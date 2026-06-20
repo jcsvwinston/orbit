@@ -24,6 +24,7 @@ import (
 
 	"github.com/jcsvwinston/orbit/internal/admin"
 
+	"github.com/jcsvwinston/nucleus/pkg/authz"
 	"github.com/jcsvwinston/nucleus/pkg/db"
 	"github.com/jcsvwinston/nucleus/pkg/nucleus"
 )
@@ -136,6 +137,28 @@ func (m *module) start(ctx context.Context) error {
 		return fmt.Errorf("orbit: resolve default *sql.DB: %w", err)
 	}
 	handles := rt.DatabaseHandles()
+
+	// Exempt orbit's prefix from the framework's default-deny RBAC. The panel
+	// owns its own session-based auth (NewDatabaseAdminAuth below) and enforces
+	// RBAC against this same enforcer, so the framework middleware must not
+	// double-gate the prefix — an unauthenticated GET would otherwise 403 before
+	// reaching the panel's login flow. This replicates, from the module side,
+	// the exemption the framework hardcoded for the in-core admin prefix before
+	// the extraction (ADR-019). Registered under the "anonymous" BootstrapSubject
+	// the default-deny middleware uses for unauthenticated requests; both the
+	// bare prefix (which carries the canonical redirect to prefix+"/") and the
+	// subtree need a row, since keyMatch("/admin","/admin/*") is false. Safe
+	// no-op on an unbacked runtime (nil enforcer); harmless under WithOpenAuthz
+	// (the middleware is not mounted, so the extra allows never fire).
+	if enf := rt.Authorizer(); enf != nil {
+		prefix := admin.NormalizePrefix(m.cfg.Prefix)
+		if err := enf.AddPolicy(authz.BootstrapSubject, prefix, "*"); err != nil {
+			return fmt.Errorf("orbit: allow admin prefix %q in authz (bare): %w", prefix, err)
+		}
+		if err := enf.AddPolicy(authz.BootstrapSubject, prefix+"/*", "*"); err != nil {
+			return fmt.Errorf("orbit: allow admin prefix %q in authz (subtree): %w", prefix, err)
+		}
+	}
 
 	// Provision the bootstrap admin user (dialect-aware) before building the panel.
 	if m.cfg.BootstrapPassword != "" {
