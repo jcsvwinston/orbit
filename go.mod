@@ -4,7 +4,7 @@ go 1.26.4
 
 require (
 	github.com/alicebob/miniredis/v2 v2.37.0
-	github.com/jcsvwinston/nucleus v0.9.1-0.20260620110433-daa6706fd0e4
+	github.com/jcsvwinston/nucleus v0.9.1-0.20260620183635-a638d14591e7
 	github.com/redis/go-redis/v9 v9.14.1
 	github.com/shirou/gopsutil/v3 v3.24.5
 	golang.org/x/net v0.55.0

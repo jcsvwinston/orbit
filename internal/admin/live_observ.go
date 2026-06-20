@@ -91,6 +91,14 @@ func (p *Panel) recordBusSQL(e *observability.SQLStatementEvent) {
 		TraceID:    strings.TrimSpace(e.TraceID),
 		UserID:     strings.TrimSpace(e.UserID),
 	}
+	p.pushLiveSQL(event)
+}
+
+// pushLiveSQL records an already-built liveSQLEvent into the ring buffer + the
+// live event stream + the cluster relay. Shared by recordBusSQL (the
+// *observability.Bus path) and recordEventBusSQL (the first-party EventBus path
+// orbit uses), so the feed logic lives in one place.
+func (p *Panel) pushLiveSQL(event liveSQLEvent) {
 	if event.NodeID == "" {
 		event.NodeID = p.liveNodeID()
 	}
