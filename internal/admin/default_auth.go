@@ -201,16 +201,18 @@ func (a *DatabaseAdminAuth) renderLoginPage(w http.ResponseWriter, status int, n
 	// stale error banner on a later clean navigation.
 	w.Header().Set("Cache-Control", "no-store")
 
-	if loginUIContent, ok := adminUIBuildFS(); ok {
-		content, err := fs.ReadFile(loginUIContent, "index.html")
-		if err == nil {
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.WriteHeader(status)
-			out := injectAdminPrefix(content, adminPrefix)
-			out = injectLoginMessage(out, errorMsg, infoMsg)
-			_, _ = w.Write(out)
-			return
-		}
+	// Serve the SPA shell for login (the prefix and any login message are
+	// injected as meta tags; the SPA renders the login screen client-side).
+	// adminUIContentFS() resolves the embedded build in a normal binary, so this
+	// is the live path — it falls through to the static page below only if the
+	// shell is somehow unreadable.
+	if content, err := fs.ReadFile(adminUIContentFS(), "index.html"); err == nil {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(status)
+		out := injectAdminPrefix(content, adminPrefix)
+		out = injectLoginMessage(out, errorMsg, infoMsg)
+		_, _ = w.Write(out)
+		return
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

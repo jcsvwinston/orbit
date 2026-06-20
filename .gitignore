@@ -1,0 +1,16 @@
+# Node dependencies + build scratch for the embedded admin SPA
+# (internal/admin/ui). The BUILT output internal/admin/ui/dist IS committed and
+# embedded via go:embed (see internal/admin/ui_fallback.go) — do NOT ignore it.
+node_modules/
+**/node_modules/
+*.tsbuildinfo
+
+# Go build / test output
+/orbit
+*.test
+*.out
+coverage*.txt
+
+# Editor / OS noise
+.DS_Store
+*.swp

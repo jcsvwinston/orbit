@@ -15,58 +15,36 @@ const adminUIDirEnv = "NUCLEUS_ADMIN_UI_DIR"
 //go:embed ui_fallback/*
 var fallbackUIFS embed.FS
 
+// builtUIFS is the real admin SPA, embedded from internal/admin/ui/dist at build
+// time. orbit commits the built dist so a consumer that mounts the module gets
+// the full admin out of the box — no separate asset deployment (ADR-019: the
+// admin ships as a normal Go dependency, closing fleetdesk finding #9). The
+// `all:` prefix includes asset files whose names begin with `_` or `.`.
+//
+//go:embed all:ui/dist
+var builtUIFS embed.FS
+
+// adminUIContentFS resolves the admin SPA filesystem, in order:
+//  1. NUCLEUS_ADMIN_UI_DIR — a dev override pointing at a built dist on disk;
+//  2. the SPA embedded in the binary (the shipped distribution);
+//  3. the placeholder (only if the embedded dist is somehow absent).
 func adminUIContentFS() fs.FS {
-	if uiFS, ok := adminUIBuildFS(); ok {
-		return uiFS
+	if dir := strings.TrimSpace(os.Getenv(adminUIDirEnv)); dir != "" && adminUIBuildDirUsable(dir) {
+		return os.DirFS(dir)
 	}
-	fsys, err := fs.Sub(fallbackUIFS, "ui_fallback")
-	if err != nil {
-		return os.DirFS(".")
+	if sub, err := fs.Sub(builtUIFS, "ui/dist"); err == nil && adminUIFSHasIndex(sub) {
+		return sub
 	}
-	return fsys
+	if fsys, err := fs.Sub(fallbackUIFS, "ui_fallback"); err == nil {
+		return fsys
+	}
+	return os.DirFS(".")
 }
 
-func adminUIBuildFS() (fs.FS, bool) {
-	if dir := strings.TrimSpace(os.Getenv(adminUIDirEnv)); dir != "" {
-		if adminUIBuildDirUsable(dir) {
-			return os.DirFS(dir), true
-		}
-		return nil, false
-	}
-	for _, dir := range adminUIBuildDirCandidates() {
-		if adminUIBuildDirUsable(dir) {
-			return os.DirFS(dir), true
-		}
-	}
-	return nil, false
-}
-
-func adminUIBuildDirCandidates() []string {
-	cwd, err := os.Getwd()
-	if err != nil || cwd == "" {
-		return nil
-	}
-
-	seen := map[string]struct{}{}
-	var dirs []string
-	add := func(dir string) {
-		cleaned := filepath.Clean(dir)
-		if _, ok := seen[cleaned]; ok {
-			return
-		}
-		seen[cleaned] = struct{}{}
-		dirs = append(dirs, cleaned)
-	}
-
-	for dir := cwd; ; dir = filepath.Dir(dir) {
-		add(filepath.Join(dir, "pkg", "admin", "ui", "dist"))
-		add(filepath.Join(dir, "ui", "dist"))
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-	}
-	return dirs
+// adminUIFSHasIndex reports whether fsys contains a usable index.html entrypoint.
+func adminUIFSHasIndex(fsys fs.FS) bool {
+	info, err := fs.Stat(fsys, "index.html")
+	return err == nil && !info.IsDir()
 }
 
 func adminUIBuildDirUsable(dir string) bool {
