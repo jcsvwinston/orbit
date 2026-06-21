@@ -1,0 +1,17 @@
+go 1.26.4
+
+// Orbit is the pluggable observability/admin product for Nucleus (ADR-019).
+// The root module (./) is the in-process orbit.Module consumed by host apps;
+// the cluster observability subsystem is split into three modules under
+// proto/, agent/, and server/ so the agent, the admin server binary, and the
+// proto stubs stay releasable independently while remaining buildable in a
+// single `go build ./...` from any module's vantage point.
+//
+// nucleus/pkg/* is an external dependency of agent/ and server/, pinned in
+// each module's go.mod to the same pseudo-version the root module uses.
+use (
+	./
+	./agent
+	./proto
+	./server
+)
