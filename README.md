@@ -38,12 +38,11 @@ single binary.
 ## Install
 
 ```bash
-go get github.com/jcsvwinston/orbit@latest
+go get github.com/jcsvwinston/orbit@v0.1.0
 ```
 
-Orbit has not cut a tagged release yet, so `@latest` resolves to a pseudo-version
-of the current `main`. Pin that pseudo-version in your `go.mod` for reproducible
-builds until a tag is published.
+The first tagged release is **v0.1.0** (`@latest` resolves to it; pin `@v0.1.0`
+for reproducible builds). **Pre-1.0:** the API may still change before v1.0.
 
 > **Requires** Go 1.26+ and a [Nucleus](https://github.com/jcsvwinston/nucleus)
 > application to mount into.
