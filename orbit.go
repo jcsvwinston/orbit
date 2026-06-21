@@ -20,6 +20,7 @@ package orbit
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/jcsvwinston/orbit/internal/admin"
@@ -52,6 +53,12 @@ type Config struct {
 	BootstrapEmail    string `yaml:"bootstrap_email"`
 	BootstrapPassword string `yaml:"bootstrap_password"`
 
+	// AuthDatabase optionally names a managed database alias whose handle backs
+	// admin authentication and the bootstrap user. Empty means use the default
+	// database. The panel itself (Data Studio etc.) always runs on the default
+	// handle; only the auth/bootstrap *sql.DB is redirected.
+	AuthDatabase string `yaml:"auth_database"`
+
 	// Multi-tenant: set these to match the host application so the admin filters
 	// records by the request's resolved tenant. Leave disabled for single-tenant
 	// apps.
@@ -65,6 +72,31 @@ type Config struct {
 	MigrationsPath string `yaml:"migrations_path"`
 	// AuditMaxSize caps the in-memory audit log (default defaultAuditMaxSize).
 	AuditMaxSize int `yaml:"audit_max_size"`
+
+	// Live view / cluster telemetry.
+
+	// LiveExcludePatterns lists path patterns excluded from the live HTTP
+	// capture feed (e.g. health checks, the admin's own polling endpoints).
+	LiveExcludePatterns []string `yaml:"live_exclude_patterns"`
+	// ClusterEnabled turns on cluster-aware live telemetry: live request/SQL
+	// events are relayed between nodes over Redis so the feed shows the whole
+	// fleet, not just the local node. Best-effort — a relay failure never blocks
+	// startup.
+	ClusterEnabled bool `yaml:"cluster_enabled"`
+	// ClusterRedisURL is the Redis URL backing the live telemetry relay.
+	ClusterRedisURL string `yaml:"cluster_redis_url"`
+	// ClusterChannel is the Redis pub/sub channel the relay publishes on
+	// (default nucleus:admin:live:v1).
+	ClusterChannel string `yaml:"cluster_channel"`
+	// ClusterNodeID is an explicit node identifier for this instance in the
+	// relay (defaults to the runtime identity).
+	ClusterNodeID string `yaml:"cluster_node_id"`
+	// ClusterToken is a shared secret the relay uses to reject untrusted
+	// (cross-tenant or spoofed) messages on the channel.
+	ClusterToken string `yaml:"cluster_token"`
+	// TraceURLTemplate is an external trace-explorer URL template surfaced in
+	// the UI; it supports a {trace_id} placeholder.
+	TraceURLTemplate string `yaml:"trace_url_template"`
 }
 
 // module holds the runtime-bound state captured in OnStart.
@@ -132,11 +164,18 @@ func (m *module) start(ctx context.Context) error {
 	if defaultHandle == nil {
 		return fmt.Errorf("orbit: no default database configured (the admin needs a database)")
 	}
-	defaultSQL, err := defaultHandle.SqlDB()
-	if err != nil {
-		return fmt.Errorf("orbit: resolve default *sql.DB: %w", err)
-	}
 	handles := rt.DatabaseHandles()
+
+	// Resolve the *sql.DB + dialect that back admin auth + the bootstrap user.
+	// Defaults to the default handle; when AuthDatabase names an alias, that
+	// handle is used for BOTH instead (the panel itself stays on defaultHandle,
+	// below). The dialect must track the AUTH database — not the default — so the
+	// bootstrap-user SQL uses the right placeholders when auth lives on a
+	// different engine.
+	authSQL, authSystem, err := resolveAuthDB(m.cfg.AuthDatabase, defaultHandle, handles)
+	if err != nil {
+		return err
+	}
 
 	// Exempt orbit's prefix from the framework's default-deny RBAC. The panel
 	// owns its own session-based auth (NewDatabaseAdminAuth below) and enforces
@@ -162,11 +201,11 @@ func (m *module) start(ctx context.Context) error {
 
 	// Provision the bootstrap admin user (dialect-aware) before building the panel.
 	if m.cfg.BootstrapPassword != "" {
-		if _, err := admin.EnsureBootstrapAdminUser(ctx, defaultSQL, admin.BootstrapAdminConfig{
+		if _, err := admin.EnsureBootstrapAdminUser(ctx, authSQL, admin.BootstrapAdminConfig{
 			Username: m.cfg.BootstrapUsername,
 			Email:    m.cfg.BootstrapEmail,
 			Password: m.cfg.BootstrapPassword,
-			System:   defaultHandle.System(),
+			System:   authSystem,
 		}); err != nil {
 			return fmt.Errorf("orbit: ensure bootstrap admin user: %w", err)
 		}
@@ -178,8 +217,9 @@ func (m *module) start(ctx context.Context) error {
 		Environment:     m.cfg.Environment,
 		Databases:       databaseRuntimeInfo(handles, defaultHandle),
 		DatabaseHandles: handles,
-		// Admin auth uses the default database's *sql.DB + the framework session.
-		Auth:         admin.NewDatabaseAdminAuth(defaultSQL, rt.Session(), m.cfg.Prefix),
+		// Admin auth uses authSQL (default handle, or AuthDatabase when set) +
+		// the framework session.
+		Auth:         admin.NewDatabaseAdminAuth(authSQL, rt.Session(), m.cfg.Prefix),
 		Session:      rt.Session(),
 		RBACEnforcer: rt.Authorizer(),
 		Store:        rt.Storage(),
@@ -192,7 +232,24 @@ func (m *module) start(ctx context.Context) error {
 		AuditEnabled:   true,
 		AuditMaxSize:   m.cfg.AuditMaxSize,
 		MigrationsPath: m.cfg.MigrationsPath,
+
+		// Live view / cluster telemetry / trace explorer.
+		LiveExcludePatterns: m.cfg.LiveExcludePatterns,
+		LiveClusterEnabled:  m.cfg.ClusterEnabled,
+		LiveClusterRedisURL: m.cfg.ClusterRedisURL,
+		LiveClusterChannel:  m.cfg.ClusterChannel,
+		LiveClusterNodeID:   m.cfg.ClusterNodeID,
+		LiveClusterToken:    m.cfg.ClusterToken,
+		TraceURLTemplate:    m.cfg.TraceURLTemplate,
 	})
+
+	// Enable the cluster-aware live telemetry relay when configured. Best-effort:
+	// a relay failure (e.g. unreachable Redis) is logged but never blocks startup.
+	if m.cfg.ClusterEnabled {
+		if err := m.panel.EnableLiveClusterRelay(); err != nil {
+			rt.Logger().Warn("orbit: live cluster relay disabled", "error", err)
+		}
+	}
 
 	// Feed the live SQL view from the framework's first-party event bus (covers
 	// every model.CRUD query across the app, not just the admin's own browsing).
@@ -216,4 +273,25 @@ func databaseRuntimeInfo(handles map[string]*db.DB, def *db.DB) []admin.Database
 		})
 	}
 	return infos
+}
+
+// resolveAuthDB picks the *sql.DB and dialect ("system") that back admin auth
+// and the bootstrap user. Empty alias → the default handle; otherwise the named
+// handle (clear error if unknown or unresolvable). The returned dialect tracks
+// the AUTH database — not the default — so the bootstrap-user SQL uses the right
+// placeholders when auth lives on a different engine than the default.
+func resolveAuthDB(alias string, defaultHandle *db.DB, handles map[string]*db.DB) (*sql.DB, string, error) {
+	h := defaultHandle
+	if alias != "" {
+		named, ok := handles[alias]
+		if !ok || named == nil {
+			return nil, "", fmt.Errorf("orbit: auth_database alias %q not found / not resolvable: no such managed database handle", alias)
+		}
+		h = named
+	}
+	sqlDB, err := h.SqlDB()
+	if err != nil {
+		return nil, "", fmt.Errorf("orbit: resolve auth database (alias %q): %w", alias, err)
+	}
+	return sqlDB, h.System(), nil
 }
