@@ -9,9 +9,14 @@ go 1.26.4
 //
 // nucleus/pkg/* is an external dependency of agent/ and server/, pinned in
 // each module's go.mod to the same pseudo-version the root module uses.
+//
+// quarkbridge/ is an opt-in module that depends on both Quark and Nucleus; it
+// requires a newer Nucleus than the rest of orbit/* (one that exposes the
+// public SQL ingest, ADR-020), so its go.mod pins a later pseudo-version.
 use (
 	./
 	./agent
 	./proto
+	./quarkbridge
 	./server
 )
