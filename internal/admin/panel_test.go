@@ -22,6 +22,8 @@ import (
 	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/observe"
 	"github.com/jcsvwinston/nucleus/pkg/router"
+
+	dsnucleus "github.com/jcsvwinston/orbit/internal/datasource/nucleus"
 )
 
 type AdminUser struct {
@@ -822,10 +824,27 @@ func setupPanelForTestWithAuth(t *testing.T, engine db.Engine, adminAuth AdminAu
 		t.Fatalf("registry.Register failed: %v", err)
 	}
 
-	panel := NewPanel(database, registry, logger, PanelConfig{
-		Prefix: "/admin",
-		Title:  "Test Admin",
-		Auth:   adminAuth,
+	// Resolve defers to the panel's own handle plumbing (reads config.DatabaseHandles
+	// at call time), so tests that inject extra aliases after construction — e.g.
+	// the db_alias routing guard — are honored.
+	var panel *Panel
+	src := dsnucleus.New(dsnucleus.Config{
+		Registry: registry,
+		Resolve: func(alias string) (*db.DB, string, error) {
+			h, err := panel.databaseHandle(alias)
+			if err != nil {
+				return nil, "", err
+			}
+			return h, h.System(), nil
+		},
+		BusConnected: func() bool { return true },
+	})
+	panel = NewPanel(src, logger, PanelConfig{
+		Prefix:          "/admin",
+		Title:           "Test Admin",
+		Auth:            adminAuth,
+		SchemaRegistry:  registry,
+		DatabaseHandles: map[string]*db.DB{"default": database},
 	})
 
 	cleanup := func() {

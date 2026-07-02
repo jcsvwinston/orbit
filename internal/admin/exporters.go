@@ -6,13 +6,13 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"reflect"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/storage"
+
+	"github.com/jcsvwinston/orbit/internal/datasource"
 )
 
 // ExportFormat defines supported export formats.
@@ -60,7 +60,7 @@ func (p *Panel) exportModels(ctx context.Context, cfg ExportConfig) (ExportResul
 	}
 
 	if len(cfg.Models) == 0 {
-		for _, m := range p.registry.All() {
+		for _, m := range p.src.All() {
 			cfg.Models = append(cfg.Models, m.Name)
 		}
 	}
@@ -88,32 +88,35 @@ func (p *Panel) exportCSV(ctx context.Context, cfg ExportConfig, result ExportRe
 	headerWritten := false
 
 	for _, modelName := range cfg.Models {
-		meta, ok := p.registry.Get(modelName)
+		mi, ok := p.src.Get(modelName)
 		if !ok {
 			continue
 		}
 
-		crud, err := p.getCRUD(meta, cfg.Database)
+		st, err := p.src.Store(mi.Name, cfg.Database)
 		if err != nil {
 			return result, fmt.Errorf("export CSV model %s: %w", modelName, err)
 		}
 
-		parsed, err := crud.FindAll(ctx, model.QueryOpts{
+		filters := cfg.Filters
+		if cfg.TenantID != "" && mi.TenantField != "" {
+			if filters == nil {
+				filters = make(map[string]string)
+			}
+			filters[mi.TenantField] = cfg.TenantID
+		}
+
+		page, err := st.List(ctx, datasource.Query{
 			Page: 1, PageSize: 10000,
-			Filters: p.applyTenantFilter(cfg.TenantID, cfg.Filters, meta),
+			Filters: filters,
 		})
 		if err != nil {
 			return result, fmt.Errorf("export CSV fetch %s: %w", modelName, err)
 		}
 
-		items := reflect.ValueOf(parsed.Items)
-		if items.Kind() == reflect.Ptr {
-			items = items.Elem()
-		}
-
 		if !headerWritten {
 			headers := []string{"_model"}
-			for _, f := range meta.Fields {
+			for _, f := range mi.Fields {
 				if !f.IsExcluded {
 					headers = append(headers, f.Column)
 				}
@@ -122,19 +125,18 @@ func (p *Panel) exportCSV(ctx context.Context, cfg ExportConfig, result ExportRe
 			headerWritten = true
 		}
 
-		for i := 0; i < items.Len(); i++ {
+		for _, rec := range page.Items {
 			row := []string{modelName}
-			item := items.Index(i)
-			for _, f := range meta.Fields {
+			for _, f := range mi.Fields {
 				if f.IsExcluded {
 					continue
 				}
-				val := item.FieldByName(f.Name)
-				if !val.IsValid() {
+				v, ok := recordValue(rec, f)
+				if !ok {
 					row = append(row, "")
 					continue
 				}
-				row = append(row, formatFieldValue(val.Interface()))
+				row = append(row, formatFieldValue(v))
 			}
 			writer.Write(row)
 			totalRecords++
@@ -165,32 +167,34 @@ func (p *Panel) exportJSON(ctx context.Context, cfg ExportConfig, result ExportR
 	totalRecords := 0
 
 	for _, modelName := range cfg.Models {
-		meta, ok := p.registry.Get(modelName)
+		mi, ok := p.src.Get(modelName)
 		if !ok {
 			continue
 		}
 
-		crud, err := p.getCRUD(meta, cfg.Database)
+		st, err := p.src.Store(mi.Name, cfg.Database)
 		if err != nil {
 			return result, fmt.Errorf("export JSON model %s: %w", modelName, err)
 		}
 
-		parsed, err := crud.FindAll(ctx, model.QueryOpts{
+		filters := cfg.Filters
+		if cfg.TenantID != "" && mi.TenantField != "" {
+			if filters == nil {
+				filters = make(map[string]string)
+			}
+			filters[mi.TenantField] = cfg.TenantID
+		}
+
+		page, err := st.List(ctx, datasource.Query{
 			Page: 1, PageSize: 10000,
-			Filters: p.applyTenantFilter(cfg.TenantID, cfg.Filters, meta),
+			Filters: filters,
 		})
 		if err != nil {
 			return result, fmt.Errorf("export JSON fetch %s: %w", modelName, err)
 		}
 
-		items := reflect.ValueOf(parsed.Items)
-		if items.Kind() == reflect.Ptr {
-			items = items.Elem()
-		}
-
-		for i := 0; i < items.Len(); i++ {
-			item := items.Index(i)
-			data := entityToMap(meta, item.Addr().Interface())
+		for _, rec := range page.Items {
+			data := map[string]interface{}(rec)
 			data["_model"] = modelName
 			allRecords = append(allRecords, data)
 			totalRecords++
@@ -225,15 +229,15 @@ func (p *Panel) exportSQL(ctx context.Context, cfg ExportConfig, result ExportRe
 	buf.WriteString(fmt.Sprintf("-- Database: %s\n\n", cfg.Database))
 
 	for _, modelName := range cfg.Models {
-		meta, ok := p.registry.Get(modelName)
+		mi, ok := p.src.Get(modelName)
 		if !ok {
 			continue
 		}
 
 		// Schema
-		buf.WriteString(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n", meta.Table))
+		buf.WriteString(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n", mi.Table))
 		cols := []string{}
-		for _, f := range meta.Fields {
+		for _, f := range mi.Fields {
 			if f.IsExcluded {
 				continue
 			}
@@ -255,44 +259,46 @@ func (p *Panel) exportSQL(ctx context.Context, cfg ExportConfig, result ExportRe
 		buf.WriteString("\n);\n\n")
 
 		// Data
-		crud, err := p.getCRUD(meta, cfg.Database)
+		st, err := p.src.Store(mi.Name, cfg.Database)
 		if err != nil {
 			return result, fmt.Errorf("export SQL model %s: %w", modelName, err)
 		}
 
-		parsed, err := crud.FindAll(ctx, model.QueryOpts{
+		filters := cfg.Filters
+		if cfg.TenantID != "" && mi.TenantField != "" {
+			if filters == nil {
+				filters = make(map[string]string)
+			}
+			filters[mi.TenantField] = cfg.TenantID
+		}
+
+		page, err := st.List(ctx, datasource.Query{
 			Page: 1, PageSize: 10000,
-			Filters: p.applyTenantFilter(cfg.TenantID, cfg.Filters, meta),
+			Filters: filters,
 		})
 		if err != nil {
 			return result, fmt.Errorf("export SQL fetch %s: %w", modelName, err)
 		}
 
-		items := reflect.ValueOf(parsed.Items)
-		if items.Kind() == reflect.Ptr {
-			items = items.Elem()
-		}
-
 		columnNames := []string{}
-		for _, f := range meta.Fields {
+		for _, f := range mi.Fields {
 			if !f.IsExcluded {
 				columnNames = append(columnNames, f.Column)
 			}
 		}
 
-		for i := 0; i < items.Len(); i++ {
-			item := items.Index(i)
+		for _, rec := range page.Items {
 			values := []string{}
-			for _, f := range meta.Fields {
+			for _, f := range mi.Fields {
 				if f.IsExcluded {
 					continue
 				}
-				val := item.FieldByName(f.Name)
-				values = append(values, sqlValue(val.Interface()))
+				v, _ := recordValue(rec, f)
+				values = append(values, sqlValue(v))
 			}
 
 			buf.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s);\n",
-				meta.Table,
+				mi.Table,
 				strings.Join(columnNames, ", "),
 				strings.Join(values, ", "),
 			))
@@ -326,21 +332,6 @@ func finalizeExport(result ExportResult, info storage.ObjectInfo, records int, f
 		result.URL = url
 	}
 	return result, nil
-}
-
-func (p *Panel) applyTenantFilter(tenantID string, filters map[string]string, meta *model.ModelMeta) map[string]string {
-	if tenantID == "" {
-		return filters
-	}
-	tenantField := meta.TenantFieldName()
-	if tenantField == "" {
-		return filters
-	}
-	if filters == nil {
-		filters = make(map[string]string)
-	}
-	filters[tenantField] = tenantID
-	return filters
 }
 
 func formatFieldValue(v interface{}) string {

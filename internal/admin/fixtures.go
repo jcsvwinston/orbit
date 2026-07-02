@@ -13,9 +13,10 @@ import (
 	"time"
 
 	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
-	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/router"
 	"github.com/jcsvwinston/nucleus/pkg/storage"
+
+	"github.com/jcsvwinston/orbit/internal/datasource"
 )
 
 // DjangoFixtureRecord represents a single record in Django-style fixture format.
@@ -57,7 +58,7 @@ func (p *Panel) Dumpdata(ctx context.Context, cfg DumpdataConfig) (ExportResult,
 	// Resolve models to export
 	modelsToExport := cfg.Models
 	if len(modelsToExport) == 0 {
-		for _, m := range p.registry.All() {
+		for _, m := range p.src.All() {
 			modelsToExport = append(modelsToExport, m.Name)
 		}
 	}
@@ -73,26 +74,23 @@ func (p *Panel) Dumpdata(ctx context.Context, cfg DumpdataConfig) (ExportResult,
 	totalRecords := 0
 
 	for _, modelName := range modelsToExport {
-		meta, ok := p.registry.Get(modelName)
+		mi, ok := p.src.Get(modelName)
 		if !ok {
 			continue
 		}
 
-		crud, err := p.getCRUD(meta, databaseAlias)
+		st, err := p.src.Store(mi.Name, databaseAlias)
 		if err != nil {
 			return result, fmt.Errorf("dumpdata model %s: %w", modelName, err)
 		}
 
 		// Build filters including tenant if applicable
 		filters := make(map[string]string)
-		if cfg.TenantID != "" {
-			tenantField := meta.TenantFieldName()
-			if tenantField != "" {
-				filters[tenantField] = cfg.TenantID
-			}
+		if cfg.TenantID != "" && mi.TenantField != "" {
+			filters[mi.TenantField] = cfg.TenantID
 		}
 
-		parsed, err := crud.FindAll(ctx, model.QueryOpts{
+		page, err := st.List(ctx, datasource.Query{
 			Page: 1, PageSize: 10000,
 			Filters: filters,
 		})
@@ -100,19 +98,12 @@ func (p *Panel) Dumpdata(ctx context.Context, cfg DumpdataConfig) (ExportResult,
 			return result, fmt.Errorf("dumpdata fetch %s: %w", modelName, err)
 		}
 
-		items := reflect.ValueOf(parsed.Items)
-		if items.Kind() == reflect.Ptr {
-			items = items.Elem()
-		}
-
-		for i := 0; i < items.Len(); i++ {
-			item := items.Index(i)
-
+		for _, item := range page.Items {
 			// Extract PK value
-			pkValue := extractPKValue(item, meta)
+			pkValue := recordPKValue(item, mi)
 
 			// Build fields map (exclude PK from fields, it goes in "pk")
-			fieldsMap := entityToFixtureFields(meta, item)
+			fieldsMap := recordToFixtureFields(mi, item)
 
 			// Model name in Django format: "app.ModelName"
 			// We use just the model name since Go doesn't have app labels
@@ -217,14 +208,14 @@ func (p *Panel) Loaddata(ctx context.Context, cfg LoaddataConfig) (*ImportReport
 	for _, modelName := range modelNames {
 		records := recordsByModel[modelName]
 
-		meta, ok := p.registry.Get(modelName)
+		mi, ok := p.src.Get(modelName)
 		if !ok {
 			// Skip records for models not in registry
 			report.Skipped += len(records)
 			continue
 		}
 
-		crud, err := p.getCRUD(meta, databaseAlias)
+		st, err := p.src.Store(mi.Name, databaseAlias)
 		if err != nil {
 			return report, fmt.Errorf("loaddata model %s: %w", modelName, err)
 		}
@@ -239,42 +230,24 @@ func (p *Panel) Loaddata(ctx context.Context, cfg LoaddataConfig) (*ImportReport
 
 			// Add PK to data if present
 			if rec.PK != nil {
-				pkColumn := meta.PrimaryKey
+				pkColumn := mi.PrimaryKey
 				if pkVal, err := normalizePKValue(rec.PK); err == nil {
 					data[pkColumn] = pkVal
 				}
 			}
 
 			// Auto-inject tenant ID
-			tenantField := meta.TenantFieldName()
-			if tenantField != "" && cfg.TenantID != "" {
-				if _, exists := data[tenantField]; !exists {
-					goField := columnToGoField(meta, tenantField)
-					if goField != "" {
-						if _, exists2 := data[goField]; !exists2 {
-							data[tenantField] = cfg.TenantID
-						}
-					} else {
-						data[tenantField] = cfg.TenantID
-					}
+			if mi.TenantField != "" && cfg.TenantID != "" {
+				if _, exists := data[mi.TenantField]; !exists {
+					data[mi.TenantField] = cfg.TenantID
 				}
 			}
 
-			// Convert to entity
-			entity, err := payloadToEntity(meta, data)
-			if err != nil {
-				report.Failed++
-				report.Errors = append(report.Errors, ImportError{
-					Message: fmt.Sprintf("model %s: %v", modelName, err),
-				})
-				continue
-			}
-
 			// Determine if record already exists
-			pkValue := extractEntityPK(entity, meta)
-			if pkValue == 0 {
+			pkValue := extractDataPK(data, mi)
+			if pkValue == "" {
 				// No PK, just create
-				if err := crud.Create(ctx, entity); err != nil {
+				if _, err := st.Create(ctx, datasource.Record(data)); err != nil {
 					report.Failed++
 					report.Errors = append(report.Errors, ImportError{
 						Message: fmt.Sprintf("model %s create: %v", modelName, err),
@@ -286,13 +259,13 @@ func (p *Panel) Loaddata(ctx context.Context, cfg LoaddataConfig) (*ImportReport
 			}
 
 			// Check if record exists
-			existing, err := crud.FindByID(ctx, pkValue)
+			existing, err := st.Get(ctx, pkValue)
 			if err != nil {
 				// Record doesn't exist, create it
-				if err := crud.Create(ctx, entity); err != nil {
+				if _, err := st.Create(ctx, datasource.Record(data)); err != nil {
 					report.Failed++
 					report.Errors = append(report.Errors, ImportError{
-						Message: fmt.Sprintf("model %s create pk=%d: %v", modelName, pkValue, err),
+						Message: fmt.Sprintf("model %s create pk=%s: %v", modelName, pkValue, err),
 					})
 				} else {
 					report.Imported++
@@ -311,16 +284,16 @@ func (p *Panel) Loaddata(ctx context.Context, cfg LoaddataConfig) (*ImportReport
 				// Build updates from fields (exclude PK)
 				updates := make(map[string]interface{})
 				for k, v := range rec.Fields {
-					field := findFieldByColumn(meta, k)
+					field := dsFindFieldByColumn(mi, k)
 					if field != nil && !field.IsPK && !field.IsReadOnly {
 						updates[k] = v
 					}
 				}
 
-				if err := crud.Update(ctx, pkValue, updates); err != nil {
+				if err := st.Update(ctx, pkValue, datasource.Record(updates)); err != nil {
 					report.Failed++
 					report.Errors = append(report.Errors, ImportError{
-						Message: fmt.Sprintf("model %s update pk=%d: %v", modelName, pkValue, err),
+						Message: fmt.Sprintf("model %s update pk=%s: %v", modelName, pkValue, err),
 					})
 				} else {
 					report.Updated++
@@ -395,59 +368,62 @@ func (p *Panel) handleLoaddata(c *router.Context) error {
 	return c.JSON(http.StatusOK, report)
 }
 
-// extractPKValue extracts the primary key value from a struct reflect value.
-func extractPKValue(item reflect.Value, meta *model.ModelMeta) interface{} {
-	if item.Kind() == reflect.Ptr {
-		item = item.Elem()
-	}
-	if item.Kind() != reflect.Struct {
-		return nil
-	}
-
-	pkField := item.FieldByName(meta.PrimaryKey)
-	if !pkField.IsValid() {
-		// Try common PK field names
-		for _, name := range []string{"ID", "Id", "id", "PrimaryKey"} {
-			pkField = item.FieldByName(name)
-			if pkField.IsValid() {
-				break
+// recordPKValue extracts the primary key value from a neutral Record. It is the
+// datasource.ModelInfo replacement for extractPKValue over reflect.Value.
+func recordPKValue(rec datasource.Record, mi datasource.ModelInfo) interface{} {
+	for _, f := range mi.Fields {
+		if f.IsPK {
+			if v, ok := recordValue(rec, f); ok {
+				return v
 			}
 		}
-		if !pkField.IsValid() {
-			return nil
-		}
 	}
-
-	return pkField.Interface()
+	if v, ok := rec["id"]; ok {
+		return v
+	}
+	return nil
 }
 
-// entityToFixtureFields converts an entity to a map of field values for fixture export.
-// Excludes the primary key field (it goes in the "pk" field of the fixture record).
-func entityToFixtureFields(meta *model.ModelMeta, item reflect.Value) map[string]interface{} {
-	if item.Kind() == reflect.Ptr {
-		item = item.Elem()
-	}
-	if item.Kind() != reflect.Struct {
-		return nil
-	}
-
+// recordToFixtureFields converts a neutral Record to a map of field values for
+// fixture export. Excludes the primary key field (it goes in the "pk" field of
+// the fixture record). It is the datasource.ModelInfo replacement for
+// entityToFixtureFields.
+func recordToFixtureFields(mi datasource.ModelInfo, rec datasource.Record) map[string]interface{} {
 	fieldsMap := make(map[string]interface{})
-
-	for _, f := range meta.Fields {
+	for _, f := range mi.Fields {
 		if f.IsExcluded || f.IsPK {
 			continue
 		}
-
-		fieldVal := item.FieldByName(f.Name)
-		if !fieldVal.IsValid() {
+		val, ok := recordValue(rec, f)
+		if !ok {
 			continue
 		}
-
-		val := fieldVal.Interface()
 		fieldsMap[f.Column] = formatFixtureValue(val)
 	}
-
 	return fieldsMap
+}
+
+// extractDataPK reads the primary key from an input data map (fixture fields
+// merged with pk), returning it as a string suitable for RecordStore's string
+// IDs (D1). Returns "" when no usable PK value is present.
+func extractDataPK(data map[string]interface{}, mi datasource.ModelInfo) string {
+	if v, ok := data[mi.PrimaryKey]; ok && v != nil && v != "" {
+		return fmt.Sprintf("%v", v)
+	}
+	for _, f := range mi.Fields {
+		if !f.IsPK {
+			continue
+		}
+		for _, key := range []string{f.Column, f.Name} {
+			if key == "" {
+				continue
+			}
+			if v, ok := data[key]; ok && v != nil && v != "" {
+				return fmt.Sprintf("%v", v)
+			}
+		}
+	}
+	return ""
 }
 
 // formatFixtureValue formats a Go value for JSON fixture serialization.
@@ -511,46 +487,5 @@ func normalizePKValue(raw interface{}) (uint, error) {
 		return uint(parsed), nil
 	default:
 		return 0, fmt.Errorf("unsupported pk type: %T", raw)
-	}
-}
-
-// extractEntityPK extracts the PK value from an entity as uint.
-func extractEntityPK(entity interface{}, meta *model.ModelMeta) uint {
-	if entity == nil {
-		return 0
-	}
-
-	val := reflect.ValueOf(entity)
-	if val.Kind() == reflect.Ptr {
-		val = val.Elem()
-	}
-	if val.Kind() != reflect.Struct {
-		return 0
-	}
-
-	pkField := val.FieldByName(meta.PrimaryKey)
-	if !pkField.IsValid() {
-		for _, name := range []string{"ID", "Id", "id"} {
-			pkField = val.FieldByName(name)
-			if pkField.IsValid() {
-				break
-			}
-		}
-		if !pkField.IsValid() {
-			return 0
-		}
-	}
-
-	switch v := pkField.Interface().(type) {
-	case uint:
-		return v
-	case uint64:
-		return uint(v)
-	case int:
-		return uint(v)
-	case int64:
-		return uint(v)
-	default:
-		return 0
 	}
 }

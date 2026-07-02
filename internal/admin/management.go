@@ -275,35 +275,29 @@ func (p *Panel) handleImportValidate(c *router.Context) error {
 		return gferrors.BadRequest("invalid JSON")
 	}
 
-	meta, ok := p.registry.Get(cfg.Model)
+	mi, ok := p.src.Get(cfg.Model)
 	if !ok {
 		return gferrors.BadRequest(fmt.Sprintf("model %q not found", cfg.Model))
 	}
+	cfg.Model = mi.Name
 
-	// Read file from storage
 	if p.store == nil {
 		return gferrors.BadRequest("storage not configured")
 	}
 
-	reader, _, err := p.store.Get(r.Context(), key)
+	// Run the shared import flow in dry-run mode: it reads the upload, parses,
+	// and validates without writing (ExecuteImport short-circuits on DryRun).
+	cfg.DryRun = true
+	report, err := p.ImportFromFile(r.Context(), key, cfg)
 	if err != nil {
-		return fmt.Errorf("read upload: %w", err)
-	}
-	defer reader.Close()
-
-	// Parse
-	records, err := ParseImportData(reader, cfg.Format)
-	if err != nil {
-		return fmt.Errorf("parse: %w", err)
+		return err
 	}
 
-	// Validate
-	errors := ValidateImportData(meta, records, cfg.TenantID)
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"total_records": len(records),
-		"valid_records": len(records) - len(errors),
-		"errors":        errors,
-		"can_proceed":   len(errors) == 0,
+		"total_records": report.Total,
+		"valid_records": report.Total - len(report.Errors),
+		"errors":        report.Errors,
+		"can_proceed":   len(report.Errors) == 0,
 	})
 }
 

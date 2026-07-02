@@ -1,21 +1,20 @@
 package admin
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
 	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/router"
+
+	"github.com/jcsvwinston/orbit/internal/datasource"
 )
 
 // handleListModels returns all registered models with their record counts.
@@ -81,7 +80,7 @@ func (p *Panel) handleListModels(c *router.Context) error {
 		SiteNames          []string `json:"site_names,omitempty"`
 	}
 
-	models := p.registry.All()
+	models := p.src.All()
 	result := make([]modelInfo, 0, len(models))
 	modelByName := make(map[string]*modelInfo, len(models))
 	for _, m := range models {
@@ -93,7 +92,7 @@ func (p *Panel) handleListModels(c *router.Context) error {
 			Name:       m.Name,
 			Plural:     m.Plural,
 			Table:      m.Table,
-			Icon:       m.Config.Icon,
+			Icon:       m.Icon,
 			Count:      count,
 			CountKnown: false,
 			Counts:     map[string]int64{},
@@ -150,10 +149,15 @@ func (p *Panel) handleListModels(c *router.Context) error {
 		if includeCounts {
 			if queryable {
 				for _, m := range models {
-					count, estimated, present, err := p.modelCount(r.Context(), m, alias)
+					st, err := p.src.Store(m.Name, alias)
+					if err != nil {
+						return fmt.Errorf("admin.ListModels store alias=%s model=%s: %w", alias, m.Name, err)
+					}
+					cr, err := st.Count(r.Context())
 					if err != nil {
 						return fmt.Errorf("admin.ListModels count alias=%s model=%s: %w", alias, m.Name, err)
 					}
+					count, estimated, present := cr.Count, cr.IsEstimated, cr.Present
 					if !present {
 						continue
 					}
@@ -196,7 +200,11 @@ func (p *Panel) handleListModels(c *router.Context) error {
 					// Fast mode still probes table PRESENCE (a zero-row
 					// scan), so database attribution stays truthful without
 					// paying for counts.
-					if !p.tableExists(r.Context(), alias, m) {
+					st, err := p.src.Store(m.Name, alias)
+					if err != nil {
+						return fmt.Errorf("admin.ListModels store alias=%s model=%s: %w", alias, m.Name, err)
+					}
+					if !st.TableExists(r.Context()) {
 						continue
 					}
 					modelNames = append(modelNames, m.Name)
@@ -335,35 +343,35 @@ func (p *Panel) handleListModels(c *router.Context) error {
 // handleGetSchema returns metadata for a specific model.
 func (p *Panel) handleGetSchema(c *router.Context) error {
 	name := c.Param("name")
-	meta, ok := p.registry.Get(name)
+	mi, ok := p.src.Get(name)
 	if !ok {
 		return gferrors.NotFound("model", name)
 	}
-	if err := p.authorizeAction(c, meta.Name, "get_schema"); err != nil {
+	if err := p.authorizeAction(c, mi.Name, "get_schema"); err != nil {
 		return err
 	}
 
 	type fieldInfo struct {
-		Name          string         `json:"name"`
-		Column        string         `json:"column"`
-		Label         string         `json:"label"`
-		Type          string         `json:"type"`
-		HTMLType      string         `json:"html_type"`
-		IsPK          bool           `json:"is_pk"`
-		IsRequired    bool           `json:"is_required"`
-		IsReadOnly    bool           `json:"is_readonly"`
-		IsList        bool           `json:"is_list"`
-		IsSearch      bool           `json:"is_search"`
-		IsFilter      bool           `json:"is_filter"`
-		IsExcluded    bool           `json:"is_excluded"`
-		IsForeignKey  bool           `json:"is_fk"`
-		IsTenantField bool           `json:"is_tenant_field"`
-		ForeignModel  string         `json:"fk_model,omitempty"`
-		Choices       []model.Choice `json:"choices,omitempty"`
+		Name          string              `json:"name"`
+		Column        string              `json:"column"`
+		Label         string              `json:"label"`
+		Type          string              `json:"type"`
+		HTMLType      string              `json:"html_type"`
+		IsPK          bool                `json:"is_pk"`
+		IsRequired    bool                `json:"is_required"`
+		IsReadOnly    bool                `json:"is_readonly"`
+		IsList        bool                `json:"is_list"`
+		IsSearch      bool                `json:"is_search"`
+		IsFilter      bool                `json:"is_filter"`
+		IsExcluded    bool                `json:"is_excluded"`
+		IsForeignKey  bool                `json:"is_fk"`
+		IsTenantField bool                `json:"is_tenant_field"`
+		ForeignModel  string              `json:"fk_model,omitempty"`
+		Choices       []datasource.Choice `json:"choices,omitempty"`
 	}
 
-	fields := make([]fieldInfo, 0, len(meta.Fields))
-	for _, f := range meta.Fields {
+	fields := make([]fieldInfo, 0, len(mi.Fields))
+	for _, f := range mi.Fields {
 		if f.IsExcluded {
 			continue
 		}
@@ -378,16 +386,16 @@ func (p *Panel) handleGetSchema(c *router.Context) error {
 		})
 	}
 
-	tenantField := p.resolveTenantField(meta.Name)
+	tenantField := p.resolveTenantField(mi.Name)
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"name":         meta.Name,
-		"plural":       meta.Plural,
-		"table":        meta.Table,
-		"primary_key":  meta.PrimaryKey,
-		"icon":         meta.Config.Icon,
-		"read_only":    meta.Config.ReadOnly,
+		"name":         mi.Name,
+		"plural":       mi.Plural,
+		"table":        mi.Table,
+		"primary_key":  mi.PrimaryKey,
+		"icon":         mi.Icon,
+		"read_only":    mi.ReadOnly,
 		"fields":       fields,
-		"foreign_keys": meta.ForeignKeys,
+		"foreign_keys": mi.ForeignKeys,
 		"tenant_field": tenantField,
 	})
 }
@@ -429,11 +437,11 @@ func (p *Panel) handleUpdateFieldMeta(c *router.Context) error {
 func (p *Panel) handleListRecords(c *router.Context) error {
 	r := c.Request
 	name := c.Param("name")
-	meta, ok := p.registry.Get(name)
+	mi, ok := p.src.Get(name)
 	if !ok {
 		return gferrors.NotFound("model", name)
 	}
-	if err := p.authorizeAction(c, meta.Name, "list"); err != nil {
+	if err := p.authorizeAction(c, mi.Name, "list"); err != nil {
 		return err
 	}
 
@@ -443,12 +451,12 @@ func (p *Panel) handleListRecords(c *router.Context) error {
 	}
 	// Fallback to model's declared database if no explicit override provided in query
 	if r.URL.Query().Get("db") == "" && r.URL.Query().Get("database") == "" && r.URL.Query().Get("db_alias") == "" {
-		if meta.DatabaseAlias != "" {
-			databaseAlias = meta.DatabaseAlias
+		if mi.DatabaseAlias != "" {
+			databaseAlias = mi.DatabaseAlias
 		}
 	}
 
-	crud, err := p.getCRUD(meta, databaseAlias)
+	st, err := p.src.Store(mi.Name, databaseAlias)
 	if err != nil {
 		return err
 	}
@@ -469,19 +477,19 @@ func (p *Panel) handleListRecords(c *router.Context) error {
 		return err
 	}
 
-	orderBy, err := sanitizeOrderBy(meta, r.URL.Query().Get("order_by"))
+	orderBy, err := dsSanitizeOrderBy(mi, r.URL.Query().Get("order_by"))
 	if err != nil {
 		return err
 	}
 
-	filters, err := collectFilters(meta, r.URL.Query())
+	filters, err := dsCollectFilters(mi, r.URL.Query())
 	if err != nil {
 		return err
 	}
 
 	// Apply tenant filtering when multi-tenant is enabled
 	if tenantCtx := tenantContextFromRequest(r); tenantCtx != nil && tenantCtx.Enabled && tenantCtx.AutoFilter {
-		tenantField := p.resolveTenantField(meta.Name)
+		tenantField := p.resolveTenantField(mi.Name)
 		if tenantField != "" && tenantCtx.TenantID != "" {
 			if filters == nil {
 				filters = make(map[string]string)
@@ -497,7 +505,7 @@ func (p *Panel) handleListRecords(c *router.Context) error {
 		pageSize = 0
 	}
 
-	result, err := crud.FindAll(r.Context(), model.QueryOpts{
+	result, err := st.List(r.Context(), datasource.Query{
 		Page: page, PageSize: pageSize, Search: search,
 		Filters: filters, OrderBy: orderBy,
 	})
@@ -514,17 +522,12 @@ func (p *Panel) handleGetRecord(c *router.Context) error {
 	name := c.Param("name")
 	idStr := c.Param("id")
 
-	meta, ok := p.registry.Get(name)
+	mi, ok := p.src.Get(name)
 	if !ok {
 		return gferrors.NotFound("model", name)
 	}
-	if err := p.authorizeAction(c, meta.Name, "retrieve"); err != nil {
+	if err := p.authorizeAction(c, mi.Name, "retrieve"); err != nil {
 		return err
-	}
-
-	id, err := strconv.ParseUint(idStr, 10, 64)
-	if err != nil {
-		return gferrors.BadRequest("invalid id")
 	}
 
 	databaseAlias, err := p.requestDatabaseAlias(r)
@@ -533,16 +536,16 @@ func (p *Panel) handleGetRecord(c *router.Context) error {
 	}
 	// Fallback to model's declared database if no explicit override provided in query
 	if r.URL.Query().Get("db") == "" && r.URL.Query().Get("database") == "" && r.URL.Query().Get("db_alias") == "" {
-		if meta.DatabaseAlias != "" {
-			databaseAlias = meta.DatabaseAlias
+		if mi.DatabaseAlias != "" {
+			databaseAlias = mi.DatabaseAlias
 		}
 	}
 
-	crud, err := p.getCRUD(meta, databaseAlias)
+	st, err := p.src.Store(mi.Name, databaseAlias)
 	if err != nil {
 		return err
 	}
-	record, err := crud.FindByID(r.Context(), uint(id))
+	record, err := st.Get(r.Context(), idStr)
 	if err != nil {
 		return err
 	}
@@ -554,14 +557,14 @@ func (p *Panel) handleGetRecord(c *router.Context) error {
 func (p *Panel) handleCreateRecord(c *router.Context) error {
 	r := c.Request
 	name := c.Param("name")
-	meta, ok := p.registry.Get(name)
+	mi, ok := p.src.Get(name)
 	if !ok {
 		return gferrors.NotFound("model", name)
 	}
-	if err := p.authorizeAction(c, meta.Name, "create"); err != nil {
+	if err := p.authorizeAction(c, mi.Name, "create"); err != nil {
 		return err
 	}
-	if meta.Config.ReadOnly {
+	if mi.ReadOnly {
 		return gferrors.Forbidden("model is read-only")
 	}
 
@@ -571,12 +574,12 @@ func (p *Panel) handleCreateRecord(c *router.Context) error {
 	}
 	// Fallback to model's declared database if no explicit override provided in query
 	if r.URL.Query().Get("db") == "" && r.URL.Query().Get("database") == "" && r.URL.Query().Get("db_alias") == "" {
-		if meta.DatabaseAlias != "" {
-			databaseAlias = meta.DatabaseAlias
+		if mi.DatabaseAlias != "" {
+			databaseAlias = mi.DatabaseAlias
 		}
 	}
 
-	crud, err := p.getCRUD(meta, databaseAlias)
+	st, err := p.src.Store(mi.Name, databaseAlias)
 	if err != nil {
 		return err
 	}
@@ -588,12 +591,18 @@ func (p *Panel) handleCreateRecord(c *router.Context) error {
 
 	// Auto-inject tenant ID on create when multi-tenant is enabled
 	if tenantCtx := tenantContextFromRequest(r); tenantCtx != nil && tenantCtx.Enabled && tenantCtx.TenantID != "" {
-		tenantField := p.resolveTenantField(meta.Name)
+		tenantField := p.resolveTenantField(mi.Name)
 		if tenantField != "" {
 			// Only inject if not already provided in payload
 			if _, exists := data[tenantField]; !exists {
 				// Also check Go field name variant
-				goFieldName := columnToGoField(meta, tenantField)
+				goFieldName := ""
+				for _, f := range mi.Fields {
+					if f.Column == tenantField {
+						goFieldName = f.Name
+						break
+					}
+				}
 				if goFieldName != "" {
 					if _, exists2 := data[goFieldName]; !exists2 {
 						data[tenantField] = tenantCtx.TenantID
@@ -605,16 +614,12 @@ func (p *Panel) handleCreateRecord(c *router.Context) error {
 		}
 	}
 
-	entity, err := payloadToEntity(meta, data)
+	created, err := st.Create(r.Context(), datasource.Record(data))
 	if err != nil {
 		return err
 	}
 
-	if err := crud.Create(r.Context(), entity); err != nil {
-		return err
-	}
-
-	return c.JSON(http.StatusCreated, entity)
+	return c.JSON(http.StatusCreated, created)
 }
 
 // handleUpdateRecord updates an existing record.
@@ -623,20 +628,15 @@ func (p *Panel) handleUpdateRecord(c *router.Context) error {
 	name := c.Param("name")
 	idStr := c.Param("id")
 
-	meta, ok := p.registry.Get(name)
+	mi, ok := p.src.Get(name)
 	if !ok {
 		return gferrors.NotFound("model", name)
 	}
-	if err := p.authorizeAction(c, meta.Name, "update"); err != nil {
+	if err := p.authorizeAction(c, mi.Name, "update"); err != nil {
 		return err
 	}
-	if meta.Config.ReadOnly {
+	if mi.ReadOnly {
 		return gferrors.Forbidden("model is read-only")
-	}
-
-	id, err := strconv.ParseUint(idStr, 10, 64)
-	if err != nil {
-		return gferrors.BadRequest("invalid id")
 	}
 
 	var updates map[string]interface{}
@@ -650,20 +650,20 @@ func (p *Panel) handleUpdateRecord(c *router.Context) error {
 	}
 	// Fallback to model's declared database if no explicit override provided in query
 	if r.URL.Query().Get("db") == "" && r.URL.Query().Get("database") == "" && r.URL.Query().Get("db_alias") == "" {
-		if meta.DatabaseAlias != "" {
-			databaseAlias = meta.DatabaseAlias
+		if mi.DatabaseAlias != "" {
+			databaseAlias = mi.DatabaseAlias
 		}
 	}
 
-	crud, err := p.getCRUD(meta, databaseAlias)
+	st, err := p.src.Store(mi.Name, databaseAlias)
 	if err != nil {
 		return err
 	}
-	if err := crud.Update(r.Context(), uint(id), updates); err != nil {
+	if err := st.Update(r.Context(), idStr, datasource.Record(updates)); err != nil {
 		return err
 	}
 
-	return c.JSON(http.StatusOK, map[string]interface{}{"updated": true, "id": id})
+	return c.JSON(http.StatusOK, map[string]interface{}{"updated": true, "id": idStr})
 }
 
 // handleDeleteRecord deletes a record by ID.
@@ -672,20 +672,15 @@ func (p *Panel) handleDeleteRecord(c *router.Context) error {
 	name := c.Param("name")
 	idStr := c.Param("id")
 
-	meta, ok := p.registry.Get(name)
+	mi, ok := p.src.Get(name)
 	if !ok {
 		return gferrors.NotFound("model", name)
 	}
-	if err := p.authorizeAction(c, meta.Name, "delete"); err != nil {
+	if err := p.authorizeAction(c, mi.Name, "delete"); err != nil {
 		return err
 	}
-	if meta.Config.ReadOnly {
+	if mi.ReadOnly {
 		return gferrors.Forbidden("model is read-only")
-	}
-
-	id, err := strconv.ParseUint(idStr, 10, 64)
-	if err != nil {
-		return gferrors.BadRequest("invalid id")
 	}
 
 	databaseAlias, err := p.requestDatabaseAlias(r)
@@ -694,27 +689,27 @@ func (p *Panel) handleDeleteRecord(c *router.Context) error {
 	}
 	// Fallback to model's declared database if no explicit override provided in query
 	if r.URL.Query().Get("db") == "" && r.URL.Query().Get("database") == "" && r.URL.Query().Get("db_alias") == "" {
-		if meta.DatabaseAlias != "" {
-			databaseAlias = meta.DatabaseAlias
+		if mi.DatabaseAlias != "" {
+			databaseAlias = mi.DatabaseAlias
 		}
 	}
 
-	crud, err := p.getCRUD(meta, databaseAlias)
+	st, err := p.src.Store(mi.Name, databaseAlias)
 	if err != nil {
 		return err
 	}
-	if err := crud.Delete(r.Context(), uint(id)); err != nil {
+	if err := st.Delete(r.Context(), idStr); err != nil {
 		return err
 	}
 
-	return c.JSON(http.StatusOK, map[string]interface{}{"deleted": true, "id": id})
+	return c.JSON(http.StatusOK, map[string]interface{}{"deleted": true, "id": idStr})
 }
 
 // handleBulkAction processes bulk operations (delete, export).
 func (p *Panel) handleBulkAction(c *router.Context) error {
 	r := c.Request
 	name := c.Param("name")
-	meta, ok := p.registry.Get(name)
+	mi, ok := p.src.Get(name)
 	if !ok {
 		return gferrors.NotFound("model", name)
 	}
@@ -733,24 +728,24 @@ func (p *Panel) handleBulkAction(c *router.Context) error {
 	}
 	// Fallback to model's declared database if no explicit override provided in query
 	if r.URL.Query().Get("db") == "" && r.URL.Query().Get("database") == "" && r.URL.Query().Get("db_alias") == "" {
-		if meta.DatabaseAlias != "" {
-			databaseAlias = meta.DatabaseAlias
+		if mi.DatabaseAlias != "" {
+			databaseAlias = mi.DatabaseAlias
 		}
 	}
 
 	action := strings.ToLower(strings.TrimSpace(req.Action))
 	switch action {
 	case "delete":
-		if err := p.authorizeAction(c, meta.Name, "bulk_delete"); err != nil {
+		if err := p.authorizeAction(c, mi.Name, "bulk_delete"); err != nil {
 			return err
 		}
-		if meta.Config.ReadOnly {
+		if mi.ReadOnly {
 			return gferrors.Forbidden("model is read-only")
 		}
 		if len(req.IDs) == 0 {
 			return gferrors.BadRequest("ids are required for delete action")
 		}
-		crud, err := p.getCRUD(meta, databaseAlias)
+		st, err := p.src.Store(mi.Name, databaseAlias)
 		if err != nil {
 			return err
 		}
@@ -763,7 +758,7 @@ func (p *Panel) handleBulkAction(c *router.Context) error {
 		deleted := 0
 		failures := make([]bulkDeleteError, 0)
 		for _, id := range req.IDs {
-			deleteErr := crud.Delete(r.Context(), id)
+			deleteErr := st.Delete(r.Context(), strconv.FormatUint(uint64(id), 10))
 			if deleteErr == nil {
 				deleted++
 				continue
@@ -782,7 +777,7 @@ func (p *Panel) handleBulkAction(c *router.Context) error {
 		})
 
 	case "export":
-		if err := p.authorizeAction(c, meta.Name, "bulk_export"); err != nil {
+		if err := p.authorizeAction(c, mi.Name, "bulk_export"); err != nil {
 			return err
 		}
 		if len(req.IDs) == 0 {
@@ -861,112 +856,6 @@ func includeModelCounts(r *http.Request) bool {
 	return true
 }
 
-func (p *Panel) modelCount(ctx context.Context, meta *model.ModelMeta, databaseAlias string) (count int64, isEstimated bool, present bool, err error) {
-	handle, err := p.databaseHandle(databaseAlias)
-	if err != nil {
-		return 0, false, false, err
-	}
-	sqlDB, err := handle.SqlDB()
-	if err != nil {
-		return 0, false, false, err
-	}
-
-	table := meta.Table
-	if table == "" {
-		table = strings.ToLower(meta.Name) + "s"
-	}
-
-	info, _ := p.databaseRuntimeInfoByAlias(databaseAlias)
-	dialect := strings.ToLower(info.Dialect)
-	if dialect == "" {
-		dialect = strings.ToLower(info.Engine)
-	}
-
-	var total int64
-	var query string
-	estimated := false
-
-	switch dialect {
-	case "postgres":
-		query = "SELECT reltuples::bigint FROM pg_class WHERE relname = ?"
-		estimated = true
-	case "mysql":
-		query = "SELECT TABLE_ROWS FROM information_schema.tables WHERE table_name = ? AND table_schema = DATABASE()"
-		estimated = true
-	case "sqlite", "sqlite3":
-		query = "SELECT n FROM sqlite_stat1 WHERE tbl = ? LIMIT 1"
-		estimated = true
-	case "sqlserver", "mssql":
-		query = "SELECT SUM(rows) FROM sys.partitions WHERE object_id = OBJECT_ID(?) AND index_id IN (0, 1)"
-		estimated = true
-	case "oracle":
-		query = "SELECT NUM_ROWS FROM ALL_TABLES WHERE TABLE_NAME = UPPER(?)"
-		estimated = true
-	default:
-		query = fmt.Sprintf("SELECT COUNT(*) FROM %s", table)
-	}
-
-	var errQuery error
-	if estimated {
-		errQuery = sqlDB.QueryRowContext(ctx, query, table).Scan(&total)
-		if errQuery != nil {
-			// Fallback to real count if estimate fails or table not analyzed
-			query = fmt.Sprintf("SELECT COUNT(*) FROM %s", table)
-			errQuery = sqlDB.QueryRowContext(ctx, query).Scan(&total)
-			estimated = false
-		}
-	} else {
-		errQuery = sqlDB.QueryRowContext(ctx, query).Scan(&total)
-	}
-
-	if errQuery != nil {
-		if isTableMissingErr(errQuery) {
-			return 0, false, false, nil
-		}
-		return 0, false, false, fmt.Errorf("admin.modelCount table=%s: %w", table, errQuery)
-	}
-	return total, estimated, true, nil
-}
-
-// tableExists probes whether the model's table is present on the given
-// database alias with a zero-row scan (`WHERE 1=0`) — cheap on every engine,
-// no counting. The table name comes from registered model metadata (already
-// identifier-gated at registration), never from request input.
-func (p *Panel) tableExists(ctx context.Context, databaseAlias string, meta *model.ModelMeta) bool {
-	handle, err := p.databaseHandle(databaseAlias)
-	if err != nil {
-		return false
-	}
-	sqlDB, err := handle.SqlDB()
-	if err != nil {
-		return false
-	}
-	table := meta.Table
-	if table == "" {
-		table = strings.ToLower(meta.Name) + "s"
-	}
-	rows, err := sqlDB.QueryContext(ctx, fmt.Sprintf("SELECT 1 FROM %s WHERE 1=0", table))
-	if err != nil {
-		return false
-	}
-	_ = rows.Close()
-	return rows.Err() == nil
-}
-
-func isTableMissingErr(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(strings.TrimSpace(err.Error()))
-	if msg == "" {
-		return false
-	}
-	return strings.Contains(msg, "no such table") ||
-		strings.Contains(msg, "does not exist") ||
-		strings.Contains(msg, "unknown table") ||
-		strings.Contains(msg, "undefined table")
-}
-
 func (p *Panel) databaseRuntimeInfoByAlias(alias string) (DatabaseRuntimeInfo, bool) {
 	needle := strings.TrimSpace(alias)
 	if needle == "" {
@@ -978,264 +867,6 @@ func (p *Panel) databaseRuntimeInfoByAlias(alias string) (DatabaseRuntimeInfo, b
 		}
 	}
 	return DatabaseRuntimeInfo{}, false
-}
-
-func hasDeletedAt(meta *model.ModelMeta) bool {
-	for _, f := range meta.Fields {
-		if f.Column == "deleted_at" {
-			return true
-		}
-	}
-	return false
-}
-
-func payloadToEntity(meta *model.ModelMeta, data map[string]interface{}) (interface{}, error) {
-	entityPtr := reflect.New(meta.Type)
-	entity := entityPtr.Elem()
-
-	for key, raw := range data {
-		fieldMeta, ok := fieldForInput(meta, key)
-		if !ok || fieldMeta.IsPK || fieldMeta.IsReadOnly {
-			continue
-		}
-
-		field := entity.FieldByName(fieldMeta.Name)
-		if !field.IsValid() || !field.CanSet() {
-			continue
-		}
-
-		if err := assignInputValue(field, raw); err != nil {
-			return nil, gferrors.BadRequest(fmt.Sprintf("invalid value for %s", key))
-		}
-	}
-
-	return entityPtr.Interface(), nil
-}
-
-func fieldForInput(meta *model.ModelMeta, key string) (model.FieldMeta, bool) {
-	for _, f := range meta.Fields {
-		if strings.EqualFold(key, f.Column) || strings.EqualFold(key, f.Name) {
-			return f, true
-		}
-	}
-	return model.FieldMeta{}, false
-}
-
-func assignInputValue(field reflect.Value, raw interface{}) error {
-	if raw == nil {
-		return nil
-	}
-
-	fieldType := field.Type()
-	if fieldType.Kind() == reflect.Ptr {
-		ptr := reflect.New(fieldType.Elem())
-		if err := assignInputValue(ptr.Elem(), raw); err != nil {
-			return err
-		}
-		field.Set(ptr)
-		return nil
-	}
-
-	if isTimeType(fieldType) {
-		ts, err := parseTimeValue(raw)
-		if err != nil {
-			return err
-		}
-		field.Set(reflect.ValueOf(ts))
-		return nil
-	}
-
-	switch field.Kind() {
-	case reflect.String:
-		field.SetString(fmt.Sprintf("%v", raw))
-		return nil
-
-	case reflect.Bool:
-		v, ok := raw.(bool)
-		if ok {
-			field.SetBool(v)
-			return nil
-		}
-		s := strings.ToLower(fmt.Sprintf("%v", raw))
-		field.SetBool(s == "1" || s == "true" || s == "yes" || s == "on")
-		return nil
-
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		n, err := toInt64(raw)
-		if err != nil {
-			return err
-		}
-		field.SetInt(n)
-		return nil
-
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		n, err := toUint64(raw)
-		if err != nil {
-			return err
-		}
-		field.SetUint(n)
-		return nil
-
-	case reflect.Float32, reflect.Float64:
-		f, err := toFloat64(raw)
-		if err != nil {
-			return err
-		}
-		field.SetFloat(f)
-		return nil
-	}
-
-	val := reflect.ValueOf(raw)
-	if val.Type().AssignableTo(fieldType) {
-		field.Set(val)
-		return nil
-	}
-	if val.Type().ConvertibleTo(fieldType) {
-		field.Set(val.Convert(fieldType))
-		return nil
-	}
-	return fmt.Errorf("unsupported conversion")
-}
-
-func isTimeType(t reflect.Type) bool {
-	return t.PkgPath() == "time" && t.Name() == "Time"
-}
-
-func parseTimeValue(raw interface{}) (time.Time, error) {
-	switch v := raw.(type) {
-	case time.Time:
-		return v, nil
-	case string:
-		v = strings.TrimSpace(v)
-		if v == "" {
-			return time.Time{}, nil
-		}
-		layouts := []string{
-			time.RFC3339,
-			"2006-01-02T15:04",
-			"2006-01-02 15:04:05",
-			"2006-01-02",
-		}
-		for _, layout := range layouts {
-			if ts, err := time.Parse(layout, v); err == nil {
-				return ts, nil
-			}
-		}
-	}
-	return time.Time{}, fmt.Errorf("invalid time value")
-}
-
-func toInt64(raw interface{}) (int64, error) {
-	switch v := raw.(type) {
-	case float64:
-		return int64(v), nil
-	case float32:
-		return int64(v), nil
-	case int:
-		return int64(v), nil
-	case int8:
-		return int64(v), nil
-	case int16:
-		return int64(v), nil
-	case int32:
-		return int64(v), nil
-	case int64:
-		return v, nil
-	case uint:
-		return int64(v), nil
-	case uint8:
-		return int64(v), nil
-	case uint16:
-		return int64(v), nil
-	case uint32:
-		return int64(v), nil
-	case uint64:
-		return int64(v), nil
-	case string:
-		return strconv.ParseInt(strings.TrimSpace(v), 10, 64)
-	default:
-		return strconv.ParseInt(strings.TrimSpace(fmt.Sprintf("%v", raw)), 10, 64)
-	}
-}
-
-func toUint64(raw interface{}) (uint64, error) {
-	switch v := raw.(type) {
-	case float64:
-		return uint64(v), nil
-	case float32:
-		return uint64(v), nil
-	case int:
-		return uint64(v), nil
-	case int8:
-		return uint64(v), nil
-	case int16:
-		return uint64(v), nil
-	case int32:
-		return uint64(v), nil
-	case int64:
-		return uint64(v), nil
-	case uint:
-		return uint64(v), nil
-	case uint8:
-		return uint64(v), nil
-	case uint16:
-		return uint64(v), nil
-	case uint32:
-		return uint64(v), nil
-	case uint64:
-		return v, nil
-	case string:
-		return strconv.ParseUint(strings.TrimSpace(v), 10, 64)
-	default:
-		return strconv.ParseUint(strings.TrimSpace(fmt.Sprintf("%v", raw)), 10, 64)
-	}
-}
-
-func toFloat64(raw interface{}) (float64, error) {
-	switch v := raw.(type) {
-	case float64:
-		return v, nil
-	case float32:
-		return float64(v), nil
-	case int:
-		return float64(v), nil
-	case int8:
-		return float64(v), nil
-	case int16:
-		return float64(v), nil
-	case int32:
-		return float64(v), nil
-	case int64:
-		return float64(v), nil
-	case uint:
-		return float64(v), nil
-	case uint8:
-		return float64(v), nil
-	case uint16:
-		return float64(v), nil
-	case uint32:
-		return float64(v), nil
-	case uint64:
-		return float64(v), nil
-	case string:
-		return strconv.ParseFloat(strings.TrimSpace(v), 64)
-	default:
-		return strconv.ParseFloat(strings.TrimSpace(fmt.Sprintf("%v", raw)), 64)
-	}
-}
-
-// sanitizeOrderBy validates the admin list endpoint's order_by parameter.
-// It delegates to model.SanitizeOrderBy — the single order-by allow-list
-// shared with the CRUD layer (audit LOW-B), so the admin cannot drift from
-// (or be laxer than) the layer that ultimately runs the query — and maps
-// any rejection to a 400. As a result the admin now also accepts
-// comma-separated multi-column ordering, exactly as the CRUD layer does.
-func sanitizeOrderBy(meta *model.ModelMeta, raw string) (string, error) {
-	orderBy, err := model.SanitizeOrderBy(meta, raw)
-	if err != nil {
-		return "", gferrors.BadRequest("invalid order_by")
-	}
-	return orderBy, nil
 }
 
 func parsePositiveQueryInt(values url.Values, key string) (value int, provided bool, err error) {
@@ -1262,74 +893,6 @@ func sanitizeSearchQuery(raw string) (string, error) {
 	return search, nil
 }
 
-func collectFilters(meta *model.ModelMeta, values url.Values) (map[string]string, error) {
-	filters := make(map[string]string)
-	for key, vals := range values {
-		// Reserved query parameters consumed by the handler itself. db_alias
-		// is the database-selector spelling the admin UI sends (the Data
-		// Studio database pills); omitting it here rejected every
-		// non-default-database listing with `invalid filter field "db_alias"`.
-		if key == "page" || key == "page_size" || key == "search" || key == "order_by" ||
-			key == "db" || key == "database" || key == "db_alias" {
-			continue
-		}
-		if len(vals) == 0 {
-			continue
-		}
-
-		raw := strings.TrimSpace(vals[0])
-		if raw == "" {
-			continue
-		}
-
-		col, normalized, err := normalizeFilter(meta, key, raw)
-		if err != nil {
-			return nil, err
-		}
-		filters[col] = normalized
-	}
-	return filters, nil
-}
-
-func normalizeFilter(meta *model.ModelMeta, key, value string) (column, normalized string, err error) {
-	col, field, found := resolveField(meta, key)
-	if !found {
-		return "", "", gferrors.BadRequest(fmt.Sprintf("invalid filter field %q", key))
-	}
-	if !field.IsFilter {
-		return "", "", gferrors.BadRequest(fmt.Sprintf("filter is not enabled for %q", key))
-	}
-
-	normalized = value
-	if strings.EqualFold(field.GoType, "bool") {
-		switch strings.ToLower(strings.TrimSpace(value)) {
-		case "1", "true", "yes", "on":
-			normalized = "1"
-		case "0", "false", "no", "off":
-			normalized = "0"
-		default:
-			return "", "", gferrors.BadRequest(fmt.Sprintf("invalid boolean value %q for filter %q", value, key))
-		}
-	}
-
-	return col, normalized, nil
-}
-
-func resolveField(meta *model.ModelMeta, key string) (column string, field model.FieldMeta, ok bool) {
-	key = strings.TrimSpace(key)
-	if key == "" {
-		return "", model.FieldMeta{}, false
-	}
-
-	for _, f := range meta.Fields {
-		col := runtimeColumn(f.Column)
-		if strings.EqualFold(key, col) || strings.EqualFold(key, f.Column) || strings.EqualFold(key, f.Name) {
-			return col, f, true
-		}
-	}
-	return "", model.FieldMeta{}, false
-}
-
 func runtimeColumn(col string) string {
 	if col == "i_d" {
 		return "id"
@@ -1354,14 +917,4 @@ func buildBulkExportURL(currentPath string, ids []uint, databaseAlias string) st
 		q.Set("db", alias)
 	}
 	return base + "/export?" + q.Encode()
-}
-
-// columnToGoField converts a database column name to a Go struct field name.
-func columnToGoField(meta *model.ModelMeta, column string) string {
-	for _, f := range meta.Fields {
-		if f.Column == column {
-			return f.Name
-		}
-	}
-	return ""
 }
