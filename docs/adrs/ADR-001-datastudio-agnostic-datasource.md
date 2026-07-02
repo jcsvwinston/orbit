@@ -106,6 +106,29 @@ implementa el mismo contrato sobre `*quark.Client` + introspección.
   `Record` con un round-trip struct→JSON (`entityToRecord`), byte-idéntico a lo que
   el panel reenviaba antes. La SPA no se toca. Cubierto por un test del adaptador.
 
+## Validación con la segunda implementación (quarkdatasource, 2026-07-02)
+
+La prueba de que la abstracción no quedó con forma de Nucleus eran dos
+implementaciones. La segunda (`orbit/quarkdatasource`, sobre `*quark.Client`)
+arrojó **una corrección** y tres encajes sin forzar:
+
+- **Corrección: el contrato sale de `internal/`** → `orbit/datasource`. Estas
+  interfaces son API pública (se congelan en v1.0), y el Caso 2 exige que la app
+  las nombre: construye el adaptador Quark y lo inyecta vía
+  `orbit.Config.DataSource`. Un tipo `internal/` no es importable por la app. El
+  adaptador Nucleus sigue en `internal/` (es cableado, no contrato).
+- **Encaja (D1)**: PK string/uuid/int de Quark se estrechan desde el id string
+  del límite; PK compuesta → el modelo se cataloga **read-only** (List/Count sí;
+  Get/Create/Update/Delete devuelven error). El contrato no necesitó cambios.
+- **Encaja (D2)**: `Record` como mapa JSON absorbe `quark.Nullable` y structs sin
+  tags json sin tocar el contrato.
+- **Encaja (D3)**: `Store(model, alias)` — el adaptador Quark ignora el alias
+  (un cliente = una base), documentado; la firma no estorbó.
+- **Matiz de implementación** (no de contrato): la API de consulta de Quark es
+  tipada (`quark.For[T]`), sin binding de tipos en runtime, así que el registro
+  del catálogo es genérico por modelo (`quarkdatasource.Register[T]`), que
+  monomorfiza el camino tipado en el cableado.
+
 ## Plan de adopción
 
 1. Añadir `internal/datasource` + `internal/datasource/nucleus`.

@@ -12,7 +12,7 @@ import (
 
 	"github.com/jcsvwinston/nucleus/pkg/storage"
 
-	"github.com/jcsvwinston/orbit/internal/datasource"
+	"github.com/jcsvwinston/orbit/datasource"
 )
 
 // ExportFormat defines supported export formats.

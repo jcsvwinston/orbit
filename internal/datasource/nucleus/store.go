@@ -10,7 +10,7 @@ import (
 
 	"github.com/jcsvwinston/nucleus/pkg/model"
 
-	"github.com/jcsvwinston/orbit/internal/datasource"
+	"github.com/jcsvwinston/orbit/datasource"
 )
 
 // store implements datasource.RecordStore for one (model, alias) pair. It owns
