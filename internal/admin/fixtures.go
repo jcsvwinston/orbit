@@ -13,7 +13,6 @@ import (
 	"time"
 
 	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
-	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/router"
 	"github.com/jcsvwinston/nucleus/pkg/storage"
 
@@ -369,61 +368,6 @@ func (p *Panel) handleLoaddata(c *router.Context) error {
 	return c.JSON(http.StatusOK, report)
 }
 
-// extractPKValue extracts the primary key value from a struct reflect value.
-func extractPKValue(item reflect.Value, meta *model.ModelMeta) interface{} {
-	if item.Kind() == reflect.Ptr {
-		item = item.Elem()
-	}
-	if item.Kind() != reflect.Struct {
-		return nil
-	}
-
-	pkField := item.FieldByName(meta.PrimaryKey)
-	if !pkField.IsValid() {
-		// Try common PK field names
-		for _, name := range []string{"ID", "Id", "id", "PrimaryKey"} {
-			pkField = item.FieldByName(name)
-			if pkField.IsValid() {
-				break
-			}
-		}
-		if !pkField.IsValid() {
-			return nil
-		}
-	}
-
-	return pkField.Interface()
-}
-
-// entityToFixtureFields converts an entity to a map of field values for fixture export.
-// Excludes the primary key field (it goes in the "pk" field of the fixture record).
-func entityToFixtureFields(meta *model.ModelMeta, item reflect.Value) map[string]interface{} {
-	if item.Kind() == reflect.Ptr {
-		item = item.Elem()
-	}
-	if item.Kind() != reflect.Struct {
-		return nil
-	}
-
-	fieldsMap := make(map[string]interface{})
-
-	for _, f := range meta.Fields {
-		if f.IsExcluded || f.IsPK {
-			continue
-		}
-
-		fieldVal := item.FieldByName(f.Name)
-		if !fieldVal.IsValid() {
-			continue
-		}
-
-		val := fieldVal.Interface()
-		fieldsMap[f.Column] = formatFixtureValue(val)
-	}
-
-	return fieldsMap
-}
-
 // recordPKValue extracts the primary key value from a neutral Record. It is the
 // datasource.ModelInfo replacement for extractPKValue over reflect.Value.
 func recordPKValue(rec datasource.Record, mi datasource.ModelInfo) interface{} {
@@ -543,46 +487,5 @@ func normalizePKValue(raw interface{}) (uint, error) {
 		return uint(parsed), nil
 	default:
 		return 0, fmt.Errorf("unsupported pk type: %T", raw)
-	}
-}
-
-// extractEntityPK extracts the PK value from an entity as uint.
-func extractEntityPK(entity interface{}, meta *model.ModelMeta) uint {
-	if entity == nil {
-		return 0
-	}
-
-	val := reflect.ValueOf(entity)
-	if val.Kind() == reflect.Ptr {
-		val = val.Elem()
-	}
-	if val.Kind() != reflect.Struct {
-		return 0
-	}
-
-	pkField := val.FieldByName(meta.PrimaryKey)
-	if !pkField.IsValid() {
-		for _, name := range []string{"ID", "Id", "id"} {
-			pkField = val.FieldByName(name)
-			if pkField.IsValid() {
-				break
-			}
-		}
-		if !pkField.IsValid() {
-			return 0
-		}
-	}
-
-	switch v := pkField.Interface().(type) {
-	case uint:
-		return v
-	case uint64:
-		return uint(v)
-	case int:
-		return uint(v)
-	case int64:
-		return uint(v)
-	default:
-		return 0
 	}
 }

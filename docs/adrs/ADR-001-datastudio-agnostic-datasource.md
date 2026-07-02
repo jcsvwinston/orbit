@@ -1,7 +1,7 @@
 ---
 id: ADR-001
 title: Data Studio agnóstico del origen de datos (contrato datasource)
-status: proposed
+status: accepted
 date: 2026-07-01
 deciders: jcsvwinston
 related: [nucleus/ADR-019, quantum/QADR-0006]
@@ -89,14 +89,22 @@ implementa el mismo contrato sobre `*quark.Client` + introspección.
 - La prueba de que la abstracción no quedó con forma de Nucleus son **dos**
   implementaciones (Nucleus + Quark).
 
-## Preguntas abiertas (confirmar al implementar)
+## Preguntas abiertas (confirmadas al implementar)
 
-- **O1** — tipo del `bus` que toma `model.NewCRUD` (`panel.go:332`).
-- **O2** — campos exactos de `model.Choice` y de `meta.ForeignKeys`.
-- **O3 (la importante)** — el envelope que devuelve `crud.FindAll`: hoy el panel
-  lo reenvía tal cual a `c.JSON` (`handlers.go:508`), así que **la SPA embebida
-  está acoplada a esa forma JSON**. `datasource.Page` debe serializar igual, o la
-  SPA se actualiza en el mismo PR. Único riesgo de romper el front.
+- **O1 — resuelto.** `model.NewCRUD(db *sql.DB, meta *ModelMeta, bus *signals.Bus)`
+  (`nucleus/pkg/model/crud.go:92`). El adaptador toma un `*signals.Bus` (nil en el
+  cableado de orbit, donde el feed live va por el bus de observabilidad).
+- **O2 — resuelto.** `model.Choice{Value, Label string}` (con tags json
+  `value`/`label`); `model.ForeignKey{FieldName, Column, ForeignModel,
+  ForeignTable, ForeignColumn}` (`nucleus/pkg/model/fields.go`, `meta.go`).
+  Reflejados en `datasource.Choice` y `datasource.ForeignKey`.
+- **O3 — resuelto, sin cambio en la SPA.** `crud.FindAll` devuelve
+  `*model.PaginatedResult` con JSON `items,total,page,page_size,total_pages,
+  is_estimated,has_more`; la SPA (`ui/src/types/index.ts` `PaginatedResult`) lee
+  exactamente esas claves, y los ítems por `field.column`/`field.name`.
+  `datasource.Page` serializa con esas mismas claves, y el adaptador construye cada
+  `Record` con un round-trip struct→JSON (`entityToRecord`), byte-idéntico a lo que
+  el panel reenviaba antes. La SPA no se toca. Cubierto por un test del adaptador.
 
 ## Plan de adopción
 

@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"encoding/json"
 	"net/http"
 	"sort"
 	"sync"
@@ -9,7 +8,6 @@ import (
 
 	"github.com/jcsvwinston/nucleus/pkg/auth"
 	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
-	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/router"
 )
 
@@ -224,25 +222,6 @@ func (p *Panel) auditMiddleware(next http.Handler) http.Handler {
 			p.recordAuditEntry(r, entry)
 		}
 	})
-}
-
-// entityToMap converts an entity to a map for audit logging.
-func entityToMap(meta *model.ModelMeta, entity interface{}) map[string]any {
-	if entity == nil {
-		return nil
-	}
-
-	// Simple JSON marshal/unmarshal for audit purposes
-	data, err := json.Marshal(entity)
-	if err != nil {
-		return map[string]any{"error": "failed to serialize"}
-	}
-
-	var result map[string]any
-	if err := json.Unmarshal(data, &result); err != nil {
-		return map[string]any{"error": "failed to deserialize"}
-	}
-	return result
 }
 
 // Admin audit log API handlers

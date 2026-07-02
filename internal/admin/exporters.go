@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/storage"
 
 	"github.com/jcsvwinston/orbit/internal/datasource"
@@ -333,21 +332,6 @@ func finalizeExport(result ExportResult, info storage.ObjectInfo, records int, f
 		result.URL = url
 	}
 	return result, nil
-}
-
-func (p *Panel) applyTenantFilter(tenantID string, filters map[string]string, meta *model.ModelMeta) map[string]string {
-	if tenantID == "" {
-		return filters
-	}
-	tenantField := meta.TenantFieldName()
-	if tenantField == "" {
-		return filters
-	}
-	if filters == nil {
-		filters = make(map[string]string)
-	}
-	filters[tenantField] = tenantID
-	return filters
 }
 
 func formatFieldValue(v interface{}) string {
