@@ -16,7 +16,7 @@ import (
 	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/signals"
 
-	"github.com/jcsvwinston/orbit/internal/datasource"
+	"github.com/jcsvwinston/orbit/datasource"
 )
 
 // Config wires the adapter from the same runtime accessors the panel used to

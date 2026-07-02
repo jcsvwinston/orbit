@@ -7,7 +7,7 @@ import (
 
 	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
 
-	"github.com/jcsvwinston/orbit/internal/datasource"
+	"github.com/jcsvwinston/orbit/datasource"
 )
 
 // This file holds Data Studio helpers rewritten over the neutral datasource

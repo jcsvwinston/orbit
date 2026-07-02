@@ -16,10 +16,10 @@ import (
 	"time"
 
 	"github.com/jcsvwinston/nucleus/pkg/auth"
-	"github.com/jcsvwinston/nucleus/pkg/router"
 	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
 	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/observe"
+	"github.com/jcsvwinston/nucleus/pkg/router"
 	"golang.org/x/net/websocket"
 )
 
@@ -207,7 +207,6 @@ func (s *liveNodeStore) touch(nodeID string, timestamp time.Time) {
 	s.mu.Unlock()
 	slog.Info("node presence touched", "node", nodeID, "ts", timestamp.Format(time.RFC3339))
 }
-
 
 func (s *liveNodeStore) active(window time.Duration) map[string]time.Time {
 	if s == nil {
@@ -523,8 +522,6 @@ func contextWithLiveObserved(r *http.Request) context.Context {
 	}
 	return context.WithValue(r.Context(), liveTrafficObservedKey{}, true)
 }
-
-
 
 func (p *Panel) recordLiveRequest(r *http.Request, status int, duration time.Duration) {
 	if p == nil || p.live == nil || r == nil {

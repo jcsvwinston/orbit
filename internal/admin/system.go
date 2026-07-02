@@ -2,9 +2,9 @@ package admin
 
 import (
 	"bytes"
+	"math"
 	"net/http"
 	"net/url"
-	"math"
 	"os"
 	"runtime"
 	"runtime/pprof"
@@ -130,7 +130,7 @@ func (p *Panel) handleSystemSnapshot(c *router.Context) error {
 			LastPauseMS:     lastGCPauseMS(mem),
 			PauseTotalMS:    uint64(mem.PauseTotalNs / uint64(time.Millisecond)),
 		},
-		Databases:    p.systemDatabasePoolRows(),
+		Databases: p.systemDatabasePoolRows(),
 		Jobs: func() tasks.RuntimeSnapshot {
 			if p.config.TaskInspector != nil {
 				return p.config.TaskInspector.InspectRuntime()
@@ -140,8 +140,8 @@ func (p *Panel) handleSystemSnapshot(c *router.Context) error {
 				Reason:  "task inspector not configured (check redis_url)",
 			}
 		}(),
-		Outbox:       p.systemOutboxSnapshot(),
-		Cluster:      p.liveClusterSnapshot(),
+		Outbox:  p.systemOutboxSnapshot(),
+		Cluster: p.liveClusterSnapshot(),
 		ClusterNodes: func() []liveNodeSnapshot {
 			nodes := p.systemClusterNodes(time.Now().UTC())
 			if nodes == nil {

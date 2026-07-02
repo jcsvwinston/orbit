@@ -10,7 +10,7 @@ import (
 
 	"github.com/jcsvwinston/nucleus/pkg/model"
 
-	"github.com/jcsvwinston/orbit/internal/datasource"
+	"github.com/jcsvwinston/orbit/datasource"
 )
 
 // entityToRecord converts a Nucleus entity (struct or *struct) to a neutral

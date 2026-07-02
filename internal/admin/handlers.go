@@ -14,7 +14,7 @@ import (
 	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/router"
 
-	"github.com/jcsvwinston/orbit/internal/datasource"
+	"github.com/jcsvwinston/orbit/datasource"
 )
 
 // handleListModels returns all registered models with their record counts.

@@ -23,8 +23,8 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/jcsvwinston/orbit/datasource"
 	"github.com/jcsvwinston/orbit/internal/admin"
-	"github.com/jcsvwinston/orbit/internal/datasource"
 	dsnucleus "github.com/jcsvwinston/orbit/internal/datasource/nucleus"
 
 	"github.com/jcsvwinston/nucleus/pkg/authz"

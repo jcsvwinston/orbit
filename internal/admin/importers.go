@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jcsvwinston/orbit/internal/datasource"
+	"github.com/jcsvwinston/orbit/datasource"
 )
 
 // ImportConfig defines the target and behavior of an import.

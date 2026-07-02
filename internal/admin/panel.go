@@ -27,7 +27,7 @@ import (
 	"github.com/jcsvwinston/nucleus/pkg/storage"
 	"github.com/jcsvwinston/nucleus/pkg/tasks"
 
-	"github.com/jcsvwinston/orbit/internal/datasource"
+	"github.com/jcsvwinston/orbit/datasource"
 )
 
 type adminAuthContextKey struct{}
