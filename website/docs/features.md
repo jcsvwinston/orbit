@@ -27,6 +27,18 @@ Use `live_exclude_patterns` to keep noisy paths (health checks, static assets)
 out of the feed, and `trace_url_template` to deep-link each entry into an
 external trace explorer.
 
+### Bridging Quark ORM statements
+
+The SQL feed is sourced from the framework's event bus, which the framework's own
+CRUD layer feeds. Applications that run queries through the
+[Quark](https://github.com/jcsvwinston/quark) ORM instead can surface those
+statements in the same live view with the opt-in
+[`quarkbridge`](https://github.com/jcsvwinston/orbit/tree/main/quarkbridge)
+module — a Quark middleware that maps each executed statement to a Nucleus SQL
+event, correlated to the request, and publishes it through the framework's public
+SQL ingest. It respects Quark's argument redaction and requires no change to
+Orbit. OpenTelemetry remains complementary for durable tracing.
+
 ## Session viewer
 
 List active server-side sessions and revoke them individually.
