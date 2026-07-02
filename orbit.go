@@ -24,6 +24,8 @@ import (
 	"fmt"
 
 	"github.com/jcsvwinston/orbit/internal/admin"
+	"github.com/jcsvwinston/orbit/internal/datasource"
+	dsnucleus "github.com/jcsvwinston/orbit/internal/datasource/nucleus"
 
 	"github.com/jcsvwinston/nucleus/pkg/authz"
 	"github.com/jcsvwinston/nucleus/pkg/db"
@@ -211,10 +213,34 @@ func (m *module) start(ctx context.Context) error {
 		}
 	}
 
-	m.panel = admin.NewPanel(defaultHandle, rt.Models(), rt.Logger(), admin.PanelConfig{
+	// Data Studio speaks Orbit's neutral datasource contract (ADR-001); build the
+	// Nucleus-backed adapter from the Runtime accessors and hand it to the panel.
+	// The observability bus feeds the live SQL view (ConsumeEventBus below), so
+	// the adapter reports the bus connected and installs no per-CRUD observer.
+	src := dsnucleus.New(dsnucleus.Config{
+		Registry:     rt.Models(),
+		DefaultAlias: "",
+		Resolve: func(alias string) (*db.DB, string, error) {
+			h := defaultHandle
+			if alias != "" {
+				if hh, ok := handles[alias]; ok && hh != nil {
+					h = hh
+				}
+			}
+			if h == nil {
+				return nil, "", fmt.Errorf("orbit: no database handle for alias %q", alias)
+			}
+			return h, h.System(), nil
+		},
+		BusConnected: func() bool { return true },
+	})
+	var _ datasource.DataSource = src
+
+	m.panel = admin.NewPanel(src, rt.Logger(), admin.PanelConfig{
 		Prefix:          m.cfg.Prefix,
 		Title:           m.cfg.Title,
 		Environment:     m.cfg.Environment,
+		SchemaRegistry:  rt.Models(),
 		Databases:       databaseRuntimeInfo(handles, defaultHandle),
 		DatabaseHandles: handles,
 		// Admin auth uses authSQL (default handle, or AuthDatabase when set) +

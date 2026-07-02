@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"sort"
-	"strconv"
 	"sync"
 	"time"
 
@@ -197,16 +196,14 @@ func (p *Panel) auditMiddleware(next http.Handler) http.Handler {
 		// For updates, capture old value
 		var oldValue map[string]any
 		if action == "update" && recordID != "" {
-			meta, ok := p.registry.Get(modelName)
+			mi, ok := p.src.Get(modelName)
 			if ok {
 				databaseAlias, _ := p.requestDatabaseAlias(r)
-				crud, err := p.getCRUD(meta, databaseAlias)
+				st, err := p.src.Store(mi.Name, databaseAlias)
 				if err == nil {
-					if id, parseErr := strconv.ParseUint(recordID, 10, 64); parseErr == nil {
-						old, _ := crud.FindByID(r.Context(), uint(id))
-						if old != nil {
-							oldValue = entityToMap(meta, old)
-						}
+					old, _ := st.Get(r.Context(), recordID)
+					if old != nil {
+						oldValue = old
 					}
 				}
 			}

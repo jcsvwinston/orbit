@@ -3,24 +3,24 @@ package admin
 import (
 	"encoding/csv"
 	"fmt"
-	"reflect"
 	"strconv"
 	"strings"
 
 	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
-	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/router"
+
+	"github.com/jcsvwinston/orbit/internal/datasource"
 )
 
 // handleExportCSV exports all records of a model as CSV.
 func (p *Panel) handleExportCSV(c *router.Context) error {
 	w, r := c.Writer, c.Request
 	name := c.Param("name")
-	meta, ok := p.registry.Get(name)
+	mi, ok := p.src.Get(name)
 	if !ok {
 		return gferrors.NotFound("model", name)
 	}
-	if err := p.authorizeAction(c, meta.Name, "export_csv"); err != nil {
+	if err := p.authorizeAction(c, mi.Name, "export_csv"); err != nil {
 		return err
 	}
 
@@ -29,7 +29,7 @@ func (p *Panel) handleExportCSV(c *router.Context) error {
 		return gferrors.BadRequest(err.Error())
 	}
 
-	crud, err := p.getCRUD(meta, databaseAlias)
+	st, err := p.src.Store(mi.Name, databaseAlias)
 	if err != nil {
 		return err
 	}
@@ -37,40 +37,40 @@ func (p *Panel) handleExportCSV(c *router.Context) error {
 	if err != nil {
 		return gferrors.BadRequest("invalid ids query param")
 	}
-	result, err := crud.FindAll(r.Context(), model.QueryOpts{
+	page, err := st.List(r.Context(), datasource.Query{
 		Page: 1, PageSize: 10000,
 	})
 	if err != nil {
 		return err
 	}
 
-	// Determine visible columns
+	// Determine visible columns and the primary-key field for id filtering.
 	var headers []string
-	var columns []string
-	for _, f := range meta.Fields {
+	var columns []datasource.FieldInfo
+	var pkField datasource.FieldInfo
+	var hasPK bool
+	for _, f := range mi.Fields {
+		if f.IsPK {
+			pkField = f
+			hasPK = true
+		}
 		if !f.IsExcluded {
 			headers = append(headers, f.Label)
-			columns = append(columns, f.Name)
+			columns = append(columns, f)
 		}
 	}
 
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.csv"`, meta.Table))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.csv"`, mi.Table))
 
 	writer := csv.NewWriter(w)
 	defer writer.Flush()
 
 	writer.Write(headers)
 
-	// Iterate over items using reflection
-	items := reflect.ValueOf(result.Items)
-	for i := 0; i < items.Len(); i++ {
-		item := items.Index(i)
-		if item.Kind() == reflect.Ptr {
-			item = item.Elem()
-		}
+	for _, rec := range page.Items {
 		if len(idSet) > 0 {
-			id, ok := recordID(item)
+			id, ok := recordID(rec, pkField, hasPK)
 			if !ok {
 				continue
 			}
@@ -79,10 +79,9 @@ func (p *Panel) handleExportCSV(c *router.Context) error {
 			}
 		}
 		row := make([]string, 0, len(columns))
-		for _, col := range columns {
-			field := item.FieldByName(col)
-			if field.IsValid() {
-				row = append(row, fmt.Sprintf("%v", field.Interface()))
+		for _, f := range columns {
+			if v, ok := recordValue(rec, f); ok {
+				row = append(row, fmt.Sprintf("%v", v))
 			} else {
 				row = append(row, "")
 			}
@@ -113,23 +112,54 @@ func parseIDSet(raw string) (map[uint64]struct{}, error) {
 	return set, nil
 }
 
-func recordID(item reflect.Value) (uint64, bool) {
-	idField := item.FieldByName("ID")
-	if !idField.IsValid() {
-		idField = item.FieldByName("Id")
+// recordID reads a record's primary-key value and coerces it to uint64 for the
+// id-set membership check. It prefers the model's PK field (when known) and
+// falls back to the conventional "id" key. Values arrive from JSON records as
+// float64, but int/uint/string forms are tolerated.
+func recordID(rec datasource.Record, pkField datasource.FieldInfo, hasPK bool) (uint64, bool) {
+	var v any
+	var found bool
+	if hasPK {
+		v, found = recordValue(rec, pkField)
 	}
-	if !idField.IsValid() {
+	if !found {
+		v, found = rec["id"]
+	}
+	if !found || v == nil {
 		return 0, false
 	}
 
-	switch idField.Kind() {
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return idField.Uint(), true
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		if idField.Int() < 0 {
+	switch n := v.(type) {
+	case float64:
+		if n < 0 {
 			return 0, false
 		}
-		return uint64(idField.Int()), true
+		return uint64(n), true
+	case float32:
+		if n < 0 {
+			return 0, false
+		}
+		return uint64(n), true
+	case int:
+		if n < 0 {
+			return 0, false
+		}
+		return uint64(n), true
+	case int64:
+		if n < 0 {
+			return 0, false
+		}
+		return uint64(n), true
+	case uint:
+		return uint64(n), true
+	case uint64:
+		return n, true
+	case string:
+		id, err := strconv.ParseUint(strings.TrimSpace(n), 10, 64)
+		if err != nil {
+			return 0, false
+		}
+		return id, true
 	default:
 		return 0, false
 	}

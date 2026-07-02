@@ -16,6 +16,8 @@ import (
 	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
 	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/router"
+
+	"github.com/jcsvwinston/orbit/internal/datasource"
 )
 
 // handleListModels returns all registered models with their record counts.
@@ -81,7 +83,7 @@ func (p *Panel) handleListModels(c *router.Context) error {
 		SiteNames          []string `json:"site_names,omitempty"`
 	}
 
-	models := p.registry.All()
+	models := p.src.All()
 	result := make([]modelInfo, 0, len(models))
 	modelByName := make(map[string]*modelInfo, len(models))
 	for _, m := range models {
@@ -93,7 +95,7 @@ func (p *Panel) handleListModels(c *router.Context) error {
 			Name:       m.Name,
 			Plural:     m.Plural,
 			Table:      m.Table,
-			Icon:       m.Config.Icon,
+			Icon:       m.Icon,
 			Count:      count,
 			CountKnown: false,
 			Counts:     map[string]int64{},
@@ -150,10 +152,15 @@ func (p *Panel) handleListModels(c *router.Context) error {
 		if includeCounts {
 			if queryable {
 				for _, m := range models {
-					count, estimated, present, err := p.modelCount(r.Context(), m, alias)
+					st, err := p.src.Store(m.Name, alias)
+					if err != nil {
+						return fmt.Errorf("admin.ListModels store alias=%s model=%s: %w", alias, m.Name, err)
+					}
+					cr, err := st.Count(r.Context())
 					if err != nil {
 						return fmt.Errorf("admin.ListModels count alias=%s model=%s: %w", alias, m.Name, err)
 					}
+					count, estimated, present := cr.Count, cr.IsEstimated, cr.Present
 					if !present {
 						continue
 					}
@@ -196,7 +203,11 @@ func (p *Panel) handleListModels(c *router.Context) error {
 					// Fast mode still probes table PRESENCE (a zero-row
 					// scan), so database attribution stays truthful without
 					// paying for counts.
-					if !p.tableExists(r.Context(), alias, m) {
+					st, err := p.src.Store(m.Name, alias)
+					if err != nil {
+						return fmt.Errorf("admin.ListModels store alias=%s model=%s: %w", alias, m.Name, err)
+					}
+					if !st.TableExists(r.Context()) {
 						continue
 					}
 					modelNames = append(modelNames, m.Name)
@@ -335,35 +346,35 @@ func (p *Panel) handleListModels(c *router.Context) error {
 // handleGetSchema returns metadata for a specific model.
 func (p *Panel) handleGetSchema(c *router.Context) error {
 	name := c.Param("name")
-	meta, ok := p.registry.Get(name)
+	mi, ok := p.src.Get(name)
 	if !ok {
 		return gferrors.NotFound("model", name)
 	}
-	if err := p.authorizeAction(c, meta.Name, "get_schema"); err != nil {
+	if err := p.authorizeAction(c, mi.Name, "get_schema"); err != nil {
 		return err
 	}
 
 	type fieldInfo struct {
-		Name          string         `json:"name"`
-		Column        string         `json:"column"`
-		Label         string         `json:"label"`
-		Type          string         `json:"type"`
-		HTMLType      string         `json:"html_type"`
-		IsPK          bool           `json:"is_pk"`
-		IsRequired    bool           `json:"is_required"`
-		IsReadOnly    bool           `json:"is_readonly"`
-		IsList        bool           `json:"is_list"`
-		IsSearch      bool           `json:"is_search"`
-		IsFilter      bool           `json:"is_filter"`
-		IsExcluded    bool           `json:"is_excluded"`
-		IsForeignKey  bool           `json:"is_fk"`
-		IsTenantField bool           `json:"is_tenant_field"`
-		ForeignModel  string         `json:"fk_model,omitempty"`
-		Choices       []model.Choice `json:"choices,omitempty"`
+		Name          string              `json:"name"`
+		Column        string              `json:"column"`
+		Label         string              `json:"label"`
+		Type          string              `json:"type"`
+		HTMLType      string              `json:"html_type"`
+		IsPK          bool                `json:"is_pk"`
+		IsRequired    bool                `json:"is_required"`
+		IsReadOnly    bool                `json:"is_readonly"`
+		IsList        bool                `json:"is_list"`
+		IsSearch      bool                `json:"is_search"`
+		IsFilter      bool                `json:"is_filter"`
+		IsExcluded    bool                `json:"is_excluded"`
+		IsForeignKey  bool                `json:"is_fk"`
+		IsTenantField bool                `json:"is_tenant_field"`
+		ForeignModel  string              `json:"fk_model,omitempty"`
+		Choices       []datasource.Choice `json:"choices,omitempty"`
 	}
 
-	fields := make([]fieldInfo, 0, len(meta.Fields))
-	for _, f := range meta.Fields {
+	fields := make([]fieldInfo, 0, len(mi.Fields))
+	for _, f := range mi.Fields {
 		if f.IsExcluded {
 			continue
 		}
@@ -378,16 +389,16 @@ func (p *Panel) handleGetSchema(c *router.Context) error {
 		})
 	}
 
-	tenantField := p.resolveTenantField(meta.Name)
+	tenantField := p.resolveTenantField(mi.Name)
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"name":         meta.Name,
-		"plural":       meta.Plural,
-		"table":        meta.Table,
-		"primary_key":  meta.PrimaryKey,
-		"icon":         meta.Config.Icon,
-		"read_only":    meta.Config.ReadOnly,
+		"name":         mi.Name,
+		"plural":       mi.Plural,
+		"table":        mi.Table,
+		"primary_key":  mi.PrimaryKey,
+		"icon":         mi.Icon,
+		"read_only":    mi.ReadOnly,
 		"fields":       fields,
-		"foreign_keys": meta.ForeignKeys,
+		"foreign_keys": mi.ForeignKeys,
 		"tenant_field": tenantField,
 	})
 }
@@ -429,11 +440,11 @@ func (p *Panel) handleUpdateFieldMeta(c *router.Context) error {
 func (p *Panel) handleListRecords(c *router.Context) error {
 	r := c.Request
 	name := c.Param("name")
-	meta, ok := p.registry.Get(name)
+	mi, ok := p.src.Get(name)
 	if !ok {
 		return gferrors.NotFound("model", name)
 	}
-	if err := p.authorizeAction(c, meta.Name, "list"); err != nil {
+	if err := p.authorizeAction(c, mi.Name, "list"); err != nil {
 		return err
 	}
 
@@ -443,12 +454,12 @@ func (p *Panel) handleListRecords(c *router.Context) error {
 	}
 	// Fallback to model's declared database if no explicit override provided in query
 	if r.URL.Query().Get("db") == "" && r.URL.Query().Get("database") == "" && r.URL.Query().Get("db_alias") == "" {
-		if meta.DatabaseAlias != "" {
-			databaseAlias = meta.DatabaseAlias
+		if mi.DatabaseAlias != "" {
+			databaseAlias = mi.DatabaseAlias
 		}
 	}
 
-	crud, err := p.getCRUD(meta, databaseAlias)
+	st, err := p.src.Store(mi.Name, databaseAlias)
 	if err != nil {
 		return err
 	}
@@ -469,19 +480,19 @@ func (p *Panel) handleListRecords(c *router.Context) error {
 		return err
 	}
 
-	orderBy, err := sanitizeOrderBy(meta, r.URL.Query().Get("order_by"))
+	orderBy, err := dsSanitizeOrderBy(mi, r.URL.Query().Get("order_by"))
 	if err != nil {
 		return err
 	}
 
-	filters, err := collectFilters(meta, r.URL.Query())
+	filters, err := dsCollectFilters(mi, r.URL.Query())
 	if err != nil {
 		return err
 	}
 
 	// Apply tenant filtering when multi-tenant is enabled
 	if tenantCtx := tenantContextFromRequest(r); tenantCtx != nil && tenantCtx.Enabled && tenantCtx.AutoFilter {
-		tenantField := p.resolveTenantField(meta.Name)
+		tenantField := p.resolveTenantField(mi.Name)
 		if tenantField != "" && tenantCtx.TenantID != "" {
 			if filters == nil {
 				filters = make(map[string]string)
@@ -497,7 +508,7 @@ func (p *Panel) handleListRecords(c *router.Context) error {
 		pageSize = 0
 	}
 
-	result, err := crud.FindAll(r.Context(), model.QueryOpts{
+	result, err := st.List(r.Context(), datasource.Query{
 		Page: page, PageSize: pageSize, Search: search,
 		Filters: filters, OrderBy: orderBy,
 	})
@@ -514,17 +525,12 @@ func (p *Panel) handleGetRecord(c *router.Context) error {
 	name := c.Param("name")
 	idStr := c.Param("id")
 
-	meta, ok := p.registry.Get(name)
+	mi, ok := p.src.Get(name)
 	if !ok {
 		return gferrors.NotFound("model", name)
 	}
-	if err := p.authorizeAction(c, meta.Name, "retrieve"); err != nil {
+	if err := p.authorizeAction(c, mi.Name, "retrieve"); err != nil {
 		return err
-	}
-
-	id, err := strconv.ParseUint(idStr, 10, 64)
-	if err != nil {
-		return gferrors.BadRequest("invalid id")
 	}
 
 	databaseAlias, err := p.requestDatabaseAlias(r)
@@ -533,16 +539,16 @@ func (p *Panel) handleGetRecord(c *router.Context) error {
 	}
 	// Fallback to model's declared database if no explicit override provided in query
 	if r.URL.Query().Get("db") == "" && r.URL.Query().Get("database") == "" && r.URL.Query().Get("db_alias") == "" {
-		if meta.DatabaseAlias != "" {
-			databaseAlias = meta.DatabaseAlias
+		if mi.DatabaseAlias != "" {
+			databaseAlias = mi.DatabaseAlias
 		}
 	}
 
-	crud, err := p.getCRUD(meta, databaseAlias)
+	st, err := p.src.Store(mi.Name, databaseAlias)
 	if err != nil {
 		return err
 	}
-	record, err := crud.FindByID(r.Context(), uint(id))
+	record, err := st.Get(r.Context(), idStr)
 	if err != nil {
 		return err
 	}
@@ -554,14 +560,14 @@ func (p *Panel) handleGetRecord(c *router.Context) error {
 func (p *Panel) handleCreateRecord(c *router.Context) error {
 	r := c.Request
 	name := c.Param("name")
-	meta, ok := p.registry.Get(name)
+	mi, ok := p.src.Get(name)
 	if !ok {
 		return gferrors.NotFound("model", name)
 	}
-	if err := p.authorizeAction(c, meta.Name, "create"); err != nil {
+	if err := p.authorizeAction(c, mi.Name, "create"); err != nil {
 		return err
 	}
-	if meta.Config.ReadOnly {
+	if mi.ReadOnly {
 		return gferrors.Forbidden("model is read-only")
 	}
 
@@ -571,12 +577,12 @@ func (p *Panel) handleCreateRecord(c *router.Context) error {
 	}
 	// Fallback to model's declared database if no explicit override provided in query
 	if r.URL.Query().Get("db") == "" && r.URL.Query().Get("database") == "" && r.URL.Query().Get("db_alias") == "" {
-		if meta.DatabaseAlias != "" {
-			databaseAlias = meta.DatabaseAlias
+		if mi.DatabaseAlias != "" {
+			databaseAlias = mi.DatabaseAlias
 		}
 	}
 
-	crud, err := p.getCRUD(meta, databaseAlias)
+	st, err := p.src.Store(mi.Name, databaseAlias)
 	if err != nil {
 		return err
 	}
@@ -588,12 +594,18 @@ func (p *Panel) handleCreateRecord(c *router.Context) error {
 
 	// Auto-inject tenant ID on create when multi-tenant is enabled
 	if tenantCtx := tenantContextFromRequest(r); tenantCtx != nil && tenantCtx.Enabled && tenantCtx.TenantID != "" {
-		tenantField := p.resolveTenantField(meta.Name)
+		tenantField := p.resolveTenantField(mi.Name)
 		if tenantField != "" {
 			// Only inject if not already provided in payload
 			if _, exists := data[tenantField]; !exists {
 				// Also check Go field name variant
-				goFieldName := columnToGoField(meta, tenantField)
+				goFieldName := ""
+				for _, f := range mi.Fields {
+					if f.Column == tenantField {
+						goFieldName = f.Name
+						break
+					}
+				}
 				if goFieldName != "" {
 					if _, exists2 := data[goFieldName]; !exists2 {
 						data[tenantField] = tenantCtx.TenantID
@@ -605,16 +617,12 @@ func (p *Panel) handleCreateRecord(c *router.Context) error {
 		}
 	}
 
-	entity, err := payloadToEntity(meta, data)
+	created, err := st.Create(r.Context(), datasource.Record(data))
 	if err != nil {
 		return err
 	}
 
-	if err := crud.Create(r.Context(), entity); err != nil {
-		return err
-	}
-
-	return c.JSON(http.StatusCreated, entity)
+	return c.JSON(http.StatusCreated, created)
 }
 
 // handleUpdateRecord updates an existing record.
@@ -623,20 +631,15 @@ func (p *Panel) handleUpdateRecord(c *router.Context) error {
 	name := c.Param("name")
 	idStr := c.Param("id")
 
-	meta, ok := p.registry.Get(name)
+	mi, ok := p.src.Get(name)
 	if !ok {
 		return gferrors.NotFound("model", name)
 	}
-	if err := p.authorizeAction(c, meta.Name, "update"); err != nil {
+	if err := p.authorizeAction(c, mi.Name, "update"); err != nil {
 		return err
 	}
-	if meta.Config.ReadOnly {
+	if mi.ReadOnly {
 		return gferrors.Forbidden("model is read-only")
-	}
-
-	id, err := strconv.ParseUint(idStr, 10, 64)
-	if err != nil {
-		return gferrors.BadRequest("invalid id")
 	}
 
 	var updates map[string]interface{}
@@ -650,20 +653,20 @@ func (p *Panel) handleUpdateRecord(c *router.Context) error {
 	}
 	// Fallback to model's declared database if no explicit override provided in query
 	if r.URL.Query().Get("db") == "" && r.URL.Query().Get("database") == "" && r.URL.Query().Get("db_alias") == "" {
-		if meta.DatabaseAlias != "" {
-			databaseAlias = meta.DatabaseAlias
+		if mi.DatabaseAlias != "" {
+			databaseAlias = mi.DatabaseAlias
 		}
 	}
 
-	crud, err := p.getCRUD(meta, databaseAlias)
+	st, err := p.src.Store(mi.Name, databaseAlias)
 	if err != nil {
 		return err
 	}
-	if err := crud.Update(r.Context(), uint(id), updates); err != nil {
+	if err := st.Update(r.Context(), idStr, datasource.Record(updates)); err != nil {
 		return err
 	}
 
-	return c.JSON(http.StatusOK, map[string]interface{}{"updated": true, "id": id})
+	return c.JSON(http.StatusOK, map[string]interface{}{"updated": true, "id": idStr})
 }
 
 // handleDeleteRecord deletes a record by ID.
@@ -672,20 +675,15 @@ func (p *Panel) handleDeleteRecord(c *router.Context) error {
 	name := c.Param("name")
 	idStr := c.Param("id")
 
-	meta, ok := p.registry.Get(name)
+	mi, ok := p.src.Get(name)
 	if !ok {
 		return gferrors.NotFound("model", name)
 	}
-	if err := p.authorizeAction(c, meta.Name, "delete"); err != nil {
+	if err := p.authorizeAction(c, mi.Name, "delete"); err != nil {
 		return err
 	}
-	if meta.Config.ReadOnly {
+	if mi.ReadOnly {
 		return gferrors.Forbidden("model is read-only")
-	}
-
-	id, err := strconv.ParseUint(idStr, 10, 64)
-	if err != nil {
-		return gferrors.BadRequest("invalid id")
 	}
 
 	databaseAlias, err := p.requestDatabaseAlias(r)
@@ -694,27 +692,27 @@ func (p *Panel) handleDeleteRecord(c *router.Context) error {
 	}
 	// Fallback to model's declared database if no explicit override provided in query
 	if r.URL.Query().Get("db") == "" && r.URL.Query().Get("database") == "" && r.URL.Query().Get("db_alias") == "" {
-		if meta.DatabaseAlias != "" {
-			databaseAlias = meta.DatabaseAlias
+		if mi.DatabaseAlias != "" {
+			databaseAlias = mi.DatabaseAlias
 		}
 	}
 
-	crud, err := p.getCRUD(meta, databaseAlias)
+	st, err := p.src.Store(mi.Name, databaseAlias)
 	if err != nil {
 		return err
 	}
-	if err := crud.Delete(r.Context(), uint(id)); err != nil {
+	if err := st.Delete(r.Context(), idStr); err != nil {
 		return err
 	}
 
-	return c.JSON(http.StatusOK, map[string]interface{}{"deleted": true, "id": id})
+	return c.JSON(http.StatusOK, map[string]interface{}{"deleted": true, "id": idStr})
 }
 
 // handleBulkAction processes bulk operations (delete, export).
 func (p *Panel) handleBulkAction(c *router.Context) error {
 	r := c.Request
 	name := c.Param("name")
-	meta, ok := p.registry.Get(name)
+	mi, ok := p.src.Get(name)
 	if !ok {
 		return gferrors.NotFound("model", name)
 	}
@@ -733,24 +731,24 @@ func (p *Panel) handleBulkAction(c *router.Context) error {
 	}
 	// Fallback to model's declared database if no explicit override provided in query
 	if r.URL.Query().Get("db") == "" && r.URL.Query().Get("database") == "" && r.URL.Query().Get("db_alias") == "" {
-		if meta.DatabaseAlias != "" {
-			databaseAlias = meta.DatabaseAlias
+		if mi.DatabaseAlias != "" {
+			databaseAlias = mi.DatabaseAlias
 		}
 	}
 
 	action := strings.ToLower(strings.TrimSpace(req.Action))
 	switch action {
 	case "delete":
-		if err := p.authorizeAction(c, meta.Name, "bulk_delete"); err != nil {
+		if err := p.authorizeAction(c, mi.Name, "bulk_delete"); err != nil {
 			return err
 		}
-		if meta.Config.ReadOnly {
+		if mi.ReadOnly {
 			return gferrors.Forbidden("model is read-only")
 		}
 		if len(req.IDs) == 0 {
 			return gferrors.BadRequest("ids are required for delete action")
 		}
-		crud, err := p.getCRUD(meta, databaseAlias)
+		st, err := p.src.Store(mi.Name, databaseAlias)
 		if err != nil {
 			return err
 		}
@@ -763,7 +761,7 @@ func (p *Panel) handleBulkAction(c *router.Context) error {
 		deleted := 0
 		failures := make([]bulkDeleteError, 0)
 		for _, id := range req.IDs {
-			deleteErr := crud.Delete(r.Context(), id)
+			deleteErr := st.Delete(r.Context(), strconv.FormatUint(uint64(id), 10))
 			if deleteErr == nil {
 				deleted++
 				continue
@@ -782,7 +780,7 @@ func (p *Panel) handleBulkAction(c *router.Context) error {
 		})
 
 	case "export":
-		if err := p.authorizeAction(c, meta.Name, "bulk_export"); err != nil {
+		if err := p.authorizeAction(c, mi.Name, "bulk_export"); err != nil {
 			return err
 		}
 		if len(req.IDs) == 0 {

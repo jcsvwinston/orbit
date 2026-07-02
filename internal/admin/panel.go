@@ -26,6 +26,8 @@ import (
 	"github.com/jcsvwinston/nucleus/pkg/signals"
 	"github.com/jcsvwinston/nucleus/pkg/storage"
 	"github.com/jcsvwinston/nucleus/pkg/tasks"
+
+	"github.com/jcsvwinston/orbit/internal/datasource"
 )
 
 type adminAuthContextKey struct{}
@@ -96,16 +98,22 @@ type PanelConfig struct {
 
 	// Storage for exports/imports
 	Store storage.Store
+
+	// SchemaRegistry is an optional Nucleus model registry used ONLY by the
+	// runtime field-metadata editor (handleUpdateFieldMeta), which mutates model
+	// metadata and has no equivalent in the neutral datasource contract. Data
+	// Studio CRUD does not use it — it speaks datasource.DataSource (ADR-001).
+	SchemaRegistry *model.Registry
 }
 
 // Panel is the admin panel instance that provides CRUD UI for registered models.
 type Panel struct {
 	db             *db.DB
 	registry       *model.Registry
+	src            datasource.DataSource
 	config         PanelConfig
 	logger         *slog.Logger
 	bus            *signals.Bus
-	cruds          map[string]model.CRUDOperator
 	live           *liveRuntime
 	liveExcludeMu  sync.RWMutex
 	liveExcludes   []string
@@ -143,8 +151,12 @@ type Panel struct {
 	exportResults map[string]ExportResult
 }
 
-// NewPanel creates a new admin panel.
-func NewPanel(database *db.DB, registry *model.Registry, logger *slog.Logger, cfg PanelConfig) *Panel {
+// NewPanel creates a new admin panel. Data Studio reads and writes records
+// through the neutral datasource contract (ADR-001); the Nucleus-backed adapter
+// is built by the caller (orbit.go) from the same Runtime accessors and passed
+// in as src. The panel no longer imports the model registry for record access —
+// only the optional cfg.SchemaRegistry, for the field-metadata editor.
+func NewPanel(src datasource.DataSource, logger *slog.Logger, cfg PanelConfig) *Panel {
 	cfg.Prefix = NormalizePrefix(cfg.Prefix)
 	if cfg.Title == "" {
 		cfg.Title = "Nucleus Admin"
@@ -154,12 +166,12 @@ func NewPanel(database *db.DB, registry *model.Registry, logger *slog.Logger, cf
 		env = os.Environ()
 	}
 
-	return &Panel{
-		db:             database,
-		registry:       registry,
+	p := &Panel{
+		db:             defaultDatabaseHandle(cfg),
+		registry:       cfg.SchemaRegistry,
+		src:            src,
 		config:         cfg,
 		logger:         logger,
-		cruds:          make(map[string]model.CRUDOperator),
 		live:           newLiveRuntime(),
 		liveExcludes:   normalizeLiveExcludePatterns(cfg.Prefix, cfg.LiveExcludePatterns),
 		flags:          newFeatureFlagStore(cfg.FeatureFlags),
@@ -177,6 +189,23 @@ func NewPanel(database *db.DB, registry *model.Registry, logger *slog.Logger, cf
 		store:         cfg.Store,
 		exportResults: make(map[string]ExportResult),
 	}
+
+	return p
+}
+
+// defaultDatabaseHandle returns the engine-aware handle for the default alias,
+// used by the panel's non-Data-Studio features (migrations, system stats).
+func defaultDatabaseHandle(cfg PanelConfig) *db.DB {
+	if len(cfg.DatabaseHandles) == 0 {
+		return nil
+	}
+	if h, ok := cfg.DatabaseHandles[defaultDatabaseAlias(cfg)]; ok {
+		return h
+	}
+	for _, h := range cfg.DatabaseHandles {
+		return h
+	}
+	return nil
 }
 
 // EnableLiveClusterRelay enables cluster-aware live telemetry distribution.
@@ -306,49 +335,6 @@ func normalizePanelNodeID(raw string) string {
 // SetSignalBus sets the signal bus for CRUD operations.
 func (p *Panel) SetSignalBus(bus *signals.Bus) {
 	p.bus = bus
-}
-
-// getCRUD returns or creates a CRUD instance for the given model and database alias.
-func (p *Panel) getCRUD(meta *model.ModelMeta, databaseAlias string) (model.CRUDOperator, error) {
-	alias, err := p.resolveDatabaseAlias(databaseAlias)
-	if err != nil {
-		return nil, err
-	}
-
-	cacheKey := alias + "::" + meta.Name
-	if c, ok := p.cruds[cacheKey]; ok {
-		return c, nil
-	}
-
-	dbHandle, err := p.databaseHandle(alias)
-	if err != nil {
-		return nil, fmt.Errorf("admin.getCRUD alias=%s model=%s: %w", alias, meta.Name, err)
-	}
-
-	sqlDB, err := dbHandle.SqlDB()
-	if err != nil {
-		return nil, fmt.Errorf("admin.getCRUD alias=%s model=%s: %w", alias, meta.Name, err)
-	}
-	c := model.NewCRUD(sqlDB, meta, p.bus)
-	// When the observability bus feeds the live SQL view, it already carries
-	// every model.CRUD query (these admin CRUDs included), so the per-CRUD
-	// observer would double-record. Install it only as the fallback for when
-	// no bus is connected (e.g. a Panel built without app.New).
-	if !p.observConnected.Load() {
-		c.SetSQLQueryObserver(p.onModelSQLQuery)
-	}
-
-	// Set dialect for estimation strategies
-	if info, ok := p.databaseRuntimeInfoByAlias(alias); ok {
-		dialect := info.Dialect
-		if dialect == "" {
-			dialect = info.Engine
-		}
-		c.SetDialect(dialect)
-	}
-
-	p.cruds[cacheKey] = c
-	return c, nil
 }
 
 // Handler returns a *router.Mux that can be mounted on the application router.
@@ -899,7 +885,7 @@ func (p *Panel) resolveTenantField(modelName string) string {
 		return field
 	}
 
-	meta, ok := p.registry.Get(modelName)
+	mi, ok := p.src.Get(modelName)
 	if !ok {
 		p.tenantFields[modelName] = ""
 		return ""
@@ -912,7 +898,7 @@ func (p *Panel) resolveTenantField(modelName string) string {
 	}
 
 	// Auto-detect from model metadata
-	field := meta.TenantFieldName()
+	field := mi.TenantField
 	p.tenantFields[modelName] = field
 	return field
 }

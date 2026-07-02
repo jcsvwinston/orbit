@@ -6,12 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"reflect"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/jcsvwinston/nucleus/pkg/model"
+	"github.com/jcsvwinston/orbit/internal/datasource"
 )
 
 // ImportConfig defines the target and behavior of an import.
@@ -44,11 +43,11 @@ type ImportReport struct {
 }
 
 // ValidateImportConfig checks import configuration.
-func ValidateImportConfig(cfg ImportConfig, registry *model.Registry) error {
+func ValidateImportConfig(cfg ImportConfig, src datasource.DataSource) error {
 	if cfg.Model == "" {
 		return fmt.Errorf("model is required")
 	}
-	if _, ok := registry.Get(cfg.Model); !ok {
+	if _, ok := src.Get(cfg.Model); !ok {
 		return fmt.Errorf("model %q not found", cfg.Model)
 	}
 	if cfg.BatchSize <= 0 {
@@ -119,17 +118,17 @@ func parseJSONData(reader io.Reader) ([]map[string]interface{}, error) {
 }
 
 // ValidateImportData validates records against model schema without importing.
-func ValidateImportData(meta *model.ModelMeta, records []map[string]interface{}, tenantID string) []ImportError {
+func ValidateImportData(mi datasource.ModelInfo, records []map[string]interface{}, tenantID string) []ImportError {
 	errors := make([]ImportError, 0)
 
 	for rowIdx, record := range records {
 		// Check _model field for multi-model exports
 		if modelField, ok := record["_model"]; ok && modelField != nil {
-			if mf, ok := modelField.(string); ok && mf != "" && mf != meta.Name {
+			if mf, ok := modelField.(string); ok && mf != "" && mf != mi.Name {
 				// This record is for a different model
 				errors = append(errors, ImportError{
 					Row:     rowIdx,
-					Message: fmt.Sprintf("record belongs to model %q, expected %q", mf, meta.Name),
+					Message: fmt.Sprintf("record belongs to model %q, expected %q", mf, mi.Name),
 				})
 				continue
 			}
@@ -141,7 +140,7 @@ func ValidateImportData(meta *model.ModelMeta, records []map[string]interface{},
 				continue
 			}
 
-			field := findFieldByColumn(meta, col)
+			field := dsFindFieldByColumn(mi, col)
 			if field == nil {
 				errors = append(errors, ImportError{
 					Row:     rowIdx,
@@ -173,7 +172,7 @@ func ValidateImportData(meta *model.ModelMeta, records []map[string]interface{},
 
 			// Type validation
 			strVal := fmt.Sprintf("%v", val)
-			if err := validateFieldValue(field, strVal); err != nil {
+			if err := validateFieldValue(*field, strVal); err != nil {
 				errors = append(errors, ImportError{
 					Row:     rowIdx,
 					Field:   col,
@@ -183,7 +182,7 @@ func ValidateImportData(meta *model.ModelMeta, records []map[string]interface{},
 		}
 
 		// Tenant field check
-		tenantField := meta.TenantFieldName()
+		tenantField := mi.TenantField
 		if tenantField != "" && tenantID != "" {
 			// Tenant will be auto-injected, no validation needed
 		}
@@ -192,16 +191,7 @@ func ValidateImportData(meta *model.ModelMeta, records []map[string]interface{},
 	return errors
 }
 
-func findFieldByColumn(meta *model.ModelMeta, column string) *model.FieldMeta {
-	for i := range meta.Fields {
-		if meta.Fields[i].Column == column || meta.Fields[i].Name == column {
-			return &meta.Fields[i]
-		}
-	}
-	return nil
-}
-
-func validateFieldValue(field *model.FieldMeta, value string) error {
+func validateFieldValue(field datasource.FieldInfo, value string) error {
 	if value == "" {
 		return nil
 	}
@@ -237,14 +227,14 @@ func validateFieldValue(field *model.FieldMeta, value string) error {
 
 // ExecuteImport imports validated records into the database.
 func (p *Panel) ExecuteImport(ctx context.Context, cfg ImportConfig, records []map[string]interface{}) (*ImportReport, error) {
-	meta, ok := p.registry.Get(cfg.Model)
+	mi, ok := p.src.Get(cfg.Model)
 	if !ok {
 		return nil, fmt.Errorf("model %q not found", cfg.Model)
 	}
 
-	crud, err := p.getCRUD(meta, cfg.Database)
+	st, err := p.src.Store(mi.Name, cfg.Database)
 	if err != nil {
-		return nil, fmt.Errorf("get CRUD for model %s: %w", cfg.Model, err)
+		return nil, fmt.Errorf("get store for model %s: %w", cfg.Model, err)
 	}
 
 	report := &ImportReport{
@@ -260,71 +250,48 @@ func (p *Panel) ExecuteImport(ctx context.Context, cfg ImportConfig, records []m
 
 	for rowIdx, record := range records {
 		// Auto-inject tenant ID
-		tenantField := meta.TenantFieldName()
-		if tenantField != "" && cfg.TenantID != "" {
-			if _, exists := record[tenantField]; !exists {
-				// Also check Go field name
-				goField := columnToGoField(meta, tenantField)
-				if goField != "" {
-					if _, exists2 := record[goField]; !exists2 {
-						record[tenantField] = cfg.TenantID
-					}
-				} else {
-					record[tenantField] = cfg.TenantID
-				}
+		if mi.TenantField != "" && cfg.TenantID != "" {
+			if _, exists := record[mi.TenantField]; !exists {
+				record[mi.TenantField] = cfg.TenantID
 			}
-		}
-
-		// Convert to entity
-		entity, err := payloadToEntity(meta, record)
-		if err != nil {
-			report.Failed++
-			report.Errors = append(report.Errors, ImportError{
-				Row:     rowIdx,
-				Message: fmt.Sprintf("failed to convert record: %v", err),
-			})
-			continue
 		}
 
 		// Check for existing record (for on_conflict handling)
 		if cfg.OnConflict == "skip" || cfg.OnConflict == "update" {
-			existing, err := p.findExistingByUniqueFields(ctx, crud, meta, record)
-			if err == nil && existing != nil {
+			existingID, err := p.findExistingByUniqueFields(ctx, st, mi, record)
+			if err == nil && existingID != "" {
 				if cfg.OnConflict == "skip" {
 					report.Skipped++
 					continue
 				}
 				if cfg.OnConflict == "update" {
 					// Update existing
-					existingID := getEntityID(existing, meta)
-					if existingID != 0 {
-						updates := make(map[string]interface{})
-						for col, val := range record {
-							if col == "_model" {
-								continue
-							}
-							field := findFieldByColumn(meta, col)
-							if field != nil && !field.IsPK && !field.IsReadOnly {
-								updates[col] = val
-							}
+					updates := make(map[string]interface{})
+					for col, val := range record {
+						if col == "_model" {
+							continue
 						}
-						if err := crud.Update(ctx, existingID, updates); err != nil {
-							report.Failed++
-							report.Errors = append(report.Errors, ImportError{
-								Row:     rowIdx,
-								Message: fmt.Sprintf("update failed: %v", err),
-							})
-						} else {
-							report.Updated++
+						field := dsFindFieldByColumn(mi, col)
+						if field != nil && !field.IsPK && !field.IsReadOnly {
+							updates[col] = val
 						}
-						continue
 					}
+					if err := st.Update(ctx, existingID, datasource.Record(updates)); err != nil {
+						report.Failed++
+						report.Errors = append(report.Errors, ImportError{
+							Row:     rowIdx,
+							Message: fmt.Sprintf("update failed: %v", err),
+						})
+					} else {
+						report.Updated++
+					}
+					continue
 				}
 			}
 		}
 
 		// Create new record
-		if err := crud.Create(ctx, entity); err != nil {
+		if _, err := st.Create(ctx, datasource.Record(record)); err != nil {
 			report.Failed++
 			report.Errors = append(report.Errors, ImportError{
 				Row:     rowIdx,
@@ -338,19 +305,22 @@ func (p *Panel) ExecuteImport(ctx context.Context, cfg ImportConfig, records []m
 	return report, nil
 }
 
-func (p *Panel) findExistingByUniqueFields(ctx context.Context, crud model.CRUDOperator, meta *model.ModelMeta, record map[string]interface{}) (interface{}, error) {
+// findExistingByUniqueFields looks up an existing record by primary key or by a
+// fully-populated unique index, returning its string ID (D1) or "" when none is
+// found. It operates over the neutral datasource contract.
+func (p *Panel) findExistingByUniqueFields(ctx context.Context, st datasource.RecordStore, mi datasource.ModelInfo, record map[string]interface{}) (string, error) {
 	// Try to find by primary key first
-	pkField := meta.PrimaryKey
+	pkField := mi.PrimaryKey
 	pkVal, ok := record[pkField]
 	if ok && pkVal != nil && pkVal != "" {
-		id, err := strconv.ParseUint(fmt.Sprintf("%v", pkVal), 10, 64)
-		if err == nil {
-			return crud.FindByID(ctx, uint(id))
+		idStr := fmt.Sprintf("%v", pkVal)
+		if _, err := st.Get(ctx, idStr); err == nil {
+			return idStr, nil
 		}
 	}
 
 	// Try to find by unique indexes
-	for _, idx := range meta.Indexes {
+	for _, idx := range mi.Indexes {
 		if !idx.Unique {
 			continue
 		}
@@ -370,45 +340,30 @@ func (p *Panel) findExistingByUniqueFields(ctx context.Context, crud model.CRUDO
 		}
 
 		// Query with unique index filter
-		result, err := crud.FindAll(ctx, model.QueryOpts{
+		page, err := st.List(ctx, datasource.Query{
 			Page: 1, PageSize: 1, Filters: filters,
 		})
-		if err == nil && result.Total > 0 {
-			items := reflect.ValueOf(result.Items)
-			if items.Kind() == reflect.Ptr {
-				items = items.Elem()
-			}
-			if items.Len() > 0 {
-				return items.Index(0).Addr().Interface(), nil
+		if err == nil && len(page.Items) > 0 {
+			found := page.Items[0]
+			if v := recordPKValue(found, mi); v != nil {
+				return fmt.Sprintf("%v", v), nil
 			}
 		}
 	}
 
-	return nil, fmt.Errorf("not found")
+	return "", fmt.Errorf("not found")
 }
 
-func getEntityID(entity interface{}, meta *model.ModelMeta) uint {
-	if entity == nil {
-		return 0
-	}
-	val := reflect.ValueOf(entity)
-	if val.Kind() == reflect.Ptr {
-		val = val.Elem()
-	}
-	pkField := val.FieldByName(meta.PrimaryKey)
-	if pkField.IsValid() {
-		switch v := pkField.Interface().(type) {
-		case uint:
-			return v
-		case uint64:
-			return uint(v)
-		case int:
-			return uint(v)
-		case int64:
-			return uint(v)
+// dsFindFieldByColumn is the datasource.ModelInfo variant of findFieldByColumn:
+// it matches a field by storage column or Go name and returns a pointer into
+// the model's Fields slice (nil when unmatched).
+func dsFindFieldByColumn(mi datasource.ModelInfo, column string) *datasource.FieldInfo {
+	for i := range mi.Fields {
+		if mi.Fields[i].Column == column || mi.Fields[i].Name == column {
+			return &mi.Fields[i]
 		}
 	}
-	return 0
+	return nil
 }
 
 // ImportFromFile handles the complete import flow: read file → parse → validate → import.
@@ -430,13 +385,13 @@ func (p *Panel) ImportFromFile(ctx context.Context, storageKey string, cfg Impor
 	}
 
 	// Get model metadata
-	meta, ok := p.registry.Get(cfg.Model)
+	mi, ok := p.src.Get(cfg.Model)
 	if !ok {
 		return nil, fmt.Errorf("model %q not found", cfg.Model)
 	}
 
 	// Validate
-	errors := ValidateImportData(meta, records, cfg.TenantID)
+	errors := ValidateImportData(mi, records, cfg.TenantID)
 	if len(errors) > 0 {
 		// Return validation errors without importing
 		report := &ImportReport{
