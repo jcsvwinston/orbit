@@ -99,6 +99,15 @@ type Config struct {
 	// TraceURLTemplate is an external trace-explorer URL template surfaced in
 	// the UI; it supports a {trace_id} placeholder.
 	TraceURLTemplate string `yaml:"trace_url_template"`
+
+	// DataSource overrides the source Data Studio browses and edits (ADR-001).
+	// Nil means the default: a Nucleus-backed adapter over the application's
+	// model registry and database handles. Set it to browse another backend —
+	// e.g. an app that runs the Quark ORM passes a quarkdatasource adapter
+	// (QADR-0006, Caso 2). Go-only wiring; not bindable from YAML. When set,
+	// the runtime field-metadata editor is disabled (it mutates the Nucleus
+	// registry, which a custom source does not necessarily have).
+	DataSource datasource.DataSource `yaml:"-"`
 }
 
 // module holds the runtime-bound state captured in OnStart.
@@ -217,30 +226,41 @@ func (m *module) start(ctx context.Context) error {
 	// Nucleus-backed adapter from the Runtime accessors and hand it to the panel.
 	// The observability bus feeds the live SQL view (ConsumeEventBus below), so
 	// the adapter reports the bus connected and installs no per-CRUD observer.
-	src := dsnucleus.New(dsnucleus.Config{
-		Registry:     rt.Models(),
-		DefaultAlias: "",
-		Resolve: func(alias string) (*db.DB, string, error) {
-			h := defaultHandle
-			if alias != "" {
-				if hh, ok := handles[alias]; ok && hh != nil {
-					h = hh
+	// Data Studio's backing source (ADR-001): the app's override when provided
+	// (e.g. a quarkdatasource adapter — QADR-0006 Caso 2), else the default
+	// Nucleus adapter over the Runtime's registry and handles. The field-meta
+	// editor (SchemaRegistry) only makes sense against the Nucleus registry, so
+	// it is wired only on the default path.
+	var src datasource.DataSource
+	var schemaRegistry = rt.Models()
+	if m.cfg.DataSource != nil {
+		src = m.cfg.DataSource
+		schemaRegistry = nil
+	} else {
+		src = dsnucleus.New(dsnucleus.Config{
+			Registry:     rt.Models(),
+			DefaultAlias: "",
+			Resolve: func(alias string) (*db.DB, string, error) {
+				h := defaultHandle
+				if alias != "" {
+					if hh, ok := handles[alias]; ok && hh != nil {
+						h = hh
+					}
 				}
-			}
-			if h == nil {
-				return nil, "", fmt.Errorf("orbit: no database handle for alias %q", alias)
-			}
-			return h, h.System(), nil
-		},
-		BusConnected: func() bool { return true },
-	})
-	var _ datasource.DataSource = src
+				if h == nil {
+					return nil, "", fmt.Errorf("orbit: no database handle for alias %q", alias)
+				}
+				return h, h.System(), nil
+			},
+			BusConnected: func() bool { return true },
+		})
+	}
 
 	m.panel = admin.NewPanel(src, rt.Logger(), admin.PanelConfig{
 		Prefix:          m.cfg.Prefix,
 		Title:           m.cfg.Title,
 		Environment:     m.cfg.Environment,
-		SchemaRegistry:  rt.Models(),
+		SchemaRegistry:  schemaRegistry,
 		Databases:       databaseRuntimeInfo(handles, defaultHandle),
 		DatabaseHandles: handles,
 		// Admin auth uses authSQL (default handle, or AuthDatabase when set) +

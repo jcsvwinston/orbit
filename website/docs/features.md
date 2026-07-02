@@ -15,6 +15,13 @@ Browse, create, edit, and delete records for every model in the application's
 registry. It is **tenant-aware** (when multitenancy is enabled) and supports
 import/export.
 
+Data Studio reads and writes through a neutral data-source contract
+(`orbit/datasource`), with the Nucleus model registry as the default backend.
+Applications that run the [Quark](https://github.com/jcsvwinston/quark) ORM can
+point it at their Quark models instead with the opt-in
+[`quarkdatasource`](https://github.com/jcsvwinston/orbit/tree/main/quarkdatasource)
+module and `orbit.Config.DataSource`.
+
 ## Live runtime inspector
 
 A real-time feed of incoming HTTP requests and executed SQL across the whole

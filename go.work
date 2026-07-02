@@ -13,10 +13,15 @@ go 1.26.4
 // quarkbridge/ is an opt-in module that depends on both Quark and Nucleus; it
 // requires a newer Nucleus than the rest of orbit/* (one that exposes the
 // public SQL ingest, ADR-020), so its go.mod pins a later pseudo-version.
+//
+// quarkdatasource/ is the opt-in Quark implementation of the datasource
+// contract (ADR-001): it depends on Quark and on the orbit root module (the
+// contract package), keeping Quark out of the core's dependency graph.
 use (
 	./
 	./agent
 	./proto
 	./quarkbridge
+	./quarkdatasource
 	./server
 )
