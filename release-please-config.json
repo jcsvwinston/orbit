@@ -1,0 +1,42 @@
+{
+  "release-type": "go",
+  "include-v-in-tag": true,
+  "tag-separator": "/",
+  "bump-minor-pre-major": true,
+  "bump-patch-for-minor-pre-major": false,
+  "separate-pull-requests": true,
+  "draft": false,
+  "prerelease": false,
+  "changelog-sections": [
+    {"type": "feat", "section": "Added"},
+    {"type": "fix", "section": "Fixed"},
+    {"type": "perf", "section": "Performance"},
+    {"type": "refactor", "section": "Changed"},
+    {"type": "revert", "section": "Reverted"},
+    {"type": "docs", "section": "Documentation", "hidden": true},
+    {"type": "test", "section": "Tests", "hidden": true},
+    {"type": "chore", "section": "Chore", "hidden": true},
+    {"type": "ci", "section": "CI", "hidden": true},
+    {"type": "build", "section": "Build", "hidden": true},
+    {"type": "style", "section": "Style", "hidden": true}
+  ],
+  "packages": {
+    ".": {
+      "package-name": "github.com/jcsvwinston/orbit",
+      "release-type": "go",
+      "include-component-in-tag": false
+    },
+    "quarkbridge": {
+      "package-name": "github.com/jcsvwinston/orbit/quarkbridge",
+      "release-type": "go",
+      "component": "quarkbridge",
+      "include-component-in-tag": true
+    },
+    "quarkdatasource": {
+      "package-name": "github.com/jcsvwinston/orbit/quarkdatasource",
+      "release-type": "go",
+      "component": "quarkdatasource",
+      "include-component-in-tag": true
+    }
+  }
+}
