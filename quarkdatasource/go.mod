@@ -8,13 +8,8 @@ go 1.26.4
 // and the orbit root module (for the contract package) — which is exactly why
 // it is a separate module: Quark must never enter the orbit core's dependency
 // graph, and Quark itself must not depend on Orbit.
-//
-// The replace mirrors the intra-repo wiring the orbit go.work provides, so the
-// module also resolves standalone (same pattern as agent/ -> proto/).
-replace github.com/jcsvwinston/orbit => ../
-
 require (
-	github.com/jcsvwinston/orbit v0.0.0-00010101000000-000000000000
+	github.com/jcsvwinston/orbit v0.2.0
 	github.com/jcsvwinston/quark v1.1.5
 	modernc.org/sqlite v1.50.0
 )
