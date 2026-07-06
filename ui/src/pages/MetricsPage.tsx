@@ -1,16 +1,19 @@
 // Metrics — per-node view (design handoff "Orbit Admin", screen 2).
-// DATA REALITY: no agent ships host metrics yet (CPU, memory RSS, goroutines,
-// heap, GC pause, DB pool). Those six cards render an em-dash plus the muted
-// mono caption "awaiting agent metrics" — no fake sparklines. The two leading
-// cards ARE real: Req/s and Requests seen, derived from the HTTP event stream
-// filtered client-side to the selected node (60-sample window, 1 sample/s).
+// DATA REALITY: agents now ship HostMetrics on every heartbeat (surfaced via
+// NodeInfo.hostMetrics on the useNodes 3s poll), so the six host cards render
+// real values with client-side rolling sparklines (useHostMetricSeries). The
+// em-dash + "awaiting agent metrics" fallback remains for older agents that
+// don't report yet. The two leading cards are derived from the HTTP event
+// stream filtered client-side to the selected node (60-sample window).
 import { useMemo, useState } from 'react'
 import { PageBody, PageHeader } from '@/components/Page'
-import { Card, Chip, Dot, Label, Segmented } from '@/components/ui'
+import { Card, Chip, Dot, Label, Progress, Segmented } from '@/components/ui'
 import { SEMANTIC } from '@/lib/colors'
 import { useNodes } from '@/hooks/useNodes'
 import { useFleetStats, formatRate } from '@/hooks/useFleetStats'
+import { useHostMetricSeries, type HostMetricSeries } from '@/hooks/useHostMetricSeries'
 import { timestampToDate } from '@/lib/format'
+import type { HostMetrics } from '@/gen/nucleus/admin/v1/admin_pb'
 
 const PLACEHOLDER_CARDS = [
   { label: 'CPU', sub: 'host' },
@@ -34,6 +37,7 @@ export function MetricsPage() {
 
   const { node: nodeStats } = useFleetStats(current)
   const info = nodes.find((n) => n.nodeId === current)
+  const hostSeries = useHostMetricSeries(current ?? '', info?.hostMetrics)
 
   const tabs = useMemo(
     () => nodes.map((n) => ({ id: n.nodeId, label: shortId(n.nodeId) })),
@@ -90,9 +94,13 @@ export function MetricsPage() {
                 data={nodeStats?.requestsSeenSeries ?? []}
                 color={SEMANTIC.blue}
               />
-              {PLACEHOLDER_CARDS.map((c) => (
-                <AwaitingCard key={c.label} label={c.label} sub={c.sub} />
-              ))}
+              {info.hostMetrics !== undefined ? (
+                <HostMetricCards hm={info.hostMetrics} series={hostSeries} />
+              ) : (
+                PLACEHOLDER_CARDS.map((c) => (
+                  <AwaitingCard key={c.label} label={c.label} sub={c.sub} />
+                ))
+              )}
             </div>
           </>
         )}
@@ -103,13 +111,70 @@ export function MetricsPage() {
 
 /* ---------- Cards ---------- */
 
+// The six host/runtime metric cards, shared with NodeDetailPage. Values come
+// straight from the node's latest HostMetrics sample; sparklines from the
+// client-side rolling window (useHostMetricSeries).
+export function HostMetricCards(props: { hm: HostMetrics; series: HostMetricSeries }) {
+  const { hm, series } = props
+  const rssMB = Number(hm.rssBytes) / 1_048_576
+  // rss is Linux-only in the agent; 0 means "platform can't report".
+  const hasRss = rssMB > 0
+  return (
+    <>
+      <RealMetricCard
+        label="CPU"
+        sub="host"
+        value={hm.cpuPercent.toFixed(1)}
+        unit="%"
+        data={series.cpu}
+        color="var(--accent)"
+      />
+      <RealMetricCard
+        label="Memory RSS"
+        sub="host"
+        value={hasRss ? rssMB.toFixed(1) : '—'}
+        unit={hasRss ? 'MB' : undefined}
+        data={series.rssMB}
+        color={SEMANTIC.blue}
+        caption={hasRss ? undefined : 'not reported on this platform'}
+      />
+      <RealMetricCard
+        label="Goroutines"
+        sub="runtime"
+        value={String(hm.goroutines)}
+        data={series.goroutines}
+        color={SEMANTIC.violet}
+      />
+      <RealMetricCard
+        label="Heap alloc"
+        sub="runtime"
+        value={(Number(hm.heapAllocBytes) / 1_048_576).toFixed(1)}
+        unit="MB"
+        data={series.heapMB}
+        color={SEMANTIC.green}
+      />
+      <RealMetricCard
+        label="GC pause p99"
+        sub="runtime"
+        value={hm.gcPauseP99Ms.toFixed(2)}
+        unit="ms"
+        data={series.gcMs}
+        color={SEMANTIC.amber}
+      />
+      <DbPoolCard hm={hm} />
+    </>
+  )
+}
+
 function RealMetricCard(props: {
   label: string
   sub: string
   value: string
-  unit?: string
+  unit?: string | undefined
   data: readonly number[]
   color: string
+  /** When set, replaces the sparkline row (e.g. rss not reported). */
+  caption?: string | undefined
 }) {
   return (
     <Card>
@@ -124,14 +189,57 @@ function RealMetricCard(props: {
             <span className="ml-[3px] text-[12px] font-normal text-t29">{props.unit}</span>
           )}
         </div>
-        <WideSparkline data={props.data} color={props.color} />
+        {props.caption !== undefined ? (
+          <div className="mt-2.5 flex h-[38px] items-center font-mono text-[10.5px] text-t26">
+            {props.caption}
+          </div>
+        ) : (
+          <WideSparkline data={props.data} color={props.color} />
+        )}
       </div>
     </Card>
   )
 }
 
-// Host/runtime metric the backend does not report yet: honest placeholder,
-// no fake sparkline (handoff "Data reality").
+// DB pool card per design: 6px usage bar instead of a sparkline. dbMaxOpen 0
+// means "unlimited" in database/sql, so no ratio can be drawn — value stays
+// an em-dash and the caption carries the live counters.
+function DbPoolCard(props: { hm: HostMetrics }) {
+  const { dbInUse, dbIdle, dbMaxOpen } = props.hm
+  const hasMax = dbMaxOpen > 0
+  return (
+    <Card>
+      <div style={{ padding: '15px 17px' }}>
+        <div className="flex items-baseline justify-between gap-2">
+          <Label>DB pool</Label>
+          <span className="font-mono text-[10.5px] text-t26">sql</span>
+        </div>
+        <div className="mt-2 text-[24px] font-semibold tabular-nums text-t46">
+          {hasMax ? (
+            <>
+              {dbInUse}
+              <span className="ml-[3px] text-[12px] font-normal text-t29">/ {dbMaxOpen}</span>
+            </>
+          ) : (
+            '—'
+          )}
+        </div>
+        <div className="mt-2.5 flex h-[38px] flex-col justify-center gap-2">
+          {hasMax && (
+            <Progress pct={(dbInUse / dbMaxOpen) * 100} height={6} color="var(--accent)" />
+          )}
+          <div className="font-mono text-[10.5px] tabular-nums text-t26">
+            {dbInUse} in use · {dbIdle} idle · max {hasMax ? dbMaxOpen : '—'}
+          </div>
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+// Host/runtime metric this agent does not report (older agent, or no
+// heartbeat with metrics yet): honest placeholder, no fake sparkline
+// (handoff "Data reality").
 function AwaitingCard(props: { label: string; sub: string }) {
   return (
     <Card>

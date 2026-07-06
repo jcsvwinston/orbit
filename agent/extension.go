@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"database/sql"
 	"context"
 	"errors"
 	"fmt"
@@ -58,6 +59,13 @@ func (e *extension) Attach(a *app.App) error {
 		return errors.New("admin agent extension: app.Observability is nil")
 	}
 
+	var sqlDB *sql.DB
+	if a.DB != nil {
+		if raw, err := a.DB.SqlDB(); err == nil {
+			sqlDB = raw
+		}
+	}
+
 	ag, err := New(Config{
 		Endpoints:            e.adminCfg.Endpoints,
 		Token:                e.adminCfg.Token,
@@ -66,6 +74,7 @@ func (e *extension) Attach(a *app.App) error {
 		Version:              e.version,
 		Labels:               e.adminCfg.Labels,
 		Bus:                  a.Observability,
+		DB:                   sqlDB,
 		HeartbeatInterval:    e.adminCfg.HeartbeatInterval,
 		DrainTimeout:         e.adminCfg.DrainTimeout,
 		HTTPBufferSize:       e.adminCfg.HTTPBufferSize,

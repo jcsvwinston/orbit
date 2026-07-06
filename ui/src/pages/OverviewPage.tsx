@@ -1,9 +1,9 @@
 // Overview — "panorama" variant (design handoff "Orbit Admin", screen 1).
 // Replaces the old DashboardPage. All numbers are derived from real signals:
-// the event streams (HTTP / SQL / sessions) and ListNodes metadata. No host
-// metrics exist in the backend yet, so the DB pool KPI honestly renders an
-// em-dash with "awaiting agent metrics" instead of a fake sparkline, and the
-// fleet table shows Started / Last seen / Status instead of CPU / Mem / Gor.
+// the event streams (HTTP / SQL / sessions) and ListNodes metadata — now
+// including per-node HostMetrics from agent heartbeats, which feed the DB
+// pool KPI as a fleet aggregate ("awaiting agent metrics" only when no node
+// reports). The fleet table shows Started / Last seen / Status.
 import { useMemo, type ReactNode } from 'react'
 import { PageBody, PageHeader } from '@/components/Page'
 import { Sparkline } from '@/components/Sparkline'
@@ -51,6 +51,24 @@ export function OverviewPage() {
       }
     }
     return best
+  }, [nodes])
+
+  // Fleet-aggregate DB pool from connected nodes' host metrics. dbMaxOpen 0
+  // means "unlimited" (database/sql), so a single unlimited node makes the
+  // fleet total unbounded — show only the in-use count then.
+  const dbPool = useMemo(() => {
+    let reporting = false
+    let inUse = 0
+    let maxOpen = 0
+    let unlimited = false
+    for (const n of nodes) {
+      if (!n.connected || n.hostMetrics === undefined) continue
+      reporting = true
+      inUse += n.hostMetrics.dbInUse
+      if (n.hostMetrics.dbMaxOpen === 0) unlimited = true
+      else maxOpen += n.hostMetrics.dbMaxOpen
+    }
+    return { reporting, inUse, maxOpen, unlimited }
   }, [nodes])
 
   const httpFeed = events.filter((ev) => ev.body.case === 'httpRequest').slice(0, FEED_LENGTH)
@@ -116,7 +134,16 @@ export function OverviewPage() {
             spark={fleet.sessionSeries}
             sub="session events · 60s window"
           />
-          <KpiCard label="DB pool" value="—" sub="awaiting agent metrics" />
+          {dbPool.reporting ? (
+            <KpiCard
+              label="DB pool"
+              value={String(dbPool.inUse)}
+              unit={dbPool.unlimited ? 'in use' : `/ ${dbPool.maxOpen}`}
+              sub="fleet aggregate"
+            />
+          ) : (
+            <KpiCard label="DB pool" value="—" sub="awaiting agent metrics" />
+          )}
         </div>
 
         {/* Row 1 — Fleet table + Health list */}

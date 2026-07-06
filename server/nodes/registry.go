@@ -60,6 +60,11 @@ type NodeInfo struct {
 	LastSeenAt       time.Time
 	Connected        bool
 	RegisteredModels []string
+
+	// HostMetrics is the latest sample the agent shipped via Heartbeat
+	// (nil until the first one arrives). Stored as the wire message; the
+	// control service forwards it verbatim to the UI.
+	HostMetrics *adminv1.HostMetrics
 }
 
 // Registry maintains the live set of connected agents.
@@ -321,4 +326,16 @@ func (r *Registry) Inactivity(now time.Time, timeout time.Duration) []NodeInfo {
 		}
 	}
 	return out
+}
+
+// SetHostMetrics records the latest heartbeat host-metrics sample for a node.
+func (r *Registry) SetHostMetrics(nodeID string, m *adminv1.HostMetrics) {
+	if m == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if e, ok := r.entries[nodeID]; ok {
+		e.Info.HostMetrics = m
+	}
 }

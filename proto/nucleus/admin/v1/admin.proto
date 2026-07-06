@@ -54,6 +54,10 @@ message Heartbeat {
   uint32 active_subscriptions = 2;
   uint64 events_emitted_total = 3;
   uint64 events_dropped_total = 4;
+
+  // Host metrics sample taken with this heartbeat (may be absent from older
+  // agents; the server just forwards the latest one it saw).
+  HostMetrics host_metrics = 5;
 }
 
 // EventType drives both per-type sampling and per-type routing in the admin
@@ -266,6 +270,29 @@ message NodeInfo {
   google.protobuf.Timestamp started_at = 4;
   google.protobuf.Timestamp last_seen_at = 5;
   bool connected = 6;
+
+  // Last host metrics sample the agent shipped (via Heartbeat). Absent until
+  // the first heartbeat with metrics arrives.
+  HostMetrics host_metrics = 7;
+}
+
+// HostMetrics is a point-in-time sample of the agent process, shipped on every
+// Heartbeat so the fleet UI can chart per-node runtime health. Fields the
+// platform cannot report are zero (the UI renders them as absent).
+message HostMetrics {
+  // Process CPU busy share since the previous sample, 0-100 (user+system time
+  // delta over wall-clock delta, via getrusage).
+  double cpu_percent = 1;
+  // Resident set size in bytes (Linux: /proc/self/statm; 0 elsewhere).
+  uint64 rss_bytes = 2;
+  uint64 heap_alloc_bytes = 3;
+  uint32 goroutines = 4;
+  // p99 of the Go runtime's recent GC pause ring, in milliseconds.
+  double gc_pause_p99_ms = 5;
+  // Framework database pool stats (zero when no managed DB).
+  uint32 db_in_use = 6;
+  uint32 db_idle = 7;
+  uint32 db_max_open = 8;
 }
 
 message ListNodesRequest {}

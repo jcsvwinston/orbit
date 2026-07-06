@@ -120,7 +120,11 @@ func (s *AgentService) Stream(ctx context.Context, stream *connect.BidiStream[ad
 				s.state.EventBus.Publish(body.Event)
 			}
 		case *adminv1.Frame_Heartbeat:
-			// last-seen already touched above; nothing else to do.
+			// last-seen already touched above; keep the newest host
+			// metrics sample for the fleet UI.
+			if body.Heartbeat != nil {
+				s.state.Nodes.SetHostMetrics(info.NodeID, body.Heartbeat.HostMetrics)
+			}
 		case *adminv1.Frame_SnapshotResponse:
 			s.state.Snapshots.Resolve(body.SnapshotResponse)
 		case *adminv1.Frame_DataStudioResponse:

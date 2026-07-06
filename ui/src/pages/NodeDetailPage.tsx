@@ -1,15 +1,18 @@
-// Node detail (redesign screen 7). Honest-UI notes: the agent reports only
-// registration/liveness data (NodeInfo) — no host metrics, Go runtime or
-// component versions yet — so metric cards render placeholders, the info
-// strip sticks to the five real fields, and Components / Recent activity
-// show explicit empty states instead of fabricated data.
+// Node detail (redesign screen 7). Honest-UI notes: agents now ship
+// HostMetrics with every heartbeat (NodeInfo.hostMetrics via the 3s poll), so
+// the metric cards show real values with client-side rolling sparklines; the
+// "awaiting agent metrics" placeholders remain only for agents that don't
+// report yet. Component versions are still not reported — Components /
+// Recent activity keep explicit empty states instead of fabricated data.
 import type { NodeInfo } from '@/gen/nucleus/admin/v1/admin_pb'
 import { useNodes } from '@/hooks/useNodes'
+import { useHostMetricSeries } from '@/hooks/useHostMetricSeries'
 import { PageBody } from '@/components/Page'
 import { Card, Chip, Dot, Label } from '@/components/ui'
 import { SEMANTIC } from '@/lib/colors'
 import { formatRelative, timestampToDate } from '@/lib/format'
 import { NodeStatusPill } from '@/pages/NodesPage'
+import { HostMetricCards } from '@/pages/MetricsPage'
 
 /** Coarse uptime from startedAt (local helper; format.ts has no uptime fn). */
 function formatUptime(started: Date | undefined): string {
@@ -32,6 +35,7 @@ const METRIC_SLOTS = ['CPU', 'Memory RSS', 'Goroutines', 'Heap alloc', 'GC pause
 export function NodeDetailPage(props: { nodeId: string }) {
   const { nodes, isLoading } = useNodes()
   const node = nodes.find((n) => n.nodeId === props.nodeId)
+  const hostSeries = useHostMetricSeries(props.nodeId, node?.hostMetrics)
 
   return (
     <>
@@ -45,10 +49,17 @@ export function NodeDetailPage(props: { nodeId: string }) {
           <>
             <InfoStrip node={node} />
             {node.connected ? (
-              <div className="grid grid-cols-3 gap-3.5">
-                {METRIC_SLOTS.map((label) => (
-                  <PlaceholderMetricCard key={label} label={label} />
-                ))}
+              <div
+                className="grid gap-3.5"
+                style={{ gridTemplateColumns: 'repeat(3,minmax(0,1fr))' }}
+              >
+                {node.hostMetrics !== undefined ? (
+                  <HostMetricCards hm={node.hostMetrics} series={hostSeries} />
+                ) : (
+                  METRIC_SLOTS.map((label) => (
+                    <PlaceholderMetricCard key={label} label={label} />
+                  ))
+                )}
               </div>
             ) : (
               <div
@@ -149,8 +160,8 @@ function InfoStrip(props: { node: NodeInfo }) {
   )
 }
 
-// The design's metric cards need host metrics the agent does not send yet;
-// render the grid with em-dash values instead of fake sparklines.
+// Fallback when this node's agent does not report host metrics (older agent,
+// or no heartbeat with metrics yet): em-dash values, no fake sparklines.
 function PlaceholderMetricCard(props: { label: string }) {
   return (
     <Card className="px-[17px] py-[15px]">

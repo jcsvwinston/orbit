@@ -61,6 +61,7 @@ func (s *ControlService) ListNodes(ctx context.Context, req *connect.Request[adm
 			StartedAt:  timestamppb.New(info.StartedAt),
 			LastSeenAt: timestamppb.New(info.LastSeenAt),
 			Connected:  info.Connected,
+			HostMetrics: info.HostMetrics,
 		})
 	}
 	return connect.NewResponse(out), nil
