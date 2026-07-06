@@ -1,5 +1,11 @@
-import { useMemo, useState } from 'react'
-import { PageBody, PageHeader } from '@/components/Layout'
+// Data Studio (design handoff screen 9): model list + Records/Schema panel +
+// edit/create modal. All data wiring (useDataStudio hooks, JSON value
+// encoding/decoding) is preserved from the previous implementation — only the
+// rendering changed to the redesign language. The filter input is wired to
+// the hook's server-side `search` parameter (debounced).
+import { useEffect, useMemo, useState } from 'react'
+import { PageBody, PageHeader } from '@/components/Page'
+import { AccentButton, Card, Chip, GhostButton, Label, Segmented } from '@/components/ui'
 import {
   useDeleteRecord,
   useModels,
@@ -9,20 +15,46 @@ import {
 } from '@/hooks/useDataStudio'
 import type { ModelField, ModelInfo, Record as PBRecord } from '@/gen/nucleus/admin/v1/admin_pb'
 
+const PAGE_SIZE = 20
+
+const TABS = [
+  { id: 'records', label: 'Records' },
+  { id: 'schema', label: 'Schema' },
+] as const
+
+type TabID = 'records' | 'schema'
+
 export function DataStudioPage() {
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
+  const [tab, setTab] = useState<TabID>('records')
   const [page, setPage] = useState(1)
-  const [editing, setEditing] = useState<{ id?: string; values: Record<string, string> } | null>(null)
-  const pageSize = 20
-
-  const models = useModels(false)
-  const schema = useSchema(selectedModel)
-  const records = useRecords(
-    selectedModel ? { modelName: selectedModel, page, pageSize } : null,
+  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearch] = useState('')
+  const [editing, setEditing] = useState<{ id?: string; values: Record<string, string> } | null>(
+    null,
   )
 
-  const deleteMut = useDeleteRecord(selectedModel ?? '')
-  const saveMut = useSaveRecord(selectedModel ?? '')
+  const models = useModels(true)
+  const activeModel = selectedModel ?? models.data?.[0]?.name ?? null
+
+  const schema = useSchema(activeModel)
+  const records = useRecords(
+    activeModel && tab === 'records'
+      ? { modelName: activeModel, page, pageSize: PAGE_SIZE, search }
+      : null,
+  )
+
+  const deleteMut = useDeleteRecord(activeModel ?? '')
+  const saveMut = useSaveRecord(activeModel ?? '')
+
+  // Debounce the filter input into the server-side search param.
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      setSearch(searchInput)
+      setPage(1)
+    }, 250)
+    return () => window.clearTimeout(t)
+  }, [searchInput])
 
   const listFields = useMemo<ModelField[]>(() => {
     if (!schema.data) return []
@@ -30,122 +62,181 @@ export function DataStudioPage() {
     return inList.length > 0 ? inList : schema.data.fields.filter((f) => !f.isExcluded).slice(0, 6)
   }, [schema.data])
 
+  const total = records.data ? Number(records.data.total) : 0
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const currentPage = records.data?.page ? records.data.page : page
+
+  const selectModel = (name: string): void => {
+    setSelectedModel(name)
+    setPage(1)
+    setSearchInput('')
+    setSearch('')
+    setEditing(null)
+  }
+
   return (
     <>
       <PageHeader
         title="Data Studio"
-        subtitle="Browse and edit registered models. Operations execute on a connected agent — signals, validation, and tenant filters apply."
+        description="Browse and edit registered models. Operations execute on a connected agent — signals, validation and tenant filters apply."
+        actions={
+          <AccentButton
+            disabled={!activeModel || !schema.data}
+            onClick={() => setEditing({ values: {} })}
+          >
+            + New record
+          </AccentButton>
+        }
       />
       <PageBody>
-        <div className="grid grid-cols-12 gap-4">
-          <aside className="col-span-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
-            <div className="mb-2 text-xs uppercase tracking-wider text-zinc-500">
-              Registered models
-            </div>
-            {models.isLoading && <div className="text-sm text-zinc-500">Loading…</div>}
-            {models.isError && (
-              <div className="text-sm text-rose-400">{models.error.message}</div>
-            )}
-            <ul className="space-y-1">
-              {(models.data ?? []).map((m: ModelInfo) => (
-                <li key={m.name}>
+        <div
+          className="grid items-start gap-4"
+          style={{ gridTemplateColumns: '210px minmax(0,1fr)' }}
+        >
+          {/* Model list */}
+          <Card className="p-2.5">
+            <Label className="px-2 pb-2 pt-0.5">Registered models</Label>
+            <div className="flex flex-col gap-px">
+              {models.isLoading && <div className="px-2 py-1 text-[12px] text-t30">Loading…</div>}
+              {models.isError && (
+                <div className="px-2 py-1 text-[12px] text-t51">{models.error.message}</div>
+              )}
+              {(models.data ?? []).map((m: ModelInfo) => {
+                const active = m.name === activeModel
+                return (
                   <button
+                    key={m.name}
                     type="button"
-                    onClick={() => {
-                      setSelectedModel(m.name)
-                      setPage(1)
-                      setEditing(null)
-                    }}
+                    onClick={() => selectModel(m.name)}
                     className={[
-                      'w-full rounded px-2 py-1.5 text-left text-sm transition-colors',
-                      selectedModel === m.name
-                        ? 'bg-zinc-800 text-zinc-100'
-                        : 'text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-100',
+                      'flex w-full items-center justify-between gap-2 rounded-[6px] px-2.5 py-1.5 text-left text-[13px] transition-colors',
+                      active ? 'bg-t13 text-t47' : 'text-t32 hover:bg-t9 hover:text-t45',
                     ].join(' ')}
                   >
-                    {m.name}
+                    <span className="flex min-w-0 items-center gap-2">
+                      {active && (
+                        <span
+                          className="h-[13px] w-[3px] shrink-0 rounded-full"
+                          style={{ background: 'var(--accent)' }}
+                        />
+                      )}
+                      <span className="truncate">{m.name}</span>
+                    </span>
+                    <span className="shrink-0 font-mono text-[10.5px] text-t26">
+                      {String(m.recordCount)}
+                    </span>
                   </button>
-                </li>
-              ))}
-              {!models.isLoading && (models.data ?? []).length === 0 && (
-                <li className="text-sm text-zinc-500">
+                )
+              })}
+              {!models.isLoading && !models.isError && (models.data ?? []).length === 0 && (
+                <div className="px-2 py-1 text-[12px] text-t30">
                   No agents are reporting models. Connect an agent with{' '}
-                  <code className="text-zinc-300">Registry</code> wired in its config.
-                </li>
+                  <code className="font-mono text-t39">Registry</code> wired in its config.
+                </div>
               )}
-            </ul>
-          </aside>
+            </div>
+          </Card>
 
-          <section className="col-span-9 space-y-3">
-            {!selectedModel && (
-              <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-6 text-sm text-zinc-400">
+          {/* Right panel */}
+          <Card className="min-w-0 overflow-hidden">
+            {!activeModel ? (
+              <div className="p-6 text-[12.5px] text-t30">
                 Select a model on the left to browse its records.
               </div>
-            )}
-
-            {selectedModel && (
+            ) : (
               <>
-                <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-semibold">{selectedModel}</h2>
-                  <button
-                    type="button"
-                    onClick={() => setEditing({ values: {} })}
-                    className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800"
-                  >
-                    + New record
-                  </button>
+                <div className="flex items-center justify-between gap-3 px-4 py-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <h2 className="m-0 truncate text-[15px] font-semibold text-t46">
+                      {activeModel}
+                    </h2>
+                    <Segmented
+                      options={TABS}
+                      value={tab}
+                      onChange={(id) => setTab(id as TabID)}
+                    />
+                  </div>
+                  {tab === 'records' && (
+                    <input
+                      type="text"
+                      value={searchInput}
+                      onChange={(e) => setSearchInput(e.target.value)}
+                      placeholder="filter records…"
+                      className="w-[220px] shrink-0 rounded-[7px] border border-t19 bg-t8 px-2.5 py-[5.5px] font-mono text-[11.5px] text-t45 placeholder:text-t26 focus:outline-none"
+                    />
+                  )}
                 </div>
 
-                {records.isLoading && (
-                  <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-6 text-sm text-zinc-500">
-                    Loading…
-                  </div>
-                )}
-                {records.isError && (
-                  <div className="rounded-lg border border-rose-800 bg-rose-950/50 p-4 text-sm text-rose-300">
-                    {records.error.message}
-                  </div>
-                )}
-
-                {records.data && (
-                  <RecordTable
-                    records={records.data.items}
-                    fields={listFields}
-                    onEdit={(rec) => {
-                      const values: Record<string, string> = {}
-                      for (const [k, v] of Object.entries(rec.valuesJson)) {
-                        values[k] = v
+                {tab === 'records' ? (
+                  <>
+                    <RecordsTable
+                      fields={listFields}
+                      loading={records.isLoading || schema.isLoading}
+                      error={
+                        records.isError
+                          ? records.error.message
+                          : schema.isError
+                            ? schema.error.message
+                            : null
                       }
-                      const id = unquoteJSON(values['ID'] ?? values['Id'] ?? values['id'] ?? '')
-                      setEditing({ id, values })
-                    }}
-                    onDelete={(rec) => {
-                      const id = unquoteJSON(
-                        rec.valuesJson['ID'] ?? rec.valuesJson['Id'] ?? rec.valuesJson['id'] ?? '',
-                      )
-                      if (!id) return
-                      if (confirm(`Delete record ${id}?`)) {
-                        deleteMut.mutate(id)
-                      }
-                    }}
-                  />
-                )}
-
-                {records.data && (
-                  <Pager
-                    page={records.data.page || 1}
-                    hasMore={records.data.hasMore}
-                    onPrev={() => setPage((p) => Math.max(1, p - 1))}
-                    onNext={() => setPage((p) => p + 1)}
+                      records={records.data?.items ?? []}
+                      onEdit={(rec) => {
+                        const values: Record<string, string> = {}
+                        for (const [k, v] of Object.entries(rec.valuesJson)) {
+                          values[k] = v
+                        }
+                        const id = unquoteJSON(
+                          values['ID'] ?? values['Id'] ?? values['id'] ?? '',
+                        )
+                        setEditing({ id, values })
+                      }}
+                      onDelete={(rec) => {
+                        const id = unquoteJSON(
+                          rec.valuesJson['ID'] ?? rec.valuesJson['Id'] ?? rec.valuesJson['id'] ?? '',
+                        )
+                        if (!id) return
+                        if (window.confirm(`Delete record ${id}?`)) {
+                          deleteMut.mutate(id)
+                        }
+                      }}
+                    />
+                    <div className="flex items-center justify-between border-t border-t10 px-4 py-2.5">
+                      <GhostButton
+                        disabled={currentPage <= 1}
+                        onClick={() => setPage((p) => Math.max(1, p - 1))}
+                      >
+                        ← Prev
+                      </GhostButton>
+                      <span className="font-mono text-[10.5px] text-t30">
+                        page {currentPage}/{totalPages} · {total} records
+                      </span>
+                      <GhostButton
+                        disabled={!records.data?.hasMore}
+                        onClick={() => setPage((p) => p + 1)}
+                      >
+                        Next →
+                      </GhostButton>
+                    </div>
+                  </>
+                ) : (
+                  <SchemaTable
+                    fields={schema.data?.fields ?? []}
+                    loading={schema.isLoading}
+                    error={schema.isError ? schema.error.message : null}
                   />
                 )}
               </>
             )}
-          </section>
+          </Card>
         </div>
 
-        {editing !== null && schema.data && selectedModel && (
+        {editing !== null && schema.data && activeModel && (
           <RecordEditor
+            title={
+              editing.id !== undefined && editing.id !== ''
+                ? `Edit record — ${editing.id}`
+                : `New ${activeModel}`
+            }
             schema={schema.data.fields}
             initial={editing.values}
             onCancel={() => setEditing(null)}
@@ -168,92 +259,133 @@ export function DataStudioPage() {
   )
 }
 
-function RecordTable(props: {
-  records: PBRecord[]
+/* ------------------------------------------------------------------ */
+/* Records tab                                                         */
+/* ------------------------------------------------------------------ */
+
+function RecordsTable(props: {
   fields: ModelField[]
+  records: PBRecord[]
+  loading: boolean
+  error: string | null
   onEdit: (rec: PBRecord) => void
   onDelete: (rec: PBRecord) => void
 }) {
+  const gridCols = `repeat(${Math.max(1, props.fields.length)}, minmax(0,1fr)) 120px`
   return (
-    <div className="overflow-x-auto rounded-lg border border-zinc-800">
-      <table className="w-full text-sm">
-        <thead className="bg-zinc-900/60 text-left text-xs uppercase tracking-wider text-zinc-500">
-          <tr>
-            {props.fields.map((f) => (
-              <th key={f.name} className="px-3 py-2 font-medium">
-                {f.label || f.name}
-              </th>
-            ))}
-            <th className="px-3 py-2 text-right font-medium">Actions</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-zinc-800">
-          {props.records.length === 0 && (
-            <tr>
-              <td
-                colSpan={props.fields.length + 1}
-                className="px-3 py-6 text-center text-zinc-500"
-              >
-                No records.
-              </td>
-            </tr>
-          )}
-          {props.records.map((rec, idx) => (
-            <tr key={idx} className="hover:bg-zinc-900/40">
-              {props.fields.map((f) => (
-                <td key={f.name} className="px-3 py-1.5 font-mono text-xs text-zinc-300">
-                  {formatCell(rec.valuesJson[f.name])}
-                </td>
-              ))}
-              <td className="px-3 py-1.5 text-right">
-                <button
-                  type="button"
-                  onClick={() => props.onEdit(rec)}
-                  className="rounded border border-zinc-700 bg-zinc-900 px-2 py-0.5 text-xs text-zinc-200 hover:bg-zinc-800"
-                >
-                  Edit
-                </button>{' '}
-                <button
-                  type="button"
-                  onClick={() => props.onDelete(rec)}
-                  className="rounded border border-rose-700 bg-rose-950/40 px-2 py-0.5 text-xs text-rose-300 hover:bg-rose-900/40"
-                >
-                  Delete
-                </button>
-              </td>
-            </tr>
+    <div className="min-w-0">
+      <div
+        className="grid bg-t6 px-4 py-2 text-[10px] font-semibold uppercase tracking-[.08em] text-t26"
+        style={{ gridTemplateColumns: gridCols }}
+      >
+        {props.fields.map((f) => (
+          <span key={f.name} className="truncate pr-2">
+            {f.label || f.name}
+          </span>
+        ))}
+        <span className="text-right">Actions</span>
+      </div>
+
+      {props.loading && (
+        <div className="border-t border-t10 px-4 py-6 text-center text-[12.5px] text-t26">
+          Loading…
+        </div>
+      )}
+      {props.error !== null && (
+        <div className="border-t border-t10 px-4 py-4 text-center font-mono text-[11.5px] text-t51">
+          {props.error}
+        </div>
+      )}
+      {!props.loading && props.error === null && props.records.length === 0 && (
+        <div className="border-t border-t10 px-4 py-6 text-center text-[12.5px] text-t26">
+          No records match.
+        </div>
+      )}
+
+      {props.records.map((rec, idx) => (
+        <div
+          key={idx}
+          className="grid items-center border-t border-t10 px-4 py-1.5 transition-colors hover:bg-t7"
+          style={{ gridTemplateColumns: gridCols }}
+        >
+          {props.fields.map((f) => (
+            <RecordCell key={f.name} raw={rec.valuesJson[f.name]} />
           ))}
-        </tbody>
-      </table>
+          <span className="flex justify-end gap-1.5">
+            <GhostButton onClick={() => props.onEdit(rec)}>Edit</GhostButton>
+            <GhostButton danger onClick={() => props.onDelete(rec)}>
+              Delete
+            </GhostButton>
+          </span>
+        </div>
+      ))}
     </div>
   )
 }
 
-function Pager(props: { page: number; hasMore: boolean; onPrev: () => void; onNext: () => void }) {
+function RecordCell(props: { raw: string | undefined }) {
+  const text = formatCell(props.raw)
+  if (text === '' || text === '∅') {
+    return <span className="pr-2.5 font-mono text-[11.5px] text-t26">∅</span>
+  }
+  return <span className="truncate pr-2.5 font-mono text-[11.5px] text-t39">{text}</span>
+}
+
+/* ------------------------------------------------------------------ */
+/* Schema tab                                                          */
+/* ------------------------------------------------------------------ */
+
+const SCHEMA_GRID = '150px 110px 110px minmax(0,1fr)'
+
+function SchemaTable(props: { fields: ModelField[]; loading: boolean; error: string | null }) {
   return (
-    <div className="flex items-center justify-between text-sm text-zinc-400">
-      <button
-        type="button"
-        disabled={props.page <= 1}
-        onClick={props.onPrev}
-        className="rounded border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-200 disabled:opacity-40"
+    <div className="min-w-0">
+      <div
+        className="grid bg-t6 px-4 py-2 text-[10px] font-semibold uppercase tracking-[.08em] text-t26"
+        style={{ gridTemplateColumns: SCHEMA_GRID }}
       >
-        ← Prev
-      </button>
-      <span>Page {props.page}</span>
-      <button
-        type="button"
-        disabled={!props.hasMore}
-        onClick={props.onNext}
-        className="rounded border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-200 disabled:opacity-40"
-      >
-        Next →
-      </button>
+        <span>Field</span>
+        <span>Go type</span>
+        <span>HTML type</span>
+        <span>Flags</span>
+      </div>
+      {props.loading && (
+        <div className="border-t border-t10 px-4 py-6 text-center text-[12.5px] text-t26">
+          Loading…
+        </div>
+      )}
+      {props.error !== null && (
+        <div className="border-t border-t10 px-4 py-4 text-center font-mono text-[11.5px] text-t51">
+          {props.error}
+        </div>
+      )}
+      {props.fields.map((f) => (
+        <div
+          key={f.name}
+          className="grid items-center border-t border-t10 px-4 py-[7px] font-mono text-[11.5px]"
+          style={{ gridTemplateColumns: SCHEMA_GRID }}
+        >
+          <span className="truncate pr-2 text-t44">{f.name}</span>
+          <span className="truncate pr-2 text-accent">{f.goType}</span>
+          <span className="truncate pr-2 text-t32">{f.htmlType}</span>
+          <span className="flex flex-wrap gap-1.5">
+            {f.isRequired && <Chip>required</Chip>}
+            {f.isReadonly && <Chip>readonly</Chip>}
+            {f.isInList && <Chip>in list</Chip>}
+            {f.isExcluded && <Chip>excluded</Chip>}
+          </span>
+        </div>
+      ))}
     </div>
   )
 }
+
+/* ------------------------------------------------------------------ */
+/* Edit / create modal                                                 */
+/* ------------------------------------------------------------------ */
 
 function RecordEditor(props: {
+  title: string
   schema: ModelField[]
   initial: Record<string, string>
   onCancel: () => void
@@ -266,57 +398,51 @@ function RecordEditor(props: {
   const editable = props.schema.filter((f) => !f.isExcluded && !f.isReadonly)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <div className="w-full max-w-2xl rounded-lg border border-zinc-800 bg-zinc-950 shadow-xl">
-        <header className="flex items-center justify-between border-b border-zinc-800 px-5 py-3">
-          <h3 className="text-sm font-semibold">
-            {props.initial['ID'] ?? props.initial['Id'] ?? props.initial['id'] ? 'Edit' : 'New'}{' '}
-            record
-          </h3>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-5"
+      style={{ background: 'rgba(0,0,0,.72)' }}
+    >
+      <div
+        className="max-h-[86vh] w-full max-w-[600px] overflow-y-auto rounded-[12px] border border-t19 bg-t5"
+        style={{ boxShadow: '0 28px 70px rgba(0,0,0,.55)' }}
+      >
+        <div className="flex items-center justify-between border-b border-t14 px-[18px] py-[13px]">
+          <h3 className="m-0 text-[15px] font-semibold text-t46">{props.title}</h3>
           <button
             type="button"
             onClick={props.onCancel}
-            className="text-zinc-500 hover:text-zinc-200"
+            className="border-none bg-transparent text-[14px] text-t29 transition-colors hover:text-t45"
           >
             ✕
           </button>
-        </header>
+        </div>
         <form
           onSubmit={(e) => {
             e.preventDefault()
             props.onSave(values)
           }}
-          className="space-y-3 p-5"
         >
-          {editable.map((f) => (
-            <FieldEditor
-              key={f.name}
-              field={f}
-              value={values[f.name] ?? ''}
-              onChange={(v) => setValues((prev) => ({ ...prev, [f.name]: v }))}
-            />
-          ))}
-          {props.error !== undefined && (
-            <div className="rounded border border-rose-800 bg-rose-950/40 px-3 py-2 text-xs text-rose-300">
-              {props.error}
-            </div>
-          )}
-          <footer className="flex items-center justify-end gap-2 border-t border-zinc-800 pt-3">
-            <button
-              type="button"
-              onClick={props.onCancel}
-              className="rounded border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={props.saving}
-              className="rounded border border-emerald-700 bg-emerald-900/40 px-3 py-1.5 text-sm text-emerald-200 hover:bg-emerald-900/60 disabled:opacity-50"
-            >
+          <div className="flex flex-col gap-3 p-[18px]">
+            {editable.map((f) => (
+              <FieldEditor
+                key={f.name}
+                field={f}
+                value={values[f.name] ?? ''}
+                onChange={(v) => setValues((prev) => ({ ...prev, [f.name]: v }))}
+              />
+            ))}
+            {props.error !== undefined && (
+              <div className="rounded-[7px] border border-t51 bg-t4 px-3 py-2 font-mono text-[11.5px] text-t51">
+                {props.error}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center justify-end gap-2 border-t border-t14 px-[18px] py-[13px]">
+            <GhostButton onClick={props.onCancel}>Cancel</GhostButton>
+            <AccentButton disabled={props.saving} onClick={() => props.onSave(values)}>
               {props.saving ? 'Saving…' : 'Save'}
-            </button>
-          </footer>
+            </AccentButton>
+          </div>
         </form>
       </div>
     </div>
@@ -324,36 +450,43 @@ function RecordEditor(props: {
 }
 
 function FieldEditor(props: { field: ModelField; value: string; onChange: (v: string) => void }) {
-  const isText = props.field.htmlType === 'textarea'
+  const isArea = props.field.htmlType === 'textarea'
+  const inputClass =
+    'w-full box-border rounded-[7px] border border-t19 bg-t8 px-2.5 py-[7px] font-mono text-[12px] text-t45 placeholder:text-t26 focus:outline-none'
   return (
-    <label className="block text-sm">
-      <span className="mb-1 block text-xs uppercase tracking-wider text-zinc-500">
+    <label className="block">
+      <span className="mb-[5px] block text-[10px] font-semibold uppercase tracking-[.09em] text-t28">
         {props.field.label || props.field.name}
-        {props.field.isRequired && <span className="text-rose-400"> *</span>}
+        {props.field.isRequired && <span className="text-t51"> *</span>}
       </span>
-      {isText ? (
+      {isArea ? (
         <textarea
+          rows={4}
           value={parseDisplay(props.value)}
           onChange={(e) => props.onChange(JSON.stringify(e.target.value))}
-          className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1 font-mono text-xs text-zinc-100"
-          rows={4}
+          placeholder={props.field.goType}
+          className={`${inputClass} resize-y`}
         />
       ) : (
         <input
           type="text"
           value={parseDisplay(props.value)}
           onChange={(e) => {
-            const raw = e.target.value
             // Encode as JSON: numeric strings become numbers, "true"/"false"
             // become booleans, everything else becomes a JSON string.
-            props.onChange(encodeUserValue(raw, props.field.goType))
+            props.onChange(encodeUserValue(e.target.value, props.field.goType))
           }}
-          className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1 font-mono text-xs text-zinc-100"
+          placeholder={props.field.goType}
+          className={inputClass}
         />
       )}
     </label>
   )
 }
+
+/* ------------------------------------------------------------------ */
+/* JSON value helpers (unchanged data behavior)                        */
+/* ------------------------------------------------------------------ */
 
 function parseDisplay(raw: string): string {
   if (!raw) return ''

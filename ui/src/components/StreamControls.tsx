@@ -1,4 +1,9 @@
+// Stream toolbar (design handoff): Live/Paused pill with pulsing dot,
+// Pause/Resume + Clear ghost buttons, mono "N buffered" counter. Same public
+// interface as before; only the visual language changed to the token system.
 import { type ReactNode } from 'react'
+import { GhostButton, Pill } from '@/components/ui'
+import { SEMANTIC } from '@/lib/colors'
 
 export interface StreamControlsProps {
   connected: boolean
@@ -11,58 +16,28 @@ export interface StreamControlsProps {
 }
 
 export function StreamControls(props: StreamControlsProps) {
+  const pill = !props.connected
+    ? { color: SEMANTIC.red, label: 'Disconnected', pulse: false }
+    : props.paused
+      ? { color: SEMANTIC.amber, label: 'Paused', pulse: false }
+      : { color: SEMANTIC.green, label: 'Live', pulse: true }
+
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <ConnectionPill connected={props.connected} />
-      <button
-        type="button"
-        onClick={props.onTogglePause}
-        className={[
-          'rounded-md border px-3 py-1.5 text-sm transition-colors',
-          props.paused
-            ? 'border-amber-700 bg-amber-900/30 text-amber-300 hover:bg-amber-900/50'
-            : 'border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800',
-        ].join(' ')}
-      >
-        {props.paused ? 'Resume' : 'Pause'}
-      </button>
-      <button
-        type="button"
-        onClick={props.onClear}
-        className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800"
-      >
-        Clear
-      </button>
-      <span className="ml-2 text-xs text-zinc-500">
-        {props.count.toLocaleString()} events buffered
+    <div className="flex flex-wrap items-center gap-2.5">
+      <Pill color={pill.color} pulse={pill.pulse}>
+        {pill.label}
+      </Pill>
+      <GhostButton onClick={props.onTogglePause}>{props.paused ? 'Resume' : 'Pause'}</GhostButton>
+      <GhostButton onClick={props.onClear}>Clear</GhostButton>
+      <span className="font-mono text-[10.5px] text-t26">
+        {props.count.toLocaleString()} buffered
       </span>
       {props.error !== undefined && props.error !== null && (
-        <span className="ml-2 text-xs text-rose-400" title={props.error}>
+        <span className="text-[11px] text-t51" title={props.error}>
           {props.error.slice(0, 80)}
         </span>
       )}
       {props.extra}
     </div>
-  )
-}
-
-function ConnectionPill(props: { connected: boolean }) {
-  return (
-    <span
-      className={[
-        'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs',
-        props.connected
-          ? 'bg-emerald-900/40 text-emerald-300 ring-1 ring-emerald-700'
-          : 'bg-zinc-800 text-zinc-400 ring-1 ring-zinc-700',
-      ].join(' ')}
-    >
-      <span
-        className={[
-          'h-2 w-2 rounded-full',
-          props.connected ? 'bg-emerald-400' : 'bg-zinc-600',
-        ].join(' ')}
-      />
-      {props.connected ? 'Live' : 'Disconnected'}
-    </span>
   )
 }

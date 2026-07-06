@@ -67,6 +67,9 @@ type Config struct {
 	Bus          *observability.Bus
 	Buffer       *buffer.PerKind
 	Metrics      *metrics.Metrics
+	// Host, when non-nil, contributes a HostMetrics sample to every
+	// heartbeat frame (see agent/hostmetrics).
+	Host         interface{ Collect() *adminv1.HostMetrics }
 	Logger       *slog.Logger
 	Heartbeat    time.Duration
 	DrainTimeout time.Duration
@@ -325,15 +328,17 @@ func (s *Stream) buildHeartbeat() *adminv1.Frame {
 	active := uint32(len(s.activeSubs))
 	s.subsMu.Unlock()
 
+	hb := &adminv1.Heartbeat{
+		Timestamp:           timestamppb.Now(),
+		ActiveSubscriptions: active,
+		EventsEmittedTotal:  emitted,
+		EventsDroppedTotal:  dropped,
+	}
+	if s.cfg.Host != nil {
+		hb.HostMetrics = s.cfg.Host.Collect()
+	}
 	return &adminv1.Frame{
-		Body: &adminv1.Frame_Heartbeat{
-			Heartbeat: &adminv1.Heartbeat{
-				Timestamp:           timestamppb.Now(),
-				ActiveSubscriptions: active,
-				EventsEmittedTotal:  emitted,
-				EventsDroppedTotal:  dropped,
-			},
-		},
+		Body: &adminv1.Frame_Heartbeat{Heartbeat: hb},
 	}
 }
 

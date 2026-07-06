@@ -209,6 +209,14 @@ export class Heartbeat extends Message<Heartbeat> {
    */
   eventsDroppedTotal = protoInt64.zero;
 
+  /**
+   * Host metrics sample taken with this heartbeat (may be absent from older
+   * agents; the server just forwards the latest one it saw).
+   *
+   * @generated from field: nucleus.admin.v1.HostMetrics host_metrics = 5;
+   */
+  hostMetrics?: HostMetrics;
+
   constructor(data?: PartialMessage<Heartbeat>) {
     super();
     proto3.util.initPartial(data, this);
@@ -221,6 +229,7 @@ export class Heartbeat extends Message<Heartbeat> {
     { no: 2, name: "active_subscriptions", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
     { no: 3, name: "events_emitted_total", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
     { no: 4, name: "events_dropped_total", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 5, name: "host_metrics", kind: "message", T: HostMetrics },
   ]);
 
   static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): Heartbeat {
@@ -1182,6 +1191,14 @@ export class NodeInfo extends Message<NodeInfo> {
    */
   connected = false;
 
+  /**
+   * Last host metrics sample the agent shipped (via Heartbeat). Absent until
+   * the first heartbeat with metrics arrives.
+   *
+   * @generated from field: nucleus.admin.v1.HostMetrics host_metrics = 7;
+   */
+  hostMetrics?: HostMetrics;
+
   constructor(data?: PartialMessage<NodeInfo>) {
     super();
     proto3.util.initPartial(data, this);
@@ -1196,6 +1213,7 @@ export class NodeInfo extends Message<NodeInfo> {
     { no: 4, name: "started_at", kind: "message", T: Timestamp },
     { no: 5, name: "last_seen_at", kind: "message", T: Timestamp },
     { no: 6, name: "connected", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 7, name: "host_metrics", kind: "message", T: HostMetrics },
   ]);
 
   static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): NodeInfo {
@@ -1212,6 +1230,98 @@ export class NodeInfo extends Message<NodeInfo> {
 
   static equals(a: NodeInfo | PlainMessage<NodeInfo> | undefined, b: NodeInfo | PlainMessage<NodeInfo> | undefined): boolean {
     return proto3.util.equals(NodeInfo, a, b);
+  }
+}
+
+/**
+ * HostMetrics is a point-in-time sample of the agent process, shipped on every
+ * Heartbeat so the fleet UI can chart per-node runtime health. Fields the
+ * platform cannot report are zero (the UI renders them as absent).
+ *
+ * @generated from message nucleus.admin.v1.HostMetrics
+ */
+export class HostMetrics extends Message<HostMetrics> {
+  /**
+   * Process CPU busy share since the previous sample, 0-100 (user+system time
+   * delta over wall-clock delta, via getrusage).
+   *
+   * @generated from field: double cpu_percent = 1;
+   */
+  cpuPercent = 0;
+
+  /**
+   * Resident set size in bytes (Linux: /proc/self/statm; 0 elsewhere).
+   *
+   * @generated from field: uint64 rss_bytes = 2;
+   */
+  rssBytes = protoInt64.zero;
+
+  /**
+   * @generated from field: uint64 heap_alloc_bytes = 3;
+   */
+  heapAllocBytes = protoInt64.zero;
+
+  /**
+   * @generated from field: uint32 goroutines = 4;
+   */
+  goroutines = 0;
+
+  /**
+   * p99 of the Go runtime's recent GC pause ring, in milliseconds.
+   *
+   * @generated from field: double gc_pause_p99_ms = 5;
+   */
+  gcPauseP99Ms = 0;
+
+  /**
+   * Framework database pool stats (zero when no managed DB).
+   *
+   * @generated from field: uint32 db_in_use = 6;
+   */
+  dbInUse = 0;
+
+  /**
+   * @generated from field: uint32 db_idle = 7;
+   */
+  dbIdle = 0;
+
+  /**
+   * @generated from field: uint32 db_max_open = 8;
+   */
+  dbMaxOpen = 0;
+
+  constructor(data?: PartialMessage<HostMetrics>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "nucleus.admin.v1.HostMetrics";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "cpu_percent", kind: "scalar", T: 1 /* ScalarType.DOUBLE */ },
+    { no: 2, name: "rss_bytes", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 3, name: "heap_alloc_bytes", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 4, name: "goroutines", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 5, name: "gc_pause_p99_ms", kind: "scalar", T: 1 /* ScalarType.DOUBLE */ },
+    { no: 6, name: "db_in_use", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 7, name: "db_idle", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 8, name: "db_max_open", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): HostMetrics {
+    return new HostMetrics().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): HostMetrics {
+    return new HostMetrics().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): HostMetrics {
+    return new HostMetrics().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: HostMetrics | PlainMessage<HostMetrics> | undefined, b: HostMetrics | PlainMessage<HostMetrics> | undefined): boolean {
+    return proto3.util.equals(HostMetrics, a, b);
   }
 }
 

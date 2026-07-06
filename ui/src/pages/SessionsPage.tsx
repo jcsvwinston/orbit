@@ -1,6 +1,9 @@
+// Session activity — live stream (design handoff "Orbit Admin", screen 8).
+// Rendering only: data wiring is the same useStreamEvents hook as before.
 import { useMemo } from 'react'
-import { PageBody, PageHeader } from '@/components/Layout'
+import { PageBody, PageHeader } from '@/components/Page'
 import { StreamControls } from '@/components/StreamControls'
+import { SEMANTIC } from '@/lib/colors'
 import { useStreamEvents } from '@/hooks/useStreamEvents'
 import {
   Filter,
@@ -9,19 +12,30 @@ import {
 } from '@/gen/nucleus/admin/v1/admin_pb'
 import { formatTime, timestampToDate } from '@/lib/format'
 
-export function SessionsPage() {
-  const filter = useMemo(
-    () => new Filter({ types: [EventType.SESSION_CHANGE] }),
-    [],
-  )
+// Exact column template from the handoff:
+// Time / Node / Kind / User / Token / Last route / IP.
+const GRID = '96px 92px 88px 120px 120px minmax(0,1fr) 110px'
 
-  const stream = useStreamEvents({ filter, bufferSize: 200, includeRecent: true })
+// Ring buffer cap ~160, render top ~60 (handoff "Interactions & Behavior").
+const BUFFER_CAP = 160
+const RENDER_CAP = 60
+
+export function SessionsPage() {
+  // The filter must be referentially stable so useStreamEvents does not
+  // re-open on every render.
+  const filter = useMemo(() => new Filter({ types: [EventType.SESSION_CHANGE] }), [])
+
+  const stream = useStreamEvents({ filter, bufferSize: BUFFER_CAP, includeRecent: true })
+
+  const rows = stream.events
+    .filter((ev) => ev.body.case === 'sessionChange')
+    .slice(0, RENDER_CAP)
 
   return (
     <>
       <PageHeader
         title="Session activity"
-        subtitle="Created / touched / destroyed lifecycle events across the fleet. Tokens are non-reversible prefixes."
+        description="Created / touched / destroyed lifecycle events. Tokens are non-reversible prefixes."
         actions={
           <StreamControls
             connected={stream.connected}
@@ -34,80 +48,75 @@ export function SessionsPage() {
         }
       />
       <PageBody>
-        <div className="overflow-hidden rounded-lg border border-zinc-800">
-          <table className="w-full text-sm">
-            <thead className="bg-zinc-900/60 text-left text-xs uppercase tracking-wider text-zinc-500">
-              <tr>
-                <th className="px-3 py-2 font-medium">Time</th>
-                <th className="px-3 py-2 font-medium">Node</th>
-                <th className="px-3 py-2 font-medium">Kind</th>
-                <th className="px-3 py-2 font-medium">User</th>
-                <th className="px-3 py-2 font-medium">Token (short)</th>
-                <th className="px-3 py-2 font-medium">Last Route</th>
-                <th className="px-3 py-2 font-medium">IP</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-800">
-              {stream.events.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="px-3 py-8 text-center text-zinc-500">
-                    Waiting for events…
-                  </td>
-                </tr>
-              )}
-              {stream.events.map((ev, idx) => {
-                if (ev.body.case !== 'sessionChange') return null
-                const s = ev.body.value
-                return (
-                  <tr key={`${ev.nodeId}-${idx}`} className="hover:bg-zinc-900/40">
-                    <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-zinc-500">
-                      {formatTime(timestampToDate(ev.timestamp))}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-zinc-400">
-                      {ev.nodeId}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-1.5 text-xs">
-                      <KindBadge kind={s.kind} />
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-zinc-200">
-                      {s.userId || '—'}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-zinc-400">
-                      {s.tokenShort || '—'}
-                    </td>
-                    <td className="px-3 py-1.5 font-mono text-xs text-zinc-300">
-                      {s.lastRoute || '—'}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-zinc-500">
-                      {s.ip || '—'}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+        <div className="overflow-hidden rounded-[10px] border border-t18 bg-t4">
+          <div
+            className="grid bg-t6 px-4 py-2 text-[10px] font-semibold uppercase tracking-[.08em] text-t30"
+            style={{ gridTemplateColumns: GRID }}
+          >
+            <span>Time</span>
+            <span>Node</span>
+            <span>Kind</span>
+            <span>User</span>
+            <span>Token</span>
+            <span>Last route</span>
+            <span className="text-right">IP</span>
+          </div>
+          {rows.length === 0 && (
+            <div className="border-t border-t10 px-4 py-8 text-center text-[12px] text-t26">
+              {stream.connected ? 'No events — stream is quiet' : 'Waiting for events…'}
+            </div>
+          )}
+          {rows.map((ev, idx) => {
+            if (ev.body.case !== 'sessionChange') return null
+            const s = ev.body.value
+            return (
+              <div
+                key={`${ev.nodeId}-${idx}`}
+                className="grid items-center border-t border-t10 px-4 py-[6px] font-mono text-[11.5px] hover:bg-t7"
+                style={{ gridTemplateColumns: GRID }}
+              >
+                <span className="text-t25">{formatTime(timestampToDate(ev.timestamp))}</span>
+                <span className="truncate text-t32">{ev.nodeId}</span>
+                <span>
+                  <KindPill kind={s.kind} />
+                </span>
+                <span className="truncate pr-2 text-t42">{s.userId || '—'}</span>
+                <span className="truncate pr-2 text-t32">{s.tokenShort || '—'}</span>
+                <span className="truncate pr-2.5 text-t36" title={s.lastRoute}>
+                  {s.lastRoute || '—'}
+                </span>
+                <span className="truncate text-right text-t25">{s.ip || '—'}</span>
+              </div>
+            )
+          })}
         </div>
       </PageBody>
     </>
   )
 }
 
-function KindBadge(props: { kind: SessionChangeEvent_Kind }) {
-  const { label, klass } = describeKind(props.kind)
+/** Tinted kind chip: 12% background tint of the semantic color. */
+function KindPill(props: { kind: SessionChangeEvent_Kind }) {
+  const { label, color } = describeKind(props.kind)
   return (
-    <span className={['rounded-full px-2 py-0.5 text-xs', klass].join(' ')}>{label}</span>
+    <span
+      className="inline-block rounded-full px-2 py-px text-[10.5px]"
+      style={{ color, background: `color-mix(in srgb, ${color} 12%, transparent)` }}
+    >
+      {label}
+    </span>
   )
 }
 
-function describeKind(k: SessionChangeEvent_Kind): { label: string; klass: string } {
+function describeKind(k: SessionChangeEvent_Kind): { label: string; color: string } {
   switch (k) {
     case SessionChangeEvent_Kind.CREATED:
-      return { label: 'created', klass: 'bg-emerald-900/40 text-emerald-300 ring-1 ring-emerald-700' }
+      return { label: 'created', color: SEMANTIC.green }
     case SessionChangeEvent_Kind.TOUCHED:
-      return { label: 'touched', klass: 'bg-sky-900/40 text-sky-300 ring-1 ring-sky-700' }
+      return { label: 'touched', color: SEMANTIC.blue }
     case SessionChangeEvent_Kind.DESTROYED:
-      return { label: 'destroyed', klass: 'bg-rose-900/40 text-rose-300 ring-1 ring-rose-700' }
+      return { label: 'destroyed', color: SEMANTIC.red }
     default:
-      return { label: 'unspecified', klass: 'bg-zinc-800 text-zinc-400 ring-1 ring-zinc-700' }
+      return { label: 'unspecified', color: 'var(--t32)' }
   }
 }

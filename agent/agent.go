@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"database/sql"
 	"context"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"github.com/jcsvwinston/nucleus/pkg/observability"
 
 	"github.com/jcsvwinston/orbit/agent/buffer"
+	"github.com/jcsvwinston/orbit/agent/hostmetrics"
 	"github.com/jcsvwinston/orbit/agent/connection"
 	dstudio "github.com/jcsvwinston/orbit/agent/datastudio"
 	"github.com/jcsvwinston/orbit/agent/identity"
@@ -28,6 +30,10 @@ type Config struct {
 	// in nucleus.yml). At least one is required for the agent to start;
 	// passing an empty list returns ErrDisabled from New.
 	Endpoints []string
+
+	// DB, when non-nil, lets the heartbeat report the framework database
+	// pool stats (in-use / idle / max) alongside the host metrics sample.
+	DB *sql.DB
 
 	// Token is the shared bearer token sent on every Connect-RPC call.
 	// May be empty if mTLS is in use (Phase 6).
@@ -307,6 +313,7 @@ func (a *Agent) runOnce(ctx context.Context) error {
 		Logger:       a.cfg.Logger,
 		Heartbeat:    a.cfg.HeartbeatInterval,
 		DrainTimeout: a.cfg.DrainTimeout,
+		Host:         hostmetrics.New(a.cfg.DB),
 	}
 	// Avoid the typed-nil-into-interface trap: only set the field when
 	// we actually have a constructed handler.
