@@ -1,3 +1,75 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Design tokens (design handoff "Orbit Admin"): --t0..--t53 + --accent.
+   Dark values are the prototype's inline fallbacks; the light block is its
+   [data-theme="light"] override, verbatim. Components reference tokens via
+   the Tailwind color aliases in tailwind.config.js (bg-t5, text-t46, ...). */
+:root,
+[data-theme='dark'] {
+  color-scheme: dark;
+  --accent: #22d3ee;
+  --accent-selection: rgba(34, 211, 238, 0.25);
+  --t0: #0a0a0c; --t1: #0d0d10; --t2: #0e0e11; --t3: #0f0f12; --t4: #101013;
+  --t5: #121215; --t6: #141418; --t7: #15151a; --t8: #16161a; --t9: #17171c;
+  --t10: #1a1a1f; --t11: #1a1a20; --t12: #1c1c21; --t13: #1c1c22; --t14: #1d1d22;
+  --t15: #1e1e24; --t16: #1f1f26; --t17: #22222a; --t18: #232329; --t19: #2a2a31;
+  --t20: #2e2e35; --t21: #4a4a54; --t22: #4d4d56; --t23: #52525b; --t24: #53535c;
+  --t25: #54545e; --t26: #55555f; --t27: #5c5c66; --t28: #63636d; --t29: #6b6b75;
+  --t30: #70707b; --t31: #7b7b85; --t32: #8a8a94; --t33: #8b8b95; --t34: #8f8f99;
+  --t35: #9a9aa4; --t36: #a9a9b2; --t37: #b0b0ba; --t38: #b6b6c0; --t39: #c2c2cc;
+  --t40: #c9c9d2; --t41: #d0d0d8; --t42: #d4d4dc; --t43: #d8d8de; --t44: #e2e2e8;
+  --t45: #e6e6ec; --t46: #ececf1; --t47: #f2f2f6;
+  --t48: #38bdf8; --t49: #34d399; --t50: #fbbf24; --t51: #fb7185; --t52: #a78bfa;
+  --t53: #08181b;
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+  --accent: #0891b2;
+  --accent-selection: rgba(8, 145, 178, 0.2);
+  --t0: #f4f4f2; --t1: #ececea; --t2: #ffffff; --t3: #ffffff; --t4: #ffffff;
+  --t5: #ffffff; --t6: #f4f4f2; --t7: #f6f6f4; --t8: #ffffff; --t9: #e2e2df;
+  --t10: #ececea; --t11: #e2e2df; --t12: #ececea; --t13: #e4e4e1; --t14: #e3e3e0;
+  --t15: #e8e8e5; --t16: #e4e4e1; --t17: #e6e6e3; --t18: #e0e0dc; --t19: #d2d2cd;
+  --t20: #d5d5d0; --t21: #b5b5bb; --t22: #9b9ba1; --t23: #b8b8be; --t24: #90909a;
+  --t25: #9494a0; --t26: #8e8e98; --t27: #8c8c96; --t28: #82828c; --t29: #7c7c86;
+  --t30: #6e6e78; --t31: #73737d; --t32: #6b6b74; --t33: #62626b; --t34: #66666f;
+  --t35: #5d5d66; --t36: #52525b; --t37: #4c4c55; --t38: #47474f; --t39: #3d3d45;
+  --t40: #37373f; --t41: #34343c; --t42: #2f2f37; --t43: #2b2b32; --t44: #26262d;
+  --t45: #222228; --t46: #1b1b21; --t47: #141419;
+  --t48: #0369a1; --t49: #047857; --t50: #b45309; --t51: #be123c; --t52: #6d28d9;
+  --t53: #ffffff;
+}
+
+body {
+  margin: 0;
+  background: var(--t0);
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+input:focus,
+textarea:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+::selection {
+  background: var(--accent-selection);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
