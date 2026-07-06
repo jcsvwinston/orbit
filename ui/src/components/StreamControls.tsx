@@ -2,7 +2,8 @@
 // Pause/Resume + Clear ghost buttons, mono "N buffered" counter. Same public
 // interface as before; only the visual language changed to the token system.
 import { type ReactNode } from 'react'
-import { GhostButton, Pill, SEMANTIC } from '@/components/ui'
+import { GhostButton, Pill } from '@/components/ui'
+import { SEMANTIC } from '@/lib/colors'
 
 export interface StreamControlsProps {
   connected: boolean

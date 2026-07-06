@@ -1,32 +1,37 @@
+// HTTP requests — live stream (design handoff "Orbit Admin", screen 3).
+// Rendering only: data wiring is the same useStreamEvents hook as before.
 import { useMemo } from 'react'
-import { PageBody, PageHeader } from '@/components/Layout'
+import { PageBody, PageHeader } from '@/components/Page'
 import { StreamControls } from '@/components/StreamControls'
+import { methodColor, statusColor } from '@/lib/colors'
 import { useStreamEvents } from '@/hooks/useStreamEvents'
 import { Filter, EventType } from '@/gen/nucleus/admin/v1/admin_pb'
-import {
-  durationToMillis,
-  formatDuration,
-  formatTime,
-  methodClass,
-  statusClass,
-  timestampToDate,
-} from '@/lib/format'
+import { durationToMillis, formatDuration, formatTime, timestampToDate } from '@/lib/format'
+
+// Exact column template from the handoff:
+// Time / Node / Method / Path / Status / Duration / Remote IP.
+const GRID = '96px 92px 62px minmax(0,1fr) 58px 84px 116px'
+
+// Ring buffer cap ~160, render top ~60 (handoff "Interactions & Behavior").
+const BUFFER_CAP = 160
+const RENDER_CAP = 60
 
 export function HTTPStreamPage() {
   // The filter must be referentially stable so useStreamEvents does not
   // re-open on every render.
-  const filter = useMemo(
-    () => new Filter({ types: [EventType.HTTP_REQUEST] }),
-    [],
-  )
+  const filter = useMemo(() => new Filter({ types: [EventType.HTTP_REQUEST] }), [])
 
-  const stream = useStreamEvents({ filter, bufferSize: 300, includeRecent: true })
+  const stream = useStreamEvents({ filter, bufferSize: BUFFER_CAP, includeRecent: true })
+
+  const rows = stream.events
+    .filter((ev) => ev.body.case === 'httpRequest')
+    .slice(0, RENDER_CAP)
 
   return (
     <>
       <PageHeader
         title="HTTP requests"
-        subtitle="Live stream from every connected agent. Sensitive query params are starred at the source."
+        description="Live stream from every connected agent. Sensitive query params are starred at the source."
         actions={
           <StreamControls
             connected={stream.connected}
@@ -39,63 +44,51 @@ export function HTTPStreamPage() {
         }
       />
       <PageBody>
-        <div className="overflow-hidden rounded-lg border border-zinc-800">
-          <table className="w-full text-sm">
-            <thead className="bg-zinc-900/60 text-left text-xs uppercase tracking-wider text-zinc-500">
-              <tr>
-                <th className="px-3 py-2 font-medium">Time</th>
-                <th className="px-3 py-2 font-medium">Node</th>
-                <th className="px-3 py-2 font-medium">Method</th>
-                <th className="px-3 py-2 font-medium">Path</th>
-                <th className="px-3 py-2 font-medium text-right">Status</th>
-                <th className="px-3 py-2 font-medium text-right">Duration</th>
-                <th className="px-3 py-2 font-medium">Remote</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-800">
-              {stream.events.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="px-3 py-8 text-center text-zinc-500">
-                    Waiting for events…
-                  </td>
-                </tr>
-              )}
-              {stream.events.map((ev, idx) => {
-                if (ev.body.case !== 'httpRequest') return null
-                const http = ev.body.value
-                return (
-                  <tr key={`${ev.nodeId}-${idx}`} className="hover:bg-zinc-900/40">
-                    <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-zinc-500">
-                      {formatTime(timestampToDate(ev.timestamp))}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-zinc-400">
-                      {ev.nodeId}
-                    </td>
-                    <td className={['px-3 py-1.5 font-mono text-xs', methodClass(http.method)].join(' ')}>
-                      {http.method}
-                    </td>
-                    <td className="px-3 py-1.5 font-mono text-xs text-zinc-200">
-                      {http.path}
-                    </td>
-                    <td
-                      className={[
-                        'whitespace-nowrap px-3 py-1.5 text-right font-mono text-xs',
-                        statusClass(http.status),
-                      ].join(' ')}
-                    >
-                      {http.status}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-1.5 text-right text-xs text-zinc-300 tabular-nums">
-                      {formatDuration(durationToMillis(http.duration))}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-zinc-500">
-                      {http.remoteIp}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+        <div className="overflow-hidden rounded-[10px] border border-t18 bg-t4">
+          <div
+            className="grid bg-t6 px-4 py-2 text-[10px] font-semibold uppercase tracking-[.08em] text-t30"
+            style={{ gridTemplateColumns: GRID }}
+          >
+            <span>Time</span>
+            <span>Node</span>
+            <span>Method</span>
+            <span>Path</span>
+            <span className="text-right">Status</span>
+            <span className="text-right">Duration</span>
+            <span className="text-right">Remote</span>
+          </div>
+          {rows.length === 0 && (
+            <div className="border-t border-t10 px-4 py-8 text-center text-[12px] text-t26">
+              {stream.connected ? 'No events — stream is quiet' : 'Waiting for events…'}
+            </div>
+          )}
+          {rows.map((ev, idx) => {
+            if (ev.body.case !== 'httpRequest') return null
+            const http = ev.body.value
+            return (
+              <div
+                key={`${ev.nodeId}-${idx}`}
+                className="grid items-center border-t border-t10 px-4 py-[6px] font-mono text-[11.5px] hover:bg-t7"
+                style={{ gridTemplateColumns: GRID }}
+              >
+                <span className="text-t25">{formatTime(timestampToDate(ev.timestamp))}</span>
+                <span className="truncate text-t32">{ev.nodeId}</span>
+                <span className="font-semibold" style={{ color: methodColor(http.method) }}>
+                  {http.method}
+                </span>
+                <span className="truncate pr-3 text-t39" title={http.path}>
+                  {http.path}
+                </span>
+                <span className="text-right" style={{ color: statusColor(http.status) }}>
+                  {http.status}
+                </span>
+                <span className="text-right text-t37 tabular-nums">
+                  {formatDuration(durationToMillis(http.duration))}
+                </span>
+                <span className="truncate text-right text-t32">{http.remoteIp}</span>
+              </div>
+            )
+          })}
         </div>
       </PageBody>
     </>

@@ -1,23 +1,40 @@
+// SQL statements — live stream (design handoff "Orbit Admin", screen 4).
+// Rendering only: data wiring is the same useStreamEvents hook as before.
 import { useMemo } from 'react'
-import { PageBody, PageHeader } from '@/components/Layout'
+import { PageBody, PageHeader } from '@/components/Page'
 import { StreamControls } from '@/components/StreamControls'
+import { SEMANTIC, sqlKindColor } from '@/lib/colors'
 import { useStreamEvents } from '@/hooks/useStreamEvents'
 import { Filter, EventType } from '@/gen/nucleus/admin/v1/admin_pb'
 import { durationToMillis, formatDuration, formatTime, timestampToDate } from '@/lib/format'
 
-export function SQLStreamPage() {
-  const filter = useMemo(
-    () => new Filter({ types: [EventType.SQL_STATEMENT] }),
-    [],
-  )
+// Exact column template from the handoff:
+// Time / Node / Kind / Statement / Duration / Rows.
+const GRID = '96px 92px 70px minmax(0,1fr) 84px 56px'
 
-  const stream = useStreamEvents({ filter, bufferSize: 300, includeRecent: true })
+// Duration turns amber when the statement takes longer than this.
+const SLOW_MS = 8
+
+// Ring buffer cap ~160, render top ~60 (handoff "Interactions & Behavior").
+const BUFFER_CAP = 160
+const RENDER_CAP = 60
+
+export function SQLStreamPage() {
+  // The filter must be referentially stable so useStreamEvents does not
+  // re-open on every render.
+  const filter = useMemo(() => new Filter({ types: [EventType.SQL_STATEMENT] }), [])
+
+  const stream = useStreamEvents({ filter, bufferSize: BUFFER_CAP, includeRecent: true })
+
+  const rows = stream.events
+    .filter((ev) => ev.body.case === 'sqlStatement')
+    .slice(0, RENDER_CAP)
 
   return (
     <>
       <PageHeader
         title="SQL statements"
-        subtitle="CRUD-layer queries observed by every connected agent. Argument values are masked at the source."
+        description="Executed statements across the fleet. Argument values are masked at the source."
         actions={
           <StreamControls
             connected={stream.connected}
@@ -30,59 +47,58 @@ export function SQLStreamPage() {
         }
       />
       <PageBody>
-        <div className="overflow-hidden rounded-lg border border-zinc-800">
-          <table className="w-full text-sm">
-            <thead className="bg-zinc-900/60 text-left text-xs uppercase tracking-wider text-zinc-500">
-              <tr>
-                <th className="px-3 py-2 font-medium">Time</th>
-                <th className="px-3 py-2 font-medium">Node</th>
-                <th className="px-3 py-2 font-medium">Model</th>
-                <th className="px-3 py-2 font-medium">Op</th>
-                <th className="px-3 py-2 font-medium">Query</th>
-                <th className="px-3 py-2 font-medium text-right">Duration</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-800">
-              {stream.events.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-3 py-8 text-center text-zinc-500">
-                    Waiting for events…
-                  </td>
-                </tr>
-              )}
-              {stream.events.map((ev, idx) => {
-                if (ev.body.case !== 'sqlStatement') return null
-                const sql = ev.body.value
-                return (
-                  <tr key={`${ev.nodeId}-${idx}`} className="hover:bg-zinc-900/40">
-                    <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-zinc-500">
-                      {formatTime(timestampToDate(ev.timestamp))}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-zinc-400">
-                      {ev.nodeId}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-zinc-200">
-                      {sql.modelName || '—'}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-amber-300">
-                      {sql.operation}
-                    </td>
-                    <td className="px-3 py-1.5 font-mono text-xs text-zinc-300">
-                      <div className="max-w-2xl truncate" title={sql.query}>
-                        {sql.query}
-                      </div>
-                      {sql.error !== '' && (
-                        <div className="text-rose-400">{sql.error}</div>
-                      )}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-1.5 text-right text-xs text-zinc-300 tabular-nums">
-                      {formatDuration(durationToMillis(sql.duration))}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+        <div className="overflow-hidden rounded-[10px] border border-t18 bg-t4">
+          <div
+            className="grid bg-t6 px-4 py-2 text-[10px] font-semibold uppercase tracking-[.08em] text-t30"
+            style={{ gridTemplateColumns: GRID }}
+          >
+            <span>Time</span>
+            <span>Node</span>
+            <span>Kind</span>
+            <span>Statement</span>
+            <span className="text-right">Duration</span>
+            <span className="text-right">Rows</span>
+          </div>
+          {rows.length === 0 && (
+            <div className="border-t border-t10 px-4 py-8 text-center text-[12px] text-t26">
+              {stream.connected ? 'No events — stream is quiet' : 'Waiting for events…'}
+            </div>
+          )}
+          {rows.map((ev, idx) => {
+            if (ev.body.case !== 'sqlStatement') return null
+            const sql = ev.body.value
+            const ms = durationToMillis(sql.duration)
+            const failed = sql.error !== ''
+            return (
+              <div
+                key={`${ev.nodeId}-${idx}`}
+                className="grid items-center border-t border-t10 px-4 py-[6px] font-mono text-[11.5px] hover:bg-t7"
+                style={{ gridTemplateColumns: GRID }}
+              >
+                <span className="text-t25">{formatTime(timestampToDate(ev.timestamp))}</span>
+                <span className="truncate text-t32">{ev.nodeId}</span>
+                <span className="font-semibold" style={{ color: sqlKindColor(sql.operation) }}>
+                  {sql.operation.toUpperCase()}
+                </span>
+                <span
+                  className={failed ? 'truncate pr-3' : 'truncate pr-3 text-t39'}
+                  style={failed ? { color: SEMANTIC.red } : undefined}
+                  title={failed ? `${sql.query} — ${sql.error}` : sql.query}
+                >
+                  {sql.query}
+                </span>
+                <span
+                  className="text-right tabular-nums"
+                  style={{ color: ms > SLOW_MS ? SEMANTIC.amber : 'var(--t37)' }}
+                >
+                  {formatDuration(ms)}
+                </span>
+                {/* SqlStatementEvent carries no affected-row count, so the
+                    Rows column renders a placeholder until the proto grows one. */}
+                <span className="text-right text-t32 tabular-nums">—</span>
+              </div>
+            )
+          })}
         </div>
       </PageBody>
     </>
