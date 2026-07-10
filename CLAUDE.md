@@ -13,9 +13,10 @@ core de Nucleus por su `ADR-019`; Nucleus ya no lleva código de admin.
 
 ## Estado real
 
-- **v0.3.0, camino de v1.0** — el gate vive en `docs/V1_GATE.md`; las
-  superficies congeladas (raíz + `datasource`) las guarda
-  `contracts/freeze_test.go` contra su baseline.
+- **v1.0.0 (primer major, 2026-07-10)** — el gate que lo certificó vive en
+  `docs/V1_GATE.md`; las superficies congeladas (raíz + `datasource`) las
+  guarda `contracts/freeze_test.go` contra su baseline. Cambios
+  incompatibles en esas superficies requieren un major.
 - **Fija Nucleus por tag** (`v1.0.0` desde orbit#16, todos los módulos). Ver
   `../versions.yaml` (`workspace_pins`).
 - **Aguas abajo de Nucleus**: consume ~15 de sus paquetes y se ata a

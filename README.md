@@ -40,8 +40,10 @@ single binary.
 go get github.com/jcsvwinston/orbit@latest
 ```
 
-The current tagged release is **v0.3.0**; pin `@v0.3.0` for reproducible
-builds. **Pre-1.0:** the API may still change before v1.0.
+The current tagged release is **v1.0.0**; pin `@v1.0.0` for reproducible
+builds. **v1.0 promise:** the public surfaces (the root module and
+`datasource`) are frozen for the life of v1.x — enforced by
+`contracts/freeze_test.go` (see `docs/V1_GATE.md`).
 
 > **Requires** Go 1.26+ and a [Nucleus](https://github.com/jcsvwinston/nucleus)
 > application to mount into.
