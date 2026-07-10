@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.0](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v0.1.0...quarkdatasource/v0.2.0) (2026-07-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **deps:** repin to nucleus v1.0.0 across all modules (lockstep, QADR-0005) ([#16](https://github.com/jcsvwinston/orbit/issues/16))
+
+### Chore
+
+* **deps:** repin to nucleus v1.0.0 across all modules (lockstep, QADR-0005) ([#16](https://github.com/jcsvwinston/orbit/issues/16)) ([b994b09](https://github.com/jcsvwinston/orbit/commit/b994b096cc5bad2ee373f94e94b75baee7df6c71))
+
 ## 0.1.0 (2026-07-03)
 
 
