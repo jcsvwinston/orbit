@@ -2,24 +2,14 @@ module github.com/jcsvwinston/orbit/server
 
 go 1.26.4
 
-// Cross-module wiring (orbit/proto, orbit/agent) is provided by the go.work
-// workspace at the orbit repository root. The replace directives below mirror
-// it so the module also resolves in isolation (e.g. `go list -m all` from
-// inside server/). The nucleus framework core is an external dependency pinned
-// to the same pseudo-version the root orbit module uses.
-replace (
-	github.com/jcsvwinston/orbit/agent => ../agent
-	github.com/jcsvwinston/orbit/proto => ../proto
-)
-
 require (
 	connectrpc.com/connect v1.19.2
-	github.com/jcsvwinston/orbit/proto v0.0.0-00010101000000-000000000000
+	github.com/jcsvwinston/orbit/proto v0.1.0
 )
 
 require (
 	github.com/jcsvwinston/nucleus v1.0.0
-	github.com/jcsvwinston/orbit/agent v0.0.0-00010101000000-000000000000
+	github.com/jcsvwinston/orbit/agent v0.1.0
 	golang.org/x/net v0.55.0
 	google.golang.org/protobuf v1.36.11
 	modernc.org/sqlite v1.50.0

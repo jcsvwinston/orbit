@@ -46,7 +46,7 @@ single binary.
 
 ## Status
 
-The first tagged release is **v0.1.0**. Pre-1.0: the API may still change before
-v1.0.
+The current tagged release is **v0.3.0**. Pre-1.0: the API may still change
+before v1.0.
 
 Next: [Quick start](./quick-start.md).

@@ -63,7 +63,7 @@ with `GOWORK=off go test ./contracts`). ADR-001 carries the freeze section.
 Note for A-3: the 21 `Config` fields are already IN the baseline; what A-3
 still owes is the field-by-field review + the godoc v1.0 promise.
 
-### A-2 — Fleet leg resolves standalone (agent/proto tags)
+### A-2 — Fleet leg resolves standalone (agent/proto tags) ✅ CLOSED 2026-07-11
 `orbit/agent` and `orbit/proto` are NOT in release-please (packages today:
 root, quarkbridge, quarkdatasource) and have no tags; `agent` and `server`
 carry intra-repo `replace` directives. Consequence: the fleet leg of a
@@ -83,7 +83,18 @@ real app does not work.
 **Closed when:** a scratch module outside the repo can `go get` the agent and
 build the fleet leg against tags only.
 
-### A-3 — `orbit.Config` shape final
+**Closure (slice 2):** `proto`, `agent` and `server` joined release-please as
+component-tag packages (orbit#22) and got their first honest tags
+(`proto/v0.1.0`, `agent/v0.1.0`, `server/v0.1.0` — release PRs #24/#25/#26).
+The intra-repo `replace` directives in `agent` and `server` are dropped;
+both modules build and test standalone (`GOWORK=off`) against the tags.
+Verified from a scratch module outside the repo: `go mod tidy` resolves
+agent+proto by tag only, and the program builds and runs. Server's
+distribution decision: **it gets tags too** — it is a deployable (the
+`admin-server` binary, go-install-able); its Go API carries no compatibility
+promise (README Distribution section).
+
+### A-3 — `orbit.Config` shape final ✅ CLOSED 2026-07-11
 `Config` is the whole public wiring surface of the module entrypoint. Review
 every field for v1.0 fitness (naming, zero-value behavior, the
 `DataSource` injection point, auth-DB alias resolution), then declare the
@@ -93,7 +104,16 @@ to freeze must be dispositioned explicitly (rename now / document / remove).
 **Closed when:** the Config fields are in the baseline and their godoc states
 the v1.0 promise.
 
-### A-4 — Docs accuracy sweep vs the v1.0 surfaces
+**Closure (slice 3):** all 21 fields reviewed field-by-field — every one is
+fit to freeze as-is (no renames, no removals; the four zero-value defaults
+are coherent and applied in `Module()`: Prefix→`/admin`,
+MigrationsPath→`migrations`, AuditMaxSize→`10000`, ClusterChannel→
+`nucleus:admin:live:v1`). The Config doc comment now states the v1.0 promise
+explicitly; the `AuditMaxSize` default is spelled out (the sizing const is
+unexported). The fields were already pinned in the freeze baseline by
+slice 1.
+
+### A-4 — Docs accuracy sweep vs the v1.0 surfaces ✅ CLOSED 2026-07-11
 Orbit's docs live as the suite site instance (9 pages, written from READMEs
 pre-v0.2). Sweep them against today's surfaces — Config fields, module
 mounting, the datasource contract, the fleet leg — with the anti-falsehood
@@ -103,21 +123,36 @@ server) get the same pass.
 **Closed when:** the sweep finds zero phantom symbols/keys and the pages
 describe v1.0 behavior.
 
+**Closure (slice 3):** full sweep of the 9 site pages, the 4 READMEs, both
+fleet `doc.go` files, `go.work`, and CLAUDE.md, every cited symbol/key/flag
+verified against source. Findings fixed: the bootstrap-password myth (docs
+promised a generated random password on empty `bootstrap_password`; the code
+SKIPS bootstrapping — 6 spots), the phantom agent wiring (`cfg.AdminAgent`,
+`app.MustLoadConfig` — the real API is `agent.ExtensionConfig` +
+`app.LoadConfig`), the phantom `--metrics-addr` server flag, the phantom
+`RequireConnection` field and `BENCHMARKS.md` pointer, the false "CI verifies
+regeneration" claim, `make build` documented as producing `bin/admin-server`
+(it does not), stale v0.1.0 version claims, pre-extraction `admin/*` paths
+and import lines, "Phase-1 skeleton" doc.go claims on implemented modules,
+and the anti-hype `status: complete` badge.
+
 ---
 
-## §B · Waiver candidates (explicit, or they don't count)
+## §B · Waivers — APPROVED by the maintainer, 2026-07-10
 
-Proposed to the maintainer — each needs a documented decision:
+Approved together with the gate scope (both were proposed as waivers in the
+scope decision Carlos accepted on 2026-07-10):
 
 1. **W1 — RBAC/audit RPCs for the Manage screens → v1.1.** The Access
    control and Audit log screens ship as UI with *declared gaps* (the
-   honest-data policy from the redesign): no simulated data, an explicit
-   "backend pending" state. Implementing the two RPC families before v1.0
-   is real scope (M–L); the declared-gap posture is already honest.
-   Additive to wire later.
+   honest-data policy from the redesign, orbit#15): no simulated data, an
+   explicit "backend pending" state. Implementing the two RPC families
+   before v1.0 is real scope (M–L); the declared-gap posture is already
+   honest. Additive to wire later — nothing in the frozen surfaces blocks
+   it.
 2. **W2 — SQL row count in `SqlStatementEvent` → v1.1.** An additive proto
-   field + emitter change; nothing in the frozen contract blocks adding it
-   later.
+   field + emitter change; the proto contract is append-only by rule
+   (EVOLUTION.md), so nothing blocks adding it later.
 
 ---
 
@@ -126,9 +161,13 @@ Proposed to the maintainer — each needs a documented decision:
 | # | Slice | Size | Unblocks |
 |---|---|---|---|
 | 1 | ✅ Freeze guard (baseline test) + datasource contract declared final + ADR-001 note (A-1) | M | the core v1.0 promise |
-| 2 | agent/proto into release-please + first tags + drop replaces + server distribution decision (A-2) | M | fleet leg standalone |
-| 3 | `orbit.Config` review + docs sweep (A-3 + A-4) | S–M | wiring surface honest |
-| 4 | Waiver decisions (§B) + Release-As 1.0.0 + RC via the suite lane → **tag v1.0.0** | S | Quantum 1.0 |
+| 2 | ✅ agent/proto into release-please + first tags + drop replaces + server distribution decision (A-2) | M | fleet leg standalone |
+| 3 | ✅ `orbit.Config` review + docs sweep (A-3 + A-4) | S–M | wiring surface honest |
+| 4 | ✅ Waiver decisions (§B) + Release-As 1.0.0 + RC via the suite lane → **tag v1.0.0** | S | Quantum 1.0 |
+
+§A closed in full (A-1/A-3 slice 1+3, A-2 slice 2, A-4 slice 3); §B holds
+two approved, documented waivers. The v1.0 release candidate is validated by
+the suite's `orbit-lockstep` lane (A-7 procedure) before the tag.
 
 Each slice lands as its own PR; the suite's `orbit-lockstep` lane validates
 every release candidate against the pinned trio before tagging (the A-7

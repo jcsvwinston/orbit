@@ -4,7 +4,6 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/jcsvwinston/orbit.svg)](https://pkg.go.dev/github.com/jcsvwinston/orbit)
 ![Go](https://img.shields.io/badge/go-1.26%2B-00ADD8?logo=go&logoColor=white)
-![Status](https://img.shields.io/badge/status-complete-brightgreen)
 
 Orbit is a self-contained admin panel — Data Studio, a live request/SQL feed, a
 session viewer, RBAC management, and system metrics — that mounts **in-process**
@@ -38,11 +37,11 @@ single binary.
 ## Install
 
 ```bash
-go get github.com/jcsvwinston/orbit@v0.1.0
+go get github.com/jcsvwinston/orbit@latest
 ```
 
-The first tagged release is **v0.1.0** (`@latest` resolves to it; pin `@v0.1.0`
-for reproducible builds). **Pre-1.0:** the API may still change before v1.0.
+The current tagged release is **v0.3.0**; pin `@v0.3.0` for reproducible
+builds. **Pre-1.0:** the API may still change before v1.0.
 
 > **Requires** Go 1.26+ and a [Nucleus](https://github.com/jcsvwinston/nucleus)
 > application to mount into.
@@ -53,6 +52,8 @@ Mount orbit on the application builder:
 
 ```go
 import (
+    "os"
+
     "github.com/jcsvwinston/nucleus/pkg/nucleus"
     "github.com/jcsvwinston/orbit"
 )
@@ -65,8 +66,9 @@ func main() {
             Title:             "Acme Admin",
             BootstrapUsername: "admin",
             BootstrapEmail:    "admin@acme.test",
-            // BootstrapPassword empty → a random one is generated and printed
-            // to stderr once on first boot. Capture it and rotate.
+            // When BootstrapPassword is empty, bootstrapping is skipped —
+            // provision the admin user another way (e.g. nucleus createuser).
+            BootstrapPassword: os.Getenv("ADMIN_BOOTSTRAP_PASSWORD"),
         })).
         Build()
     if err != nil {
@@ -95,7 +97,7 @@ The zero value is valid too — `orbit.Module(orbit.Config{})` mounts under
 | `environment` | string | — | Label shown in the UI (e.g. `production`). |
 | `bootstrap_username` | string | — | Admin user created on first boot. |
 | `bootstrap_email` | string | — | Email for the bootstrap user. |
-| `bootstrap_password` | string | — | Password for the bootstrap user; empty → a random one is generated and printed once. |
+| `bootstrap_password` | string | — | Password for the bootstrap user; empty → bootstrapping is skipped (provision the admin user another way, e.g. `nucleus createuser`). |
 | `auth_database` | string | app default | DB alias whose handle backs admin auth + the bootstrap user (use a dedicated DB for the admin user store). |
 | `migrations_path` | string | `migrations` | Directory the migrations view reads. |
 | `audit_max_size` | int | `10000` | In-memory audit-log ring size. |
@@ -168,5 +170,5 @@ a clean break. Nucleus itself no longer ships any admin code.
 ```bash
 go build ./...        # build the root module
 go test ./...         # test it
-go work sync          # the repo is a Go workspace: ./ ./proto ./agent ./server
+go work sync          # Go workspace: ./ ./agent ./proto ./quarkbridge ./quarkdatasource ./server
 ```

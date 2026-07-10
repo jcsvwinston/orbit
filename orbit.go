@@ -42,6 +42,11 @@ const defaultAuditMaxSize = 10000
 // Config configures the orbit admin module. The zero value is valid (orbit
 // mounts under DefaultPrefix); bound from the `modules.orbit.*` subtree of the
 // application config when mounted on a config-file app.
+//
+// Config is a frozen v1.0 surface (docs/V1_GATE.md §A-3): every field keeps
+// its name, yaml key, type, and zero-value behavior for the life of v1.x.
+// Fields may be added; none is removed or renamed without a major. The freeze
+// is enforced by contracts/freeze_test.go.
 type Config struct {
 	// Prefix is the URL path orbit mounts under (default DefaultPrefix).
 	Prefix string `yaml:"prefix"`
@@ -72,7 +77,8 @@ type Config struct {
 	Environment string `yaml:"environment"`
 	// MigrationsPath is the directory the migrations view reads (default "migrations").
 	MigrationsPath string `yaml:"migrations_path"`
-	// AuditMaxSize caps the in-memory audit log (default defaultAuditMaxSize).
+	// AuditMaxSize caps the in-memory audit log ring buffer; zero or negative
+	// means the default of 10000 entries.
 	AuditMaxSize int `yaml:"audit_max_size"`
 
 	// Live view / cluster telemetry.

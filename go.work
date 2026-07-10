@@ -7,12 +7,11 @@ go 1.26.4
 // proto stubs stay releasable independently while remaining buildable in a
 // single `go build ./...` from any module's vantage point.
 //
-// nucleus/pkg/* is an external dependency of agent/ and server/, pinned in
-// each module's go.mod to the same pseudo-version the root module uses.
+// nucleus/pkg/* is an external dependency of every module here, pinned by
+// tag (v1.0.0 since orbit#16) in each module's go.mod.
 //
-// quarkbridge/ is an opt-in module that depends on both Quark and Nucleus; it
-// requires a newer Nucleus than the rest of orbit/* (one that exposes the
-// public SQL ingest, ADR-020), so its go.mod pins a later pseudo-version.
+// quarkbridge/ is an opt-in module that depends on both Quark and Nucleus
+// (it needs the public SQL ingest, nucleus ADR-020).
 //
 // quarkdatasource/ is the opt-in Quark implementation of the datasource
 // contract (ADR-001): it depends on Quark and on the orbit root module (the
