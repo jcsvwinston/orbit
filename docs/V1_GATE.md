@@ -36,7 +36,7 @@ today.
 
 ## §A · Blocking items (close before v1.0)
 
-### A-1 — `datasource` contract: declare final + add a freeze guard
+### A-1 — `datasource` contract: declare final + add a freeze guard ✅ CLOSED 2026-07-11
 ADR-001 defers the contract freeze to v1.0 — that moment is now. Two halves:
 
 - **Declare the shape final**: `Record`, `Choice`, `FieldInfo`, `ForeignKey`,
@@ -52,6 +52,16 @@ ADR-001 defers the contract freeze to v1.0 — that moment is now. Two halves:
 
 **Closed when:** the baseline test exists and is green in CI, and ADR-001
 carries the freeze note.
+
+**Closure (slice 1):** `contracts/freeze_test.go` pins `orbit` (root) +
+`orbit/datasource` against `contracts/baseline/api_exported_symbols.txt`
+(100 symbols; both directions fail — removals AND unreviewed additions);
+deliberate changes rebaseline via `ORBIT_UPDATE_CONTRACT_BASELINE=1`. The
+suite's `orbit-lockstep` lane covers `./orbit/...`, so the guard runs on
+every quantum push/PR (orbit has no PR CI of its own — verified locally
+with `GOWORK=off go test ./contracts`). ADR-001 carries the freeze section.
+Note for A-3: the 21 `Config` fields are already IN the baseline; what A-3
+still owes is the field-by-field review + the godoc v1.0 promise.
 
 ### A-2 — Fleet leg resolves standalone (agent/proto tags)
 `orbit/agent` and `orbit/proto` are NOT in release-please (packages today:
@@ -115,7 +125,7 @@ Proposed to the maintainer — each needs a documented decision:
 
 | # | Slice | Size | Unblocks |
 |---|---|---|---|
-| 1 | Freeze guard (baseline test) + datasource contract declared final + ADR-001 note (A-1) | M | the core v1.0 promise |
+| 1 | ✅ Freeze guard (baseline test) + datasource contract declared final + ADR-001 note (A-1) | M | the core v1.0 promise |
 | 2 | agent/proto into release-please + first tags + drop replaces + server distribution decision (A-2) | M | fleet leg standalone |
 | 3 | `orbit.Config` review + docs sweep (A-3 + A-4) | S–M | wiring surface honest |
 | 4 | Waiver decisions (§B) + Release-As 1.0.0 + RC via the suite lane → **tag v1.0.0** | S | Quantum 1.0 |
