@@ -81,22 +81,19 @@
       "package-name": "github.com/jcsvwinston/orbit/proto",
       "release-type": "go",
       "component": "proto",
-      "include-component-in-tag": true,
-      "release-as": "0.1.0"
+      "include-component-in-tag": true
     },
     "agent": {
       "package-name": "github.com/jcsvwinston/orbit/agent",
       "release-type": "go",
       "component": "agent",
-      "include-component-in-tag": true,
-      "release-as": "0.1.0"
+      "include-component-in-tag": true
     },
     "server": {
       "package-name": "github.com/jcsvwinston/orbit/server",
       "release-type": "go",
       "component": "server",
-      "include-component-in-tag": true,
-      "release-as": "0.1.0"
+      "include-component-in-tag": true
     }
   }
 }

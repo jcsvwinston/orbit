@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.0.0](https://github.com/jcsvwinston/orbit/compare/v0.3.0...v1.0.0) (2026-07-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **fleet:** none for consumers — this is what makes the modules consumable outside the repo in the first place; the marker records the dependency-graph shift from replace-wiring to tags.
+* Config declared frozen (A-3) + anti-falsehood sweep of every doc surface (A-4) ([#23](https://github.com/jcsvwinston/orbit/issues/23))
+* **deps:** repin to nucleus v1.0.0 across all modules (lockstep, QADR-0005) ([#16](https://github.com/jcsvwinston/orbit/issues/16))
+
+### Added
+
+* **contracts:** freeze the public API — the datasource contract is final (gate A-1) ([#21](https://github.com/jcsvwinston/orbit/issues/21)) ([cbf1df9](https://github.com/jcsvwinston/orbit/commit/cbf1df9e2b941722d1a7357094f2460563b63d7f))
+* **fleet:** agent, proto and server join release-please — the fleet leg gets tags (gate A-2) ([#22](https://github.com/jcsvwinston/orbit/issues/22)) ([be3362b](https://github.com/jcsvwinston/orbit/commit/be3362b98b57f0464f1d6cf2cc1bd936d2f5e26c))
+
+
+### Fixed
+
+* **fleet:** drop the intra-repo replace directives — agent and server resolve by tags (gate A-2) ([#27](https://github.com/jcsvwinston/orbit/issues/27)) ([8b4d516](https://github.com/jcsvwinston/orbit/commit/8b4d5163dab6e2b1dc9d5041a383c3fe91b92c34))
+
+
+### Documentation
+
+* Config declared frozen (A-3) + anti-falsehood sweep of every doc surface (A-4) ([#23](https://github.com/jcsvwinston/orbit/issues/23)) ([fabc580](https://github.com/jcsvwinston/orbit/commit/fabc580046b29277d4df9a459dc27f16619c0fb9))
+* **gate:** formalize the approved W1/W2 waivers — the v1.0 gate is closed ([fe5f2f6](https://github.com/jcsvwinston/orbit/commit/fe5f2f699b0330b1d62ab879aa47ce361f5482a4))
+
+
+### Chore
+
+* **deps:** repin to nucleus v1.0.0 across all modules (lockstep, QADR-0005) ([#16](https://github.com/jcsvwinston/orbit/issues/16)) ([b994b09](https://github.com/jcsvwinston/orbit/commit/b994b096cc5bad2ee373f94e94b75baee7df6c71))
+
 ## [0.3.0](https://github.com/jcsvwinston/orbit/compare/v0.2.0...v0.3.0) (2026-07-06)
 
 

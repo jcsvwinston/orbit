@@ -16,7 +16,7 @@ description: The modules.orbit.* configuration reference.
 | `environment` | string | — | Label shown in the UI (e.g. `production`). |
 | `bootstrap_username` | string | — | Admin user created on first boot. |
 | `bootstrap_email` | string | — | Email for the bootstrap user. |
-| `bootstrap_password` | string | — | Password for the bootstrap user; empty → a random one is generated and printed once. |
+| `bootstrap_password` | string | — | Password for the bootstrap user; empty → bootstrapping is skipped (provision the admin user another way, e.g. `nucleus createuser`). |
 | `auth_database` | string | app default | DB alias whose handle backs admin auth + the bootstrap user (use a dedicated DB for the admin user store). |
 | `migrations_path` | string | `migrations` | Directory the migrations view reads. |
 | `audit_max_size` | int | `10000` | In-memory audit-log ring size. |
