@@ -63,7 +63,7 @@ with `GOWORK=off go test ./contracts`). ADR-001 carries the freeze section.
 Note for A-3: the 21 `Config` fields are already IN the baseline; what A-3
 still owes is the field-by-field review + the godoc v1.0 promise.
 
-### A-2 — Fleet leg resolves standalone (agent/proto tags)
+### A-2 — Fleet leg resolves standalone (agent/proto tags) ✅ CLOSED 2026-07-11
 `orbit/agent` and `orbit/proto` are NOT in release-please (packages today:
 root, quarkbridge, quarkdatasource) and have no tags; `agent` and `server`
 carry intra-repo `replace` directives. Consequence: the fleet leg of a
@@ -82,6 +82,17 @@ real app does not work.
 
 **Closed when:** a scratch module outside the repo can `go get` the agent and
 build the fleet leg against tags only.
+
+**Closure (slice 2):** `proto`, `agent` and `server` joined release-please as
+component-tag packages (orbit#22) and got their first honest tags
+(`proto/v0.1.0`, `agent/v0.1.0`, `server/v0.1.0` — release PRs #24/#25/#26).
+The intra-repo `replace` directives in `agent` and `server` are dropped;
+both modules build and test standalone (`GOWORK=off`) against the tags.
+Verified from a scratch module outside the repo: `go mod tidy` resolves
+agent+proto by tag only, and the program builds and runs. Server's
+distribution decision: **it gets tags too** — it is a deployable (the
+`admin-server` binary, go-install-able); its Go API carries no compatibility
+promise (README Distribution section).
 
 ### A-3 — `orbit.Config` shape final ✅ CLOSED 2026-07-11
 `Config` is the whole public wiring surface of the module entrypoint. Review
@@ -148,7 +159,7 @@ Proposed to the maintainer — each needs a documented decision:
 | # | Slice | Size | Unblocks |
 |---|---|---|---|
 | 1 | ✅ Freeze guard (baseline test) + datasource contract declared final + ADR-001 note (A-1) | M | the core v1.0 promise |
-| 2 | agent/proto into release-please + first tags + drop replaces + server distribution decision (A-2) | M | fleet leg standalone |
+| 2 | ✅ agent/proto into release-please + first tags + drop replaces + server distribution decision (A-2) | M | fleet leg standalone |
 | 3 | ✅ `orbit.Config` review + docs sweep (A-3 + A-4) | S–M | wiring surface honest |
 | 4 | Waiver decisions (§B) + Release-As 1.0.0 + RC via the suite lane → **tag v1.0.0** | S | Quantum 1.0 |
 
