@@ -138,19 +138,21 @@ and the anti-hype `status: complete` badge.
 
 ---
 
-## §B · Waiver candidates (explicit, or they don't count)
+## §B · Waivers — APPROVED by the maintainer, 2026-07-10
 
-Proposed to the maintainer — each needs a documented decision:
+Approved together with the gate scope (both were proposed as waivers in the
+scope decision Carlos accepted on 2026-07-10):
 
 1. **W1 — RBAC/audit RPCs for the Manage screens → v1.1.** The Access
    control and Audit log screens ship as UI with *declared gaps* (the
-   honest-data policy from the redesign): no simulated data, an explicit
-   "backend pending" state. Implementing the two RPC families before v1.0
-   is real scope (M–L); the declared-gap posture is already honest.
-   Additive to wire later.
+   honest-data policy from the redesign, orbit#15): no simulated data, an
+   explicit "backend pending" state. Implementing the two RPC families
+   before v1.0 is real scope (M–L); the declared-gap posture is already
+   honest. Additive to wire later — nothing in the frozen surfaces blocks
+   it.
 2. **W2 — SQL row count in `SqlStatementEvent` → v1.1.** An additive proto
-   field + emitter change; nothing in the frozen contract blocks adding it
-   later.
+   field + emitter change; the proto contract is append-only by rule
+   (EVOLUTION.md), so nothing blocks adding it later.
 
 ---
 
@@ -161,7 +163,11 @@ Proposed to the maintainer — each needs a documented decision:
 | 1 | ✅ Freeze guard (baseline test) + datasource contract declared final + ADR-001 note (A-1) | M | the core v1.0 promise |
 | 2 | ✅ agent/proto into release-please + first tags + drop replaces + server distribution decision (A-2) | M | fleet leg standalone |
 | 3 | ✅ `orbit.Config` review + docs sweep (A-3 + A-4) | S–M | wiring surface honest |
-| 4 | Waiver decisions (§B) + Release-As 1.0.0 + RC via the suite lane → **tag v1.0.0** | S | Quantum 1.0 |
+| 4 | ✅ Waiver decisions (§B) + Release-As 1.0.0 + RC via the suite lane → **tag v1.0.0** | S | Quantum 1.0 |
+
+§A closed in full (A-1/A-3 slice 1+3, A-2 slice 2, A-4 slice 3); §B holds
+two approved, documented waivers. The v1.0 release candidate is validated by
+the suite's `orbit-lockstep` lane (A-7 procedure) before the tag.
 
 Each slice lands as its own PR; the suite's `orbit-lockstep` lane validates
 every release candidate against the pinned trio before tagging (the A-7
