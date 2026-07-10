@@ -83,7 +83,7 @@ real app does not work.
 **Closed when:** a scratch module outside the repo can `go get` the agent and
 build the fleet leg against tags only.
 
-### A-3 — `orbit.Config` shape final
+### A-3 — `orbit.Config` shape final ✅ CLOSED 2026-07-11
 `Config` is the whole public wiring surface of the module entrypoint. Review
 every field for v1.0 fitness (naming, zero-value behavior, the
 `DataSource` injection point, auth-DB alias resolution), then declare the
@@ -93,7 +93,16 @@ to freeze must be dispositioned explicitly (rename now / document / remove).
 **Closed when:** the Config fields are in the baseline and their godoc states
 the v1.0 promise.
 
-### A-4 — Docs accuracy sweep vs the v1.0 surfaces
+**Closure (slice 3):** all 21 fields reviewed field-by-field — every one is
+fit to freeze as-is (no renames, no removals; the four zero-value defaults
+are coherent and applied in `Module()`: Prefix→`/admin`,
+MigrationsPath→`migrations`, AuditMaxSize→`10000`, ClusterChannel→
+`nucleus:admin:live:v1`). The Config doc comment now states the v1.0 promise
+explicitly; the `AuditMaxSize` default is spelled out (the sizing const is
+unexported). The fields were already pinned in the freeze baseline by
+slice 1.
+
+### A-4 — Docs accuracy sweep vs the v1.0 surfaces ✅ CLOSED 2026-07-11
 Orbit's docs live as the suite site instance (9 pages, written from READMEs
 pre-v0.2). Sweep them against today's surfaces — Config fields, module
 mounting, the datasource contract, the fleet leg — with the anti-falsehood
@@ -102,6 +111,19 @@ server) get the same pass.
 
 **Closed when:** the sweep finds zero phantom symbols/keys and the pages
 describe v1.0 behavior.
+
+**Closure (slice 3):** full sweep of the 9 site pages, the 4 READMEs, both
+fleet `doc.go` files, `go.work`, and CLAUDE.md, every cited symbol/key/flag
+verified against source. Findings fixed: the bootstrap-password myth (docs
+promised a generated random password on empty `bootstrap_password`; the code
+SKIPS bootstrapping — 6 spots), the phantom agent wiring (`cfg.AdminAgent`,
+`app.MustLoadConfig` — the real API is `agent.ExtensionConfig` +
+`app.LoadConfig`), the phantom `--metrics-addr` server flag, the phantom
+`RequireConnection` field and `BENCHMARKS.md` pointer, the false "CI verifies
+regeneration" claim, `make build` documented as producing `bin/admin-server`
+(it does not), stale v0.1.0 version claims, pre-extraction `admin/*` paths
+and import lines, "Phase-1 skeleton" doc.go claims on implemented modules,
+and the anti-hype `status: complete` badge.
 
 ---
 
@@ -127,7 +149,7 @@ Proposed to the maintainer — each needs a documented decision:
 |---|---|---|---|
 | 1 | ✅ Freeze guard (baseline test) + datasource contract declared final + ADR-001 note (A-1) | M | the core v1.0 promise |
 | 2 | agent/proto into release-please + first tags + drop replaces + server distribution decision (A-2) | M | fleet leg standalone |
-| 3 | `orbit.Config` review + docs sweep (A-3 + A-4) | S–M | wiring surface honest |
+| 3 | ✅ `orbit.Config` review + docs sweep (A-3 + A-4) | S–M | wiring surface honest |
 | 4 | Waiver decisions (§B) + Release-As 1.0.0 + RC via the suite lane → **tag v1.0.0** | S | Quantum 1.0 |
 
 Each slice lands as its own PR; the suite's `orbit-lockstep` lane validates

@@ -12,17 +12,32 @@ stream.
 
 ## Wiring it into an app
 
+The agent owns its configuration type (`agent.ExtensionConfig`) — the
+framework carries no admin-specific config. Populate it directly (e.g. from
+your own config file) and pass it to `agent.NewExtension` together with the
+framework's state directory and your app's version string:
+
 ```go
 import (
+    "context"
+    "log"
+    "os"
+
     "github.com/jcsvwinston/nucleus/pkg/app"
     "github.com/jcsvwinston/orbit/agent"
 )
 
 func main() {
-    cfg := app.MustLoadConfig("nucleus.yml")
+    cfg, err := app.LoadConfig("nucleus.yml")
+    if err != nil {
+        log.Fatal(err)
+    }
     a, err := app.New(cfg,
         app.WithExtensions(
-            agent.NewExtension(cfg.AdminAgent, cfg.StateDir, "v0.1.0"),
+            agent.NewExtension(agent.ExtensionConfig{
+                Endpoints: []string{"https://admin.internal:9090"},
+                Token:     os.Getenv("NUCLEUS_ADMIN_TOKEN"),
+            }, cfg.StateDir, "v1.2.3"), // your app's version string
         ),
     )
     if err != nil {
@@ -34,17 +49,17 @@ func main() {
 }
 ```
 
-When `cfg.AdminAgent.Endpoints` is empty the extension is a **no-op** and the
+When `ExtensionConfig.Endpoints` is empty the extension is a **no-op** and the
 framework runs unchanged. When it is set, the agent starts in parallel with the
-framework's `Run`, and observability events flow through `pkg/observability`
-into the bidi stream.
+framework's `Run`, and observability events flow through the framework's
+`pkg/observability` bus into the bidi stream.
 
 ## Hot-path cost
 
 The agent never blocks the framework's request thread. Every producer-side path
 (the HTTP middleware, the SQL observer) starts with a single atomic load on
 `observability.Bus.HasSubscribers(kind)` and short-circuits when nobody is
-watching — about 0.25 ns when idle.
+watching.
 
 ## What's inside
 
