@@ -129,6 +129,24 @@ arrojó **una corrección** y tres encajes sin forzar:
   del catálogo es genérico por modelo (`quarkdatasource.Register[T]`), que
   monomorfiza el camino tipado en el cableado.
 
+## Congelación del contrato (2026-07-11, gate v1.0 §A-1)
+
+El momento que este ADR difería («se congelan en el v1.0 de Orbit») llegó: el
+contrato `datasource` queda **declarado final** con la forma validada por las
+dos implementaciones (adaptador Nucleus + `quarkdatasource`), incluidos los
+tres encajes documentados arriba (PK compuesta → read-only, absorción de
+`Nullable`, alias ignorado por el adaptador Quark).
+
+La promesa tiene maquinaria: `contracts/freeze_test.go` fija la superficie
+exportada de `orbit` (raíz) y `orbit/datasource` contra
+`contracts/baseline/api_exported_symbols.txt` (100 símbolos en la primera
+línea base). Quitar o renombrar un símbolo congelado rompe el test; una
+ampliación deliberada se rebaselinea con `ORBIT_UPDATE_CONTRACT_BASELINE=1
+go test ./contracts` y se revisa en el PR. El test corre en el lane
+`orbit-lockstep` de la suite (cubre `./orbit/...`).
+
+Cambios incompatibles a partir de v1.0 requieren un ADR sucesor y un major.
+
 ## Plan de adopción
 
 1. Añadir `internal/datasource` + `internal/datasource/nucleus`.
