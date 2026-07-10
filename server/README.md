@@ -65,3 +65,18 @@ cd admin/server && go test -race ./...
 * `nodes/registry_test.go`, `routing/eventbus_test.go`,
   `routing/snapshot_test.go` — table-driven unit coverage of the
   routing primitives.
+
+## Distribution
+
+Released as its own Go module with component tags (`server/vX.Y.Z`,
+via release-please). It is a deployable, not a library: the supported
+artifact is the `admin-server` binary, installable directly once the
+module resolves by tag:
+
+```bash
+go install github.com/jcsvwinston/orbit/server/cmd/admin-server@latest
+```
+
+or built from a checkout with `make build` (embeds the UI). Its Go API
+(`server.New`, config types) carries no compatibility promise — the
+frozen v1.0 surfaces of orbit are the root module and `datasource`.

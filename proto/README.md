@@ -45,3 +45,10 @@ yet. The npm packages in `admin/ui/package.json` track the same line
 When the v2 plugin lands on the registry, this is a 3-line change here
 plus a single `npm install` in admin/ui — the API surfaces are stable
 and well-documented.
+
+## Distribution
+
+Released as its own Go module with component tags (`proto/vX.Y.Z`,
+via release-please) so the agent and the server can depend on the
+generated bindings by tag instead of intra-repo `replace` directives.
+Wire-compatibility rules live in `EVOLUTION.md`.

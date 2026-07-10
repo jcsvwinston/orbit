@@ -75,3 +75,15 @@ cd admin/agent && go test -race ./...
 Integration tests live in `agent_test.go` and `extension_test.go`. The
 in-process `testserver` fakes the admin server with enough fidelity to
 exercise reconnect, subscribe/unsubscribe, drain, and Goodbye paths.
+
+## Distribution
+
+Released as its own Go module with component tags (`agent/vX.Y.Z`,
+via release-please). Consumer apps add it with:
+
+```bash
+go get github.com/jcsvwinston/orbit/agent
+```
+
+Pre-1.0: the module version signals honestly that the agent's public
+surface may still change before its own v1.0.
