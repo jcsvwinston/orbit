@@ -46,7 +46,8 @@ single binary.
 
 ## Status
 
-The current tagged release is **v0.3.0**. Pre-1.0: the API may still change
-before v1.0.
+The current tagged release is **v1.0.0**. The public surfaces (the root
+module and `datasource`) are frozen for the life of v1.x — a contract-freeze
+test enforces it.
 
 Next: [Quick start](./quick-start.md).

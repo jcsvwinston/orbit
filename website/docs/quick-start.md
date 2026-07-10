@@ -12,7 +12,7 @@ Orbit mounts on the application builder as a Nucleus module. Add the dependency:
 go get github.com/jcsvwinston/orbit@latest
 ```
 
-The current tagged release is v0.3.0; pin `@v0.3.0` for reproducible builds.
+The current tagged release is v1.0.0; pin `@v1.0.0` for reproducible builds.
 
 ## Mount it
 

@@ -1,6 +1,6 @@
 # v1.0 Gate — what an honest tag still requires
 
-> **Date:** 2026-07-10 · **Current version:** v0.3.0
+> **Date:** 2026-07-10 · **Outcome:** v1.0.0 tagged 2026-07-10 (gate closed)
 > **Origin:** Quantum suite Fase 5 ([QADR-0005](https://github.com/jcsvwinston/quantum/blob/main/docs/adr/QADR-0005-secuenciacion-convergencia.md)):
 > orbit converges to v1.0 in lockstep, consuming nucleus v1.0.0 — the frozen,
 > promised surface. Nucleus tagged its major 2026-07-10; the repin landed the
