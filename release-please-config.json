@@ -69,13 +69,32 @@
       "package-name": "github.com/jcsvwinston/orbit/quarkbridge",
       "release-type": "go",
       "component": "quarkbridge",
-      "include-component-in-tag": true,
-      "release-as": "0.1.0"
+      "include-component-in-tag": true
     },
     "quarkdatasource": {
       "package-name": "github.com/jcsvwinston/orbit/quarkdatasource",
       "release-type": "go",
       "component": "quarkdatasource",
+      "include-component-in-tag": true
+    },
+    "proto": {
+      "package-name": "github.com/jcsvwinston/orbit/proto",
+      "release-type": "go",
+      "component": "proto",
+      "include-component-in-tag": true,
+      "release-as": "0.1.0"
+    },
+    "agent": {
+      "package-name": "github.com/jcsvwinston/orbit/agent",
+      "release-type": "go",
+      "component": "agent",
+      "include-component-in-tag": true,
+      "release-as": "0.1.0"
+    },
+    "server": {
+      "package-name": "github.com/jcsvwinston/orbit/server",
+      "release-type": "go",
+      "component": "server",
       "include-component-in-tag": true,
       "release-as": "0.1.0"
     }
