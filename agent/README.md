@@ -1,22 +1,37 @@
-# admin/agent
+# orbit/agent
 
 The Nucleus admin observability agent. Embeds in every framework
-process and ships events to a standalone admin server over a single
-Connect-RPC bidi stream.
+process and ships events to a standalone admin server (`../server`)
+over a single Connect-RPC bidi stream.
 
 ## Wiring into a Nucleus app
 
+The agent owns its configuration type (`ExtensionConfig`) — the
+framework carries no admin-specific config. Populate it directly and
+pass it to `NewExtension` with the framework's state directory and
+your app's version string:
+
 ```go
 import (
+    "context"
+    "log"
+    "os"
+
     "github.com/jcsvwinston/nucleus/pkg/app"
-    "github.com/jcsvwinston/nucleus/admin/agent"
+    "github.com/jcsvwinston/orbit/agent"
 )
 
 func main() {
-    cfg := app.MustLoadConfig("nucleus.yml")
+    cfg, err := app.LoadConfig("nucleus.yml")
+    if err != nil {
+        log.Fatal(err)
+    }
     a, err := app.New(cfg,
         app.WithExtensions(
-            agent.NewExtension(cfg.AdminAgent, cfg.StateDir, "v0.7.0"),
+            agent.NewExtension(agent.ExtensionConfig{
+                Endpoints: []string{"https://admin.internal:9090"},
+                Token:     os.Getenv("NUCLEUS_ADMIN_TOKEN"),
+            }, cfg.StateDir, "v1.2.3"), // your app's version string
         ),
     )
     if err != nil {
@@ -28,12 +43,13 @@ func main() {
 }
 ```
 
-When `cfg.AdminAgent.Endpoints` is empty, the extension is a no-op and
+When `ExtensionConfig.Endpoints` is empty, the extension is a no-op and
 the framework runs unchanged. When it is set, the agent starts in
 parallel with the framework's `Run`; observability events flow through
-`pkg/observability` into the bidi stream.
+the framework's `pkg/observability` bus into the bidi stream.
 
-See `admin/README.md` for the configuration reference.
+The full configuration surface is the godoc of `ExtensionConfig`
+(`extension_config.go`).
 
 ## Layered structure
 
@@ -54,7 +70,6 @@ The top-level `Agent` (`agent.go`) composes everything and exposes:
 * `Run(ctx)` — blocks until ctx cancels; reconnect loop with backoff.
 * `NodeID()` — the resolved identifier.
 * `Connected()` — channel closed on first successful stream open.
-  Used by `NewExtension(...).Attach` when `RequireConnection` is true.
 * `Metrics()` — the Prometheus registry, in case the host wants to
   serve `/metrics` from its own port.
 
@@ -63,13 +78,12 @@ The top-level `Agent` (`agent.go`) composes everything and exposes:
 The agent never blocks the framework's request thread. Every public
 producer-side path (the HTTP middleware, the SQL observer) starts with
 a single atomic load on `pkg/observability.Bus.HasSubscribers(kind)`
-and short-circuits when nobody is watching. See `admin/BENCHMARKS.md`
-for the measured cost (≈ 0.25 ns idle).
+and short-circuits when nobody is watching.
 
 ## Tests
 
 ```bash
-cd admin/agent && go test -race ./...
+cd agent && go test -race ./...
 ```
 
 Integration tests live in `agent_test.go` and `extension_test.go`. The

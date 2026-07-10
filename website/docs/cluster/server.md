@@ -13,7 +13,8 @@ API. Many [agents](./agent.md) stream to one server.
 ## Run it
 
 ```bash
-make build              # builds bin/admin-server with the UI embedded
+# from the server module (the UI bundle is embedded via go:embed)
+cd server && go build -o bin/admin-server ./cmd/admin-server
 ./bin/admin-server      # defaults: agents on :9090, UI on :8080
 ```
 
@@ -46,7 +47,9 @@ flag has a `NUCLEUS_ADMIN_*` env-var counterpart.
 
 ## Operational notes
 
-- `/metrics` is available when `--metrics-addr` is set (not exposed by default).
+- `/metrics` is not exposed by the `admin-server` binary today: the Go API
+  (`server.Config.MetricsAddr`) supports a metrics listener, but the CLI has
+  no flag for it yet.
 - Structured logging via `slog`, JSON or text.
 - **Per-stream events are never persisted.** The replay buffer is in-memory and
   bounded.

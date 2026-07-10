@@ -13,7 +13,8 @@ The Connect-RPC v1 contract between the [agent](./agent.md), the
 ## Generated outputs
 
 Both targets are committed, so a fresh checkout compiles without `buf`
-installed; CI verifies that regeneration produces no diff.
+installed. Regeneration is a manual discipline (`make proto` after any
+`.proto` change) — there is no CI lane verifying a clean diff today.
 
 - `gen/go/nucleus/admin/v1/` — Go message structs and Connect-RPC service stubs,
   imported by [`orbit/agent`](./agent.md) and [`orbit/server`](./server.md).

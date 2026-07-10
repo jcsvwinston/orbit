@@ -9,15 +9,17 @@ description: Mount Orbit on a Nucleus app and sign in.
 Orbit mounts on the application builder as a Nucleus module. Add the dependency:
 
 ```bash
-go get github.com/jcsvwinston/orbit@v0.1.0
+go get github.com/jcsvwinston/orbit@latest
 ```
 
-`@latest` resolves to v0.1.0; pin `@v0.1.0` for reproducible builds.
+The current tagged release is v0.3.0; pin `@v0.3.0` for reproducible builds.
 
 ## Mount it
 
 ```go
 import (
+    "os"
+
     "github.com/jcsvwinston/nucleus/pkg/nucleus"
     "github.com/jcsvwinston/orbit"
 )
@@ -30,8 +32,9 @@ func main() {
             Title:             "Acme Admin",
             BootstrapUsername: "admin",
             BootstrapEmail:    "admin@acme.test",
-            // BootstrapPassword empty → a random one is generated and printed
-            // to stderr once on first boot. Capture it and rotate.
+            // When BootstrapPassword is empty, bootstrapping is skipped —
+            // provision the admin user another way (e.g. nucleus createuser).
+            BootstrapPassword: os.Getenv("ADMIN_BOOTSTRAP_PASSWORD"),
         })).
         Build()
     if err != nil {
@@ -54,8 +57,9 @@ with sensible defaults:
 .Mount(orbit.Module(orbit.Config{}))
 ```
 
-When `BootstrapPassword` is empty, Orbit generates a random password and prints
-it to stderr **once** on first boot. Capture it from the logs and rotate it.
+When `BootstrapPassword` is empty, bootstrapping is **skipped** — no admin user
+is created. Provision one another way (e.g. the framework's `nucleus createuser`
+command against the same database) before signing in.
 
 See [Configuration](./configuration.md) for every option, or
 [How it works](./how-it-works.md) for the runtime model.

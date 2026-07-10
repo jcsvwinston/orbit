@@ -1,4 +1,4 @@
-# admin/server
+# orbit/server
 
 Standalone Nucleus admin observability server. Accepts agent
 connections (`AgentService.Stream`) and serves the admin web UI plus
@@ -7,7 +7,8 @@ its `ControlService` API.
 ## Run it
 
 ```bash
-make build              # builds bin/admin-server with the UI embedded
+# from this module (the UI bundle is embedded via go:embed)
+go build -o bin/admin-server ./cmd/admin-server
 ./bin/admin-server      # default flags: agents :9090, UI :8080
 
 # Production-flavoured invocation:
@@ -49,7 +50,9 @@ The top-level `Server` (`server.go`) composes everything:
 
 ## Observability of the observability server
 
-* `/metrics` (when `--metrics-addr` is set; not exposed by default).
+* `/metrics` is not exposed by the binary today: the Go API
+  (`Config.MetricsAddr`) supports a metrics listener, but the CLI has
+  no flag for it yet.
 * Structured logging via `slog`. JSON or text format.
 * Per-stream events are NEVER persisted. The replay buffer is in-memory
   and bounded.
@@ -57,7 +60,7 @@ The top-level `Server` (`server.go`) composes everything:
 ## Tests
 
 ```bash
-cd admin/server && go test -race ./...
+cd server && go test -race ./...
 ```
 
 * `server_integration_test.go` — full agent-server-UI happy paths and
@@ -77,6 +80,7 @@ module resolves by tag:
 go install github.com/jcsvwinston/orbit/server/cmd/admin-server@latest
 ```
 
-or built from a checkout with `make build` (embeds the UI). Its Go API
-(`server.New`, config types) carries no compatibility promise — the
-frozen v1.0 surfaces of orbit are the root module and `datasource`.
+or built from a checkout as shown above (the UI bundle is embedded via
+`go:embed`). Its Go API (`server.New`, config types) carries no
+compatibility promise — the frozen v1.0 surfaces of orbit are the root
+module and `datasource`.
