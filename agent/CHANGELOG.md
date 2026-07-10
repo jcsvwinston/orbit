@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.0](https://github.com/jcsvwinston/orbit/compare/agent/v0.1.0...agent/v0.2.0) (2026-07-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **fleet:** none for consumers — this is what makes the modules consumable outside the repo in the first place; the marker records the dependency-graph shift from replace-wiring to tags.
+
+### Fixed
+
+* **fleet:** drop the intra-repo replace directives — agent and server resolve by tags (gate A-2) ([#27](https://github.com/jcsvwinston/orbit/issues/27)) ([8b4d516](https://github.com/jcsvwinston/orbit/commit/8b4d5163dab6e2b1dc9d5041a383c3fe91b92c34))
+
 ## 0.1.0 (2026-07-10)
 
 
