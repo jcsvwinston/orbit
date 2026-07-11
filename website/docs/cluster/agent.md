@@ -66,5 +66,8 @@ watching.
 The agent is layered: node-identity resolution, event conversion and sampling, a
 drop-oldest ring buffer for brief disconnects, an endpoint-failover dialer with
 exponential backoff, the bidi stream lifecycle (registration, recv/send/heartbeat,
-replay on reconnect), and `admin_agent_*` Prometheus collectors. The top-level
-`Agent` exposes `New`, `Run`, `NodeID`, `Connected`, and `Metrics`.
+replay on reconnect), `admin_agent_*` Prometheus collectors, and the read-only
+RBAC snapshot handler behind the fleet UI's Access control screen — wired
+automatically from the application's authorizer when the extension attaches
+(no extra configuration). The top-level `Agent` exposes `New`, `Run`,
+`NodeID`, `Connected`, and `Metrics`.
