@@ -2,7 +2,7 @@
   ".": "1.0.0",
   "quarkbridge": "0.2.0",
   "quarkdatasource": "0.2.0",
-  "proto": "0.1.0",
+  "proto": "0.1.1",
   "agent": "0.2.0",
   "server": "0.3.0"
 }
