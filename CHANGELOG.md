@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.0](https://github.com/jcsvwinston/orbit/compare/v1.0.0...v1.1.0) (2026-07-11)
+
+
+### Added
+
+* **server:** opt-in Prometheus /metrics listener + honest --version from build info ([#33](https://github.com/jcsvwinston/orbit/issues/33)) ([4e77621](https://github.com/jcsvwinston/orbit/commit/4e776212d58d8508151553dec21869d088c0de4e))
+
+
+### Fixed
+
+* pin toolchain go1.26.5 across all six modules (GO-2026-5856) ([#36](https://github.com/jcsvwinston/orbit/issues/36)) ([7f79f96](https://github.com/jcsvwinston/orbit/commit/7f79f9667d096ac561d5eb28ac1ade17359691cf))
+
 ## [1.0.0](https://github.com/jcsvwinston/orbit/compare/v0.3.0...v1.0.0) (2026-07-10)
 
 
