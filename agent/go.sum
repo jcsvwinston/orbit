@@ -182,8 +182,8 @@ github.com/jackc/puddle/v2 v2.2.2 h1:PR8nw+E/1w0GLuRFSmiioY6UooMp6KJv0/61nB7icHo
 github.com/jackc/puddle/v2 v2.2.2/go.mod h1:vriiEXHvEE654aYKXXjOvZM39qJ0q+azkZFrfEOc3H4=
 github.com/jcsvwinston/nucleus v1.1.0 h1:d9P6+7GMhCrsWJbV2gjyEPjypnCddIAwnRH3psbruJs=
 github.com/jcsvwinston/nucleus v1.1.0/go.mod h1:vA+pd56Fz60WYsDCdIeDZb0c2SsCty8XKqpYDZlCUos=
-github.com/jcsvwinston/orbit/proto v0.2.0 h1:A0z+IlDiRYavr27OXMeBhEq2fcKzfFtzUqqmcQ/D+bk=
-github.com/jcsvwinston/orbit/proto v0.2.0/go.mod h1:h5DGWGHKG8wFOwBe43HFFhJXWgfyls7li9XS8olcQto=
+github.com/jcsvwinston/orbit/proto v0.3.0 h1:9KgsPIGrcGBiJczbkGhGIzKt8g/IIKBr4UZp8fZz6aI=
+github.com/jcsvwinston/orbit/proto v0.3.0/go.mod h1:h5DGWGHKG8wFOwBe43HFFhJXWgfyls7li9XS8olcQto=
 github.com/klauspost/compress v1.18.2 h1:iiPHWW0YrcFgpBYhsA6D1+fqHssJscY/Tm/y2Uqnapk=
 github.com/klauspost/compress v1.18.2/go.mod h1:R0h/fSBs8DE4ENlcrlib3PsXS61voFxhIs2DeRhCvJ4=
 github.com/klauspost/cpuid/v2 v2.0.1/go.mod h1:FInQzS24/EEf25PyTYn52gqo7WaD8xa0213Md/qVLRg=
