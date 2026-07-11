@@ -1034,6 +1034,12 @@ export class Command extends Message<Command> {
      */
     value: DataStudioRequest;
     case: "dataStudio";
+  } | {
+    /**
+     * @generated from field: nucleus.admin.v1.RbacRequest rbac = 6;
+     */
+    value: RbacRequest;
+    case: "rbac";
   } | { case: undefined; value?: undefined } = { case: undefined };
 
   constructor(data?: PartialMessage<Command>) {
@@ -1049,6 +1055,7 @@ export class Command extends Message<Command> {
     { no: 3, name: "snapshot_request", kind: "message", T: SnapshotRequest, oneof: "body" },
     { no: 4, name: "goodbye", kind: "message", T: Goodbye, oneof: "body" },
     { no: 5, name: "data_studio", kind: "message", T: DataStudioRequest, oneof: "body" },
+    { no: 6, name: "rbac", kind: "message", T: RbacRequest, oneof: "body" },
   ]);
 
   static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): Command {
@@ -1121,6 +1128,12 @@ export class Frame extends Message<Frame> {
      */
     value: DataStudioResponse;
     case: "dataStudioResponse";
+  } | {
+    /**
+     * @generated from field: nucleus.admin.v1.RbacResponse rbac_response = 8;
+     */
+    value: RbacResponse;
+    case: "rbacResponse";
   } | { case: undefined; value?: undefined } = { case: undefined };
 
   constructor(data?: PartialMessage<Frame>) {
@@ -1138,6 +1151,7 @@ export class Frame extends Message<Frame> {
     { no: 5, name: "snapshot_response", kind: "message", T: SnapshotResponse, oneof: "body" },
     { no: 6, name: "goodbye", kind: "message", T: Goodbye, oneof: "body" },
     { no: 7, name: "data_studio_response", kind: "message", T: DataStudioResponse, oneof: "body" },
+    { no: 8, name: "rbac_response", kind: "message", T: RbacResponse, oneof: "body" },
   ]);
 
   static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): Frame {
@@ -2769,6 +2783,439 @@ export class DataStudioResponse extends Message<DataStudioResponse> {
 
   static equals(a: DataStudioResponse | PlainMessage<DataStudioResponse> | undefined, b: DataStudioResponse | PlainMessage<DataStudioResponse> | undefined): boolean {
     return proto3.util.equals(DataStudioResponse, a, b);
+  }
+}
+
+/**
+ * RbacRequest asks a connected agent for a point-in-time snapshot of the
+ * application's Casbin roles and policies (read-only; the app's authorizer
+ * stays the single writer). Travels server -> agent inside Command.
+ *
+ * @generated from message nucleus.admin.v1.RbacRequest
+ */
+export class RbacRequest extends Message<RbacRequest> {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId = "";
+
+  constructor(data?: PartialMessage<RbacRequest>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "nucleus.admin.v1.RbacRequest";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "request_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): RbacRequest {
+    return new RbacRequest().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): RbacRequest {
+    return new RbacRequest().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): RbacRequest {
+    return new RbacRequest().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: RbacRequest | PlainMessage<RbacRequest> | undefined, b: RbacRequest | PlainMessage<RbacRequest> | undefined): boolean {
+    return proto3.util.equals(RbacRequest, a, b);
+  }
+}
+
+/**
+ * @generated from message nucleus.admin.v1.RbacRole
+ */
+export class RbacRole extends Message<RbacRole> {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name = "";
+
+  /**
+   * Number of subjects with a grouping rule onto this role.
+   *
+   * @generated from field: int32 members = 2;
+   */
+  members = 0;
+
+  constructor(data?: PartialMessage<RbacRole>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "nucleus.admin.v1.RbacRole";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "members", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): RbacRole {
+    return new RbacRole().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): RbacRole {
+    return new RbacRole().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): RbacRole {
+    return new RbacRole().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: RbacRole | PlainMessage<RbacRole> | undefined, b: RbacRole | PlainMessage<RbacRole> | undefined): boolean {
+    return proto3.util.equals(RbacRole, a, b);
+  }
+}
+
+/**
+ * @generated from message nucleus.admin.v1.RbacPolicy
+ */
+export class RbacPolicy extends Message<RbacPolicy> {
+  /**
+   * @generated from field: string subject = 1;
+   */
+  subject = "";
+
+  /**
+   * @generated from field: string object = 2;
+   */
+  object = "";
+
+  /**
+   * @generated from field: string action = 3;
+   */
+  action = "";
+
+  /**
+   * "allow" unless the policy row carries an explicit deny effect.
+   *
+   * @generated from field: string effect = 4;
+   */
+  effect = "";
+
+  constructor(data?: PartialMessage<RbacPolicy>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "nucleus.admin.v1.RbacPolicy";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "subject", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "object", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "action", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "effect", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): RbacPolicy {
+    return new RbacPolicy().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): RbacPolicy {
+    return new RbacPolicy().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): RbacPolicy {
+    return new RbacPolicy().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: RbacPolicy | PlainMessage<RbacPolicy> | undefined, b: RbacPolicy | PlainMessage<RbacPolicy> | undefined): boolean {
+    return proto3.util.equals(RbacPolicy, a, b);
+  }
+}
+
+/**
+ * RbacResponse travels agent -> server on the same Stream. error is
+ * non-empty when the snapshot failed; in that case the lists are empty.
+ *
+ * @generated from message nucleus.admin.v1.RbacResponse
+ */
+export class RbacResponse extends Message<RbacResponse> {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId = "";
+
+  /**
+   * @generated from field: string error = 2;
+   */
+  error = "";
+
+  /**
+   * @generated from field: repeated nucleus.admin.v1.RbacRole roles = 10;
+   */
+  roles: RbacRole[] = [];
+
+  /**
+   * @generated from field: repeated nucleus.admin.v1.RbacPolicy policies = 11;
+   */
+  policies: RbacPolicy[] = [];
+
+  constructor(data?: PartialMessage<RbacResponse>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "nucleus.admin.v1.RbacResponse";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "request_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "error", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 10, name: "roles", kind: "message", T: RbacRole, repeated: true },
+    { no: 11, name: "policies", kind: "message", T: RbacPolicy, repeated: true },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): RbacResponse {
+    return new RbacResponse().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): RbacResponse {
+    return new RbacResponse().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): RbacResponse {
+    return new RbacResponse().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: RbacResponse | PlainMessage<RbacResponse> | undefined, b: RbacResponse | PlainMessage<RbacResponse> | undefined): boolean {
+    return proto3.util.equals(RbacResponse, a, b);
+  }
+}
+
+/**
+ * GetRbacRequest addresses one connected agent, like Data Studio does.
+ *
+ * @generated from message nucleus.admin.v1.GetRbacRequest
+ */
+export class GetRbacRequest extends Message<GetRbacRequest> {
+  /**
+   * @generated from field: string node_id = 1;
+   */
+  nodeId = "";
+
+  constructor(data?: PartialMessage<GetRbacRequest>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "nucleus.admin.v1.GetRbacRequest";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "node_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetRbacRequest {
+    return new GetRbacRequest().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetRbacRequest {
+    return new GetRbacRequest().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetRbacRequest {
+    return new GetRbacRequest().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: GetRbacRequest | PlainMessage<GetRbacRequest> | undefined, b: GetRbacRequest | PlainMessage<GetRbacRequest> | undefined): boolean {
+    return proto3.util.equals(GetRbacRequest, a, b);
+  }
+}
+
+/**
+ * @generated from message nucleus.admin.v1.GetRbacResponse
+ */
+export class GetRbacResponse extends Message<GetRbacResponse> {
+  /**
+   * @generated from field: repeated nucleus.admin.v1.RbacRole roles = 1;
+   */
+  roles: RbacRole[] = [];
+
+  /**
+   * @generated from field: repeated nucleus.admin.v1.RbacPolicy policies = 2;
+   */
+  policies: RbacPolicy[] = [];
+
+  constructor(data?: PartialMessage<GetRbacResponse>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "nucleus.admin.v1.GetRbacResponse";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "roles", kind: "message", T: RbacRole, repeated: true },
+    { no: 2, name: "policies", kind: "message", T: RbacPolicy, repeated: true },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetRbacResponse {
+    return new GetRbacResponse().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetRbacResponse {
+    return new GetRbacResponse().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetRbacResponse {
+    return new GetRbacResponse().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: GetRbacResponse | PlainMessage<GetRbacResponse> | undefined, b: GetRbacResponse | PlainMessage<GetRbacResponse> | undefined): boolean {
+    return proto3.util.equals(GetRbacResponse, a, b);
+  }
+}
+
+/**
+ * AuditEntry is one fleet-plane action: something an operator did THROUGH
+ * the admin server (Data Studio mutations, and future manage actions).
+ * Per-app admin actions stay in each node's in-process Orbit audit ring;
+ * this log covers the fleet plane the server itself routes.
+ *
+ * @generated from message nucleus.admin.v1.AuditEntry
+ */
+export class AuditEntry extends Message<AuditEntry> {
+  /**
+   * @generated from field: google.protobuf.Timestamp time = 1;
+   */
+  time?: Timestamp;
+
+  /**
+   * Operator identity as resolved by the UI auth chain.
+   *
+   * @generated from field: string actor = 2;
+   */
+  actor = "";
+
+  /**
+   * e.g. "datastudio.create", "datastudio.delete", "datastudio.bulk".
+   *
+   * @generated from field: string action = 3;
+   */
+  action = "";
+
+  /**
+   * Human-readable target, e.g. "Article #42 (default)".
+   *
+   * @generated from field: string target = 4;
+   */
+  target = "";
+
+  /**
+   * Agent the action was routed to.
+   *
+   * @generated from field: string node_id = 5;
+   */
+  nodeId = "";
+
+  constructor(data?: PartialMessage<AuditEntry>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "nucleus.admin.v1.AuditEntry";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "time", kind: "message", T: Timestamp },
+    { no: 2, name: "actor", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "action", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "target", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "node_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): AuditEntry {
+    return new AuditEntry().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): AuditEntry {
+    return new AuditEntry().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): AuditEntry {
+    return new AuditEntry().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: AuditEntry | PlainMessage<AuditEntry> | undefined, b: AuditEntry | PlainMessage<AuditEntry> | undefined): boolean {
+    return proto3.util.equals(AuditEntry, a, b);
+  }
+}
+
+/**
+ * @generated from message nucleus.admin.v1.ListAuditRequest
+ */
+export class ListAuditRequest extends Message<ListAuditRequest> {
+  /**
+   * Maximum entries to return, newest first. 0 means the server default.
+   *
+   * @generated from field: int32 limit = 1;
+   */
+  limit = 0;
+
+  constructor(data?: PartialMessage<ListAuditRequest>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "nucleus.admin.v1.ListAuditRequest";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "limit", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListAuditRequest {
+    return new ListAuditRequest().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListAuditRequest {
+    return new ListAuditRequest().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListAuditRequest {
+    return new ListAuditRequest().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: ListAuditRequest | PlainMessage<ListAuditRequest> | undefined, b: ListAuditRequest | PlainMessage<ListAuditRequest> | undefined): boolean {
+    return proto3.util.equals(ListAuditRequest, a, b);
+  }
+}
+
+/**
+ * @generated from message nucleus.admin.v1.ListAuditResponse
+ */
+export class ListAuditResponse extends Message<ListAuditResponse> {
+  /**
+   * @generated from field: repeated nucleus.admin.v1.AuditEntry entries = 1;
+   */
+  entries: AuditEntry[] = [];
+
+  constructor(data?: PartialMessage<ListAuditResponse>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "nucleus.admin.v1.ListAuditResponse";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "entries", kind: "message", T: AuditEntry, repeated: true },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListAuditResponse {
+    return new ListAuditResponse().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListAuditResponse {
+    return new ListAuditResponse().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListAuditResponse {
+    return new ListAuditResponse().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: ListAuditResponse | PlainMessage<ListAuditResponse> | undefined, b: ListAuditResponse | PlainMessage<ListAuditResponse> | undefined): boolean {
+    return proto3.util.equals(ListAuditResponse, a, b);
   }
 }
 

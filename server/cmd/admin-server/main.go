@@ -5,15 +5,15 @@
 //
 // Configuration sources, in order of precedence:
 //
-//   1. Command-line flags
-//   2. Environment variables (NUCLEUS_ADMIN_*)
-//   3. Built-in defaults (see admin/server.Config.withDefaults)
+//  1. Command-line flags
+//  2. Environment variables (NUCLEUS_ADMIN_*)
+//  3. Built-in defaults (see admin/server.Config.withDefaults)
 //
 // Two listeners run by default:
 //
-//   * --agent-addr (default :9090) — h2c by default; mTLS when --agent-cert
+//   - --agent-addr (default :9090) — h2c by default; mTLS when --agent-cert
 //     and --agent-key are supplied.
-//   * --ui-addr (default :8080) — h2c + embedded UI; trusted-proxy headers
+//   - --ui-addr (default :8080) — h2c + embedded UI; trusted-proxy headers
 //     and bearer fallback per --ui-* flags.
 //
 // A third, opt-in listener serves Prometheus /metrics (+/healthz) when

@@ -37,6 +37,8 @@ const (
 	ControlServiceName = "nucleus.admin.v1.ControlService"
 	// DataStudioServiceName is the fully-qualified name of the DataStudioService service.
 	DataStudioServiceName = "nucleus.admin.v1.DataStudioService"
+	// ManageServiceName is the fully-qualified name of the ManageService service.
+	ManageServiceName = "nucleus.admin.v1.ManageService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -82,6 +84,10 @@ const (
 	// DataStudioServiceBulkActionProcedure is the fully-qualified name of the DataStudioService's
 	// BulkAction RPC.
 	DataStudioServiceBulkActionProcedure = "/nucleus.admin.v1.DataStudioService/BulkAction"
+	// ManageServiceGetRbacProcedure is the fully-qualified name of the ManageService's GetRbac RPC.
+	ManageServiceGetRbacProcedure = "/nucleus.admin.v1.ManageService/GetRbac"
+	// ManageServiceListAuditProcedure is the fully-qualified name of the ManageService's ListAudit RPC.
+	ManageServiceListAuditProcedure = "/nucleus.admin.v1.ManageService/ListAudit"
 )
 
 // AgentServiceClient is a client for the nucleus.admin.v1.AgentService service.
@@ -526,4 +532,100 @@ func (UnimplementedDataStudioServiceHandler) DeleteRecord(context.Context, *conn
 
 func (UnimplementedDataStudioServiceHandler) BulkAction(context.Context, *connect.Request[v1.BulkActionRequest]) (*connect.Response[v1.BulkActionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nucleus.admin.v1.DataStudioService.BulkAction is not implemented"))
+}
+
+// ManageServiceClient is a client for the nucleus.admin.v1.ManageService service.
+type ManageServiceClient interface {
+	GetRbac(context.Context, *connect.Request[v1.GetRbacRequest]) (*connect.Response[v1.GetRbacResponse], error)
+	ListAudit(context.Context, *connect.Request[v1.ListAuditRequest]) (*connect.Response[v1.ListAuditResponse], error)
+}
+
+// NewManageServiceClient constructs a client for the nucleus.admin.v1.ManageService service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewManageServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) ManageServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	manageServiceMethods := v1.File_nucleus_admin_v1_admin_proto.Services().ByName("ManageService").Methods()
+	return &manageServiceClient{
+		getRbac: connect.NewClient[v1.GetRbacRequest, v1.GetRbacResponse](
+			httpClient,
+			baseURL+ManageServiceGetRbacProcedure,
+			connect.WithSchema(manageServiceMethods.ByName("GetRbac")),
+			connect.WithClientOptions(opts...),
+		),
+		listAudit: connect.NewClient[v1.ListAuditRequest, v1.ListAuditResponse](
+			httpClient,
+			baseURL+ManageServiceListAuditProcedure,
+			connect.WithSchema(manageServiceMethods.ByName("ListAudit")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// manageServiceClient implements ManageServiceClient.
+type manageServiceClient struct {
+	getRbac   *connect.Client[v1.GetRbacRequest, v1.GetRbacResponse]
+	listAudit *connect.Client[v1.ListAuditRequest, v1.ListAuditResponse]
+}
+
+// GetRbac calls nucleus.admin.v1.ManageService.GetRbac.
+func (c *manageServiceClient) GetRbac(ctx context.Context, req *connect.Request[v1.GetRbacRequest]) (*connect.Response[v1.GetRbacResponse], error) {
+	return c.getRbac.CallUnary(ctx, req)
+}
+
+// ListAudit calls nucleus.admin.v1.ManageService.ListAudit.
+func (c *manageServiceClient) ListAudit(ctx context.Context, req *connect.Request[v1.ListAuditRequest]) (*connect.Response[v1.ListAuditResponse], error) {
+	return c.listAudit.CallUnary(ctx, req)
+}
+
+// ManageServiceHandler is an implementation of the nucleus.admin.v1.ManageService service.
+type ManageServiceHandler interface {
+	GetRbac(context.Context, *connect.Request[v1.GetRbacRequest]) (*connect.Response[v1.GetRbacResponse], error)
+	ListAudit(context.Context, *connect.Request[v1.ListAuditRequest]) (*connect.Response[v1.ListAuditResponse], error)
+}
+
+// NewManageServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewManageServiceHandler(svc ManageServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	manageServiceMethods := v1.File_nucleus_admin_v1_admin_proto.Services().ByName("ManageService").Methods()
+	manageServiceGetRbacHandler := connect.NewUnaryHandler(
+		ManageServiceGetRbacProcedure,
+		svc.GetRbac,
+		connect.WithSchema(manageServiceMethods.ByName("GetRbac")),
+		connect.WithHandlerOptions(opts...),
+	)
+	manageServiceListAuditHandler := connect.NewUnaryHandler(
+		ManageServiceListAuditProcedure,
+		svc.ListAudit,
+		connect.WithSchema(manageServiceMethods.ByName("ListAudit")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/nucleus.admin.v1.ManageService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case ManageServiceGetRbacProcedure:
+			manageServiceGetRbacHandler.ServeHTTP(w, r)
+		case ManageServiceListAuditProcedure:
+			manageServiceListAuditHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedManageServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedManageServiceHandler struct{}
+
+func (UnimplementedManageServiceHandler) GetRbac(context.Context, *connect.Request[v1.GetRbacRequest]) (*connect.Response[v1.GetRbacResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nucleus.admin.v1.ManageService.GetRbac is not implemented"))
+}
+
+func (UnimplementedManageServiceHandler) ListAudit(context.Context, *connect.Request[v1.ListAuditRequest]) (*connect.Response[v1.ListAuditResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nucleus.admin.v1.ManageService.ListAudit is not implemented"))
 }

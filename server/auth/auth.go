@@ -83,7 +83,12 @@ func UIMiddleware(cfg UIConfig) func(http.Handler) http.Handler {
 			// 1) trusted-proxy header path
 			if from := remoteIP(r); from != nil && cidrsContain(trusted, from) {
 				if user := strings.TrimSpace(r.Header.Get(authHeader)); user != "" {
-					next.ServeHTTP(w, r)
+					id := Identity{
+						Subject: user,
+						Email:   strings.TrimSpace(r.Header.Get(emailHeader)),
+						Role:    "ui-operator",
+					}
+					next.ServeHTTP(w, r.WithContext(WithIdentity(r.Context(), id)))
 					return
 				}
 			}
@@ -91,7 +96,8 @@ func UIMiddleware(cfg UIConfig) func(http.Handler) http.Handler {
 			if bearer != "" {
 				got := bearerFromHeader(r)
 				if subtle.ConstantTimeCompare([]byte(got), []byte(bearer)) == 1 {
-					next.ServeHTTP(w, r)
+					id := Identity{Subject: "ui-bearer", Role: "ui-operator"}
+					next.ServeHTTP(w, r.WithContext(WithIdentity(r.Context(), id)))
 					return
 				}
 			}

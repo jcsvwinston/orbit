@@ -33,10 +33,12 @@ type State struct {
 	Replay         *routing.Replay
 	Snapshots      *routing.SnapshotRouter
 	DataStudio     *routing.DataStudioRouter
+	Rbac           *routing.RbacRouter
+	Audit          *routing.AuditRing
 	Logger         *slog.Logger
 	SendChanBuffer int
 	OnAgentSubMode func(*nodes.Entry, *routing.EventBus) // hook called whenever bus demand changes
-	HeartbeatGrace time.Duration                          // tolerance window for stale heartbeat reports
+	HeartbeatGrace time.Duration                         // tolerance window for stale heartbeat reports
 }
 
 // AgentService implements adminv1connect.AgentServiceHandler.
@@ -130,6 +132,10 @@ func (s *AgentService) Stream(ctx context.Context, stream *connect.BidiStream[ad
 		case *adminv1.Frame_DataStudioResponse:
 			if s.state.DataStudio != nil {
 				s.state.DataStudio.Resolve(body.DataStudioResponse)
+			}
+		case *adminv1.Frame_RbacResponse:
+			if s.state.Rbac != nil {
+				s.state.Rbac.Resolve(body.RbacResponse)
 			}
 		case *adminv1.Frame_Goodbye:
 			s.state.Logger.Info("admin agent client goodbye",

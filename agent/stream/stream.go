@@ -81,6 +81,18 @@ type Config struct {
 	// NodeRegistration so the admin server can route requests to the
 	// right agent.
 	DataStudio DataStudioDispatcher
+
+	// Rbac, when non-nil, enables the agent-side RBAC snapshot
+	// dispatcher (agent/rbac.Handler). The stream forwards RbacRequest
+	// commands to it and ships the RbacResponse back.
+	Rbac RbacDispatcher
+}
+
+// RbacDispatcher answers an RBAC snapshot request. Concrete
+// implementation lives in agent/rbac.Handler; the interface keeps
+// stream.go free of authz imports.
+type RbacDispatcher interface {
+	Dispatch(req *adminv1.RbacRequest) *adminv1.RbacResponse
 }
 
 func (c Config) withDefaults() Config {
@@ -373,7 +385,40 @@ func (s *Stream) handleCommand(cmd *adminv1.Command) {
 			"reason", body.Goodbye.GetReason())
 	case *adminv1.Command_DataStudio:
 		s.handleDataStudio(body.DataStudio)
+	case *adminv1.Command_Rbac:
+		s.handleRbac(body.Rbac)
 	}
+}
+
+// handleRbac snapshots the app's RBAC state and ships the response back.
+// Runs in its own goroutine so a slow authorizer never blocks recvLoop.
+func (s *Stream) handleRbac(req *adminv1.RbacRequest) {
+	if req == nil {
+		return
+	}
+	if s.cfg.Rbac == nil {
+		s.queueFrame(&adminv1.Frame{
+			Body: &adminv1.Frame_RbacResponse{
+				RbacResponse: &adminv1.RbacResponse{
+					RequestId: req.GetRequestId(),
+					Error:     "admin agent: rbac is not enabled on this node",
+				},
+			},
+		})
+		return
+	}
+	go func() {
+		resp := s.cfg.Rbac.Dispatch(req)
+		if resp == nil {
+			resp = &adminv1.RbacResponse{
+				RequestId: req.GetRequestId(),
+				Error:     "admin agent: rbac dispatcher returned no response",
+			}
+		}
+		s.queueFrame(&adminv1.Frame{
+			Body: &adminv1.Frame_RbacResponse{RbacResponse: resp},
+		})
+	}()
 }
 
 // handleDataStudio runs a Data Studio request on the agent and ships

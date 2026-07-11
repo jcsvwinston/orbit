@@ -9,6 +9,7 @@ import { createConnectTransport } from '@connectrpc/connect-web'
 import {
   ControlService,
   DataStudioService,
+  ManageService,
 } from '@/gen/nucleus/admin/v1/admin_connect.js'
 
 const transport = createConnectTransport({
@@ -19,3 +20,4 @@ const transport = createConnectTransport({
 
 export const controlClient = createPromiseClient(ControlService, transport)
 export const dataStudioClient = createPromiseClient(DataStudioService, transport)
+export const manageClient = createPromiseClient(ManageService, transport)

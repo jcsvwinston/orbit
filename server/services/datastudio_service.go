@@ -9,6 +9,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/jcsvwinston/orbit/server/auth"
 	"github.com/jcsvwinston/orbit/server/nodes"
 	"github.com/jcsvwinston/orbit/server/routing"
 
@@ -55,7 +56,7 @@ func (s *DataStudioService) ListModels(_ context.Context, req *connect.Request[a
 	}
 
 	wrapped := &adminv1.DataStudioRequest{Body: &adminv1.DataStudioRequest_ListModels{ListModels: body}}
-	resp, err := s.dispatch(body.GetNodeId(), "", wrapped)
+	resp, _, err := s.dispatch(body.GetNodeId(), "", wrapped)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +69,7 @@ func (s *DataStudioService) ListModels(_ context.Context, req *connect.Request[a
 func (s *DataStudioService) GetSchema(_ context.Context, req *connect.Request[adminv1.GetSchemaRequest]) (*connect.Response[adminv1.ModelSchema], error) {
 	body := req.Msg
 	wrapped := &adminv1.DataStudioRequest{Body: &adminv1.DataStudioRequest_GetSchema{GetSchema: body}}
-	resp, err := s.dispatch(body.GetNodeId(), body.GetModelName(), wrapped)
+	resp, _, err := s.dispatch(body.GetNodeId(), body.GetModelName(), wrapped)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +82,7 @@ func (s *DataStudioService) GetSchema(_ context.Context, req *connect.Request[ad
 func (s *DataStudioService) ListRecords(_ context.Context, req *connect.Request[adminv1.ListRecordsRequest]) (*connect.Response[adminv1.PaginatedRecords], error) {
 	body := req.Msg
 	wrapped := &adminv1.DataStudioRequest{Body: &adminv1.DataStudioRequest_ListRecords{ListRecords: body}}
-	resp, err := s.dispatch(body.GetNodeId(), body.GetModelName(), wrapped)
+	resp, _, err := s.dispatch(body.GetNodeId(), body.GetModelName(), wrapped)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +95,7 @@ func (s *DataStudioService) ListRecords(_ context.Context, req *connect.Request[
 func (s *DataStudioService) GetRecord(_ context.Context, req *connect.Request[adminv1.GetRecordRequest]) (*connect.Response[adminv1.Record], error) {
 	body := req.Msg
 	wrapped := &adminv1.DataStudioRequest{Body: &adminv1.DataStudioRequest_GetRecord{GetRecord: body}}
-	resp, err := s.dispatch(body.GetNodeId(), body.GetModelName(), wrapped)
+	resp, _, err := s.dispatch(body.GetNodeId(), body.GetModelName(), wrapped)
 	if err != nil {
 		return nil, err
 	}
@@ -104,53 +105,58 @@ func (s *DataStudioService) GetRecord(_ context.Context, req *connect.Request[ad
 	return nil, connect.NewError(connect.CodeNotFound, errors.New("admin server: record not found"))
 }
 
-func (s *DataStudioService) CreateRecord(_ context.Context, req *connect.Request[adminv1.CreateRecordRequest]) (*connect.Response[adminv1.Record], error) {
+func (s *DataStudioService) CreateRecord(ctx context.Context, req *connect.Request[adminv1.CreateRecordRequest]) (*connect.Response[adminv1.Record], error) {
 	body := req.Msg
 	wrapped := &adminv1.DataStudioRequest{Body: &adminv1.DataStudioRequest_CreateRecord{CreateRecord: body}}
-	resp, err := s.dispatch(body.GetNodeId(), body.GetModelName(), wrapped)
+	resp, node, err := s.dispatch(body.GetNodeId(), body.GetModelName(), wrapped)
 	if err != nil {
 		return nil, err
 	}
 	if rec := resp.GetRecord(); rec != nil {
+		s.audit(ctx, "datastudio.create", auditTarget(body.GetModelName(), recordID(rec), body.GetDatabaseAlias()), node)
 		return connect.NewResponse(rec), nil
 	}
 	return nil, connect.NewError(connect.CodeUnknown, errors.New("admin server: empty create response"))
 }
 
-func (s *DataStudioService) UpdateRecord(_ context.Context, req *connect.Request[adminv1.UpdateRecordRequest]) (*connect.Response[adminv1.Record], error) {
+func (s *DataStudioService) UpdateRecord(ctx context.Context, req *connect.Request[adminv1.UpdateRecordRequest]) (*connect.Response[adminv1.Record], error) {
 	body := req.Msg
 	wrapped := &adminv1.DataStudioRequest{Body: &adminv1.DataStudioRequest_UpdateRecord{UpdateRecord: body}}
-	resp, err := s.dispatch(body.GetNodeId(), body.GetModelName(), wrapped)
+	resp, node, err := s.dispatch(body.GetNodeId(), body.GetModelName(), wrapped)
 	if err != nil {
 		return nil, err
 	}
 	if rec := resp.GetRecord(); rec != nil {
+		s.audit(ctx, "datastudio.update", auditTarget(body.GetModelName(), body.GetId(), body.GetDatabaseAlias()), node)
 		return connect.NewResponse(rec), nil
 	}
 	return nil, connect.NewError(connect.CodeUnknown, errors.New("admin server: empty update response"))
 }
 
-func (s *DataStudioService) DeleteRecord(_ context.Context, req *connect.Request[adminv1.DeleteRecordRequest]) (*connect.Response[adminv1.DeleteRecordResponse], error) {
+func (s *DataStudioService) DeleteRecord(ctx context.Context, req *connect.Request[adminv1.DeleteRecordRequest]) (*connect.Response[adminv1.DeleteRecordResponse], error) {
 	body := req.Msg
 	wrapped := &adminv1.DataStudioRequest{Body: &adminv1.DataStudioRequest_DeleteRecord{DeleteRecord: body}}
-	resp, err := s.dispatch(body.GetNodeId(), body.GetModelName(), wrapped)
+	resp, node, err := s.dispatch(body.GetNodeId(), body.GetModelName(), wrapped)
 	if err != nil {
 		return nil, err
 	}
 	if del := resp.GetDeleteRecord(); del != nil {
+		s.audit(ctx, "datastudio.delete", auditTarget(body.GetModelName(), body.GetId(), body.GetDatabaseAlias()), node)
 		return connect.NewResponse(del), nil
 	}
 	return nil, connect.NewError(connect.CodeUnknown, errors.New("admin server: empty delete response"))
 }
 
-func (s *DataStudioService) BulkAction(_ context.Context, req *connect.Request[adminv1.BulkActionRequest]) (*connect.Response[adminv1.BulkActionResponse], error) {
+func (s *DataStudioService) BulkAction(ctx context.Context, req *connect.Request[adminv1.BulkActionRequest]) (*connect.Response[adminv1.BulkActionResponse], error) {
 	body := req.Msg
 	wrapped := &adminv1.DataStudioRequest{Body: &adminv1.DataStudioRequest_BulkAction{BulkAction: body}}
-	resp, err := s.dispatch(body.GetNodeId(), body.GetModelName(), wrapped)
+	resp, node, err := s.dispatch(body.GetNodeId(), body.GetModelName(), wrapped)
 	if err != nil {
 		return nil, err
 	}
 	if bulk := resp.GetBulkAction(); bulk != nil {
+		s.audit(ctx, "datastudio.bulk."+body.GetAction(),
+			fmt.Sprintf("%s ×%d (%s)", body.GetModelName(), len(body.GetIds()), aliasOrDefault(body.GetDatabaseAlias())), node)
 		return connect.NewResponse(bulk), nil
 	}
 	return nil, connect.NewError(connect.CodeUnknown, errors.New("admin server: empty bulk response"))
@@ -159,28 +165,28 @@ func (s *DataStudioService) BulkAction(_ context.Context, req *connect.Request[a
 // dispatch picks an agent, allocates a request_id, and sends the
 // pre-built request over the agent's bidi stream. Blocks on the
 // matching DataStudioResponse for at most s.Timeout.
-func (s *DataStudioService) dispatch(nodeID, modelName string, req *adminv1.DataStudioRequest) (*adminv1.DataStudioResponse, error) {
+func (s *DataStudioService) dispatch(nodeID, modelName string, req *adminv1.DataStudioRequest) (*adminv1.DataStudioResponse, string, error) {
 	if s == nil || s.state == nil {
-		return nil, connect.NewError(connect.CodeInternal, errors.New("admin server: state not initialized"))
+		return nil, "", connect.NewError(connect.CodeInternal, errors.New("admin server: state not initialized"))
 	}
 
 	entry, ok := s.pickAgent(nodeID, modelName)
 	if !ok {
 		if nodeID != "" {
-			return nil, connect.NewError(connect.CodeNotFound,
+			return nil, "", connect.NewError(connect.CodeNotFound,
 				fmt.Errorf("admin server: node %q is not connected", nodeID))
 		}
 		if modelName != "" {
-			return nil, connect.NewError(connect.CodeNotFound,
+			return nil, "", connect.NewError(connect.CodeNotFound,
 				fmt.Errorf("admin server: no connected agent registered model %q", modelName))
 		}
-		return nil, connect.NewError(connect.CodeUnavailable,
+		return nil, "", connect.NewError(connect.CodeUnavailable,
 			errors.New("admin server: no agents connected"))
 	}
 
 	id, ch, cancel, err := s.state.DataStudio.Begin()
 	if err != nil {
-		return nil, connect.NewError(connect.CodeResourceExhausted, err)
+		return nil, "", connect.NewError(connect.CodeResourceExhausted, err)
 	}
 	req.RequestId = id
 
@@ -193,21 +199,21 @@ func (s *DataStudioService) dispatch(nodeID, modelName string, req *adminv1.Data
 	}
 	if !nodes.TryEnqueue(entry, frame) {
 		cancel()
-		return nil, connect.NewError(connect.CodeUnavailable,
+		return nil, "", connect.NewError(connect.CodeUnavailable,
 			errors.New("admin server: agent send buffer full or stream closing"))
 	}
 
 	resp, err := routing.WaitDataStudio(ch, cancel, s.Timeout)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeDeadlineExceeded, err)
+		return nil, "", connect.NewError(connect.CodeDeadlineExceeded, err)
 	}
 	if resp == nil {
-		return nil, connect.NewError(connect.CodeUnavailable, errors.New("admin server: empty data studio response"))
+		return nil, "", connect.NewError(connect.CodeUnavailable, errors.New("admin server: empty data studio response"))
 	}
 	if resp.Error != "" {
-		return nil, connect.NewError(connect.CodeUnknown, errors.New(resp.Error))
+		return nil, "", connect.NewError(connect.CodeUnknown, errors.New(resp.Error))
 	}
-	return resp, nil
+	return resp, entry.NodeID, nil
 }
 
 // pickAgent returns the entry that should serve the request:
@@ -233,3 +239,48 @@ func (s *DataStudioService) pickAgent(nodeID, modelName string) (*nodes.Entry, b
 
 // Compile-time assertion.
 var _ adminv1connect.DataStudioServiceHandler = (*DataStudioService)(nil)
+
+// audit records a fleet-plane action in the server's audit ring,
+// attributed to the operator resolved by the UI auth chain.
+func (s *DataStudioService) audit(ctx context.Context, action, target, nodeID string) {
+	if s == nil || s.state == nil || s.state.Audit == nil {
+		return
+	}
+	actor := auth.IdentityFromContext(ctx).Subject
+	if actor == "" {
+		actor = "unknown"
+	}
+	s.state.Audit.Append(routing.AuditEntry{
+		Actor:  actor,
+		Action: action,
+		Target: target,
+		NodeID: nodeID,
+	})
+}
+
+// recordID extracts the record's id from its JSON value map ("" when
+// the agent's response carries none — the target stays model-level).
+func recordID(rec *adminv1.Record) string {
+	if rec == nil {
+		return ""
+	}
+	raw, ok := rec.GetValuesJson()["id"]
+	if !ok {
+		return ""
+	}
+	return strings.Trim(raw, `"`)
+}
+
+func auditTarget(model, id, alias string) string {
+	if id == "" {
+		return fmt.Sprintf("%s (%s)", model, aliasOrDefault(alias))
+	}
+	return fmt.Sprintf("%s #%s (%s)", model, id, aliasOrDefault(alias))
+}
+
+func aliasOrDefault(alias string) string {
+	if strings.TrimSpace(alias) == "" {
+		return "default"
+	}
+	return alias
+}
