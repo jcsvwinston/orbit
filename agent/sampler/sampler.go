@@ -43,9 +43,9 @@ const (
 // Sampler groups one filter and its sampling rates, behind an RWMutex so
 // the server-driven Subscribe can update it without tearing.
 type Sampler struct {
-	mu         sync.RWMutex
-	filter     *adminv1.Filter   // wire filter (full proto, including HTTP/SQL specifics)
-	rates      map[string]float32 // EventKind enum-name without prefix, e.g. "HTTP_REQUEST"
+	mu     sync.RWMutex
+	filter *adminv1.Filter    // wire filter (full proto, including HTTP/SQL specifics)
+	rates  map[string]float32 // EventKind enum-name without prefix, e.g. "HTTP_REQUEST"
 }
 
 // New constructs a Sampler with the given starting filter and rate map.

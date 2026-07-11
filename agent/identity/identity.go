@@ -2,9 +2,9 @@
 // server. It implements the resolution policy decided in the refactor plan
 // (decision 15):
 //
-//   1. UUIDv4 persisted at ${StateDir}/node_id. Stable across restarts.
-//   2. If the file cannot be read or written: fallback to
-//      "<hostname>-<random8>" and log a WARN.
+//  1. UUIDv4 persisted at ${StateDir}/node_id. Stable across restarts.
+//  2. If the file cannot be read or written: fallback to
+//     "<hostname>-<random8>" and log a WARN.
 //
 // Resolution is performed once at agent boot. The resulting NodeID is
 // constant for the lifetime of the process; the agent never re-reads the

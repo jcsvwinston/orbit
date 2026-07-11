@@ -479,6 +479,14 @@ export class SqlStatementEvent extends Message<SqlStatementEvent> {
    */
   userId = "";
 
+  /**
+   * Driver-reported row count for exec-style statements; 0 means "not
+   * reported" (SELECTs, drivers without support). Additive (W2).
+   *
+   * @generated from field: int64 rows_affected = 10;
+   */
+  rowsAffected = protoInt64.zero;
+
   constructor(data?: PartialMessage<SqlStatementEvent>) {
     super();
     proto3.util.initPartial(data, this);
@@ -496,6 +504,7 @@ export class SqlStatementEvent extends Message<SqlStatementEvent> {
     { no: 7, name: "request_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 8, name: "trace_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 9, name: "user_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 10, name: "rows_affected", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
   ]);
 
   static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): SqlStatementEvent {

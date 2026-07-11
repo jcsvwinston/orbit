@@ -23,14 +23,14 @@ import (
 type Metrics struct {
 	registry *prometheus.Registry
 
-	Connected         *prometheus.GaugeVec   // labels: endpoint
-	ReconnectsTotal   prometheus.Counter
-	EventsEmittedTotal *prometheus.CounterVec // labels: type
-	EventsDroppedTotal *prometheus.CounterVec // labels: type, reason
-	BufferSize         *prometheus.GaugeVec   // labels: type
+	Connected           *prometheus.GaugeVec // labels: endpoint
+	ReconnectsTotal     prometheus.Counter
+	EventsEmittedTotal  *prometheus.CounterVec // labels: type
+	EventsDroppedTotal  *prometheus.CounterVec // labels: type, reason
+	BufferSize          *prometheus.GaugeVec   // labels: type
 	ActiveSubscriptions prometheus.Gauge
-	HeartbeatsSent     prometheus.Counter
-	StreamErrorsTotal  *prometheus.CounterVec // labels: stage
+	HeartbeatsSent      prometheus.Counter
+	StreamErrorsTotal   *prometheus.CounterVec // labels: stage
 }
 
 // New returns a fully wired Metrics with all collectors registered in a

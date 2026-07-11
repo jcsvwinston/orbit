@@ -1,8 +1,8 @@
 package agent
 
 import (
-	"database/sql"
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -14,12 +14,12 @@ import (
 	"github.com/jcsvwinston/nucleus/pkg/observability"
 
 	"github.com/jcsvwinston/orbit/agent/buffer"
-	"github.com/jcsvwinston/orbit/agent/hostmetrics"
 	"github.com/jcsvwinston/orbit/agent/connection"
 	dstudio "github.com/jcsvwinston/orbit/agent/datastudio"
+	"github.com/jcsvwinston/orbit/agent/hostmetrics"
 	"github.com/jcsvwinston/orbit/agent/identity"
-	"github.com/jcsvwinston/orbit/agent/rbac"
 	"github.com/jcsvwinston/orbit/agent/metrics"
+	"github.com/jcsvwinston/orbit/agent/rbac"
 	"github.com/jcsvwinston/orbit/agent/stream"
 )
 

@@ -116,15 +116,15 @@ func TestResolve_UnwritableStateDir_Ephemeral(t *testing.T) {
 // TestLooksLikeNodeID covers the validity gate.
 func TestLooksLikeNodeID(t *testing.T) {
 	cases := map[string]bool{
-		"":                                       false,
-		"abc":                                    true,
-		"550e8400-e29b-41d4-a716-446655440000":   true,
-		"node-foo-bar":                           true,
-		"pod@host":                               true,
-		"region/us-east/host":                    true,
-		"hello world":                            false, // space
-		"oops\nnewline":                          false,
-		strings.Repeat("a", 257):                 false, // too long
+		"":                                     false,
+		"abc":                                  true,
+		"550e8400-e29b-41d4-a716-446655440000": true,
+		"node-foo-bar":                         true,
+		"pod@host":                             true,
+		"region/us-east/host":                  true,
+		"hello world":                          false, // space
+		"oops\nnewline":                        false,
+		strings.Repeat("a", 257):               false, // too long
 	}
 	for in, want := range cases {
 		if got := looksLikeNodeID(in); got != want {
