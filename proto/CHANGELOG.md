@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/jcsvwinston/orbit/compare/proto/v0.1.1...proto/v0.2.0) (2026-07-11)
+
+
+### Added
+
+* Access control and Audit log wired end-to-end — the W1 waiver lands (v1.2 arc) ([#42](https://github.com/jcsvwinston/orbit/issues/42)) ([8c600ce](https://github.com/jcsvwinston/orbit/commit/8c600ce2504b4514a2292002ea322b73ce809c55))
+
 ## [0.1.1](https://github.com/jcsvwinston/orbit/compare/proto/v0.1.0...proto/v0.1.1) (2026-07-11)
 
 
