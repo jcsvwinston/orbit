@@ -16,6 +16,9 @@
 //   * --ui-addr (default :8080) — h2c + embedded UI; trusted-proxy headers
 //     and bearer fallback per --ui-* flags.
 //
+// A third, opt-in listener serves Prometheus /metrics (+/healthz) when
+// --metrics-addr is set; empty (the default) disables it.
+//
 // Run "admin-server --help" for the full surface.
 package main
 
@@ -28,6 +31,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -59,6 +63,7 @@ func run(args []string) error {
 	uiKey := fs.String("ui-key", os.Getenv("NUCLEUS_ADMIN_UI_KEY"), "PEM key for UI listener")
 	logLevel := fs.String("log-level", envOr("NUCLEUS_ADMIN_LOG_LEVEL", "info"), "log level: debug | info | warn | error")
 	logFormat := fs.String("log-format", envOr("NUCLEUS_ADMIN_LOG_FORMAT", "json"), "log format: json | text")
+	metricsAddr := fs.String("metrics-addr", os.Getenv("NUCLEUS_ADMIN_METRICS_ADDR"), "address for the Prometheus /metrics (+/healthz) listener; empty disables it")
 	versionFlag := fs.Bool("version", false, "print build version and exit")
 
 	if err := fs.Parse(args); err != nil {
@@ -68,7 +73,16 @@ func run(args []string) error {
 		return err
 	}
 	if *versionFlag {
-		fmt.Println("nucleus-admin-server (phase 4)")
+		// The module version comes from build info: `go install
+		// …/admin-server@vX.Y.Z` stamps the real tag; source builds
+		// report "devel" honestly instead of a hardcoded label.
+		version := "devel"
+		if bi, ok := debug.ReadBuildInfo(); ok {
+			if v := bi.Main.Version; v != "" && v != "(devel)" {
+				version = v
+			}
+		}
+		fmt.Println("nucleus-admin-server " + version)
 		return nil
 	}
 
@@ -82,6 +96,7 @@ func run(args []string) error {
 		UIAuthHeader:        *uiAuthHeader,
 		UIEmailHeader:       *uiEmailHeader,
 		UITrustedProxyCIDRs: splitCSV(*uiTrustedCIDRs),
+		MetricsAddr:         strings.TrimSpace(*metricsAddr),
 		Logger:              logger,
 	}
 
@@ -108,6 +123,7 @@ func run(args []string) error {
 	logger.Info("admin-server boot",
 		"agent_addr", cfg.AgentAddr,
 		"ui_addr", cfg.UIAddr,
+		"metrics_addr", cfg.MetricsAddr,
 		"agent_token_set", cfg.AgentToken != "",
 		"ui_bearer_set", cfg.UIBearerToken != "",
 		"agent_tls", cfg.AgentTLS != nil,

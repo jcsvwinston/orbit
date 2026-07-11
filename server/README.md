@@ -50,9 +50,12 @@ The top-level `Server` (`server.go`) composes everything:
 
 ## Observability of the observability server
 
-* `/metrics` is not exposed by the binary today: the Go API
-  (`Config.MetricsAddr`) supports a metrics listener, but the CLI has
-  no flag for it yet.
+* `/metrics` is opt-in: `--metrics-addr` (env
+  `NUCLEUS_ADMIN_METRICS_ADDR`) runs a third listener serving the
+  Prometheus default registry (`go_*`/`process_*` collectors;
+  server-specific collectors are future work) plus `/healthz`.
+  Unauthenticated by design — bind it to a private interface. Empty
+  (the default) disables it.
 * Structured logging via `slog`. JSON or text format.
 * Per-stream events are NEVER persisted. The replay buffer is in-memory
   and bounded.

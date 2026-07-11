@@ -47,9 +47,11 @@ flag has a `NUCLEUS_ADMIN_*` env-var counterpart.
 
 ## Operational notes
 
-- `/metrics` is not exposed by the `admin-server` binary today: the Go API
-  (`server.Config.MetricsAddr`) supports a metrics listener, but the CLI has
-  no flag for it yet.
+- `/metrics` is opt-in: `--metrics-addr` (env `NUCLEUS_ADMIN_METRICS_ADDR`)
+  runs a third listener serving the Prometheus default registry
+  (`go_*`/`process_*` collectors; server-specific collectors are future
+  work) plus `/healthz`. Unauthenticated by design — bind it to a private
+  interface. Empty (the default) disables it.
 - Structured logging via `slog`, JSON or text.
 - **Per-stream events are never persisted.** The replay buffer is in-memory and
   bounded.

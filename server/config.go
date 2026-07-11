@@ -75,8 +75,11 @@ type Config struct {
 	// events see overflow drops. Default 256.
 	EventChannelSize int
 
-	// MetricsAddr, when non-empty, runs a /metrics + /healthz HTTP
-	// server on this address. Default ":9091".
+	// MetricsAddr, when non-empty, runs a third HTTP listener on this
+	// address serving Prometheus /metrics (the default registry: go_* and
+	// process_* collectors; server-specific collectors are future work)
+	// plus /healthz. Empty (the default) disables the listener — metrics
+	// are strictly opt-in.
 	MetricsAddr string
 
 	// Logger receives diagnostics. Pass nil for slog.Default.
@@ -117,9 +120,9 @@ func (c Config) withDefaults() Config {
 	if strings.TrimSpace(c.UIEmailHeader) == "" {
 		c.UIEmailHeader = "X-Auth-Email"
 	}
-	if strings.TrimSpace(c.MetricsAddr) == "" {
-		c.MetricsAddr = ":9091"
-	}
+	// MetricsAddr deliberately gets NO default: empty means disabled. (It
+	// used to be coerced to ":9091" while nothing consumed the field —
+	// dead config whose godoc claimed a listener that never ran.)
 	if c.Logger == nil {
 		c.Logger = slog.Default()
 	}
