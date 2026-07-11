@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 
@@ -38,13 +39,16 @@ type Server struct {
 
 	agentSrv *http.Server
 	uiSrv    *http.Server
+	// metricsSrv is nil unless Config.MetricsAddr opts in.
+	metricsSrv *http.Server
 
 	// listenersMu guards the listener fields. Run writes them once
 	// during boot; AgentAddr/UIAddr read them concurrently from test
 	// goroutines, so a small mutex is the simplest race-free interface.
-	listenersMu   sync.RWMutex
-	agentListener net.Listener
-	uiListener    net.Listener
+	listenersMu     sync.RWMutex
+	agentListener   net.Listener
+	uiListener      net.Listener
+	metricsListener net.Listener
 
 	logger *slog.Logger
 }
@@ -105,7 +109,32 @@ func New(cfg Config) *Server {
 	s.agentSrv = newH2CServer(agentRoot, cfg.AgentTLS)
 	s.uiSrv = newH2CServer(uiRoot, cfg.UITLS)
 
+	// Optional metrics listener (Config.MetricsAddr): Prometheus default
+	// registry (go_* and process_* collectors; server-specific collectors
+	// are future work) + /healthz. Unauthenticated by design — bind it to
+	// a private interface, like any metrics port.
+	if strings.TrimSpace(cfg.MetricsAddr) != "" {
+		metricsRoot := http.NewServeMux()
+		metricsRoot.HandleFunc("/healthz", healthOK)
+		metricsRoot.Handle("/metrics", promhttp.Handler())
+		s.metricsSrv = newH2CServer(metricsRoot, nil)
+	}
+
 	return s
+}
+
+// MetricsAddr returns the resolved metrics address (after Run has bound),
+// or "" when the metrics listener is disabled.
+func (s *Server) MetricsAddr() string {
+	if s == nil {
+		return ""
+	}
+	s.listenersMu.RLock()
+	defer s.listenersMu.RUnlock()
+	if s.metricsListener == nil {
+		return ""
+	}
+	return s.metricsListener.Addr().String()
 }
 
 // State returns the wired-up services.State. Useful for tests.
@@ -149,17 +178,28 @@ func (s *Server) Run(ctx context.Context) error {
 		_ = agentLn.Close()
 		return fmt.Errorf("admin server: listen ui %s: %w", s.cfg.UIAddr, err)
 	}
+	var metricsLn net.Listener
+	if s.metricsSrv != nil {
+		metricsLn, err = net.Listen("tcp", s.cfg.MetricsAddr)
+		if err != nil {
+			_ = agentLn.Close()
+			_ = uiLn.Close()
+			return fmt.Errorf("admin server: listen metrics %s: %w", s.cfg.MetricsAddr, err)
+		}
+	}
 
 	s.listenersMu.Lock()
 	s.agentListener = agentLn
 	s.uiListener = uiLn
+	s.metricsListener = metricsLn
 	s.listenersMu.Unlock()
 
 	s.logger.Info("admin server starting",
 		"agent_addr", agentLn.Addr(),
-		"ui_addr", uiLn.Addr())
+		"ui_addr", uiLn.Addr(),
+		"metrics_enabled", metricsLn != nil)
 
-	errCh := make(chan error, 2)
+	errCh := make(chan error, 3)
 	var wg sync.WaitGroup
 	wg.Add(2)
 
@@ -177,6 +217,16 @@ func (s *Server) Run(ctx context.Context) error {
 			errCh <- fmt.Errorf("ui listener: %w", err)
 		}
 	}()
+	if metricsLn != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			err := s.metricsSrv.Serve(metricsLn)
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
+				errCh <- fmt.Errorf("metrics listener: %w", err)
+			}
+		}()
+	}
 
 	select {
 	case <-ctx.Done():
@@ -190,7 +240,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 }
 
-// shutdown gracefully closes both listeners. Best-effort; bounded by
+// shutdown gracefully closes every listener. Best-effort; bounded by
 // timeout per server.
 func (s *Server) shutdown(timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -202,6 +252,11 @@ func (s *Server) shutdown(timeout time.Duration) error {
 	}
 	if err := s.uiSrv.Shutdown(ctx); err != nil && first == nil && !errors.Is(err, context.DeadlineExceeded) {
 		first = err
+	}
+	if s.metricsSrv != nil {
+		if err := s.metricsSrv.Shutdown(ctx); err != nil && first == nil && !errors.Is(err, context.DeadlineExceeded) {
+			first = err
+		}
 	}
 	return first
 }

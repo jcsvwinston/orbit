@@ -626,3 +626,68 @@ func min(a, b int) int {
 	}
 	return b
 }
+
+// TestServer_MetricsListener verifies the opt-in metrics listener: when
+// Config.MetricsAddr is set, a third listener serves Prometheus /metrics
+// (default registry) and /healthz; when empty, MetricsAddr() reports
+// the listener as disabled.
+func TestServer_MetricsListener(t *testing.T) {
+	srv := server.New(server.Config{
+		AgentAddr:   "127.0.0.1:0",
+		UIAddr:      "127.0.0.1:0",
+		MetricsAddr: "127.0.0.1:0",
+		Logger:      discardLogger(),
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	doneCh := make(chan error, 1)
+	go func() { doneCh <- srv.Run(ctx) }()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && srv.MetricsAddr() == "" {
+		time.Sleep(10 * time.Millisecond)
+	}
+	addr := srv.MetricsAddr()
+	if addr == "" {
+		t.Fatal("metrics listener never bound")
+	}
+
+	for path, want := range map[string]string{
+		"/healthz": "",
+		"/metrics": "go_goroutines",
+	} {
+		resp, err := http.Get("http://" + addr + path)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET %s: status %d", path, resp.StatusCode)
+		}
+		if want != "" && !strings.Contains(string(body), want) {
+			t.Fatalf("GET %s: body missing %q", path, want)
+		}
+	}
+
+	cancel()
+	select {
+	case err := <-doneCh:
+		if err != nil {
+			t.Fatalf("Run returned error: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("server did not shut down")
+	}
+}
+
+// TestServer_MetricsDisabledByDefault pins the opt-in contract: no
+// MetricsAddr, no third listener.
+func TestServer_MetricsDisabledByDefault(t *testing.T) {
+	srv, stop := startServer(t)
+	defer stop()
+	if got := srv.MetricsAddr(); got != "" {
+		t.Fatalf("metrics listener bound at %q without opt-in", got)
+	}
+}
