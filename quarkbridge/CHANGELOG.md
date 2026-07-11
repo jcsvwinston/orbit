@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v0.2.1...quarkbridge/v0.3.0) (2026-07-11)
+
+
+### Added
+
+* SQL stream shows the driver-reported row count — the W2 waiver lands (v1.2 arc) ([#49](https://github.com/jcsvwinston/orbit/issues/49)) ([04071da](https://github.com/jcsvwinston/orbit/commit/04071da06776f86c61d0a0b9aac2c6c76c20e95b))
+
 ## [0.2.1](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v0.2.0...quarkbridge/v0.2.1) (2026-07-11)
 
 
