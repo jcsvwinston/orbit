@@ -60,13 +60,13 @@ type DataStudioDispatcher interface {
 
 // Config bundles the dependencies a Stream needs.
 type Config struct {
-	NodeID       string
-	Version      string
-	Labels       map[string]string
-	StartedAt    time.Time
-	Bus          *observability.Bus
-	Buffer       *buffer.PerKind
-	Metrics      *metrics.Metrics
+	NodeID    string
+	Version   string
+	Labels    map[string]string
+	StartedAt time.Time
+	Bus       *observability.Bus
+	Buffer    *buffer.PerKind
+	Metrics   *metrics.Metrics
 	// Host, when non-nil, contributes a HostMetrics sample to every
 	// heartbeat frame (see agent/hostmetrics).
 	Host         interface{ Collect() *adminv1.HostMetrics }

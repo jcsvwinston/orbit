@@ -233,9 +233,9 @@ func bearerInterceptor(token string) connect.UnaryInterceptorFunc {
 // newConnectHTTPClient builds an HTTP/2-only client.
 //
 // Background:
-//   * Connect-RPC bidi streams require HTTP/2.
-//   * We want to support both h2c (plaintext, dev) and HTTPS (prod, Phase 6).
-//   * golang.org/x/net/http2.Transport with AllowHTTP=true upgrades plain
+//   - Connect-RPC bidi streams require HTTP/2.
+//   - We want to support both h2c (plaintext, dev) and HTTPS (prod, Phase 6).
+//   - golang.org/x/net/http2.Transport with AllowHTTP=true upgrades plain
 //     http:// URLs to h2c. The exact dial path depends on the URL scheme:
 //     for "http://" the transport uses its DialTLSContext too (it does not
 //     have a separate Dial path when AllowHTTP is true), passing the

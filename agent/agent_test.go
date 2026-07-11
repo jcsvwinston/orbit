@@ -32,13 +32,13 @@ func TestAgent_New_Disabled(t *testing.T) {
 
 // TestAgent_RegistrationAndSubscribe is the core integration test:
 //
-//   1. start a fake admin server
-//   2. start the agent pointing at it
-//   3. observe the NodeRegistration arrive
-//   4. send a Subscribe command from the server
-//   5. emit an event into the bus
-//   6. observe it arrive at the server
-//   7. send Unsubscribe and verify subsequent events are NOT delivered
+//  1. start a fake admin server
+//  2. start the agent pointing at it
+//  3. observe the NodeRegistration arrive
+//  4. send a Subscribe command from the server
+//  5. emit an event into the bus
+//  6. observe it arrive at the server
+//  7. send Unsubscribe and verify subsequent events are NOT delivered
 func TestAgent_RegistrationAndSubscribe(t *testing.T) {
 	srv := testserver.Start()
 	defer srv.Close()
@@ -275,4 +275,3 @@ func TestAgent_NodeIDPersistsAcrossRestarts(t *testing.T) {
 		t.Errorf("NodeID changed across restarts: %q -> %q", id1, second.NodeID())
 	}
 }
-

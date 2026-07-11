@@ -79,15 +79,16 @@ func sqlEventToProto(e *observability.SQLStatementEvent) *adminv1.SqlStatementEv
 	args := make([]string, len(e.Args))
 	copy(args, e.Args)
 	return &adminv1.SqlStatementEvent{
-		ModelName: e.ModelName,
-		Operation: e.Operation,
-		Query:     e.Query,
-		Args:      args,
-		Duration:  durationpb.New(e.Duration),
-		Error:     e.Err,
-		RequestId: e.RequestID,
-		TraceId:   e.TraceID,
-		UserId:    e.UserID,
+		ModelName:    e.ModelName,
+		Operation:    e.Operation,
+		Query:        e.Query,
+		Args:         args,
+		Duration:     durationpb.New(e.Duration),
+		Error:        e.Err,
+		RequestId:    e.RequestID,
+		TraceId:      e.TraceID,
+		UserId:       e.UserID,
+		RowsAffected: e.RowsAffected,
 	}
 }
 

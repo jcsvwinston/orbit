@@ -123,6 +123,9 @@ message SqlStatementEvent {
   string request_id = 7;
   string trace_id = 8;
   string user_id = 9;
+  // Driver-reported row count for exec-style statements; 0 means "not
+  // reported" (SELECTs, drivers without support). Additive (W2).
+  int64 rows_affected = 10;
 }
 
 message SessionChangeEvent {

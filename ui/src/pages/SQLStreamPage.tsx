@@ -93,9 +93,11 @@ export function SQLStreamPage() {
                 >
                   {formatDuration(ms)}
                 </span>
-                {/* SqlStatementEvent carries no affected-row count, so the
-                    Rows column renders a placeholder until the proto grows one. */}
-                <span className="text-right text-t32 tabular-nums">—</span>
+                {/* 0 means "not reported" (SELECTs, unsupported drivers) —
+                    render the honest dash instead of a fake zero. */}
+                <span className="text-right text-t32 tabular-nums">
+                  {sql.rowsAffected > 0n ? sql.rowsAffected.toString() : '—'}
+                </span>
               </div>
             )
           })}

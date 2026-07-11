@@ -588,12 +588,15 @@ type SqlStatementEvent struct {
 	Query     string                 `protobuf:"bytes,3,opt,name=query,proto3" json:"query,omitempty"`
 	// Sanitized argument representation. The agent never ships raw values for
 	// string/bytes; only "type(len):***" markers. See agent/sanitize.
-	Args          []string             `protobuf:"bytes,4,rep,name=args,proto3" json:"args,omitempty"`
-	Duration      *durationpb.Duration `protobuf:"bytes,5,opt,name=duration,proto3" json:"duration,omitempty"`
-	Error         string               `protobuf:"bytes,6,opt,name=error,proto3" json:"error,omitempty"`
-	RequestId     string               `protobuf:"bytes,7,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	TraceId       string               `protobuf:"bytes,8,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`
-	UserId        string               `protobuf:"bytes,9,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Args      []string             `protobuf:"bytes,4,rep,name=args,proto3" json:"args,omitempty"`
+	Duration  *durationpb.Duration `protobuf:"bytes,5,opt,name=duration,proto3" json:"duration,omitempty"`
+	Error     string               `protobuf:"bytes,6,opt,name=error,proto3" json:"error,omitempty"`
+	RequestId string               `protobuf:"bytes,7,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	TraceId   string               `protobuf:"bytes,8,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`
+	UserId    string               `protobuf:"bytes,9,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	// Driver-reported row count for exec-style statements; 0 means "not
+	// reported" (SELECTs, drivers without support). Additive (W2).
+	RowsAffected  int64 `protobuf:"varint,10,opt,name=rows_affected,json=rowsAffected,proto3" json:"rows_affected,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -689,6 +692,13 @@ func (x *SqlStatementEvent) GetUserId() string {
 		return x.UserId
 	}
 	return ""
+}
+
+func (x *SqlStatementEvent) GetRowsAffected() int64 {
+	if x != nil {
+		return x.RowsAffected
+	}
+	return 0
 }
 
 type SessionChangeEvent struct {
@@ -4206,7 +4216,7 @@ const file_nucleus_admin_v1_admin_proto_rawDesc = "" +
 	"\n" +
 	"user_agent\x18\t \x01(\tR\tuserAgent\x12'\n" +
 	"\x0fpayload_preview\x18\n" +
-	" \x01(\tR\x0epayloadPreview\"\x9a\x02\n" +
+	" \x01(\tR\x0epayloadPreview\"\xbf\x02\n" +
 	"\x11SqlStatementEvent\x12\x1d\n" +
 	"\n" +
 	"model_name\x18\x01 \x01(\tR\tmodelName\x12\x1c\n" +
@@ -4218,7 +4228,9 @@ const file_nucleus_admin_v1_admin_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\a \x01(\tR\trequestId\x12\x19\n" +
 	"\btrace_id\x18\b \x01(\tR\atraceId\x12\x17\n" +
-	"\auser_id\x18\t \x01(\tR\x06userId\"\xcc\x02\n" +
+	"\auser_id\x18\t \x01(\tR\x06userId\x12#\n" +
+	"\rrows_affected\x18\n" +
+	" \x01(\x03R\frowsAffected\"\xcc\x02\n" +
 	"\x12SessionChangeEvent\x12=\n" +
 	"\x04kind\x18\x01 \x01(\x0e2).nucleus.admin.v1.SessionChangeEvent.KindR\x04kind\x12\x1f\n" +
 	"\vtoken_short\x18\x02 \x01(\tR\n" +
