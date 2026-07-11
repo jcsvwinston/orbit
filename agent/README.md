@@ -62,6 +62,7 @@ The full configuration surface is the godoc of `ExtensionConfig`
 | `connection`        | Endpoint failover dialer with exponential backoff (cap 30s) and rate-limited disconnect WARN (1/min).             |
 | `stream`            | Bidi stream lifecycle: registration, three-goroutine recv/send/heartbeat loop, command dispatch, replay on reconnect. |
 | `metrics`           | `admin_agent_*` Prometheus collectors + standalone `/metrics` + `/healthz` server.                                |
+| `rbac`              | Read-only Casbin snapshot handler for the fleet UI's Access control screen (wired from `app.Authorizer`).         |
 | `internal/testserver` | In-process h2c admin server fake for integration tests. (Internal; do not import.)                              |
 
 The top-level `Agent` (`agent.go`) composes everything and exposes:
@@ -70,6 +71,9 @@ The top-level `Agent` (`agent.go`) composes everything and exposes:
 * `Run(ctx)` — blocks until ctx cancels; reconnect loop with backoff.
 * `NodeID()` — the resolved identifier.
 * `Connected()` — channel closed on first successful stream open.
+  Used by `NewExtension(...).Attach` when `ExtensionConfig.
+  RequireConnection` is true (boot blocks until the stream opens or
+  `RequireConnectionTimeout` expires).
 * `Metrics()` — the Prometheus registry, in case the host wants to
   serve `/metrics` from its own port.
 
