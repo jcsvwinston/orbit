@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/jcsvwinston/orbit/compare/server/v0.2.0...server/v0.3.0) (2026-07-11)
+
+
+### Added
+
+* **server:** opt-in Prometheus /metrics listener + honest --version from build info ([#33](https://github.com/jcsvwinston/orbit/issues/33)) ([4e77621](https://github.com/jcsvwinston/orbit/commit/4e776212d58d8508151553dec21869d088c0de4e))
+
 ## [0.2.0](https://github.com/jcsvwinston/orbit/compare/server/v0.1.0...server/v0.2.0) (2026-07-10)
 
 
