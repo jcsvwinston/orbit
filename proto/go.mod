@@ -2,6 +2,8 @@ module github.com/jcsvwinston/orbit/proto
 
 go 1.26.4
 
+toolchain go1.26.5
+
 // Generated stubs (connectrpc, google.golang.org/protobuf) are committed
 // alongside this module so `go build ./...` works without buf installed.
 // Regenerate with `make proto` after any change to nucleus/admin/**/*.proto.

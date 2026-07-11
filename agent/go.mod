@@ -2,6 +2,8 @@ module github.com/jcsvwinston/orbit/agent
 
 go 1.26.4
 
+toolchain go1.26.5
+
 require (
 	connectrpc.com/connect v1.19.2
 	github.com/google/uuid v1.6.0

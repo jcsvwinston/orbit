@@ -2,6 +2,8 @@ module github.com/jcsvwinston/orbit
 
 go 1.26.4
 
+toolchain go1.26.5
+
 require (
 	github.com/alicebob/miniredis/v2 v2.37.0
 	github.com/jcsvwinston/nucleus v1.0.0
