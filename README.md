@@ -40,7 +40,7 @@ single binary.
 go get github.com/jcsvwinston/orbit@latest
 ```
 
-The current tagged release is **v1.0.0**; pin `@v1.0.0` for reproducible
+The current tagged release is **v1.2.0**; pin `@v1.2.0` for reproducible
 builds. **v1.0 promise:** the public surfaces (the root module and
 `datasource`) are frozen for the life of v1.x — enforced by
 `contracts/freeze_test.go` (see `docs/V1_GATE.md`).

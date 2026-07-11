@@ -41,9 +41,19 @@ flag has a `NUCLEUS_ADMIN_*` env-var counterpart.
   out of auth for load balancers.
 - **Routing primitives** — a connected-agents registry, per-UI subscription
   fanout (drop-newest under backpressure), a drop-oldest replay buffer for
-  `include_recent`, and request-ID correlation for snapshots.
+  `include_recent`, and request-ID correlation for snapshots, Data Studio
+  operations and RBAC snapshots.
+- **Manage surface** — the Access control screen reads a **read-only Casbin
+  snapshot** routed to a connected agent (the application's authorizer stays
+  the single writer); the Audit log screen reads the server's own
+  **fleet-plane audit ring**: mutations an operator performed THROUGH this
+  server (Data Studio create/update/delete/bulk), attributed to the identity
+  resolved by the UI auth chain and to the routed node. In-memory and
+  bounded, like event replay; per-app admin actions stay in each node's
+  in-process Orbit panel.
 - **Auth** — a shared bearer token for agents; trusted-proxy/bearer middleware
-  for UIs.
+  for UIs (the resolved operator identity travels in the request context and
+  attributes audit entries).
 
 ## Operational notes
 

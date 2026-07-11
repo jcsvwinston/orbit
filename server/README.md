@@ -35,8 +35,10 @@ Every flag has a `NUCLEUS_ADMIN_*` env var counterpart.
 | `routing/replay`    | Per-event-kind drop-oldest replay buffer for `include_recent`.                                                           |
 | `routing/snapshot`  | Request-ID correlation between UI's `GetSnapshot` and the agent's `SnapshotResponse`.                                    |
 | `routing/match`     | HTTP method/glob/status-class + SQL model matchers shared with the in-process Filter.                                    |
-| `auth`              | Agent shared bearer token + UI trusted-proxy/bearer middlewares. `/healthz` is carved out of auth on both listeners.     |
-| `services`          | Connect-RPC handlers for `AgentService.Stream` and `ControlService.{ListNodes,StreamEvents,GetSnapshot}`.                 |
+| `routing` (rbac)    | Request-ID correlation for RBAC snapshots routed to agents (`RbacRouter`).                                               |
+| `routing` (audit)   | Bounded in-memory fleet-plane audit ring (`AuditRing`, drop-oldest, never persisted).                                     |
+| `auth`              | Agent shared bearer token + UI trusted-proxy/bearer middlewares (the resolved operator identity travels in the request context). `/healthz` is carved out of auth on both listeners. |
+| `services`          | Connect-RPC handlers for `AgentService.Stream`, `ControlService.{ListNodes,StreamEvents,GetSnapshot}`, `DataStudioService` (UI CRUD routed to agents) and `ManageService.{GetRbac,ListAudit}`. |
 | `ui`                | `//go:embed all:dist`. Serves the React bundle at `/`, falls back to a placeholder if the dist hasn't been built.        |
 | `cmd/admin-server`  | The binary's main: flags, env, signal handling, TLS loading.                                                            |
 
