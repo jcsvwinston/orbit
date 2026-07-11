@@ -1274,6 +1274,7 @@ type Command struct {
 	//	*Command_SnapshotRequest
 	//	*Command_Goodbye
 	//	*Command_DataStudio
+	//	*Command_Rbac
 	Body          isCommand_Body `protobuf_oneof:"body"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1361,6 +1362,15 @@ func (x *Command) GetDataStudio() *DataStudioRequest {
 	return nil
 }
 
+func (x *Command) GetRbac() *RbacRequest {
+	if x != nil {
+		if x, ok := x.Body.(*Command_Rbac); ok {
+			return x.Rbac
+		}
+	}
+	return nil
+}
+
 type isCommand_Body interface {
 	isCommand_Body()
 }
@@ -1385,6 +1395,10 @@ type Command_DataStudio struct {
 	DataStudio *DataStudioRequest `protobuf:"bytes,5,opt,name=data_studio,json=dataStudio,proto3,oneof"`
 }
 
+type Command_Rbac struct {
+	Rbac *RbacRequest `protobuf:"bytes,6,opt,name=rbac,proto3,oneof"`
+}
+
 func (*Command_Subscribe) isCommand_Body() {}
 
 func (*Command_Unsubscribe) isCommand_Body() {}
@@ -1394,6 +1408,8 @@ func (*Command_SnapshotRequest) isCommand_Body() {}
 func (*Command_Goodbye) isCommand_Body() {}
 
 func (*Command_DataStudio) isCommand_Body() {}
+
+func (*Command_Rbac) isCommand_Body() {}
 
 // Frame is the envelope on the agent <-> admin bidi stream. Both directions
 // reuse the same Frame; agents send registration/event/heartbeat/snapshot
@@ -1409,6 +1425,7 @@ type Frame struct {
 	//	*Frame_SnapshotResponse
 	//	*Frame_Goodbye
 	//	*Frame_DataStudioResponse
+	//	*Frame_RbacResponse
 	Body          isFrame_Body `protobuf_oneof:"body"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1514,6 +1531,15 @@ func (x *Frame) GetDataStudioResponse() *DataStudioResponse {
 	return nil
 }
 
+func (x *Frame) GetRbacResponse() *RbacResponse {
+	if x != nil {
+		if x, ok := x.Body.(*Frame_RbacResponse); ok {
+			return x.RbacResponse
+		}
+	}
+	return nil
+}
+
 type isFrame_Body interface {
 	isFrame_Body()
 }
@@ -1546,6 +1572,10 @@ type Frame_DataStudioResponse struct {
 	DataStudioResponse *DataStudioResponse `protobuf:"bytes,7,opt,name=data_studio_response,json=dataStudioResponse,proto3,oneof"`
 }
 
+type Frame_RbacResponse struct {
+	RbacResponse *RbacResponse `protobuf:"bytes,8,opt,name=rbac_response,json=rbacResponse,proto3,oneof"`
+}
+
 func (*Frame_Registration) isFrame_Body() {}
 
 func (*Frame_Event) isFrame_Body() {}
@@ -1559,6 +1589,8 @@ func (*Frame_SnapshotResponse) isFrame_Body() {}
 func (*Frame_Goodbye) isFrame_Body() {}
 
 func (*Frame_DataStudioResponse) isFrame_Body() {}
+
+func (*Frame_RbacResponse) isFrame_Body() {}
 
 type NodeInfo struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
@@ -3623,6 +3655,515 @@ func (*DataStudioResponse_DeleteRecord) isDataStudioResponse_Body() {}
 
 func (*DataStudioResponse_BulkAction) isDataStudioResponse_Body() {}
 
+// RbacRequest asks a connected agent for a point-in-time snapshot of the
+// application's Casbin roles and policies (read-only; the app's authorizer
+// stays the single writer). Travels server -> agent inside Command.
+type RbacRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RbacRequest) Reset() {
+	*x = RbacRequest{}
+	mi := &file_nucleus_admin_v1_admin_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RbacRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RbacRequest) ProtoMessage() {}
+
+func (x *RbacRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_nucleus_admin_v1_admin_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RbacRequest.ProtoReflect.Descriptor instead.
+func (*RbacRequest) Descriptor() ([]byte, []int) {
+	return file_nucleus_admin_v1_admin_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *RbacRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+type RbacRole struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// Number of subjects with a grouping rule onto this role.
+	Members       int32 `protobuf:"varint,2,opt,name=members,proto3" json:"members,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RbacRole) Reset() {
+	*x = RbacRole{}
+	mi := &file_nucleus_admin_v1_admin_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RbacRole) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RbacRole) ProtoMessage() {}
+
+func (x *RbacRole) ProtoReflect() protoreflect.Message {
+	mi := &file_nucleus_admin_v1_admin_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RbacRole.ProtoReflect.Descriptor instead.
+func (*RbacRole) Descriptor() ([]byte, []int) {
+	return file_nucleus_admin_v1_admin_proto_rawDescGZIP(), []int{42}
+}
+
+func (x *RbacRole) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *RbacRole) GetMembers() int32 {
+	if x != nil {
+		return x.Members
+	}
+	return 0
+}
+
+type RbacPolicy struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Subject string                 `protobuf:"bytes,1,opt,name=subject,proto3" json:"subject,omitempty"`
+	Object  string                 `protobuf:"bytes,2,opt,name=object,proto3" json:"object,omitempty"`
+	Action  string                 `protobuf:"bytes,3,opt,name=action,proto3" json:"action,omitempty"`
+	// "allow" unless the policy row carries an explicit deny effect.
+	Effect        string `protobuf:"bytes,4,opt,name=effect,proto3" json:"effect,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RbacPolicy) Reset() {
+	*x = RbacPolicy{}
+	mi := &file_nucleus_admin_v1_admin_proto_msgTypes[43]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RbacPolicy) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RbacPolicy) ProtoMessage() {}
+
+func (x *RbacPolicy) ProtoReflect() protoreflect.Message {
+	mi := &file_nucleus_admin_v1_admin_proto_msgTypes[43]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RbacPolicy.ProtoReflect.Descriptor instead.
+func (*RbacPolicy) Descriptor() ([]byte, []int) {
+	return file_nucleus_admin_v1_admin_proto_rawDescGZIP(), []int{43}
+}
+
+func (x *RbacPolicy) GetSubject() string {
+	if x != nil {
+		return x.Subject
+	}
+	return ""
+}
+
+func (x *RbacPolicy) GetObject() string {
+	if x != nil {
+		return x.Object
+	}
+	return ""
+}
+
+func (x *RbacPolicy) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *RbacPolicy) GetEffect() string {
+	if x != nil {
+		return x.Effect
+	}
+	return ""
+}
+
+// RbacResponse travels agent -> server on the same Stream. error is
+// non-empty when the snapshot failed; in that case the lists are empty.
+type RbacResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Error         string                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	Roles         []*RbacRole            `protobuf:"bytes,10,rep,name=roles,proto3" json:"roles,omitempty"`
+	Policies      []*RbacPolicy          `protobuf:"bytes,11,rep,name=policies,proto3" json:"policies,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RbacResponse) Reset() {
+	*x = RbacResponse{}
+	mi := &file_nucleus_admin_v1_admin_proto_msgTypes[44]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RbacResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RbacResponse) ProtoMessage() {}
+
+func (x *RbacResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_nucleus_admin_v1_admin_proto_msgTypes[44]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RbacResponse.ProtoReflect.Descriptor instead.
+func (*RbacResponse) Descriptor() ([]byte, []int) {
+	return file_nucleus_admin_v1_admin_proto_rawDescGZIP(), []int{44}
+}
+
+func (x *RbacResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *RbacResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *RbacResponse) GetRoles() []*RbacRole {
+	if x != nil {
+		return x.Roles
+	}
+	return nil
+}
+
+func (x *RbacResponse) GetPolicies() []*RbacPolicy {
+	if x != nil {
+		return x.Policies
+	}
+	return nil
+}
+
+// GetRbacRequest addresses one connected agent, like Data Studio does.
+type GetRbacRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetRbacRequest) Reset() {
+	*x = GetRbacRequest{}
+	mi := &file_nucleus_admin_v1_admin_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetRbacRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRbacRequest) ProtoMessage() {}
+
+func (x *GetRbacRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_nucleus_admin_v1_admin_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRbacRequest.ProtoReflect.Descriptor instead.
+func (*GetRbacRequest) Descriptor() ([]byte, []int) {
+	return file_nucleus_admin_v1_admin_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *GetRbacRequest) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+type GetRbacResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Roles         []*RbacRole            `protobuf:"bytes,1,rep,name=roles,proto3" json:"roles,omitempty"`
+	Policies      []*RbacPolicy          `protobuf:"bytes,2,rep,name=policies,proto3" json:"policies,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetRbacResponse) Reset() {
+	*x = GetRbacResponse{}
+	mi := &file_nucleus_admin_v1_admin_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetRbacResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRbacResponse) ProtoMessage() {}
+
+func (x *GetRbacResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_nucleus_admin_v1_admin_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRbacResponse.ProtoReflect.Descriptor instead.
+func (*GetRbacResponse) Descriptor() ([]byte, []int) {
+	return file_nucleus_admin_v1_admin_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *GetRbacResponse) GetRoles() []*RbacRole {
+	if x != nil {
+		return x.Roles
+	}
+	return nil
+}
+
+func (x *GetRbacResponse) GetPolicies() []*RbacPolicy {
+	if x != nil {
+		return x.Policies
+	}
+	return nil
+}
+
+// AuditEntry is one fleet-plane action: something an operator did THROUGH
+// the admin server (Data Studio mutations, and future manage actions).
+// Per-app admin actions stay in each node's in-process Orbit audit ring;
+// this log covers the fleet plane the server itself routes.
+type AuditEntry struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Time  *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=time,proto3" json:"time,omitempty"`
+	// Operator identity as resolved by the UI auth chain.
+	Actor string `protobuf:"bytes,2,opt,name=actor,proto3" json:"actor,omitempty"`
+	// e.g. "datastudio.create", "datastudio.delete", "datastudio.bulk".
+	Action string `protobuf:"bytes,3,opt,name=action,proto3" json:"action,omitempty"`
+	// Human-readable target, e.g. "Article #42 (default)".
+	Target string `protobuf:"bytes,4,opt,name=target,proto3" json:"target,omitempty"`
+	// Agent the action was routed to.
+	NodeId        string `protobuf:"bytes,5,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AuditEntry) Reset() {
+	*x = AuditEntry{}
+	mi := &file_nucleus_admin_v1_admin_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuditEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuditEntry) ProtoMessage() {}
+
+func (x *AuditEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_nucleus_admin_v1_admin_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuditEntry.ProtoReflect.Descriptor instead.
+func (*AuditEntry) Descriptor() ([]byte, []int) {
+	return file_nucleus_admin_v1_admin_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *AuditEntry) GetTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Time
+	}
+	return nil
+}
+
+func (x *AuditEntry) GetActor() string {
+	if x != nil {
+		return x.Actor
+	}
+	return ""
+}
+
+func (x *AuditEntry) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *AuditEntry) GetTarget() string {
+	if x != nil {
+		return x.Target
+	}
+	return ""
+}
+
+func (x *AuditEntry) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+type ListAuditRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Maximum entries to return, newest first. 0 means the server default.
+	Limit         int32 `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListAuditRequest) Reset() {
+	*x = ListAuditRequest{}
+	mi := &file_nucleus_admin_v1_admin_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAuditRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAuditRequest) ProtoMessage() {}
+
+func (x *ListAuditRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_nucleus_admin_v1_admin_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAuditRequest.ProtoReflect.Descriptor instead.
+func (*ListAuditRequest) Descriptor() ([]byte, []int) {
+	return file_nucleus_admin_v1_admin_proto_rawDescGZIP(), []int{48}
+}
+
+func (x *ListAuditRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type ListAuditResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Entries       []*AuditEntry          `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListAuditResponse) Reset() {
+	*x = ListAuditResponse{}
+	mi := &file_nucleus_admin_v1_admin_proto_msgTypes[49]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAuditResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAuditResponse) ProtoMessage() {}
+
+func (x *ListAuditResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_nucleus_admin_v1_admin_proto_msgTypes[49]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAuditResponse.ProtoReflect.Descriptor instead.
+func (*ListAuditResponse) Descriptor() ([]byte, []int) {
+	return file_nucleus_admin_v1_admin_proto_rawDescGZIP(), []int{49}
+}
+
+func (x *ListAuditResponse) GetEntries() []*AuditEntry {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
+}
+
 var File_nucleus_admin_v1_admin_proto protoreflect.FileDescriptor
 
 const file_nucleus_admin_v1_admin_proto_rawDesc = "" +
@@ -3731,15 +4272,16 @@ const file_nucleus_admin_v1_admin_proto_rawDesc = "" +
 	"\fpayload_json\x18\x03 \x01(\fR\vpayloadJson\x12\x14\n" +
 	"\x05error\x18\x04 \x01(\tR\x05error\"!\n" +
 	"\aGoodbye\x12\x16\n" +
-	"\x06reason\x18\x01 \x01(\tR\x06reason\"\xe0\x02\n" +
+	"\x06reason\x18\x01 \x01(\tR\x06reason\"\x95\x03\n" +
 	"\aCommand\x12;\n" +
 	"\tsubscribe\x18\x01 \x01(\v2\x1b.nucleus.admin.v1.SubscribeH\x00R\tsubscribe\x12A\n" +
 	"\vunsubscribe\x18\x02 \x01(\v2\x1d.nucleus.admin.v1.UnsubscribeH\x00R\vunsubscribe\x12N\n" +
 	"\x10snapshot_request\x18\x03 \x01(\v2!.nucleus.admin.v1.SnapshotRequestH\x00R\x0fsnapshotRequest\x125\n" +
 	"\agoodbye\x18\x04 \x01(\v2\x19.nucleus.admin.v1.GoodbyeH\x00R\agoodbye\x12F\n" +
 	"\vdata_studio\x18\x05 \x01(\v2#.nucleus.admin.v1.DataStudioRequestH\x00R\n" +
-	"dataStudioB\x06\n" +
-	"\x04body\"\xe2\x03\n" +
+	"dataStudio\x123\n" +
+	"\x04rbac\x18\x06 \x01(\v2\x1d.nucleus.admin.v1.RbacRequestH\x00R\x04rbacB\x06\n" +
+	"\x04body\"\xa9\x04\n" +
 	"\x05Frame\x12H\n" +
 	"\fregistration\x18\x01 \x01(\v2\".nucleus.admin.v1.NodeRegistrationH\x00R\fregistration\x12/\n" +
 	"\x05event\x18\x02 \x01(\v2\x17.nucleus.admin.v1.EventH\x00R\x05event\x12;\n" +
@@ -3747,7 +4289,8 @@ const file_nucleus_admin_v1_admin_proto_rawDesc = "" +
 	"\acommand\x18\x04 \x01(\v2\x19.nucleus.admin.v1.CommandH\x00R\acommand\x12Q\n" +
 	"\x11snapshot_response\x18\x05 \x01(\v2\".nucleus.admin.v1.SnapshotResponseH\x00R\x10snapshotResponse\x125\n" +
 	"\agoodbye\x18\x06 \x01(\v2\x19.nucleus.admin.v1.GoodbyeH\x00R\agoodbye\x12X\n" +
-	"\x14data_studio_response\x18\a \x01(\v2$.nucleus.admin.v1.DataStudioResponseH\x00R\x12dataStudioResponseB\x06\n" +
+	"\x14data_studio_response\x18\a \x01(\v2$.nucleus.admin.v1.DataStudioResponseH\x00R\x12dataStudioResponse\x12E\n" +
+	"\rrbac_response\x18\b \x01(\v2\x1e.nucleus.admin.v1.RbacResponseH\x00R\frbacResponseB\x06\n" +
 	"\x04body\"\x91\x03\n" +
 	"\bNodeInfo\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x18\n" +
@@ -3940,7 +4483,42 @@ const file_nucleus_admin_v1_admin_proto_rawDesc = "" +
 	"\rdelete_record\x18\x0e \x01(\v2&.nucleus.admin.v1.DeleteRecordResponseH\x00R\fdeleteRecord\x12G\n" +
 	"\vbulk_action\x18\x0f \x01(\v2$.nucleus.admin.v1.BulkActionResponseH\x00R\n" +
 	"bulkActionB\x06\n" +
-	"\x04body*\x98\x01\n" +
+	"\x04body\",\n" +
+	"\vRbacRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\"8\n" +
+	"\bRbacRole\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
+	"\amembers\x18\x02 \x01(\x05R\amembers\"n\n" +
+	"\n" +
+	"RbacPolicy\x12\x18\n" +
+	"\asubject\x18\x01 \x01(\tR\asubject\x12\x16\n" +
+	"\x06object\x18\x02 \x01(\tR\x06object\x12\x16\n" +
+	"\x06action\x18\x03 \x01(\tR\x06action\x12\x16\n" +
+	"\x06effect\x18\x04 \x01(\tR\x06effect\"\xaf\x01\n" +
+	"\fRbacResponse\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\x120\n" +
+	"\x05roles\x18\n" +
+	" \x03(\v2\x1a.nucleus.admin.v1.RbacRoleR\x05roles\x128\n" +
+	"\bpolicies\x18\v \x03(\v2\x1c.nucleus.admin.v1.RbacPolicyR\bpolicies\")\n" +
+	"\x0eGetRbacRequest\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"}\n" +
+	"\x0fGetRbacResponse\x120\n" +
+	"\x05roles\x18\x01 \x03(\v2\x1a.nucleus.admin.v1.RbacRoleR\x05roles\x128\n" +
+	"\bpolicies\x18\x02 \x03(\v2\x1c.nucleus.admin.v1.RbacPolicyR\bpolicies\"\x9b\x01\n" +
+	"\n" +
+	"AuditEntry\x12.\n" +
+	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x14\n" +
+	"\x05actor\x18\x02 \x01(\tR\x05actor\x12\x16\n" +
+	"\x06action\x18\x03 \x01(\tR\x06action\x12\x16\n" +
+	"\x06target\x18\x04 \x01(\tR\x06target\x12\x17\n" +
+	"\anode_id\x18\x05 \x01(\tR\x06nodeId\"(\n" +
+	"\x10ListAuditRequest\x12\x14\n" +
+	"\x05limit\x18\x01 \x01(\x05R\x05limit\"K\n" +
+	"\x11ListAuditResponse\x126\n" +
+	"\aentries\x18\x01 \x03(\v2\x1c.nucleus.admin.v1.AuditEntryR\aentries*\x98\x01\n" +
 	"\tEventType\x12\x1a\n" +
 	"\x16EVENT_TYPE_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17EVENT_TYPE_HTTP_REQUEST\x10\x01\x12\x1c\n" +
@@ -3970,7 +4548,10 @@ const file_nucleus_admin_v1_admin_proto_rawDesc = "" +
 	"\fUpdateRecord\x12%.nucleus.admin.v1.UpdateRecordRequest\x1a\x18.nucleus.admin.v1.Record\x12]\n" +
 	"\fDeleteRecord\x12%.nucleus.admin.v1.DeleteRecordRequest\x1a&.nucleus.admin.v1.DeleteRecordResponse\x12W\n" +
 	"\n" +
-	"BulkAction\x12#.nucleus.admin.v1.BulkActionRequest\x1a$.nucleus.admin.v1.BulkActionResponseBDZBgithub.com/jcsvwinston/orbit/proto/gen/go/nucleus/admin/v1;adminv1b\x06proto3"
+	"BulkAction\x12#.nucleus.admin.v1.BulkActionRequest\x1a$.nucleus.admin.v1.BulkActionResponse2\xb5\x01\n" +
+	"\rManageService\x12N\n" +
+	"\aGetRbac\x12 .nucleus.admin.v1.GetRbacRequest\x1a!.nucleus.admin.v1.GetRbacResponse\x12T\n" +
+	"\tListAudit\x12\".nucleus.admin.v1.ListAuditRequest\x1a#.nucleus.admin.v1.ListAuditResponseBDZBgithub.com/jcsvwinston/orbit/proto/gen/go/nucleus/admin/v1;adminv1b\x06proto3"
 
 var (
 	file_nucleus_admin_v1_admin_proto_rawDescOnce sync.Once
@@ -3985,7 +4566,7 @@ func file_nucleus_admin_v1_admin_proto_rawDescGZIP() []byte {
 }
 
 var file_nucleus_admin_v1_admin_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_nucleus_admin_v1_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 48)
+var file_nucleus_admin_v1_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 57)
 var file_nucleus_admin_v1_admin_proto_goTypes = []any{
 	(EventType)(0),                // 0: nucleus.admin.v1.EventType
 	(SnapshotType)(0),             // 1: nucleus.admin.v1.SnapshotType
@@ -4031,33 +4612,42 @@ var file_nucleus_admin_v1_admin_proto_goTypes = []any{
 	(*BulkActionResponse)(nil),    // 41: nucleus.admin.v1.BulkActionResponse
 	(*DataStudioRequest)(nil),     // 42: nucleus.admin.v1.DataStudioRequest
 	(*DataStudioResponse)(nil),    // 43: nucleus.admin.v1.DataStudioResponse
-	nil,                           // 44: nucleus.admin.v1.NodeRegistration.LabelsEntry
-	nil,                           // 45: nucleus.admin.v1.CustomEvent.LabelsEntry
-	nil,                           // 46: nucleus.admin.v1.Subscribe.SamplingRateEntry
-	nil,                           // 47: nucleus.admin.v1.NodeInfo.LabelsEntry
-	nil,                           // 48: nucleus.admin.v1.StreamEventsRequest.SamplingRateEntry
-	nil,                           // 49: nucleus.admin.v1.Record.ValuesJsonEntry
-	nil,                           // 50: nucleus.admin.v1.ListRecordsRequest.FiltersEntry
-	(*timestamppb.Timestamp)(nil), // 51: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),   // 52: google.protobuf.Duration
+	(*RbacRequest)(nil),           // 44: nucleus.admin.v1.RbacRequest
+	(*RbacRole)(nil),              // 45: nucleus.admin.v1.RbacRole
+	(*RbacPolicy)(nil),            // 46: nucleus.admin.v1.RbacPolicy
+	(*RbacResponse)(nil),          // 47: nucleus.admin.v1.RbacResponse
+	(*GetRbacRequest)(nil),        // 48: nucleus.admin.v1.GetRbacRequest
+	(*GetRbacResponse)(nil),       // 49: nucleus.admin.v1.GetRbacResponse
+	(*AuditEntry)(nil),            // 50: nucleus.admin.v1.AuditEntry
+	(*ListAuditRequest)(nil),      // 51: nucleus.admin.v1.ListAuditRequest
+	(*ListAuditResponse)(nil),     // 52: nucleus.admin.v1.ListAuditResponse
+	nil,                           // 53: nucleus.admin.v1.NodeRegistration.LabelsEntry
+	nil,                           // 54: nucleus.admin.v1.CustomEvent.LabelsEntry
+	nil,                           // 55: nucleus.admin.v1.Subscribe.SamplingRateEntry
+	nil,                           // 56: nucleus.admin.v1.NodeInfo.LabelsEntry
+	nil,                           // 57: nucleus.admin.v1.StreamEventsRequest.SamplingRateEntry
+	nil,                           // 58: nucleus.admin.v1.Record.ValuesJsonEntry
+	nil,                           // 59: nucleus.admin.v1.ListRecordsRequest.FiltersEntry
+	(*timestamppb.Timestamp)(nil), // 60: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),   // 61: google.protobuf.Duration
 }
 var file_nucleus_admin_v1_admin_proto_depIdxs = []int32{
-	44, // 0: nucleus.admin.v1.NodeRegistration.labels:type_name -> nucleus.admin.v1.NodeRegistration.LabelsEntry
-	51, // 1: nucleus.admin.v1.NodeRegistration.started_at:type_name -> google.protobuf.Timestamp
-	51, // 2: nucleus.admin.v1.Heartbeat.timestamp:type_name -> google.protobuf.Timestamp
+	53, // 0: nucleus.admin.v1.NodeRegistration.labels:type_name -> nucleus.admin.v1.NodeRegistration.LabelsEntry
+	60, // 1: nucleus.admin.v1.NodeRegistration.started_at:type_name -> google.protobuf.Timestamp
+	60, // 2: nucleus.admin.v1.Heartbeat.timestamp:type_name -> google.protobuf.Timestamp
 	19, // 3: nucleus.admin.v1.Heartbeat.host_metrics:type_name -> nucleus.admin.v1.HostMetrics
 	0,  // 4: nucleus.admin.v1.Filter.types:type_name -> nucleus.admin.v1.EventType
-	52, // 5: nucleus.admin.v1.HttpRequestEvent.duration:type_name -> google.protobuf.Duration
-	52, // 6: nucleus.admin.v1.SqlStatementEvent.duration:type_name -> google.protobuf.Duration
+	61, // 5: nucleus.admin.v1.HttpRequestEvent.duration:type_name -> google.protobuf.Duration
+	61, // 6: nucleus.admin.v1.SqlStatementEvent.duration:type_name -> google.protobuf.Duration
 	2,  // 7: nucleus.admin.v1.SessionChangeEvent.kind:type_name -> nucleus.admin.v1.SessionChangeEvent.Kind
-	45, // 8: nucleus.admin.v1.CustomEvent.labels:type_name -> nucleus.admin.v1.CustomEvent.LabelsEntry
-	51, // 9: nucleus.admin.v1.Event.timestamp:type_name -> google.protobuf.Timestamp
+	54, // 8: nucleus.admin.v1.CustomEvent.labels:type_name -> nucleus.admin.v1.CustomEvent.LabelsEntry
+	60, // 9: nucleus.admin.v1.Event.timestamp:type_name -> google.protobuf.Timestamp
 	6,  // 10: nucleus.admin.v1.Event.http_request:type_name -> nucleus.admin.v1.HttpRequestEvent
 	7,  // 11: nucleus.admin.v1.Event.sql_statement:type_name -> nucleus.admin.v1.SqlStatementEvent
 	8,  // 12: nucleus.admin.v1.Event.session_change:type_name -> nucleus.admin.v1.SessionChangeEvent
 	9,  // 13: nucleus.admin.v1.Event.custom:type_name -> nucleus.admin.v1.CustomEvent
 	5,  // 14: nucleus.admin.v1.Subscribe.filter:type_name -> nucleus.admin.v1.Filter
-	46, // 15: nucleus.admin.v1.Subscribe.sampling_rate:type_name -> nucleus.admin.v1.Subscribe.SamplingRateEntry
+	55, // 15: nucleus.admin.v1.Subscribe.sampling_rate:type_name -> nucleus.admin.v1.Subscribe.SamplingRateEntry
 	1,  // 16: nucleus.admin.v1.SnapshotRequest.type:type_name -> nucleus.admin.v1.SnapshotType
 	1,  // 17: nucleus.admin.v1.SnapshotResponse.type:type_name -> nucleus.admin.v1.SnapshotType
 	11, // 18: nucleus.admin.v1.Command.subscribe:type_name -> nucleus.admin.v1.Subscribe
@@ -4065,75 +4655,87 @@ var file_nucleus_admin_v1_admin_proto_depIdxs = []int32{
 	13, // 20: nucleus.admin.v1.Command.snapshot_request:type_name -> nucleus.admin.v1.SnapshotRequest
 	15, // 21: nucleus.admin.v1.Command.goodbye:type_name -> nucleus.admin.v1.Goodbye
 	42, // 22: nucleus.admin.v1.Command.data_studio:type_name -> nucleus.admin.v1.DataStudioRequest
-	3,  // 23: nucleus.admin.v1.Frame.registration:type_name -> nucleus.admin.v1.NodeRegistration
-	10, // 24: nucleus.admin.v1.Frame.event:type_name -> nucleus.admin.v1.Event
-	4,  // 25: nucleus.admin.v1.Frame.heartbeat:type_name -> nucleus.admin.v1.Heartbeat
-	16, // 26: nucleus.admin.v1.Frame.command:type_name -> nucleus.admin.v1.Command
-	14, // 27: nucleus.admin.v1.Frame.snapshot_response:type_name -> nucleus.admin.v1.SnapshotResponse
-	15, // 28: nucleus.admin.v1.Frame.goodbye:type_name -> nucleus.admin.v1.Goodbye
-	43, // 29: nucleus.admin.v1.Frame.data_studio_response:type_name -> nucleus.admin.v1.DataStudioResponse
-	47, // 30: nucleus.admin.v1.NodeInfo.labels:type_name -> nucleus.admin.v1.NodeInfo.LabelsEntry
-	51, // 31: nucleus.admin.v1.NodeInfo.started_at:type_name -> google.protobuf.Timestamp
-	51, // 32: nucleus.admin.v1.NodeInfo.last_seen_at:type_name -> google.protobuf.Timestamp
-	19, // 33: nucleus.admin.v1.NodeInfo.host_metrics:type_name -> nucleus.admin.v1.HostMetrics
-	18, // 34: nucleus.admin.v1.ListNodesResponse.nodes:type_name -> nucleus.admin.v1.NodeInfo
-	5,  // 35: nucleus.admin.v1.StreamEventsRequest.filter:type_name -> nucleus.admin.v1.Filter
-	48, // 36: nucleus.admin.v1.StreamEventsRequest.sampling_rate:type_name -> nucleus.admin.v1.StreamEventsRequest.SamplingRateEntry
-	1,  // 37: nucleus.admin.v1.GetSnapshotRequest.type:type_name -> nucleus.admin.v1.SnapshotType
-	1,  // 38: nucleus.admin.v1.Snapshot.type:type_name -> nucleus.admin.v1.SnapshotType
-	51, // 39: nucleus.admin.v1.Snapshot.generated_at:type_name -> google.protobuf.Timestamp
-	26, // 40: nucleus.admin.v1.ModelField.choices:type_name -> nucleus.admin.v1.FieldChoice
-	27, // 41: nucleus.admin.v1.ModelSchema.info:type_name -> nucleus.admin.v1.ModelInfo
-	25, // 42: nucleus.admin.v1.ModelSchema.fields:type_name -> nucleus.admin.v1.ModelField
-	49, // 43: nucleus.admin.v1.Record.values_json:type_name -> nucleus.admin.v1.Record.ValuesJsonEntry
-	27, // 44: nucleus.admin.v1.ListModelsResponse.models:type_name -> nucleus.admin.v1.ModelInfo
-	50, // 45: nucleus.admin.v1.ListRecordsRequest.filters:type_name -> nucleus.admin.v1.ListRecordsRequest.FiltersEntry
-	29, // 46: nucleus.admin.v1.PaginatedRecords.items:type_name -> nucleus.admin.v1.Record
-	29, // 47: nucleus.admin.v1.CreateRecordRequest.record:type_name -> nucleus.admin.v1.Record
-	29, // 48: nucleus.admin.v1.UpdateRecordRequest.record:type_name -> nucleus.admin.v1.Record
-	30, // 49: nucleus.admin.v1.DataStudioRequest.list_models:type_name -> nucleus.admin.v1.ListModelsRequest
-	32, // 50: nucleus.admin.v1.DataStudioRequest.get_schema:type_name -> nucleus.admin.v1.GetSchemaRequest
-	33, // 51: nucleus.admin.v1.DataStudioRequest.list_records:type_name -> nucleus.admin.v1.ListRecordsRequest
-	35, // 52: nucleus.admin.v1.DataStudioRequest.get_record:type_name -> nucleus.admin.v1.GetRecordRequest
-	36, // 53: nucleus.admin.v1.DataStudioRequest.create_record:type_name -> nucleus.admin.v1.CreateRecordRequest
-	37, // 54: nucleus.admin.v1.DataStudioRequest.update_record:type_name -> nucleus.admin.v1.UpdateRecordRequest
-	38, // 55: nucleus.admin.v1.DataStudioRequest.delete_record:type_name -> nucleus.admin.v1.DeleteRecordRequest
-	40, // 56: nucleus.admin.v1.DataStudioRequest.bulk_action:type_name -> nucleus.admin.v1.BulkActionRequest
-	31, // 57: nucleus.admin.v1.DataStudioResponse.list_models:type_name -> nucleus.admin.v1.ListModelsResponse
-	28, // 58: nucleus.admin.v1.DataStudioResponse.schema:type_name -> nucleus.admin.v1.ModelSchema
-	34, // 59: nucleus.admin.v1.DataStudioResponse.records_page:type_name -> nucleus.admin.v1.PaginatedRecords
-	29, // 60: nucleus.admin.v1.DataStudioResponse.record:type_name -> nucleus.admin.v1.Record
-	39, // 61: nucleus.admin.v1.DataStudioResponse.delete_record:type_name -> nucleus.admin.v1.DeleteRecordResponse
-	41, // 62: nucleus.admin.v1.DataStudioResponse.bulk_action:type_name -> nucleus.admin.v1.BulkActionResponse
-	17, // 63: nucleus.admin.v1.AgentService.Stream:input_type -> nucleus.admin.v1.Frame
-	20, // 64: nucleus.admin.v1.ControlService.ListNodes:input_type -> nucleus.admin.v1.ListNodesRequest
-	22, // 65: nucleus.admin.v1.ControlService.StreamEvents:input_type -> nucleus.admin.v1.StreamEventsRequest
-	23, // 66: nucleus.admin.v1.ControlService.GetSnapshot:input_type -> nucleus.admin.v1.GetSnapshotRequest
-	30, // 67: nucleus.admin.v1.DataStudioService.ListModels:input_type -> nucleus.admin.v1.ListModelsRequest
-	32, // 68: nucleus.admin.v1.DataStudioService.GetSchema:input_type -> nucleus.admin.v1.GetSchemaRequest
-	33, // 69: nucleus.admin.v1.DataStudioService.ListRecords:input_type -> nucleus.admin.v1.ListRecordsRequest
-	35, // 70: nucleus.admin.v1.DataStudioService.GetRecord:input_type -> nucleus.admin.v1.GetRecordRequest
-	36, // 71: nucleus.admin.v1.DataStudioService.CreateRecord:input_type -> nucleus.admin.v1.CreateRecordRequest
-	37, // 72: nucleus.admin.v1.DataStudioService.UpdateRecord:input_type -> nucleus.admin.v1.UpdateRecordRequest
-	38, // 73: nucleus.admin.v1.DataStudioService.DeleteRecord:input_type -> nucleus.admin.v1.DeleteRecordRequest
-	40, // 74: nucleus.admin.v1.DataStudioService.BulkAction:input_type -> nucleus.admin.v1.BulkActionRequest
-	17, // 75: nucleus.admin.v1.AgentService.Stream:output_type -> nucleus.admin.v1.Frame
-	21, // 76: nucleus.admin.v1.ControlService.ListNodes:output_type -> nucleus.admin.v1.ListNodesResponse
-	10, // 77: nucleus.admin.v1.ControlService.StreamEvents:output_type -> nucleus.admin.v1.Event
-	24, // 78: nucleus.admin.v1.ControlService.GetSnapshot:output_type -> nucleus.admin.v1.Snapshot
-	31, // 79: nucleus.admin.v1.DataStudioService.ListModels:output_type -> nucleus.admin.v1.ListModelsResponse
-	28, // 80: nucleus.admin.v1.DataStudioService.GetSchema:output_type -> nucleus.admin.v1.ModelSchema
-	34, // 81: nucleus.admin.v1.DataStudioService.ListRecords:output_type -> nucleus.admin.v1.PaginatedRecords
-	29, // 82: nucleus.admin.v1.DataStudioService.GetRecord:output_type -> nucleus.admin.v1.Record
-	29, // 83: nucleus.admin.v1.DataStudioService.CreateRecord:output_type -> nucleus.admin.v1.Record
-	29, // 84: nucleus.admin.v1.DataStudioService.UpdateRecord:output_type -> nucleus.admin.v1.Record
-	39, // 85: nucleus.admin.v1.DataStudioService.DeleteRecord:output_type -> nucleus.admin.v1.DeleteRecordResponse
-	41, // 86: nucleus.admin.v1.DataStudioService.BulkAction:output_type -> nucleus.admin.v1.BulkActionResponse
-	75, // [75:87] is the sub-list for method output_type
-	63, // [63:75] is the sub-list for method input_type
-	63, // [63:63] is the sub-list for extension type_name
-	63, // [63:63] is the sub-list for extension extendee
-	0,  // [0:63] is the sub-list for field type_name
+	44, // 23: nucleus.admin.v1.Command.rbac:type_name -> nucleus.admin.v1.RbacRequest
+	3,  // 24: nucleus.admin.v1.Frame.registration:type_name -> nucleus.admin.v1.NodeRegistration
+	10, // 25: nucleus.admin.v1.Frame.event:type_name -> nucleus.admin.v1.Event
+	4,  // 26: nucleus.admin.v1.Frame.heartbeat:type_name -> nucleus.admin.v1.Heartbeat
+	16, // 27: nucleus.admin.v1.Frame.command:type_name -> nucleus.admin.v1.Command
+	14, // 28: nucleus.admin.v1.Frame.snapshot_response:type_name -> nucleus.admin.v1.SnapshotResponse
+	15, // 29: nucleus.admin.v1.Frame.goodbye:type_name -> nucleus.admin.v1.Goodbye
+	43, // 30: nucleus.admin.v1.Frame.data_studio_response:type_name -> nucleus.admin.v1.DataStudioResponse
+	47, // 31: nucleus.admin.v1.Frame.rbac_response:type_name -> nucleus.admin.v1.RbacResponse
+	56, // 32: nucleus.admin.v1.NodeInfo.labels:type_name -> nucleus.admin.v1.NodeInfo.LabelsEntry
+	60, // 33: nucleus.admin.v1.NodeInfo.started_at:type_name -> google.protobuf.Timestamp
+	60, // 34: nucleus.admin.v1.NodeInfo.last_seen_at:type_name -> google.protobuf.Timestamp
+	19, // 35: nucleus.admin.v1.NodeInfo.host_metrics:type_name -> nucleus.admin.v1.HostMetrics
+	18, // 36: nucleus.admin.v1.ListNodesResponse.nodes:type_name -> nucleus.admin.v1.NodeInfo
+	5,  // 37: nucleus.admin.v1.StreamEventsRequest.filter:type_name -> nucleus.admin.v1.Filter
+	57, // 38: nucleus.admin.v1.StreamEventsRequest.sampling_rate:type_name -> nucleus.admin.v1.StreamEventsRequest.SamplingRateEntry
+	1,  // 39: nucleus.admin.v1.GetSnapshotRequest.type:type_name -> nucleus.admin.v1.SnapshotType
+	1,  // 40: nucleus.admin.v1.Snapshot.type:type_name -> nucleus.admin.v1.SnapshotType
+	60, // 41: nucleus.admin.v1.Snapshot.generated_at:type_name -> google.protobuf.Timestamp
+	26, // 42: nucleus.admin.v1.ModelField.choices:type_name -> nucleus.admin.v1.FieldChoice
+	27, // 43: nucleus.admin.v1.ModelSchema.info:type_name -> nucleus.admin.v1.ModelInfo
+	25, // 44: nucleus.admin.v1.ModelSchema.fields:type_name -> nucleus.admin.v1.ModelField
+	58, // 45: nucleus.admin.v1.Record.values_json:type_name -> nucleus.admin.v1.Record.ValuesJsonEntry
+	27, // 46: nucleus.admin.v1.ListModelsResponse.models:type_name -> nucleus.admin.v1.ModelInfo
+	59, // 47: nucleus.admin.v1.ListRecordsRequest.filters:type_name -> nucleus.admin.v1.ListRecordsRequest.FiltersEntry
+	29, // 48: nucleus.admin.v1.PaginatedRecords.items:type_name -> nucleus.admin.v1.Record
+	29, // 49: nucleus.admin.v1.CreateRecordRequest.record:type_name -> nucleus.admin.v1.Record
+	29, // 50: nucleus.admin.v1.UpdateRecordRequest.record:type_name -> nucleus.admin.v1.Record
+	30, // 51: nucleus.admin.v1.DataStudioRequest.list_models:type_name -> nucleus.admin.v1.ListModelsRequest
+	32, // 52: nucleus.admin.v1.DataStudioRequest.get_schema:type_name -> nucleus.admin.v1.GetSchemaRequest
+	33, // 53: nucleus.admin.v1.DataStudioRequest.list_records:type_name -> nucleus.admin.v1.ListRecordsRequest
+	35, // 54: nucleus.admin.v1.DataStudioRequest.get_record:type_name -> nucleus.admin.v1.GetRecordRequest
+	36, // 55: nucleus.admin.v1.DataStudioRequest.create_record:type_name -> nucleus.admin.v1.CreateRecordRequest
+	37, // 56: nucleus.admin.v1.DataStudioRequest.update_record:type_name -> nucleus.admin.v1.UpdateRecordRequest
+	38, // 57: nucleus.admin.v1.DataStudioRequest.delete_record:type_name -> nucleus.admin.v1.DeleteRecordRequest
+	40, // 58: nucleus.admin.v1.DataStudioRequest.bulk_action:type_name -> nucleus.admin.v1.BulkActionRequest
+	31, // 59: nucleus.admin.v1.DataStudioResponse.list_models:type_name -> nucleus.admin.v1.ListModelsResponse
+	28, // 60: nucleus.admin.v1.DataStudioResponse.schema:type_name -> nucleus.admin.v1.ModelSchema
+	34, // 61: nucleus.admin.v1.DataStudioResponse.records_page:type_name -> nucleus.admin.v1.PaginatedRecords
+	29, // 62: nucleus.admin.v1.DataStudioResponse.record:type_name -> nucleus.admin.v1.Record
+	39, // 63: nucleus.admin.v1.DataStudioResponse.delete_record:type_name -> nucleus.admin.v1.DeleteRecordResponse
+	41, // 64: nucleus.admin.v1.DataStudioResponse.bulk_action:type_name -> nucleus.admin.v1.BulkActionResponse
+	45, // 65: nucleus.admin.v1.RbacResponse.roles:type_name -> nucleus.admin.v1.RbacRole
+	46, // 66: nucleus.admin.v1.RbacResponse.policies:type_name -> nucleus.admin.v1.RbacPolicy
+	45, // 67: nucleus.admin.v1.GetRbacResponse.roles:type_name -> nucleus.admin.v1.RbacRole
+	46, // 68: nucleus.admin.v1.GetRbacResponse.policies:type_name -> nucleus.admin.v1.RbacPolicy
+	60, // 69: nucleus.admin.v1.AuditEntry.time:type_name -> google.protobuf.Timestamp
+	50, // 70: nucleus.admin.v1.ListAuditResponse.entries:type_name -> nucleus.admin.v1.AuditEntry
+	17, // 71: nucleus.admin.v1.AgentService.Stream:input_type -> nucleus.admin.v1.Frame
+	20, // 72: nucleus.admin.v1.ControlService.ListNodes:input_type -> nucleus.admin.v1.ListNodesRequest
+	22, // 73: nucleus.admin.v1.ControlService.StreamEvents:input_type -> nucleus.admin.v1.StreamEventsRequest
+	23, // 74: nucleus.admin.v1.ControlService.GetSnapshot:input_type -> nucleus.admin.v1.GetSnapshotRequest
+	30, // 75: nucleus.admin.v1.DataStudioService.ListModels:input_type -> nucleus.admin.v1.ListModelsRequest
+	32, // 76: nucleus.admin.v1.DataStudioService.GetSchema:input_type -> nucleus.admin.v1.GetSchemaRequest
+	33, // 77: nucleus.admin.v1.DataStudioService.ListRecords:input_type -> nucleus.admin.v1.ListRecordsRequest
+	35, // 78: nucleus.admin.v1.DataStudioService.GetRecord:input_type -> nucleus.admin.v1.GetRecordRequest
+	36, // 79: nucleus.admin.v1.DataStudioService.CreateRecord:input_type -> nucleus.admin.v1.CreateRecordRequest
+	37, // 80: nucleus.admin.v1.DataStudioService.UpdateRecord:input_type -> nucleus.admin.v1.UpdateRecordRequest
+	38, // 81: nucleus.admin.v1.DataStudioService.DeleteRecord:input_type -> nucleus.admin.v1.DeleteRecordRequest
+	40, // 82: nucleus.admin.v1.DataStudioService.BulkAction:input_type -> nucleus.admin.v1.BulkActionRequest
+	48, // 83: nucleus.admin.v1.ManageService.GetRbac:input_type -> nucleus.admin.v1.GetRbacRequest
+	51, // 84: nucleus.admin.v1.ManageService.ListAudit:input_type -> nucleus.admin.v1.ListAuditRequest
+	17, // 85: nucleus.admin.v1.AgentService.Stream:output_type -> nucleus.admin.v1.Frame
+	21, // 86: nucleus.admin.v1.ControlService.ListNodes:output_type -> nucleus.admin.v1.ListNodesResponse
+	10, // 87: nucleus.admin.v1.ControlService.StreamEvents:output_type -> nucleus.admin.v1.Event
+	24, // 88: nucleus.admin.v1.ControlService.GetSnapshot:output_type -> nucleus.admin.v1.Snapshot
+	31, // 89: nucleus.admin.v1.DataStudioService.ListModels:output_type -> nucleus.admin.v1.ListModelsResponse
+	28, // 90: nucleus.admin.v1.DataStudioService.GetSchema:output_type -> nucleus.admin.v1.ModelSchema
+	34, // 91: nucleus.admin.v1.DataStudioService.ListRecords:output_type -> nucleus.admin.v1.PaginatedRecords
+	29, // 92: nucleus.admin.v1.DataStudioService.GetRecord:output_type -> nucleus.admin.v1.Record
+	29, // 93: nucleus.admin.v1.DataStudioService.CreateRecord:output_type -> nucleus.admin.v1.Record
+	29, // 94: nucleus.admin.v1.DataStudioService.UpdateRecord:output_type -> nucleus.admin.v1.Record
+	39, // 95: nucleus.admin.v1.DataStudioService.DeleteRecord:output_type -> nucleus.admin.v1.DeleteRecordResponse
+	41, // 96: nucleus.admin.v1.DataStudioService.BulkAction:output_type -> nucleus.admin.v1.BulkActionResponse
+	49, // 97: nucleus.admin.v1.ManageService.GetRbac:output_type -> nucleus.admin.v1.GetRbacResponse
+	52, // 98: nucleus.admin.v1.ManageService.ListAudit:output_type -> nucleus.admin.v1.ListAuditResponse
+	85, // [85:99] is the sub-list for method output_type
+	71, // [71:85] is the sub-list for method input_type
+	71, // [71:71] is the sub-list for extension type_name
+	71, // [71:71] is the sub-list for extension extendee
+	0,  // [0:71] is the sub-list for field type_name
 }
 
 func init() { file_nucleus_admin_v1_admin_proto_init() }
@@ -4153,6 +4755,7 @@ func file_nucleus_admin_v1_admin_proto_init() {
 		(*Command_SnapshotRequest)(nil),
 		(*Command_Goodbye)(nil),
 		(*Command_DataStudio)(nil),
+		(*Command_Rbac)(nil),
 	}
 	file_nucleus_admin_v1_admin_proto_msgTypes[14].OneofWrappers = []any{
 		(*Frame_Registration)(nil),
@@ -4162,6 +4765,7 @@ func file_nucleus_admin_v1_admin_proto_init() {
 		(*Frame_SnapshotResponse)(nil),
 		(*Frame_Goodbye)(nil),
 		(*Frame_DataStudioResponse)(nil),
+		(*Frame_RbacResponse)(nil),
 	}
 	file_nucleus_admin_v1_admin_proto_msgTypes[39].OneofWrappers = []any{
 		(*DataStudioRequest_ListModels)(nil),
@@ -4187,9 +4791,9 @@ func file_nucleus_admin_v1_admin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_nucleus_admin_v1_admin_proto_rawDesc), len(file_nucleus_admin_v1_admin_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   48,
+			NumMessages:   57,
 			NumExtensions: 0,
-			NumServices:   3,
+			NumServices:   4,
 		},
 		GoTypes:           file_nucleus_admin_v1_admin_proto_goTypes,
 		DependencyIndexes: file_nucleus_admin_v1_admin_proto_depIdxs,

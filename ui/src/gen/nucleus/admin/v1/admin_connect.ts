@@ -13,7 +13,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-import { BulkActionRequest, BulkActionResponse, CreateRecordRequest, DeleteRecordRequest, DeleteRecordResponse, Event, Frame, GetRecordRequest, GetSchemaRequest, GetSnapshotRequest, ListModelsRequest, ListModelsResponse, ListNodesRequest, ListNodesResponse, ListRecordsRequest, ModelSchema, PaginatedRecords, Record, Snapshot, StreamEventsRequest, UpdateRecordRequest } from "./admin_pb.js";
+import { BulkActionRequest, BulkActionResponse, CreateRecordRequest, DeleteRecordRequest, DeleteRecordResponse, Event, Frame, GetRbacRequest, GetRbacResponse, GetRecordRequest, GetSchemaRequest, GetSnapshotRequest, ListAuditRequest, ListAuditResponse, ListModelsRequest, ListModelsResponse, ListNodesRequest, ListNodesResponse, ListRecordsRequest, ModelSchema, PaginatedRecords, Record, Snapshot, StreamEventsRequest, UpdateRecordRequest } from "./admin_pb.js";
 import { MethodKind } from "@bufbuild/protobuf";
 
 /**
@@ -158,6 +158,38 @@ export const DataStudioService = {
       name: "BulkAction",
       I: BulkActionRequest,
       O: BulkActionResponse,
+      kind: MethodKind.Unary,
+    },
+  }
+} as const;
+
+/**
+ * ManageService is the UI-facing surface for the Access control and Audit
+ * log screens. GetRbac is translated into an RbacRequest on the chosen
+ * agent's stream; ListAudit reads the server's own fleet-plane audit ring
+ * (in-memory, bounded, never persisted — same discipline as event replay).
+ *
+ * @generated from service nucleus.admin.v1.ManageService
+ */
+export const ManageService = {
+  typeName: "nucleus.admin.v1.ManageService",
+  methods: {
+    /**
+     * @generated from rpc nucleus.admin.v1.ManageService.GetRbac
+     */
+    getRbac: {
+      name: "GetRbac",
+      I: GetRbacRequest,
+      O: GetRbacResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc nucleus.admin.v1.ManageService.ListAudit
+     */
+    listAudit: {
+      name: "ListAudit",
+      I: ListAuditRequest,
+      O: ListAuditResponse,
       kind: MethodKind.Unary,
     },
   }

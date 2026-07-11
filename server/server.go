@@ -68,6 +68,8 @@ func New(cfg Config) *Server {
 		}),
 		Snapshots:      routing.NewSnapshotRouter(0),
 		DataStudio:     routing.NewDataStudioRouter(0),
+		Rbac:           routing.NewRbacRouter(0),
+		Audit:          routing.NewAuditRing(0),
 		Logger:         cfg.Logger,
 		SendChanBuffer: 64,
 		HeartbeatGrace: cfg.AgentInactivityTimeout,
@@ -93,9 +95,11 @@ func New(cfg Config) *Server {
 	// the UI assets) goes through the auth chain.
 	controlSvc := services.NewControlService(state, cfg.EventChannelSize, cfg.SnapshotTimeout)
 	dataStudioSvc := services.NewDataStudioService(state, cfg.SnapshotTimeout)
+	manageSvc := services.NewManageService(state, cfg.SnapshotTimeout)
 	protectedUI := http.NewServeMux()
 	protectedUI.Handle(adminv1connect.NewControlServiceHandler(controlSvc))
 	protectedUI.Handle(adminv1connect.NewDataStudioServiceHandler(dataStudioSvc))
+	protectedUI.Handle(adminv1connect.NewManageServiceHandler(manageSvc))
 	protectedUI.Handle("/", staticUIHandler())
 	uiRoot := http.NewServeMux()
 	uiRoot.HandleFunc("/healthz", healthOK)

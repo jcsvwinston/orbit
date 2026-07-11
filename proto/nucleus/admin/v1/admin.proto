@@ -226,6 +226,7 @@ message Command {
     SnapshotRequest snapshot_request = 3;
     Goodbye goodbye = 4;
     DataStudioRequest data_studio = 5;
+    RbacRequest rbac = 6;
   }
 }
 
@@ -245,6 +246,7 @@ message Frame {
     SnapshotResponse snapshot_response = 5;
     Goodbye goodbye = 6;
     DataStudioResponse data_studio_response = 7;
+    RbacResponse rbac_response = 8;
   }
 }
 
@@ -528,4 +530,82 @@ service DataStudioService {
   rpc UpdateRecord(UpdateRecordRequest) returns (Record);
   rpc DeleteRecord(DeleteRecordRequest) returns (DeleteRecordResponse);
   rpc BulkAction(BulkActionRequest) returns (BulkActionResponse);
+}
+
+// =============================================================================
+// Manage: RBAC snapshot (server -> agent -> server) + fleet-plane audit
+// =============================================================================
+
+// RbacRequest asks a connected agent for a point-in-time snapshot of the
+// application's Casbin roles and policies (read-only; the app's authorizer
+// stays the single writer). Travels server -> agent inside Command.
+message RbacRequest {
+  string request_id = 1;
+}
+
+message RbacRole {
+  string name = 1;
+  // Number of subjects with a grouping rule onto this role.
+  int32 members = 2;
+}
+
+message RbacPolicy {
+  string subject = 1;
+  string object = 2;
+  string action = 3;
+  // "allow" unless the policy row carries an explicit deny effect.
+  string effect = 4;
+}
+
+// RbacResponse travels agent -> server on the same Stream. error is
+// non-empty when the snapshot failed; in that case the lists are empty.
+message RbacResponse {
+  string request_id = 1;
+  string error = 2;
+  repeated RbacRole roles = 10;
+  repeated RbacPolicy policies = 11;
+}
+
+// GetRbacRequest addresses one connected agent, like Data Studio does.
+message GetRbacRequest {
+  string node_id = 1;
+}
+
+message GetRbacResponse {
+  repeated RbacRole roles = 1;
+  repeated RbacPolicy policies = 2;
+}
+
+// AuditEntry is one fleet-plane action: something an operator did THROUGH
+// the admin server (Data Studio mutations, and future manage actions).
+// Per-app admin actions stay in each node's in-process Orbit audit ring;
+// this log covers the fleet plane the server itself routes.
+message AuditEntry {
+  google.protobuf.Timestamp time = 1;
+  // Operator identity as resolved by the UI auth chain.
+  string actor = 2;
+  // e.g. "datastudio.create", "datastudio.delete", "datastudio.bulk".
+  string action = 3;
+  // Human-readable target, e.g. "Article #42 (default)".
+  string target = 4;
+  // Agent the action was routed to.
+  string node_id = 5;
+}
+
+message ListAuditRequest {
+  // Maximum entries to return, newest first. 0 means the server default.
+  int32 limit = 1;
+}
+
+message ListAuditResponse {
+  repeated AuditEntry entries = 1;
+}
+
+// ManageService is the UI-facing surface for the Access control and Audit
+// log screens. GetRbac is translated into an RbacRequest on the chosen
+// agent's stream; ListAudit reads the server's own fleet-plane audit ring
+// (in-memory, bounded, never persisted — same discipline as event replay).
+service ManageService {
+  rpc GetRbac(GetRbacRequest) returns (GetRbacResponse);
+  rpc ListAudit(ListAuditRequest) returns (ListAuditResponse);
 }

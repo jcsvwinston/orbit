@@ -55,12 +55,12 @@ func (s *ControlService) ListNodes(ctx context.Context, req *connect.Request[adm
 	}
 	for _, info := range infos {
 		out.Nodes = append(out.Nodes, &adminv1.NodeInfo{
-			NodeId:     info.NodeID,
-			Version:    info.Version,
-			Labels:     cloneLabels(info.Labels),
-			StartedAt:  timestamppb.New(info.StartedAt),
-			LastSeenAt: timestamppb.New(info.LastSeenAt),
-			Connected:  info.Connected,
+			NodeId:      info.NodeID,
+			Version:     info.Version,
+			Labels:      cloneLabels(info.Labels),
+			StartedAt:   timestamppb.New(info.StartedAt),
+			LastSeenAt:  timestamppb.New(info.LastSeenAt),
+			Connected:   info.Connected,
 			HostMetrics: info.HostMetrics,
 		})
 	}

@@ -18,6 +18,7 @@ import (
 	"github.com/jcsvwinston/orbit/agent/connection"
 	dstudio "github.com/jcsvwinston/orbit/agent/datastudio"
 	"github.com/jcsvwinston/orbit/agent/identity"
+	"github.com/jcsvwinston/orbit/agent/rbac"
 	"github.com/jcsvwinston/orbit/agent/metrics"
 	"github.com/jcsvwinston/orbit/agent/stream"
 )
@@ -87,6 +88,12 @@ type Config struct {
 	// server. Empty disables the Data Studio path.
 	Databases map[string]*db.DB
 
+	// Authorizer is a read-only view of the framework's RBAC state (the
+	// *authz.Enforcer satisfies it). Required for the Access control
+	// screen of the fleet UI; nil disables the RBAC snapshot path on
+	// this agent.
+	Authorizer rbac.PolicySource
+
 	// DefaultDatabaseAlias is the alias used when a Data Studio request
 	// arrives with an empty database_alias. Falls back to "default" if
 	// unset.
@@ -141,6 +148,7 @@ type Agent struct {
 	metrics    *metrics.Metrics
 	dialer     *connection.Dialer
 	dataStudio *dstudio.Handler
+	rbac       *rbac.Handler
 
 	// connectedOnce is closed the first time Run successfully establishes
 	// a stream to any admin endpoint. Used by Extension wrappers that
@@ -200,6 +208,7 @@ func New(cfg Config) (*Agent, error) {
 		metrics:       m,
 		dialer:        dialer,
 		dataStudio:    dataStudio,
+		rbac:          rbac.New(cfg.Authorizer),
 		connectedOnce: make(chan struct{}),
 	}, nil
 }
@@ -315,10 +324,13 @@ func (a *Agent) runOnce(ctx context.Context) error {
 		DrainTimeout: a.cfg.DrainTimeout,
 		Host:         hostmetrics.New(a.cfg.DB),
 	}
-	// Avoid the typed-nil-into-interface trap: only set the field when
-	// we actually have a constructed handler.
+	// Avoid the typed-nil-into-interface trap: only set the fields when
+	// we actually have constructed handlers.
 	if a.dataStudio != nil {
 		streamCfg.DataStudio = a.dataStudio
+	}
+	if a.rbac != nil {
+		streamCfg.Rbac = a.rbac
 	}
 	st := stream.New(res.Client, streamCfg)
 

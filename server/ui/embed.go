@@ -3,12 +3,12 @@
 //
 // Build pipeline:
 //
-//   1. `make ui-build` runs vite in admin/ui/ and writes admin/ui/dist/.
-//   2. A tiny copy step (CI: scripts/build_admin_server_ui.sh; locally:
-//      `make server-build` invokes the same logic) copies admin/ui/dist/
-//      into admin/server/ui/dist/ so the //go:embed below picks it up.
-//   3. `go build ./admin/server/cmd/admin-server` produces a binary that
-//      serves the static UI at "/" without depending on anything on disk.
+//  1. `make ui-build` runs vite in admin/ui/ and writes admin/ui/dist/.
+//  2. A tiny copy step (CI: scripts/build_admin_server_ui.sh; locally:
+//     `make server-build` invokes the same logic) copies admin/ui/dist/
+//     into admin/server/ui/dist/ so the //go:embed below picks it up.
+//  3. `go build ./admin/server/cmd/admin-server` produces a binary that
+//     serves the static UI at "/" without depending on anything on disk.
 //
 // During development you run `make ui-dev` (Vite on :5173 with proxy to
 // :8080) and access the admin UI directly without going through the Go
