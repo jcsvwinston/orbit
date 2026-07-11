@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.0](https://github.com/jcsvwinston/orbit/compare/server/v0.3.1...server/v0.4.0) (2026-07-11)
+
+
+### Added
+
+* Access control and Audit log wired end-to-end — the W1 waiver lands (v1.2 arc) ([#42](https://github.com/jcsvwinston/orbit/issues/42)) ([8c600ce](https://github.com/jcsvwinston/orbit/commit/8c600ce2504b4514a2292002ea322b73ce809c55))
+
+
+### Fixed
+
+* **fleet:** bump agent to v0.3.0 in server — full standalone resolution after W1 ([#48](https://github.com/jcsvwinston/orbit/issues/48)) ([1617c0b](https://github.com/jcsvwinston/orbit/commit/1617c0bfa26024aa3b466a4fb1643727a4961680))
+* **fleet:** bump proto to v0.2.0 in agent and server — standalone resolution restored after W1 ([#47](https://github.com/jcsvwinston/orbit/issues/47)) ([d8009bf](https://github.com/jcsvwinston/orbit/commit/d8009bf0990844dac57090ed17d9dda1b789f90b))
+
 ## [0.3.1](https://github.com/jcsvwinston/orbit/compare/server/v0.3.0...server/v0.3.1) (2026-07-11)
 
 
