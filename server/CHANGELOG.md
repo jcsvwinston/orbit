@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/jcsvwinston/orbit/compare/server/v0.4.0...server/v0.5.0) (2026-07-11)
+
+
+### Added
+
+* SQL stream shows the driver-reported row count — the W2 waiver lands (v1.2 arc) ([#49](https://github.com/jcsvwinston/orbit/issues/49)) ([04071da](https://github.com/jcsvwinston/orbit/commit/04071da06776f86c61d0a0b9aac2c6c76c20e95b))
+
+
+### Fixed
+
+* **fleet:** bump proto to v0.3.0 in agent and server — standalone resolution restored after W2 ([#54](https://github.com/jcsvwinston/orbit/issues/54)) ([ea225a9](https://github.com/jcsvwinston/orbit/commit/ea225a9ae158ac43d9e51789bbf1575edf93f1c7))
+
 ## [0.4.0](https://github.com/jcsvwinston/orbit/compare/server/v0.3.1...server/v0.4.0) (2026-07-11)
 
 
