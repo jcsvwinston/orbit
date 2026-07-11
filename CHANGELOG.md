@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.2.0](https://github.com/jcsvwinston/orbit/compare/v1.1.0...v1.2.0) (2026-07-11)
+
+
+### Added
+
+* Access control and Audit log wired end-to-end — the W1 waiver lands (v1.2 arc) ([#42](https://github.com/jcsvwinston/orbit/issues/42)) ([8c600ce](https://github.com/jcsvwinston/orbit/commit/8c600ce2504b4514a2292002ea322b73ce809c55))
+* SQL stream shows the driver-reported row count — the W2 waiver lands (v1.2 arc) ([#49](https://github.com/jcsvwinston/orbit/issues/49)) ([04071da](https://github.com/jcsvwinston/orbit/commit/04071da06776f86c61d0a0b9aac2c6c76c20e95b))
+
+
+### Fixed
+
+* **fleet:** bump agent to v0.3.0 in server — full standalone resolution after W1 ([#48](https://github.com/jcsvwinston/orbit/issues/48)) ([1617c0b](https://github.com/jcsvwinston/orbit/commit/1617c0bfa26024aa3b466a4fb1643727a4961680))
+* **fleet:** bump proto to v0.2.0 in agent and server — standalone resolution restored after W1 ([#47](https://github.com/jcsvwinston/orbit/issues/47)) ([d8009bf](https://github.com/jcsvwinston/orbit/commit/d8009bf0990844dac57090ed17d9dda1b789f90b))
+* **fleet:** bump proto to v0.3.0 in agent and server — standalone resolution restored after W2 ([#54](https://github.com/jcsvwinston/orbit/issues/54)) ([ea225a9](https://github.com/jcsvwinston/orbit/commit/ea225a9ae158ac43d9e51789bbf1575edf93f1c7))
+
 ## [1.1.0](https://github.com/jcsvwinston/orbit/compare/v1.0.0...v1.1.0) (2026-07-11)
 
 
