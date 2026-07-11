@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/jcsvwinston/orbit/compare/server/v0.3.0...server/v0.3.1) (2026-07-11)
+
+
+### Fixed
+
+* pin toolchain go1.26.5 across all six modules (GO-2026-5856) ([#36](https://github.com/jcsvwinston/orbit/issues/36)) ([7f79f96](https://github.com/jcsvwinston/orbit/commit/7f79f9667d096ac561d5eb28ac1ade17359691cf))
+
 ## [0.3.0](https://github.com/jcsvwinston/orbit/compare/server/v0.2.0...server/v0.3.0) (2026-07-11)
 
 
