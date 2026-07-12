@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.2](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v0.2.1...quarkdatasource/v0.2.2) (2026-07-12)
+
+
+### Fixed
+
+* **deps:** los puentes suben quark de v1.1.5 a v1.2.1, el quark del set certificado (H-U5) ([34cbc2e](https://github.com/jcsvwinston/orbit/commit/34cbc2ef42475de7c46a055a04a428c62a615395))
+* **deps:** los puentes suben quark de v1.1.5 a v1.2.1, el quark del set certificado (H-U5) ([f4cc128](https://github.com/jcsvwinston/orbit/commit/f4cc1284c6471a12d4596121b9ea3ca59a64cb2f))
+
 ## [0.2.1](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v0.2.0...quarkdatasource/v0.2.1) (2026-07-11)
 
 

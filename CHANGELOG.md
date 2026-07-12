@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.1](https://github.com/jcsvwinston/orbit/compare/v1.2.0...v1.2.1) (2026-07-12)
+
+
+### Fixed
+
+* **admin:** parametriza el INSERT del bootstrap admin (H-O5) ([d8bf01b](https://github.com/jcsvwinston/orbit/commit/d8bf01bc72bb32e24d3c917f16a123f1aa3178d7))
+* **admin:** parametriza el INSERT del bootstrap admin (H-O5) ([65763a8](https://github.com/jcsvwinston/orbit/commit/65763a82c6825dd5e728ee99b14841488bfde2af))
+
 ## [1.2.0](https://github.com/jcsvwinston/orbit/compare/v1.1.0...v1.2.0) (2026-07-11)
 
 
