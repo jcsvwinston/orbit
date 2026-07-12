@@ -91,8 +91,8 @@ github.com/jackc/puddle/v2 v2.2.2 h1:PR8nw+E/1w0GLuRFSmiioY6UooMp6KJv0/61nB7icHo
 github.com/jackc/puddle/v2 v2.2.2/go.mod h1:vriiEXHvEE654aYKXXjOvZM39qJ0q+azkZFrfEOc3H4=
 github.com/jcsvwinston/orbit v0.3.0 h1:T/9wkmE2m2vxA4ihy9YIHNmpuSZQSprAv/Md/3mlFOc=
 github.com/jcsvwinston/orbit v0.3.0/go.mod h1:WKzUADIUztOWzoT6QLx0A4x0LdiiPVOhltd3pNixa0w=
-github.com/jcsvwinston/quark v1.1.5 h1:ZJFljfQay+T8a3o2Uzelf/KpM3irE2X1NAqaPubHxgY=
-github.com/jcsvwinston/quark v1.1.5/go.mod h1:/dYf1reJE+Jq5tHNSbf4z6vz8evp+0zxlBi/3rOKSQQ=
+github.com/jcsvwinston/quark v1.2.1 h1:JS+RpUquohKEw+gWqT4JOcx6QjQPIvumFV+9hBKpJ+s=
+github.com/jcsvwinston/quark v1.2.1/go.mod h1:Dl3dLq/rQCGKPnyXQvDz7ZmRbm4+0qYIaFHRY9hPJ74=
 github.com/klauspost/compress v1.18.5 h1:/h1gH5Ce+VWNLSWqPzOVn6XBO+vJbCNGvjoaGBFW2IE=
 github.com/klauspost/compress v1.18.5/go.mod h1:cwPg85FWrGar70rWktvGQj8/hthj3wpl0PGDogxkrSQ=
 github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0SNc=
