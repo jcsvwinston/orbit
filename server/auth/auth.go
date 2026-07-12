@@ -62,7 +62,20 @@ type UIConfig struct {
 	// TrustedCIDRs is the allowlist of remote addresses whose
 	// trusted-proxy headers are honoured. Empty = "127.0.0.1/32, ::1/128".
 	TrustedCIDRs []string
+
+	// ProxySecret, when non-empty, is a shared secret the trusted proxy
+	// must echo in the ProxySecretHeader ("X-Auth-Proxy-Secret") for its
+	// forwarded identity to be honoured. CIDR membership alone is then no
+	// longer sufficient — it defends against any co-located process that
+	// can source packets from a trusted CIDR but does not know the secret.
+	// Empty keeps the CIDR-only behaviour.
+	ProxySecret string
 }
+
+// ProxySecretHeader is the header the trusted proxy uses to present
+// UIConfig.ProxySecret. Fixed (not configurable) to keep the contract
+// between proxy and server unambiguous.
+const ProxySecretHeader = "X-Auth-Proxy-Secret"
 
 // UIMiddleware authenticates UI requests. It returns a generic 401 on
 // failure rather than leaking which credential mode was attempted.
@@ -77,11 +90,17 @@ func UIMiddleware(cfg UIConfig) func(http.Handler) http.Handler {
 		emailHeader = "X-Auth-Email"
 	}
 	bearer := strings.TrimSpace(cfg.BearerToken)
+	proxySecret := strings.TrimSpace(cfg.ProxySecret)
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// 1) trusted-proxy header path
-			if from := remoteIP(r); from != nil && cidrsContain(trusted, from) {
+			// 1) trusted-proxy header path. When a proxy secret is
+			// configured the header identity is honoured only if the
+			// request also carries the matching secret — CIDR membership
+			// alone is not enough. A trusted-CIDR request that fails the
+			// secret check falls through to the bearer path rather than
+			// short-circuiting, so a bad secret never blocks a valid bearer.
+			if from := remoteIP(r); from != nil && cidrsContain(trusted, from) && proxySecretOK(r, proxySecret) {
 				if user := strings.TrimSpace(r.Header.Get(authHeader)); user != "" {
 					id := Identity{
 						Subject: user,
@@ -170,6 +189,21 @@ func remoteIP(r *http.Request) net.IP {
 		host = r.RemoteAddr
 	}
 	return net.ParseIP(strings.TrimSpace(host))
+}
+
+// proxySecretOK reports whether the request satisfies the shared
+// proxy-secret requirement. When expected is empty the check is disabled
+// (returns true); otherwise the request must present the exact secret in
+// ProxySecretHeader, compared in constant time.
+func proxySecretOK(r *http.Request, expected string) bool {
+	if expected == "" {
+		return true
+	}
+	if r == nil {
+		return false
+	}
+	got := strings.TrimSpace(r.Header.Get(ProxySecretHeader))
+	return subtle.ConstantTimeCompare([]byte(got), []byte(expected)) == 1
 }
 
 func bearerFromHeader(r *http.Request) string {

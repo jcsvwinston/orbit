@@ -35,6 +35,14 @@ type Config struct {
 	// private network).
 	AgentToken string
 
+	// InsecureAgentListener overrides the fail-closed guard that refuses
+	// to start the agent listener on a non-loopback interface when it has
+	// no authentication (AgentToken == "" && AgentTLS == nil). Leave false
+	// in production; set it only when a network-layer control (private
+	// subnet, service mesh mTLS, firewall) already restricts who can reach
+	// AgentAddr. See Run for the exact condition.
+	InsecureAgentListener bool
+
 	// UIBearerToken is the optional fallback token for direct UI access
 	// without a reverse proxy. Empty disables this fallback.
 	UIBearerToken string
@@ -52,6 +60,15 @@ type Config struct {
 	// UIAuthHeader / UIEmailHeader. Empty means "trust 127.0.0.1/32 and
 	// ::1/128 only". Configure your reverse proxy's network here.
 	UITrustedProxyCIDRs []string
+
+	// UIProxySecret, when non-empty, requires the trusted reverse proxy to
+	// also present a shared secret in the "X-Auth-Proxy-Secret" header
+	// before the server honours UIAuthHeader / UIEmailHeader. This closes
+	// the gap where any process inside a trusted CIDR (a sidecar, a
+	// host-networked container, another local process) could forge an
+	// operator identity with just the CIDR membership. Empty preserves the
+	// CIDR-only behaviour. See auth.UIMiddleware.
+	UIProxySecret string
 
 	// HTTPReplayBufferSize is the per-kind ring buffer capacity for
 	// replaying recent events to a freshly opened UI panel. Default 256.

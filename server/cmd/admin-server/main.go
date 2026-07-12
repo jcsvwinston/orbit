@@ -12,9 +12,12 @@
 // Two listeners run by default:
 //
 //   - --agent-addr (default :9090) — h2c by default; mTLS when --agent-cert
-//     and --agent-key are supplied.
+//     and --agent-key are supplied. With no --agent-token and no TLS the
+//     server refuses to start unless the address is loopback or
+//     --insecure-agent-listener is passed (see server.Run).
 //   - --ui-addr (default :8080) — h2c + embedded UI; trusted-proxy headers
-//     and bearer fallback per --ui-* flags.
+//     and bearer fallback per --ui-* flags. --ui-proxy-secret adds a shared
+//     secret the proxy must echo before its identity header is trusted.
 //
 // A third, opt-in listener serves Prometheus /metrics (+/healthz) when
 // --metrics-addr is set; empty (the default) disables it.
@@ -57,6 +60,8 @@ func run(args []string) error {
 	uiAuthHeader := fs.String("ui-auth-header", envOr("NUCLEUS_ADMIN_UI_AUTH_HEADER", "X-Auth-User"), "trusted-proxy header carrying authenticated user")
 	uiEmailHeader := fs.String("ui-email-header", envOr("NUCLEUS_ADMIN_UI_EMAIL_HEADER", "X-Auth-Email"), "trusted-proxy header carrying user email")
 	uiTrustedCIDRs := fs.String("ui-trusted-cidrs", os.Getenv("NUCLEUS_ADMIN_UI_TRUSTED_CIDRS"), "comma-separated CIDRs allowed to set trusted-proxy headers")
+	uiProxySecret := fs.String("ui-proxy-secret", os.Getenv("NUCLEUS_ADMIN_UI_PROXY_SECRET"), "shared secret the trusted proxy must echo in X-Auth-Proxy-Secret before its forwarded identity is honoured; empty keeps CIDR-only trust")
+	insecureAgentListener := fs.Bool("insecure-agent-listener", envBool("NUCLEUS_ADMIN_INSECURE_AGENT_LISTENER"), "allow the agent listener to bind a non-loopback interface without a token or TLS (secure the address at the network layer)")
 	agentCert := fs.String("agent-cert", os.Getenv("NUCLEUS_ADMIN_AGENT_CERT"), "PEM cert for agent listener (enables TLS)")
 	agentKey := fs.String("agent-key", os.Getenv("NUCLEUS_ADMIN_AGENT_KEY"), "PEM key for agent listener")
 	uiCert := fs.String("ui-cert", os.Getenv("NUCLEUS_ADMIN_UI_CERT"), "PEM cert for UI listener (enables TLS)")
@@ -89,15 +94,17 @@ func run(args []string) error {
 	logger := newLogger(*logLevel, *logFormat)
 
 	cfg := server.Config{
-		AgentAddr:           *agentAddr,
-		UIAddr:              *uiAddr,
-		AgentToken:          strings.TrimSpace(*agentToken),
-		UIBearerToken:       strings.TrimSpace(*uiBearer),
-		UIAuthHeader:        *uiAuthHeader,
-		UIEmailHeader:       *uiEmailHeader,
-		UITrustedProxyCIDRs: splitCSV(*uiTrustedCIDRs),
-		MetricsAddr:         strings.TrimSpace(*metricsAddr),
-		Logger:              logger,
+		AgentAddr:             *agentAddr,
+		UIAddr:                *uiAddr,
+		AgentToken:            strings.TrimSpace(*agentToken),
+		InsecureAgentListener: *insecureAgentListener,
+		UIBearerToken:         strings.TrimSpace(*uiBearer),
+		UIAuthHeader:          *uiAuthHeader,
+		UIEmailHeader:         *uiEmailHeader,
+		UITrustedProxyCIDRs:   splitCSV(*uiTrustedCIDRs),
+		UIProxySecret:         strings.TrimSpace(*uiProxySecret),
+		MetricsAddr:           strings.TrimSpace(*metricsAddr),
+		Logger:                logger,
 	}
 
 	if *agentCert != "" || *agentKey != "" {
@@ -125,7 +132,9 @@ func run(args []string) error {
 		"ui_addr", cfg.UIAddr,
 		"metrics_addr", cfg.MetricsAddr,
 		"agent_token_set", cfg.AgentToken != "",
+		"insecure_agent_listener", cfg.InsecureAgentListener,
 		"ui_bearer_set", cfg.UIBearerToken != "",
+		"ui_proxy_secret_set", cfg.UIProxySecret != "",
 		"agent_tls", cfg.AgentTLS != nil,
 		"ui_tls", cfg.UITLS != nil)
 
@@ -175,6 +184,18 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// envBool reads a boolean env var. Unset or empty is false; "1", "true",
+// "yes", "on" (any case) are true. Used for the default of a bool flag so
+// the flag still wins when passed explicitly.
+func envBool(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func splitCSV(in string) []string {
