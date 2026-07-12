@@ -14,9 +14,11 @@
 // :8080) and access the admin UI directly without going through the Go
 // embed path. The embed path is for production binaries.
 //
-// The dist directory is gitignored. If a build runs without the dist in
-// place, FS still embeds an empty filesystem and the server falls back
-// to the placeholder index from PlaceholderHTML.
+// The built dist directory (index.html + hashed assets) is committed so
+// the binary is self-contained and `go install …/admin-server` works
+// without a Node toolchain. If a checkout somehow lacks dist, FS still
+// embeds an empty filesystem and the server falls back to the placeholder
+// index from PlaceholderHTML.
 package ui
 
 import (
