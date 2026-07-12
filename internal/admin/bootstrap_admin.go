@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -89,18 +90,15 @@ func EnsureBootstrapAdminUser(ctx context.Context, sqlDB *sql.DB, cfg BootstrapA
 
 	userID := newBootstrapAdminUserID()
 	now := time.Now().UTC().Format(time.RFC3339)
-	insert := fmt.Sprintf(
-		"INSERT INTO %s (id, username, email, password_hash, is_superuser, created_at, updated_at) VALUES (%s, %s, %s, %s, %d, %s, %s)",
-		defaultAdminUsersTable,
-		quoteBootstrapSQLString(userID),
-		quoteBootstrapSQLString(username),
-		quoteBootstrapSQLString(email),
-		quoteBootstrapSQLString(hash),
-		1,
-		quoteBootstrapSQLString(now),
-		quoteBootstrapSQLString(now),
-	)
-	if _, err := sqlDB.ExecContext(ctx, insert); err != nil {
+	if err := insertBootstrapAdminUser(ctx, sqlDB, cfg.System, bootstrapAdminRow{
+		id:           userID,
+		username:     username,
+		email:        email,
+		passwordHash: hash,
+		isSuperuser:  1,
+		createdAt:    now,
+		updatedAt:    now,
+	}); err != nil {
 		if isBootstrapDuplicateError(err) {
 			return BootstrapAdminResult{
 				Created:           false,
@@ -148,9 +146,11 @@ func ensureBootstrapAdminUsersTable(ctx context.Context, sqlDB *sql.DB, system s
 //     fallback): the portable `CREATE TABLE IF NOT EXISTS` form,
 //     unchanged from the pre-dialect-aware implementation.
 //
-// The INSERT and COUNT statements elsewhere in this file are already
-// dialect-agnostic (standard SQL string literals, no placeholders), so
-// the CREATE statement is the only dialect-specific surface.
+// The COUNT statement elsewhere in this file is dialect-agnostic (it
+// binds no values). The INSERT is dialect-aware too: it binds its values
+// with dialect-appropriate placeholders when System is known
+// (insertBootstrapAdminUser / bootstrapInsertPlaceholders), falling back
+// to inline literals only when the dialect is unknown.
 func bootstrapAdminUsersTableDDL(system string) string {
 	switch system {
 	case "mssql":
@@ -190,6 +190,88 @@ END;`, defaultAdminUsersTable)
 	updated_at TEXT NOT NULL
 )`, defaultAdminUsersTable)
 	}
+}
+
+// bootstrapAdminRow is the fixed set of values written by the admin
+// bootstrap INSERT, in column order.
+type bootstrapAdminRow struct {
+	id           string
+	username     string
+	email        string
+	passwordHash string
+	isSuperuser  int
+	createdAt    string
+	updatedAt    string
+}
+
+// adminUsersInsertColumns is the column list (and, with it, the value
+// count) for the bootstrap admin INSERT.
+const adminUsersInsertColumns = "(id, username, email, password_hash, is_superuser, created_at, updated_at)"
+
+// insertBootstrapAdminUser inserts the first admin user. When system names
+// a known dialect the values are bound as parameters (no SQL-string
+// concatenation); when system is empty or unrecognised the dialect — and
+// therefore the placeholder style — is unknown, so it falls back to the
+// portable inline-literal form. Real deployments always pass System
+// (orbit.go derives it from db.DB.System()); the inline path exists only
+// for a caller that opts out of dialect awareness, and its values are
+// operator config / framework-generated (never end-user input), with
+// single quotes doubled.
+func insertBootstrapAdminUser(ctx context.Context, sqlDB *sql.DB, system string, row bootstrapAdminRow) error {
+	if ph := bootstrapInsertPlaceholders(system); ph != nil {
+		stmt := fmt.Sprintf("INSERT INTO %s %s VALUES (%s)",
+			defaultAdminUsersTable, adminUsersInsertColumns, strings.Join(ph, ", "))
+		_, err := sqlDB.ExecContext(ctx, stmt,
+			row.id, row.username, row.email, row.passwordHash, row.isSuperuser, row.createdAt, row.updatedAt)
+		return err
+	}
+
+	stmt := fmt.Sprintf("INSERT INTO %s %s VALUES (%s, %s, %s, %s, %d, %s, %s)",
+		defaultAdminUsersTable, adminUsersInsertColumns,
+		quoteBootstrapSQLString(row.id),
+		quoteBootstrapSQLString(row.username),
+		quoteBootstrapSQLString(row.email),
+		quoteBootstrapSQLString(row.passwordHash),
+		row.isSuperuser,
+		quoteBootstrapSQLString(row.createdAt),
+		quoteBootstrapSQLString(row.updatedAt),
+	)
+	_, err := sqlDB.ExecContext(ctx, stmt)
+	return err
+}
+
+// bootstrapInsertPlaceholders returns the positional bind placeholders for
+// the admin-users INSERT in the dialect of system, matching the styles
+// pkg/db uses (schema_drift.go): "?" for sqlite/mysql, "$N" for
+// postgresql, "@pN" for mssql, ":N" for oracle. It returns nil for an
+// empty or unrecognised system, signalling the caller to use the portable
+// inline-literal fallback (no portable placeholder style exists).
+func bootstrapInsertPlaceholders(system string) []string {
+	const n = 7 // len(adminUsersInsertColumns) values
+	switch system {
+	case "sqlite", "mysql":
+		ph := make([]string, n)
+		for i := range ph {
+			ph[i] = "?"
+		}
+		return ph
+	case "postgresql":
+		return numberedBindPlaceholders("$", n)
+	case "mssql":
+		return numberedBindPlaceholders("@p", n)
+	case "oracle":
+		return numberedBindPlaceholders(":", n)
+	default:
+		return nil
+	}
+}
+
+func numberedBindPlaceholders(prefix string, n int) []string {
+	ph := make([]string, n)
+	for i := range ph {
+		ph[i] = prefix + strconv.Itoa(i+1)
+	}
+	return ph
 }
 
 func countBootstrapAdminUsers(ctx context.Context, sqlDB *sql.DB) (int, error) {
