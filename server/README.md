@@ -25,6 +25,50 @@ go build -o bin/admin-server ./cmd/admin-server
 Run `./bin/admin-server --help` (or `--version`) for the full surface.
 Every flag has a `NUCLEUS_ADMIN_*` env var counterpart.
 
+## Security defaults
+
+Read this before exposing either listener beyond localhost.
+
+**Agent listener is fail-closed.** The agent listener (`--agent-addr`,
+default `:9090`) accepts agent registrations that then drive Data Studio
+CRUD, RBAC snapshots and fleet events. With **no** `--agent-token` and
+**no** TLS (`--agent-cert`/`--agent-key`), `AgentMiddleware` is a
+pass-through, so an unauthenticated listener on a non-loopback interface
+would accept any rogue agent on the network. The server therefore
+**refuses to start** in that configuration. To run it you must do one of:
+
+* set `--agent-token` (shared bearer) — the recommended minimum;
+* supply `--agent-cert`/`--agent-key` (mTLS at the listener); or
+* bind `--agent-addr` to loopback (`127.0.0.1:9090`); or
+* pass `--insecure-agent-listener` (env
+  `NUCLEUS_ADMIN_INSECURE_AGENT_LISTENER=1`) to override, **only** when a
+  network-layer control (private subnet, service mesh, firewall) already
+  restricts who can reach the address. The override logs a `WARN` on boot.
+
+**UI trusted-proxy trust and the `X-Auth-Proxy-Secret` gate.** The UI
+listener authenticates operators via a trusted reverse proxy that sets
+`X-Auth-User` (per decision 14). By default the server honours that header
+for any request whose source IP is in `--ui-trusted-cidrs` (default
+`127.0.0.1/32, ::1/128`). **Localhost is always trusted by default**, so
+any co-located process — a sidecar, a host-networked container, another
+local process — can forge an operator identity and falsify audit
+attribution. To require proof that the request really came through your
+proxy, set `--ui-proxy-secret` (env `NUCLEUS_ADMIN_UI_PROXY_SECRET`): the
+proxy must then echo the secret in the `X-Auth-Proxy-Secret` header, and a
+trusted-CIDR request without the matching secret falls through to the
+bearer path instead of being trusted. Keep `--ui-trusted-cidrs` as narrow
+as your proxy's real source range.
+
+**Operators are fleet superusers; Access control is informational.** Every
+authenticated operator can perform every Data Studio mutation on every
+model of every connected node. The `ManageService.GetRbac` surface behind
+the UI's "Access control" screen is a **read-only snapshot** of each
+node's Casbin policy (the app's own authorizer); it does **not** gate the
+operator's own fleet-plane actions, which are audited but not authorized
+per verb/object. A role-scoped (e.g. read-only) operator model is future
+work. Until then, treat access to the UI listener as full fleet-admin
+access.
+
 ## Sub-packages
 
 | Sub-package         | Responsibility                                                                                                            |

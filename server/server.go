@@ -108,6 +108,7 @@ func New(cfg Config) *Server {
 		AuthHeader:   cfg.UIAuthHeader,
 		EmailHeader:  cfg.UIEmailHeader,
 		TrustedCIDRs: cfg.UITrustedProxyCIDRs,
+		ProxySecret:  cfg.UIProxySecret,
 	})(protectedUI))
 
 	s.agentSrv = newH2CServer(agentRoot, cfg.AgentTLS)
@@ -173,6 +174,18 @@ func (s *Server) UIAddr() string {
 // Run starts both listeners and blocks until ctx is cancelled. Returns
 // nil on graceful shutdown, non-nil on listen errors. Not idempotent.
 func (s *Server) Run(ctx context.Context) error {
+	// Fail-closed: refuse an unauthenticated agent listener bound to a
+	// non-loopback interface (see agentListenerGuard).
+	warnExposed, err := s.cfg.agentListenerGuard()
+	if err != nil {
+		return err
+	}
+	if warnExposed {
+		s.logger.Warn("agent listener is exposed without authentication",
+			"agent_addr", s.cfg.AgentAddr,
+			"reason", "--insecure-agent-listener set; ensure AgentAddr is restricted at the network layer")
+	}
+
 	agentLn, err := net.Listen("tcp", s.cfg.AgentAddr)
 	if err != nil {
 		return fmt.Errorf("admin server: listen agent %s: %w", s.cfg.AgentAddr, err)
@@ -308,6 +321,59 @@ func spaHandler(fsys fs.FS) http.Handler {
 		}
 		_, _ = w.Write(index)
 	})
+}
+
+// agentListenerGuard decides whether the agent listener may start. An
+// unauthenticated listener (AgentToken == "" && AgentTLS == nil) on a
+// non-loopback interface would let any host on the network register as an
+// agent, drive Data Studio CRUD, read RBAC snapshots and inject fleet
+// events. It returns:
+//
+//   - err != nil  → the listener must be refused (caller returns it).
+//   - warn == true → the listener starts exposed-and-unauthenticated only
+//     because InsecureAgentListener overrode the guard; the caller logs it.
+//   - (false, nil) → the listener is authenticated or loopback; start it.
+func (c Config) agentListenerGuard() (warn bool, err error) {
+	if !agentListenerExposed(c.AgentAddr) || c.AgentToken != "" || c.AgentTLS != nil {
+		return false, nil
+	}
+	if !c.InsecureAgentListener {
+		return false, fmt.Errorf("admin server: refusing to start the agent listener on non-loopback address %q without authentication: "+
+			"set --agent-token or --agent-cert/--agent-key, bind --agent-addr to loopback, or pass --insecure-agent-listener to override", c.AgentAddr)
+	}
+	return true, nil
+}
+
+// agentListenerExposed reports whether addr binds an interface reachable
+// from off-host. It is conservative: anything that is not provably
+// loopback counts as exposed, so the fail-closed guard in Run errs toward
+// refusing an unauthenticated listener rather than allowing one.
+//
+//   - ":9090" / "0.0.0.0:9090" / "[::]:9090" — all interfaces → exposed.
+//   - "127.0.0.1:9090" / "[::1]:9090" / "localhost:9090" — loopback.
+//   - any other specific IP or hostname → exposed (can't prove loopback).
+func agentListenerExposed(addr string) bool {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(addr))
+	if err != nil {
+		// No port form (or malformed); treat the whole string as the host.
+		host = strings.TrimSpace(addr)
+	}
+	host = strings.TrimSpace(host)
+	switch host {
+	case "":
+		// Empty host binds every interface.
+		return true
+	case "localhost":
+		return false
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if ip.IsUnspecified() {
+			return true // 0.0.0.0 / ::
+		}
+		return !ip.IsLoopback()
+	}
+	// Non-IP hostname other than "localhost": can't prove it's loopback.
+	return true
 }
 
 func healthOK(w http.ResponseWriter, _ *http.Request) {
