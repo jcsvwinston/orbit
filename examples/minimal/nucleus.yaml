@@ -1,0 +1,12 @@
+port: 8080
+log_level: info
+log_format: text
+
+databases:
+  default:
+    url: "sqlite://orbit_minimal.db"
+
+# Dev-only: the admin panel is served over plain HTTP in this example, so
+# the session cookie can't require Secure. Never do this in production —
+# front the app with TLS and drop this line.
+session_cookie_secure: false

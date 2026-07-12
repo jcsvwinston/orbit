@@ -1,0 +1,9 @@
+port: 8080
+log_level: info
+log_format: text
+
+databases:
+  default:
+    url: "sqlite://fleet_app.db"
+
+session_cookie_secure: false
