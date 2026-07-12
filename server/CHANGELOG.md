@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.0](https://github.com/jcsvwinston/orbit/compare/server/v0.5.0...server/v0.6.0) (2026-07-12)
+
+
+### Added
+
+* **server:** endurece los defaults del admin-server + correcciones del brief (H-O1..H-O4, H-O7) ([79a5595](https://github.com/jcsvwinston/orbit/commit/79a5595390829184158cf3a7f38f32690a8a289c), [d1735e1](https://github.com/jcsvwinston/orbit/commit/d1735e1b117b29d89e8ce33e1bef1692381772ee))
+
+### Behavior changes
+
+Endurecimiento de seguridad: un despliegue existente puede notar estos cambios al actualizar.
+
+* El admin-server **se niega a arrancar** el listener de agentes en una interfaz no-loopback sin autenticación: hace falta `--agent-token` o TLS (`--agent-cert`/`--agent-key`). Para forzar el comportamiento anterior existe `--insecure-agent-listener`.
+* El modo trusted-proxy del UI ahora exige el secreto compartido `--ui-proxy-secret`: las peticiones con `X-Auth-User` que no traigan `X-Auth-Proxy-Secret` correcto reciben `401`.
+
 ## [0.5.0](https://github.com/jcsvwinston/orbit/compare/server/v0.4.0...server/v0.5.0) (2026-07-11)
 
 
