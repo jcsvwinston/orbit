@@ -63,7 +63,14 @@
     ".": {
       "package-name": "github.com/jcsvwinston/orbit",
       "release-type": "go",
-      "include-component-in-tag": false
+      "include-component-in-tag": false,
+      "exclude-paths": [
+        "quarkbridge",
+        "quarkdatasource",
+        "proto",
+        "agent",
+        "server"
+      ]
     },
     "quarkbridge": {
       "package-name": "github.com/jcsvwinston/orbit/quarkbridge",
