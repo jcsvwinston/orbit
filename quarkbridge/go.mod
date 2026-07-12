@@ -15,7 +15,7 @@ toolchain go1.26.5
 // local ./nucleus checkout; standalone it resolves from the proxy.
 require (
 	github.com/jcsvwinston/nucleus v1.1.0
-	github.com/jcsvwinston/quark v1.1.5
+	github.com/jcsvwinston/quark v1.2.1
 )
 
 require (

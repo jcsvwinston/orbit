@@ -206,8 +206,8 @@ github.com/jackc/puddle/v2 v2.2.2 h1:PR8nw+E/1w0GLuRFSmiioY6UooMp6KJv0/61nB7icHo
 github.com/jackc/puddle/v2 v2.2.2/go.mod h1:vriiEXHvEE654aYKXXjOvZM39qJ0q+azkZFrfEOc3H4=
 github.com/jcsvwinston/nucleus v1.1.0 h1:d9P6+7GMhCrsWJbV2gjyEPjypnCddIAwnRH3psbruJs=
 github.com/jcsvwinston/nucleus v1.1.0/go.mod h1:vA+pd56Fz60WYsDCdIeDZb0c2SsCty8XKqpYDZlCUos=
-github.com/jcsvwinston/quark v1.1.5 h1:ZJFljfQay+T8a3o2Uzelf/KpM3irE2X1NAqaPubHxgY=
-github.com/jcsvwinston/quark v1.1.5/go.mod h1:/dYf1reJE+Jq5tHNSbf4z6vz8evp+0zxlBi/3rOKSQQ=
+github.com/jcsvwinston/quark v1.2.1 h1:JS+RpUquohKEw+gWqT4JOcx6QjQPIvumFV+9hBKpJ+s=
+github.com/jcsvwinston/quark v1.2.1/go.mod h1:Dl3dLq/rQCGKPnyXQvDz7ZmRbm4+0qYIaFHRY9hPJ74=
 github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 h1:Z9n2FFNUXsshfwJMBgNA0RU6/i7WVaAegv3PtuIHPMs=
 github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51/go.mod h1:CzGEWj7cYgsdH8dAjBGEr58BoE7ScuLd+fwFZ44+/x8=
 github.com/klauspost/compress v1.18.5 h1:/h1gH5Ce+VWNLSWqPzOVn6XBO+vJbCNGvjoaGBFW2IE=
