@@ -152,6 +152,80 @@ func TestEnsureBootstrapAdminUser_SQLite(t *testing.T) {
 	}
 }
 
+// TestBootstrapInsertPlaceholders asserts the per-dialect bind
+// placeholder styles (mirroring pkg/db's schema_drift.go) and that an
+// unknown/empty dialect returns nil so the caller uses the inline-literal
+// fallback. Offline — no live DB.
+func TestBootstrapInsertPlaceholders(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		system string
+		want   []string
+	}{
+		{"sqlite", []string{"?", "?", "?", "?", "?", "?", "?"}},
+		{"mysql", []string{"?", "?", "?", "?", "?", "?", "?"}},
+		{"postgresql", []string{"$1", "$2", "$3", "$4", "$5", "$6", "$7"}},
+		{"mssql", []string{"@p1", "@p2", "@p3", "@p4", "@p5", "@p6", "@p7"}},
+		{"oracle", []string{":1", ":2", ":3", ":4", ":5", ":6", ":7"}},
+		{"", nil},
+		{"unknown", nil},
+	}
+	for _, tc := range cases {
+		got := bootstrapInsertPlaceholders(tc.system)
+		if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+			t.Errorf("bootstrapInsertPlaceholders(%q) = %v, want %v", tc.system, got, tc.want)
+		}
+	}
+}
+
+// TestEnsureBootstrapAdminUser_ParametrizedBindsSpecialChars proves the
+// dialect-aware path binds values instead of concatenating them: a
+// username/email containing a single quote (which would terminate a naive
+// SQL string literal) is stored verbatim and creates exactly one row.
+func TestEnsureBootstrapAdminUser_ParametrizedBindsSpecialChars(t *testing.T) {
+	t.Parallel()
+
+	database, err := db.New(db.Config{DatabaseURL: "sqlite://:memory:"}, nil)
+	if err != nil {
+		t.Fatalf("db.New: %v", err)
+	}
+	defer database.Close()
+	sqlDB, err := database.SqlDB()
+	if err != nil {
+		t.Fatalf("SqlDB: %v", err)
+	}
+
+	const wantUser = "o'brien'); DROP TABLE nucleus_admin_users;--"
+	const wantEmail = "o'brien@example.com"
+	res, err := EnsureBootstrapAdminUser(context.Background(), sqlDB, BootstrapAdminConfig{
+		Username: wantUser,
+		Email:    wantEmail,
+		Password: "supersecret",
+		System:   database.System(), // "sqlite" → parametrised path
+	})
+	if err != nil {
+		t.Fatalf("EnsureBootstrapAdminUser: %v", err)
+	}
+	if !res.Created {
+		t.Fatal("expected the admin to be created")
+	}
+
+	// The table must still exist (the injection attempt was bound, not
+	// executed) and hold exactly the value we passed.
+	var gotUser, gotEmail string
+	if err := sqlDB.QueryRow(
+		"SELECT username, email FROM "+defaultAdminUsersTable).Scan(&gotUser, &gotEmail); err != nil {
+		t.Fatalf("read back user (table should still exist): %v", err)
+	}
+	if gotUser != wantUser {
+		t.Errorf("username round-trip: got %q want %q", gotUser, wantUser)
+	}
+	if gotEmail != wantEmail {
+		t.Errorf("email round-trip: got %q want %q", gotEmail, wantEmail)
+	}
+}
+
 // TestEnsureBootstrapAdminUser_EmptySystemUsesDefaultDDL guards the
 // backward-compatibility contract: a config with no System set falls
 // back to the portable DDL and still works on SQLite.
