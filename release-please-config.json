@@ -64,7 +64,6 @@
       "package-name": "github.com/jcsvwinston/orbit",
       "release-type": "go",
       "include-component-in-tag": false,
-      "release-as": "1.2.1",
       "exclude-paths": [
         "quarkbridge",
         "quarkdatasource",
