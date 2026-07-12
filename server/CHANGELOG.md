@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0](https://github.com/jcsvwinston/orbit/compare/server/v0.5.0...server/v0.6.0) (2026-07-12)
+
+
+### Added
+
+* **server:** endurece los defaults del admin-server (H-O1, H-O2, H-O3) ([d1735e1](https://github.com/jcsvwinston/orbit/commit/d1735e1b117b29d89e8ce33e1bef1692381772ee))
+* **server:** endurece los defaults del admin-server + correcciones del brief (H-O1..H-O4, H-O7) ([79a5595](https://github.com/jcsvwinston/orbit/commit/79a5595390829184158cf3a7f38f32690a8a289c))
+
 ## [0.5.0](https://github.com/jcsvwinston/orbit/compare/server/v0.4.0...server/v0.5.0) (2026-07-11)
 
 
