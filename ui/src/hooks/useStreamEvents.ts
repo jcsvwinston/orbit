@@ -6,7 +6,9 @@
 //
 //   - Pause is tracked in a ref, not in state, so toggling pause does
 //     NOT re-open the upstream stream. The async iterator keeps reading
-//     and just discards events while paused.
+//     and, while paused, BUFFERS events (up to bufferSize) instead of
+//     discarding them; on resume the buffer is flushed into the visible
+//     ring and pendingCount drops back to 0 (OR-UX-P1-4).
 //
 //   - Reconnect is automatic on transport errors with a small exponential
 //     backoff (1s, 2s, 4s, capped at 5s). We don't surface that on the
@@ -35,6 +37,9 @@ export interface UseStreamEventsResult {
   setPaused: (v: boolean) => void
   clear: () => void
   errorMessage: string | null
+  // pendingCount is how many events arrived while paused and are waiting
+  // to be flushed on resume (0 when live).
+  pendingCount: number
 }
 
 export function useStreamEvents(opts: UseStreamEventsOptions): UseStreamEventsResult {
@@ -43,11 +48,27 @@ export function useStreamEvents(opts: UseStreamEventsOptions): UseStreamEventsRe
   const [connected, setConnected] = useState(false)
   const [paused, setPausedState] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [pendingCount, setPendingCount] = useState(0)
 
   const pausedRef = useRef(false)
+  // pendingRef holds events received while paused, newest-first, capped
+  // at bufferSize. Flushed into `events` on resume.
+  const pendingRef = useRef<Event[]>([])
   const setPaused = (v: boolean): void => {
     pausedRef.current = v
     setPausedState(v)
+    if (!v && pendingRef.current.length > 0) {
+      // Resume: prepend the buffered events (they are newer than what's
+      // visible) and trim to the ring size.
+      const buffered = pendingRef.current
+      pendingRef.current = []
+      setPendingCount(0)
+      setEvents((prev) => {
+        const next = [...buffered, ...prev]
+        if (next.length > bufferSize) next.length = bufferSize
+        return next
+      })
+    }
   }
 
   useEffect(() => {
@@ -69,7 +90,14 @@ export function useStreamEvents(opts: UseStreamEventsOptions): UseStreamEventsRe
           )
           for await (const ev of stream) {
             if (!alive) return
-            if (pausedRef.current) continue
+            if (pausedRef.current) {
+              // Buffer instead of discarding; cap and report the count.
+              const buf = pendingRef.current
+              buf.unshift(ev)
+              if (buf.length > bufferSize) buf.length = bufferSize
+              setPendingCount(buf.length)
+              continue
+            }
             setEvents((prev) => {
               const next = [ev, ...prev]
               if (next.length > bufferSize) next.length = bufferSize
@@ -108,8 +136,13 @@ export function useStreamEvents(opts: UseStreamEventsOptions): UseStreamEventsRe
     connected,
     paused,
     setPaused,
-    clear: () => setEvents([]),
+    clear: () => {
+      pendingRef.current = []
+      setPendingCount(0)
+      setEvents([])
+    },
     errorMessage,
+    pendingCount,
   }
 }
 

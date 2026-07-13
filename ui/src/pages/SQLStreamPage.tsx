@@ -6,7 +6,7 @@ import { StreamControls } from '@/components/StreamControls'
 import { SEMANTIC, sqlKindColor } from '@/lib/colors'
 import { useStreamEvents } from '@/hooks/useStreamEvents'
 import { Filter, EventType } from '@/gen/nucleus/admin/v1/admin_pb'
-import { durationToMillis, formatDuration, formatTime, timestampToDate } from '@/lib/format'
+import { durationToMillis, formatDuration, formatTime, streamRowKey, timestampToDate } from '@/lib/format'
 
 // Exact column template from the handoff:
 // Time / Node / Kind / Statement / Duration / Rows.
@@ -42,6 +42,7 @@ export function SQLStreamPage() {
             onTogglePause={() => stream.setPaused(!stream.paused)}
             onClear={stream.clear}
             count={stream.events.length}
+            pendingCount={stream.pendingCount}
             error={stream.errorMessage}
           />
         }
@@ -71,11 +72,11 @@ export function SQLStreamPage() {
             const failed = sql.error !== ''
             return (
               <div
-                key={`${ev.nodeId}-${idx}`}
+                key={streamRowKey(ev.nodeId, ev.timestamp, idx)}
                 className="grid items-center border-t border-t10 px-4 py-[6px] font-mono text-[11.5px] hover:bg-t7"
                 style={{ gridTemplateColumns: GRID }}
               >
-                <span className="text-t25">{formatTime(timestampToDate(ev.timestamp))}</span>
+                <span className="text-t31">{formatTime(timestampToDate(ev.timestamp))}</span>
                 <span className="truncate text-t32">{ev.nodeId}</span>
                 <span className="font-semibold" style={{ color: sqlKindColor(sql.operation) }}>
                   {sql.operation.toUpperCase()}

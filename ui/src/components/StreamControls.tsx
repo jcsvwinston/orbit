@@ -12,6 +12,9 @@ export interface StreamControlsProps {
   onClear: () => void
   count: number
   error?: string | null
+  // pendingCount: events buffered while paused (shown on the Resume
+  // button so the operator knows resuming reveals N new rows).
+  pendingCount?: number
   extra?: ReactNode
 }
 
@@ -27,9 +30,15 @@ export function StreamControls(props: StreamControlsProps) {
       <Pill color={pill.color} pulse={pill.pulse}>
         {pill.label}
       </Pill>
-      <GhostButton onClick={props.onTogglePause}>{props.paused ? 'Resume' : 'Pause'}</GhostButton>
+      <GhostButton onClick={props.onTogglePause}>
+        {props.paused
+          ? props.pendingCount && props.pendingCount > 0
+            ? `Resume (${props.pendingCount.toLocaleString()} new)`
+            : 'Resume'
+          : 'Pause'}
+      </GhostButton>
       <GhostButton onClick={props.onClear}>Clear</GhostButton>
-      <span className="font-mono text-[10.5px] text-t26">
+      <span className="font-mono text-[10.5px] text-t31">
         {props.count.toLocaleString()} buffered
       </span>
       {props.error !== undefined && props.error !== null && (

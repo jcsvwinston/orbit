@@ -9,6 +9,15 @@ export function timestampToDate(ts: Timestamp | undefined): Date | undefined {
   return new Date(Number(ts.seconds) * 1000 + Math.floor(ts.nanos / 1_000_000))
 }
 
+// streamRowKey derives a stable React key from an event's node + wall
+// clock (nanosecond precision). Index-based keys remount every row when
+// a new event is prepended (the whole list shifts), so React can't reuse
+// DOM nodes — the ns timestamp keeps keys stable across prepends.
+export function streamRowKey(nodeId: string, ts: Timestamp | undefined, fallbackIdx: number): string {
+  if (!ts) return `${nodeId}:idx${fallbackIdx}`
+  return `${nodeId}:${ts.seconds.toString()}.${ts.nanos.toString()}`
+}
+
 export function durationToMillis(d: Duration | undefined): number {
   if (!d) return 0
   return Number(d.seconds) * 1000 + d.nanos / 1_000_000
@@ -39,26 +48,3 @@ export function formatTime(date: Date | undefined): string {
   return `${h}:${m}:${s}.${ms}`
 }
 
-export function statusClass(status: number): string {
-  if (status === 0) return 'text-zinc-500'
-  if (status < 300) return 'text-emerald-400'
-  if (status < 400) return 'text-sky-400'
-  if (status < 500) return 'text-amber-400'
-  return 'text-rose-400'
-}
-
-export function methodClass(method: string): string {
-  switch (method.toUpperCase()) {
-    case 'GET':
-      return 'text-sky-400'
-    case 'POST':
-      return 'text-emerald-400'
-    case 'PUT':
-    case 'PATCH':
-      return 'text-amber-400'
-    case 'DELETE':
-      return 'text-rose-400'
-    default:
-      return 'text-zinc-400'
-  }
-}

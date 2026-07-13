@@ -3,9 +3,10 @@
 // encoding/decoding) is preserved from the previous implementation — only the
 // rendering changed to the redesign language. The filter input is wired to
 // the hook's server-side `search` parameter (debounced).
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PageBody, PageHeader } from '@/components/Page'
 import { AccentButton, Card, Chip, GhostButton, Label, Segmented } from '@/components/ui'
+import { useToast } from '@/components/Toast'
 import {
   useDeleteRecord,
   useModels,
@@ -44,8 +45,13 @@ export function DataStudioPage() {
       : null,
   )
 
+  const toast = useToast()
   const deleteMut = useDeleteRecord(activeModel ?? '')
   const saveMut = useSaveRecord(activeModel ?? '')
+
+  // The row that is currently being deleted (its id), so the row can show
+  // a "deleting…" state instead of appearing to hang.
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   // Debounce the filter input into the server-side search param.
   useEffect(() => {
@@ -122,8 +128,10 @@ export function DataStudioPage() {
                       )}
                       <span className="truncate">{m.name}</span>
                     </span>
-                    <span className="shrink-0 font-mono text-[10.5px] text-t26">
-                      {String(m.recordCount)}
+                    <span className="shrink-0 font-mono text-[10.5px] text-t31">
+                      {/* -1 = "count unknown" (no agent queried yet) —
+                          render an em dash, not a literal "-1". */}
+                      {m.recordCount < 0n ? '—' : String(m.recordCount)}
                     </span>
                   </button>
                 )
@@ -190,14 +198,29 @@ export function DataStudioPage() {
                         )
                         setEditing({ id, values })
                       }}
+                      deletingId={deletingId}
                       onDelete={(rec) => {
                         const id = unquoteJSON(
                           rec.valuesJson['ID'] ?? rec.valuesJson['Id'] ?? rec.valuesJson['id'] ?? '',
                         )
                         if (!id) return
-                        if (window.confirm(`Delete record ${id}?`)) {
-                          deleteMut.mutate(id)
-                        }
+                        if (!window.confirm(`Delete record ${id}?`)) return
+                        setDeletingId(id)
+                        deleteMut.mutate(id, {
+                          onSuccess: () => {
+                            toast.success(`Deleted ${activeModel} ${id}`)
+                          },
+                          onError: (err) => {
+                            // Without this the row simply "won't disappear"
+                            // on an FK/permission failure, with no reason.
+                            toast.error(
+                              `Couldn't delete ${activeModel} ${id}: ${
+                                err instanceof Error ? err.message : String(err)
+                              }`,
+                            )
+                          },
+                          onSettled: () => setDeletingId(null),
+                        })
                       }}
                     />
                     <div className="flex items-center justify-between border-t border-t10 px-4 py-2.5">
@@ -241,14 +264,18 @@ export function DataStudioPage() {
             initial={editing.values}
             onCancel={() => setEditing(null)}
             onSave={(values) => {
-              saveMut.mutate(
-                editing.id !== undefined && editing.id !== ''
-                  ? { id: editing.id, values }
-                  : { values },
-                {
-                  onSuccess: () => setEditing(null),
+              const editId = editing.id
+              const vars = editId !== undefined && editId !== '' ? { id: editId, values } : { values }
+              saveMut.mutate(vars, {
+                onSuccess: () => {
+                  setEditing(null)
+                  toast.success(
+                    editId !== undefined && editId !== ''
+                      ? `Saved ${activeModel} ${editId}`
+                      : `Created ${activeModel}`,
+                  )
                 },
-              )
+              })
             }}
             saving={saveMut.isPending}
             error={saveMut.error?.message}
@@ -268,6 +295,7 @@ function RecordsTable(props: {
   records: PBRecord[]
   loading: boolean
   error: string | null
+  deletingId: string | null
   onEdit: (rec: PBRecord) => void
   onDelete: (rec: PBRecord) => void
 }) {
@@ -302,23 +330,38 @@ function RecordsTable(props: {
         </div>
       )}
 
-      {props.records.map((rec, idx) => (
-        <div
-          key={idx}
-          className="grid items-center border-t border-t10 px-4 py-1.5 transition-colors hover:bg-t7"
-          style={{ gridTemplateColumns: gridCols }}
-        >
-          {props.fields.map((f) => (
-            <RecordCell key={f.name} raw={rec.valuesJson[f.name]} />
-          ))}
-          <span className="flex justify-end gap-1.5">
-            <GhostButton onClick={() => props.onEdit(rec)}>Edit</GhostButton>
-            <GhostButton danger onClick={() => props.onDelete(rec)}>
-              Delete
-            </GhostButton>
-          </span>
-        </div>
-      ))}
+      {props.records.map((rec, idx) => {
+        const rowId = unquoteJSON(
+          rec.valuesJson['ID'] ?? rec.valuesJson['Id'] ?? rec.valuesJson['id'] ?? '',
+        )
+        const deleting = props.deletingId !== null && props.deletingId === rowId
+        return (
+          <div
+            key={rowId || idx}
+            className={[
+              'grid items-center border-t border-t10 px-4 py-1.5 transition-colors hover:bg-t7',
+              deleting ? 'opacity-50' : '',
+            ].join(' ')}
+            style={{ gridTemplateColumns: gridCols }}
+          >
+            {props.fields.map((f) => (
+              <RecordCell key={f.name} raw={rec.valuesJson[f.name]} />
+            ))}
+            <span className="flex justify-end gap-1.5">
+              {deleting ? (
+                <span className="font-mono text-[10.5px] text-t30">deleting…</span>
+              ) : (
+                <>
+                  <GhostButton onClick={() => props.onEdit(rec)}>Edit</GhostButton>
+                  <GhostButton danger onClick={() => props.onDelete(rec)}>
+                    Delete
+                  </GhostButton>
+                </>
+              )}
+            </span>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -394,24 +437,68 @@ function RecordEditor(props: {
   error: string | undefined
 }) {
   const [values, setValues] = useState<Record<string, string>>(() => ({ ...props.initial }))
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const titleId = useRef(`ds-modal-${Math.random().toString(36).slice(2)}`).current
 
   const editable = props.schema.filter((f) => !f.isExcluded && !f.isReadonly)
+
+  const onCancel = props.onCancel
+  // Escape closes; focus moves into the dialog on open (basic focus
+  // management for keyboard users — OR-UX-P1-8).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onCancel()
+    }
+    document.addEventListener('keydown', onKey)
+    const first = dialogRef.current?.querySelector<HTMLElement>('input, textarea, button')
+    first?.focus()
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onCancel])
+
+  // Trap Tab within the dialog so focus can't escape to the page behind.
+  const onKeyDown = useCallback((e: React.KeyboardEvent): void => {
+    if (e.key !== 'Tab' || !dialogRef.current) return
+    const focusables = dialogRef.current.querySelectorAll<HTMLElement>(
+      'input, textarea, button, [href], select, [tabindex]:not([tabindex="-1"])',
+    )
+    if (focusables.length === 0) return
+    const first = focusables[0]
+    const last = focusables[focusables.length - 1]
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault()
+      last.focus()
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault()
+      first.focus()
+    }
+  }, [])
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-5"
       style={{ background: 'rgba(0,0,0,.72)' }}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onCancel()
+      }}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        onKeyDown={onKeyDown}
         className="max-h-[86vh] w-full max-w-[600px] overflow-y-auto rounded-[12px] border border-t19 bg-t5"
         style={{ boxShadow: '0 28px 70px rgba(0,0,0,.55)' }}
       >
         <div className="flex items-center justify-between border-b border-t14 px-[18px] py-[13px]">
-          <h3 className="m-0 text-[15px] font-semibold text-t46">{props.title}</h3>
+          <h3 id={titleId} className="m-0 text-[15px] font-semibold text-t46">
+            {props.title}
+          </h3>
           <button
             type="button"
             onClick={props.onCancel}
-            className="border-none bg-transparent text-[14px] text-t29 transition-colors hover:text-t45"
+            aria-label="Close dialog"
+            className="border-none bg-transparent text-[14px] text-t30 transition-colors hover:text-t45"
           >
             ✕
           </button>

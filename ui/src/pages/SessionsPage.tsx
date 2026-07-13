@@ -10,7 +10,7 @@ import {
   EventType,
   SessionChangeEvent_Kind,
 } from '@/gen/nucleus/admin/v1/admin_pb'
-import { formatTime, timestampToDate } from '@/lib/format'
+import { formatTime, streamRowKey, timestampToDate } from '@/lib/format'
 
 // Exact column template from the handoff:
 // Time / Node / Kind / User / Token / Last route / IP.
@@ -43,6 +43,7 @@ export function SessionsPage() {
             onTogglePause={() => stream.setPaused(!stream.paused)}
             onClear={stream.clear}
             count={stream.events.length}
+            pendingCount={stream.pendingCount}
             error={stream.errorMessage}
           />
         }
@@ -71,11 +72,11 @@ export function SessionsPage() {
             const s = ev.body.value
             return (
               <div
-                key={`${ev.nodeId}-${idx}`}
+                key={streamRowKey(ev.nodeId, ev.timestamp, idx)}
                 className="grid items-center border-t border-t10 px-4 py-[6px] font-mono text-[11.5px] hover:bg-t7"
                 style={{ gridTemplateColumns: GRID }}
               >
-                <span className="text-t25">{formatTime(timestampToDate(ev.timestamp))}</span>
+                <span className="text-t31">{formatTime(timestampToDate(ev.timestamp))}</span>
                 <span className="truncate text-t32">{ev.nodeId}</span>
                 <span>
                   <KindPill kind={s.kind} />
