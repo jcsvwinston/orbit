@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/jcsvwinston/orbit/compare/agent/v0.4.0...agent/v0.5.0) (2026-07-13)
+
+
+### Added
+
+* cierra el backlog fleet de la auditoría v1.2.1 — telemetría que se reanuda, node_id correlacionado, sampler real, snapshots, operador read-only ([#66](https://github.com/jcsvwinston/orbit/issues/66)) ([7535bbd](https://github.com/jcsvwinston/orbit/commit/7535bbd4e3587df068b71edbdcf3481ab3e4e195))
+
+
+### Fixed
+
+* **admin:** backlog del panel in-process — audit real bajo auth, redacción, lockout de login, CSRF, headers, y los dos botones fake (terminate/export) ([#67](https://github.com/jcsvwinston/orbit/issues/67)) ([607246d](https://github.com/jcsvwinston/orbit/commit/607246d13464b7ded042fb12c8fa9d326c6165a3))
+
 ## [0.4.0](https://github.com/jcsvwinston/orbit/compare/agent/v0.3.0...agent/v0.4.0) (2026-07-11)
 
 
