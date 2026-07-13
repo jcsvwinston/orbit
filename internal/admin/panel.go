@@ -345,6 +345,9 @@ func (p *Panel) Handler() *router.Mux {
 }
 
 func (p *Panel) mountRoutes(r *router.Mux) {
+	// Browser security headers on every panel response (SPA, login, API).
+	r.Use(securityHeadersMiddleware)
+
 	uiContent := adminUIContentFS()
 	fileServer := http.FileServer(http.FS(uiContent))
 	r.Get("/static/{filepath...}", router.FromHTTP(http.StripPrefix("/static", fileServer).ServeHTTP))
@@ -373,12 +376,18 @@ func (p *Panel) mountRoutes(r *router.Mux) {
 		r.Group(func(sub *router.Mux) {
 			sub.Use(p.authMiddleware)
 
-			// /api/* — authenticated at the edge here, authorized per
-			// handler. They intentionally do not inherit the SPA-only
-			// observation middlewares applied in the nested group below
-			// (preserving their prior router-layer middleware set, which
-			// under the authenticated branch was none).
-			p.mountAPIRoutes(sub)
+			// /api/* — authenticated at the edge, authorized per handler.
+			// They do not inherit the SPA-only observation middlewares of
+			// the nested group below, but they DO carry auditMiddleware:
+			// before this group existed the audit middleware hung only off
+			// the (GET-only) SPA branch, so under auth — the production
+			// posture — Data Studio writes were never audited. They also
+			// carry the CSRF content-type gate (see csrfContentTypeMiddleware).
+			sub.Group(func(api *router.Mux) {
+				api.Use(p.csrfContentTypeMiddleware)
+				api.Use(p.auditMiddleware)
+				p.mountAPIRoutes(api)
+			})
 
 			// SPA fallback keeps its existing middleware stack, now nested
 			// under — and inheriting — authMiddleware.
@@ -399,6 +408,7 @@ func (p *Panel) mountRoutes(r *router.Mux) {
 	// wired by hand. See ADR-016.
 	p.warnAdminAuthDisabled()
 	r.Use(p.tenantContextMiddleware)
+	r.Use(p.csrfContentTypeMiddleware)
 	r.Use(p.auditMiddleware)
 	r.Use(p.sessionActivityMiddleware)
 	r.Use(p.liveTrafficMiddleware)
@@ -430,6 +440,7 @@ func (p *Panel) mountAPIRoutes(m *router.Mux) {
 	m.Get("/api/models/{name}/export", p.handleExportCSV)
 	m.Post("/api/logout", p.handleLogout)
 	m.Get("/api/sessions", p.handleListSessions)
+	m.Delete("/api/sessions/{token}", p.handleTerminateSession)
 	m.Get("/api/live/snapshot", p.handleLiveSnapshot)
 	m.Get("/api/live/excludes", p.handleListLiveExcludePatterns)
 	m.Post("/api/live/excludes", p.handleAddLiveExcludePattern)
@@ -474,6 +485,10 @@ func (p *Panel) mountAPIRoutes(m *router.Mux) {
 	// Data management
 	m.Post("/api/exports", p.handleExportCreate)
 	m.Get("/api/exports", p.handleExportList)
+	// Storage keys contain slashes, so the download route takes the key
+	// as ?key= (the {id}/download form can't carry it in the path). The
+	// SPA uses this route.
+	m.Get("/api/exports/download", p.handleExportDownload)
 	m.Get("/api/exports/{id}", p.handleExportStatus)
 	m.Get("/api/exports/{id}/download", p.handleExportDownload)
 	m.Post("/api/imports", p.handleImportUpload)

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jcsvwinston/nucleus/pkg/auth"
+	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
 	"github.com/jcsvwinston/nucleus/pkg/router"
 )
 
@@ -302,6 +303,68 @@ func isSessionActiveAt(row sessionRow, ts time.Time) bool {
 	}
 
 	return !start.After(ts) && end.After(ts)
+}
+
+// handleTerminateSession destroys one session by token — the backend of
+// the session list's "terminate" action (the SPA shipped the button for
+// months while no DELETE route existed; it failed on every click).
+func (p *Panel) handleTerminateSession(c *router.Context) error {
+	r := c.Request
+	if err := p.authorizeAction(c, "*", "terminate_sessions"); err != nil {
+		return err
+	}
+
+	if p.config.Session == nil {
+		return gferrors.BadRequest("session manager is not configured in admin panel")
+	}
+	token := strings.TrimSpace(c.Param("token"))
+	if token == "" {
+		return gferrors.BadRequest("session token is required")
+	}
+
+	store := p.config.Session.SCS().Store
+
+	// Existence check first so a bogus token 404s instead of "succeeding".
+	var (
+		found bool
+		err   error
+	)
+	if finder, ok := store.(interface {
+		FindCtx(context.Context, string) ([]byte, bool, error)
+	}); ok {
+		_, found, err = finder.FindCtx(r.Context(), token)
+	} else {
+		_, found, err = store.Find(token)
+	}
+	if err != nil {
+		return fmt.Errorf("admin.TerminateSession find: %w", err)
+	}
+	if !found {
+		return gferrors.NotFound("session", shortenToken(token))
+	}
+
+	if deleter, ok := store.(interface {
+		DeleteCtx(context.Context, string) error
+	}); ok {
+		err = deleter.DeleteCtx(r.Context(), token)
+	} else {
+		err = store.Delete(token)
+	}
+	if err != nil {
+		return fmt.Errorf("admin.TerminateSession delete: %w", err)
+	}
+
+	// The audit middleware only covers /api/models/* writes; record this
+	// one explicitly (never the full token — it is a bearer credential).
+	p.recordAuditEntry(r, AuditEntry{
+		Action:   "session.terminate",
+		RecordID: shortenToken(token),
+	})
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"terminated":  true,
+		"token_short": shortenToken(token),
+	})
 }
 
 func allSessionPayloads(ctx context.Context, sm *auth.SessionManager) (map[string][]byte, bool, error) {

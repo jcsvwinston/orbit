@@ -40,6 +40,7 @@ type DatabaseAdminAuth struct {
 	session *auth.SessionManager
 	prefix  string
 	table   string
+	limiter *loginLimiter
 }
 
 // NewDatabaseAdminAuth creates a DB-backed AdminAuth provider that validates
@@ -50,6 +51,7 @@ func NewDatabaseAdminAuth(sqlDB *sql.DB, session *auth.SessionManager, prefix st
 		session: session,
 		prefix:  normalizeAdminPrefix(prefix),
 		table:   defaultAdminUsersTable,
+		limiter: newLoginLimiter(),
 	}
 }
 
@@ -151,6 +153,18 @@ func (a *DatabaseAdminAuth) handleLoginPOST(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Brute-force lockout (fixed window, per client IP and per username)
+	// BEFORE touching the database or bcrypt. bcrypt + the timing
+	// equalization below make each guess expensive but do not bound the
+	// guess RATE — this does.
+	ipKey := "ip:" + auth.ClientIPFromRequest(r)
+	userKey := "user:" + strings.ToLower(username)
+	if a.limiter.blocked(ipKey) || a.limiter.blocked(userKey) {
+		a.renderLoginPage(w, http.StatusTooManyRequests, next,
+			"Too many failed attempts. Try again in a minute.", "")
+		return
+	}
+
 	record, found, err := a.findUserByLogin(r.Context(), username)
 	if err != nil {
 		http.Error(w, "admin login query failed", http.StatusInternalServerError)
@@ -159,6 +173,8 @@ func (a *DatabaseAdminAuth) handleLoginPOST(w http.ResponseWriter, r *http.Reque
 
 	if found {
 		if !auth.CheckPassword(password, record.PasswordHash) {
+			a.limiter.fail(ipKey)
+			a.limiter.fail(userKey)
 			a.renderLoginPage(w, http.StatusUnauthorized, next, "Invalid credentials.", "")
 			return
 		}
@@ -166,9 +182,14 @@ func (a *DatabaseAdminAuth) handleLoginPOST(w http.ResponseWriter, r *http.Reque
 		// Equalize timing with the found-branch compare above; the result
 		// is deliberately discarded (see dummyPasswordHash).
 		auth.CheckPassword(password, dummyPasswordHash)
+		a.limiter.fail(ipKey)
+		a.limiter.fail(userKey)
 		a.renderLoginPage(w, http.StatusUnauthorized, next, "Invalid credentials.", "")
 		return
 	}
+
+	a.limiter.reset(userKey)
+	a.limiter.reset(ipKey)
 
 	if a.session == nil || !sessionContextReady(a.session, r.Context()) {
 		http.Error(w, "session middleware is not configured for admin login", http.StatusInternalServerError)

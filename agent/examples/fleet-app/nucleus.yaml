@@ -6,4 +6,7 @@ databases:
   default:
     url: "sqlite://fleet_app.db"
 
+# Dev-only: this example serves plain HTTP, so the session cookie can't
+# require Secure. Never do this in production — front the app with TLS
+# and drop this line. (The cookie is SameSite=Lax by default.)
 session_cookie_secure: false
