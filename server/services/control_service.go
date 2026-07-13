@@ -173,18 +173,15 @@ func (s *ControlService) GetSnapshot(ctx context.Context, req *connect.Request[a
 	}), nil
 }
 
-// pushAggregateToAgents recomputes the union filter every connected
-// agent should apply, and pushes it to each one. When zero subscribers
-// remain the function pushes an Unsubscribe to clear ingress.
-func (s *ControlService) pushAggregateToAgents() {
+// aggregateFrame builds the frame carrying the current agent-side
+// aggregate demand: a Subscribe with the union filter + sampling rates,
+// or an Unsubscribe when zero UI subscribers remain (clear ingress).
+func aggregateFrame(bus *routing.EventBus) *adminv1.Frame {
 	const aggregateID = "server-aggregate"
 
-	// Build the union filter once.
-	agg := s.state.EventBus.AggregateFilter()
-
-	var frame *adminv1.Frame
+	agg := bus.AggregateFilter()
 	if agg == nil {
-		frame = &adminv1.Frame{
+		return &adminv1.Frame{
 			Body: &adminv1.Frame_Command{
 				Command: &adminv1.Command{
 					Body: &adminv1.Command_Unsubscribe{
@@ -195,21 +192,38 @@ func (s *ControlService) pushAggregateToAgents() {
 				},
 			},
 		}
-	} else {
-		frame = &adminv1.Frame{
-			Body: &adminv1.Frame_Command{
-				Command: &adminv1.Command{
-					Body: &adminv1.Command_Subscribe{
-						Subscribe: &adminv1.Subscribe{
-							SubscriptionId: aggregateID,
-							Filter:         agg,
-						},
+	}
+	return &adminv1.Frame{
+		Body: &adminv1.Frame_Command{
+			Command: &adminv1.Command{
+				Body: &adminv1.Command_Subscribe{
+					Subscribe: &adminv1.Subscribe{
+						SubscriptionId: aggregateID,
+						Filter:         agg,
+						SamplingRate:   bus.AggregateSampling(),
 					},
 				},
 			},
-		}
+		},
 	}
+}
 
+// PushAggregate ships the current aggregate demand to a single agent.
+// server.New wires it as State.OnAgentSubMode so a (re)connecting agent
+// starts shipping immediately when UI streams are already open — without
+// it, an agent that restarts mid-stream stays silent until some UI
+// reopens its subscription.
+func PushAggregate(e *nodes.Entry, bus *routing.EventBus) {
+	if e == nil || bus == nil {
+		return
+	}
+	nodes.TryEnqueue(e, aggregateFrame(bus))
+}
+
+// pushAggregateToAgents recomputes the union filter every connected
+// agent should apply, and pushes it to each one.
+func (s *ControlService) pushAggregateToAgents() {
+	frame := aggregateFrame(s.state.EventBus)
 	s.state.Nodes.ForEach(func(e *nodes.Entry) {
 		nodes.TryEnqueue(e, frame)
 	})

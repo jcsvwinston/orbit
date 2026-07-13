@@ -155,13 +155,44 @@ func (r *Registry) remove(nodeID string, owner *Entry) {
 }
 
 // Touch updates the last-seen timestamp on every event/heartbeat the
-// AgentService handler receives. Idempotent.
+// AgentService handler receives. Idempotent. A node previously marked
+// stale (MarkStale) is revived: Connected flips back to true and
+// watchers get the reconnect notification.
 func (r *Registry) Touch(nodeID string, at time.Time) {
+	var revived *NodeChange
 	r.mu.Lock()
 	if e, ok := r.entries[nodeID]; ok {
 		e.Info.LastSeenAt = at
+		if !e.Info.Connected {
+			e.Info.Connected = true
+			revived = &NodeChange{NodeID: nodeID, Connected: true, Info: e.Info}
+		}
 	}
 	r.mu.Unlock()
+	if revived != nil {
+		r.publish(*revived)
+	}
+}
+
+// MarkStale flips a node to disconnected without evicting its entry —
+// the inactivity janitor's action on a peer whose stream is silent past
+// the timeout. Returns true when the node existed and was connected
+// (i.e. this call actually changed state and notified watchers). The
+// stream itself is left alone: if it turns out to be alive, the next
+// frame's Touch revives the node.
+func (r *Registry) MarkStale(nodeID string) bool {
+	var change *NodeChange
+	r.mu.Lock()
+	if e, ok := r.entries[nodeID]; ok && e.Info.Connected {
+		e.Info.Connected = false
+		change = &NodeChange{NodeID: nodeID, Connected: false, Info: e.Info}
+	}
+	r.mu.Unlock()
+	if change == nil {
+		return false
+	}
+	r.publish(*change)
+	return true
 }
 
 // List returns a stable snapshot of every registered node, sorted by

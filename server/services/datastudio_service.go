@@ -106,6 +106,9 @@ func (s *DataStudioService) GetRecord(_ context.Context, req *connect.Request[ad
 }
 
 func (s *DataStudioService) CreateRecord(ctx context.Context, req *connect.Request[adminv1.CreateRecordRequest]) (*connect.Response[adminv1.Record], error) {
+	if err := requireWrite(ctx); err != nil {
+		return nil, err
+	}
 	body := req.Msg
 	wrapped := &adminv1.DataStudioRequest{Body: &adminv1.DataStudioRequest_CreateRecord{CreateRecord: body}}
 	resp, node, err := s.dispatch(body.GetNodeId(), body.GetModelName(), wrapped)
@@ -120,6 +123,9 @@ func (s *DataStudioService) CreateRecord(ctx context.Context, req *connect.Reque
 }
 
 func (s *DataStudioService) UpdateRecord(ctx context.Context, req *connect.Request[adminv1.UpdateRecordRequest]) (*connect.Response[adminv1.Record], error) {
+	if err := requireWrite(ctx); err != nil {
+		return nil, err
+	}
 	body := req.Msg
 	wrapped := &adminv1.DataStudioRequest{Body: &adminv1.DataStudioRequest_UpdateRecord{UpdateRecord: body}}
 	resp, node, err := s.dispatch(body.GetNodeId(), body.GetModelName(), wrapped)
@@ -134,6 +140,9 @@ func (s *DataStudioService) UpdateRecord(ctx context.Context, req *connect.Reque
 }
 
 func (s *DataStudioService) DeleteRecord(ctx context.Context, req *connect.Request[adminv1.DeleteRecordRequest]) (*connect.Response[adminv1.DeleteRecordResponse], error) {
+	if err := requireWrite(ctx); err != nil {
+		return nil, err
+	}
 	body := req.Msg
 	wrapped := &adminv1.DataStudioRequest{Body: &adminv1.DataStudioRequest_DeleteRecord{DeleteRecord: body}}
 	resp, node, err := s.dispatch(body.GetNodeId(), body.GetModelName(), wrapped)
@@ -148,6 +157,9 @@ func (s *DataStudioService) DeleteRecord(ctx context.Context, req *connect.Reque
 }
 
 func (s *DataStudioService) BulkAction(ctx context.Context, req *connect.Request[adminv1.BulkActionRequest]) (*connect.Response[adminv1.BulkActionResponse], error) {
+	if err := requireWrite(ctx); err != nil {
+		return nil, err
+	}
 	body := req.Msg
 	wrapped := &adminv1.DataStudioRequest{Body: &adminv1.DataStudioRequest_BulkAction{BulkAction: body}}
 	resp, node, err := s.dispatch(body.GetNodeId(), body.GetModelName(), wrapped)
@@ -239,6 +251,17 @@ func (s *DataStudioService) pickAgent(nodeID, modelName string) (*nodes.Entry, b
 
 // Compile-time assertion.
 var _ adminv1connect.DataStudioServiceHandler = (*DataStudioService)(nil)
+
+// requireWrite refuses the call when the authenticated operator is
+// read-only (viewer role via the trusted proxy, or a server running
+// with Config.UIReadOnly). Reads are never gated here.
+func requireWrite(ctx context.Context) error {
+	if auth.IdentityFromContext(ctx).ReadOnly {
+		return connect.NewError(connect.CodePermissionDenied,
+			errors.New("admin server: operator is read-only; data studio mutations are disabled"))
+	}
+	return nil
+}
 
 // audit records a fleet-plane action in the server's audit ring,
 // attributed to the operator resolved by the UI auth chain.

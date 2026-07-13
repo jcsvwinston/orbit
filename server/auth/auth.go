@@ -17,12 +17,17 @@ import (
 )
 
 // Identity is the minimal set of facts the rest of the server may rely
-// on after a request has been authenticated. Currently only used for
-// observability + audit.
+// on after a request has been authenticated. Used for observability,
+// audit attribution, and the read-only gate on Data Studio mutations.
 type Identity struct {
 	Subject string // "agent:<NodeID>" for agents, the UI user for UI
 	Email   string // empty for agents, optional for UI
 	Role    string // "agent" | "ui-operator"
+
+	// ReadOnly marks an operator whose mutations must be refused
+	// (Data Studio create/update/delete/bulk). Set from the trusted
+	// proxy's role header or forced globally via UIConfig.ForceReadOnly.
+	ReadOnly bool
 }
 
 // AgentMiddleware returns an http middleware that enforces shared-token
@@ -31,13 +36,25 @@ type Identity struct {
 // using mTLS at the listener layer).
 func AgentMiddleware(token string) func(http.Handler) http.Handler {
 	expected := strings.TrimSpace(token)
+	limiter := newFailureLimiter()
 	return func(next http.Handler) http.Handler {
 		if expected == "" {
 			return next
 		}
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ip := remoteIPString(r)
+			if limiter.blocked(ip) {
+				http.Error(w, "too many failed attempts", http.StatusTooManyRequests)
+				return
+			}
 			got := bearerFromHeader(r)
 			if subtle.ConstantTimeCompare([]byte(got), []byte(expected)) != 1 {
+				// Only presented-and-wrong credentials count toward the
+				// lockout: a request with no bearer at all is not a
+				// brute-force attempt.
+				if got != "" {
+					limiter.fail(ip)
+				}
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
@@ -70,6 +87,18 @@ type UIConfig struct {
 	// can source packets from a trusted CIDR but does not know the secret.
 	// Empty keeps the CIDR-only behaviour.
 	ProxySecret string
+
+	// RoleHeader names the trusted-proxy header carrying the operator's
+	// role (default "X-Auth-Role"). Honoured only on the trusted-proxy
+	// path, together with AuthHeader. Value "viewer" / "readonly" /
+	// "read-only" (case-insensitive) marks the identity read-only; any
+	// other value — including absent — keeps the operator read-write.
+	RoleHeader string
+
+	// ForceReadOnly marks EVERY authenticated UI identity read-only,
+	// regardless of role header or credential mode. See
+	// Config.UIReadOnly.
+	ForceReadOnly bool
 }
 
 // ProxySecretHeader is the header the trusted proxy uses to present
@@ -91,9 +120,19 @@ func UIMiddleware(cfg UIConfig) func(http.Handler) http.Handler {
 	}
 	bearer := strings.TrimSpace(cfg.BearerToken)
 	proxySecret := strings.TrimSpace(cfg.ProxySecret)
+	roleHeader := strings.TrimSpace(cfg.RoleHeader)
+	if roleHeader == "" {
+		roleHeader = "X-Auth-Role"
+	}
+	limiter := newFailureLimiter()
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ip := remoteIPString(r)
+			if limiter.blocked(ip) {
+				http.Error(w, "too many failed attempts", http.StatusTooManyRequests)
+				return
+			}
 			// 1) trusted-proxy header path. When a proxy secret is
 			// configured the header identity is honoured only if the
 			// request also carries the matching secret — CIDR membership
@@ -103,9 +142,10 @@ func UIMiddleware(cfg UIConfig) func(http.Handler) http.Handler {
 			if from := remoteIP(r); from != nil && cidrsContain(trusted, from) && proxySecretOK(r, proxySecret) {
 				if user := strings.TrimSpace(r.Header.Get(authHeader)); user != "" {
 					id := Identity{
-						Subject: user,
-						Email:   strings.TrimSpace(r.Header.Get(emailHeader)),
-						Role:    "ui-operator",
+						Subject:  user,
+						Email:    strings.TrimSpace(r.Header.Get(emailHeader)),
+						Role:     "ui-operator",
+						ReadOnly: cfg.ForceReadOnly || readOnlyRole(r.Header.Get(roleHeader)),
 					}
 					next.ServeHTTP(w, r.WithContext(WithIdentity(r.Context(), id)))
 					return
@@ -115,13 +155,31 @@ func UIMiddleware(cfg UIConfig) func(http.Handler) http.Handler {
 			if bearer != "" {
 				got := bearerFromHeader(r)
 				if subtle.ConstantTimeCompare([]byte(got), []byte(bearer)) == 1 {
-					id := Identity{Subject: "ui-bearer", Role: "ui-operator"}
+					id := Identity{Subject: "ui-bearer", Role: "ui-operator", ReadOnly: cfg.ForceReadOnly}
 					next.ServeHTTP(w, r.WithContext(WithIdentity(r.Context(), id)))
 					return
+				}
+				// A presented-and-wrong bearer (or a wrong proxy secret
+				// alongside it) counts toward the per-IP lockout;
+				// credential-less requests do not.
+				if got != "" {
+					limiter.fail(ip)
 				}
 			}
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 		})
+	}
+}
+
+// readOnlyRole maps a trusted-proxy role header value onto the read-only
+// flag. Unknown values default to read-write so existing deployments
+// (which send no role header) keep today's behaviour.
+func readOnlyRole(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "viewer", "readonly", "read-only":
+		return true
+	default:
+		return false
 	}
 }
 

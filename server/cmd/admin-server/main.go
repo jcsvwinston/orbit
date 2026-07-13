@@ -61,6 +61,8 @@ func run(args []string) error {
 	uiEmailHeader := fs.String("ui-email-header", envOr("NUCLEUS_ADMIN_UI_EMAIL_HEADER", "X-Auth-Email"), "trusted-proxy header carrying user email")
 	uiTrustedCIDRs := fs.String("ui-trusted-cidrs", os.Getenv("NUCLEUS_ADMIN_UI_TRUSTED_CIDRS"), "comma-separated CIDRs allowed to set trusted-proxy headers")
 	uiProxySecret := fs.String("ui-proxy-secret", os.Getenv("NUCLEUS_ADMIN_UI_PROXY_SECRET"), "shared secret the trusted proxy must echo in X-Auth-Proxy-Secret before its forwarded identity is honoured; empty keeps CIDR-only trust")
+	uiRoleHeader := fs.String("ui-role-header", envOr("NUCLEUS_ADMIN_UI_ROLE_HEADER", "X-Auth-Role"), "trusted-proxy header carrying the operator role; value \"viewer\" makes that operator read-only")
+	uiReadOnly := fs.Bool("ui-read-only", envBool("NUCLEUS_ADMIN_UI_READ_ONLY"), "make every UI operator read-only (Data Studio mutations refused)")
 	insecureAgentListener := fs.Bool("insecure-agent-listener", envBool("NUCLEUS_ADMIN_INSECURE_AGENT_LISTENER"), "allow the agent listener to bind a non-loopback interface without a token or TLS (secure the address at the network layer)")
 	agentCert := fs.String("agent-cert", os.Getenv("NUCLEUS_ADMIN_AGENT_CERT"), "PEM cert for agent listener (enables TLS)")
 	agentKey := fs.String("agent-key", os.Getenv("NUCLEUS_ADMIN_AGENT_KEY"), "PEM key for agent listener")
@@ -103,6 +105,8 @@ func run(args []string) error {
 		UIEmailHeader:         *uiEmailHeader,
 		UITrustedProxyCIDRs:   splitCSV(*uiTrustedCIDRs),
 		UIProxySecret:         strings.TrimSpace(*uiProxySecret),
+		UIRoleHeader:          *uiRoleHeader,
+		UIReadOnly:            *uiReadOnly,
 		MetricsAddr:           strings.TrimSpace(*metricsAddr),
 		Logger:                logger,
 	}

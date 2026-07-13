@@ -365,19 +365,7 @@ func (s *Stream) handleCommand(cmd *adminv1.Command) {
 	case *adminv1.Command_Unsubscribe:
 		s.handleUnsubscribe(body.Unsubscribe)
 	case *adminv1.Command_SnapshotRequest:
-		// Snapshot routing is the admin server's job in Phase 4. The
-		// agent has no snapshot providers wired in this phase; respond
-		// with an empty error response so the server can surface a
-		// "snapshot not available" diagnostic to the operator.
-		s.queueFrame(&adminv1.Frame{
-			Body: &adminv1.Frame_SnapshotResponse{
-				SnapshotResponse: &adminv1.SnapshotResponse{
-					RequestId: body.SnapshotRequest.GetRequestId(),
-					Type:      body.SnapshotRequest.GetType(),
-					Error:     "agent: snapshot providers not implemented",
-				},
-			},
-		})
+		s.handleSnapshotRequest(body.SnapshotRequest)
 	case *adminv1.Command_Goodbye:
 		// Server-initiated graceful close handled by recvLoop's Goodbye
 		// frame as well; this branch covers the alternative shape.
@@ -532,6 +520,11 @@ func (s *Stream) processEvent(a *activeSub, ev observability.Event) {
 		s.cfg.Metrics.EventsDroppedTotal.WithLabelValues(kindLabel, "unknown_kind").Inc()
 		return
 	}
+	// The in-process bus stamps its own NodeID (hostname / instance
+	// label) — a different namespace from the fleet identity this agent
+	// registered under. Overwrite so events correlate with the server's
+	// node registry (Nodes page, per-node filters, metrics cards).
+	pb.NodeId = s.cfg.NodeID
 	frame := &adminv1.Frame{Body: &adminv1.Frame_Event{Event: pb}}
 	if !s.tryQueueFrame(frame) {
 		// Send buffer full; route to the per-kind ring buffer for replay

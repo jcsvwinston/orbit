@@ -15,6 +15,7 @@
 package routing
 
 import (
+	"math/rand/v2"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -39,6 +40,7 @@ type EventBus struct {
 
 	publishedTotal atomic.Uint64
 	droppedTotal   atomic.Uint64
+	sampledTotal   atomic.Uint64
 }
 
 // EventSubscription is one UI-side subscription. The server creates one
@@ -73,7 +75,7 @@ func (b *EventBus) Subscribe(filter *adminv1.Filter, samplingRate map[string]flo
 	sub := &EventSubscription{
 		bus:          b,
 		filter:       filter,
-		samplingRate: cloneFloatMap(samplingRate),
+		samplingRate: normalizeRates(samplingRate),
 		ch:           make(chan *adminv1.Event, channelSize),
 	}
 
@@ -98,9 +100,23 @@ func (b *EventBus) Publish(e *adminv1.Event) int {
 	}
 	b.publishedTotal.Add(1)
 
+	kind := eventTypeOf(e)
+	key := samplingKey(kind)
+
 	b.mu.RLock()
 	matched := make([]*EventSubscription, 0, len(b.subscribers))
+	// aggRate mirrors the rate the agent-side aggregate Subscribe ships
+	// this kind at (the max across demanding subscriptions — see
+	// AggregateSampling). Each subscription then keeps rate/aggRate of
+	// what arrives, so its end-to-end rate is its own requested rate,
+	// not rate·aggRate.
+	var aggRate float32
 	for _, sub := range b.subscribers {
+		if demandsKind(sub.filter, kind) {
+			if r := sub.rateFor(key); r > aggRate {
+				aggRate = r
+			}
+		}
 		if sub.matches(e) {
 			matched = append(matched, sub)
 		}
@@ -109,6 +125,10 @@ func (b *EventBus) Publish(e *adminv1.Event) int {
 
 	delivered := 0
 	for _, sub := range matched {
+		if !sub.sampleResidual(key, aggRate) {
+			b.sampledTotal.Add(1)
+			continue
+		}
 		select {
 		case sub.ch <- e:
 			delivered++
@@ -159,10 +179,13 @@ func (b *EventBus) SubscriberCount() int {
 	return n
 }
 
-// Stats returns published / dropped totals.
+// Stats returns published / dropped / sampled totals.
 type Stats struct {
 	Published uint64
 	Dropped   uint64
+	// Sampled counts deliveries skipped by a subscription's sampling
+	// rate (by design, unlike Dropped which signals backpressure).
+	Sampled uint64
 }
 
 // Stats returns publish counters.
@@ -173,6 +196,7 @@ func (b *EventBus) Stats() Stats {
 	return Stats{
 		Published: b.publishedTotal.Load(),
 		Dropped:   b.droppedTotal.Load(),
+		Sampled:   b.sampledTotal.Load(),
 	}
 }
 
@@ -230,6 +254,57 @@ func (b *EventBus) AggregateFilter() *adminv1.Filter {
 	out.SqlModels = make([]string, 0, len(modelsSeen))
 	for m := range modelsSeen {
 		out.SqlModels = append(out.SqlModels, m)
+	}
+	return out
+}
+
+// AggregateSampling computes the per-kind sampling rate the agent-side
+// aggregate Subscribe should apply: the MAX rate any live subscription
+// wants for that kind (a subscription without an entry wants 1.0 — the
+// proto default). Kinds whose aggregate is 1.0 are omitted. Returns nil
+// when there are no subscribers or nothing samples below 1.0.
+//
+// Publish compensates for this shared agent-side rate per subscription
+// (see sampleResidual), so a 0.1-rate panel and a 1.0-rate panel can
+// coexist: the agent ships at 1.0 and the server thins the 0.1 panel.
+func (b *EventBus) AggregateSampling() map[string]float32 {
+	if b == nil {
+		return nil
+	}
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	if len(b.subscribers) == 0 {
+		return nil
+	}
+
+	out := map[string]float32{}
+	for _, kind := range []adminv1.EventType{
+		adminv1.EventType_EVENT_TYPE_HTTP_REQUEST,
+		adminv1.EventType_EVENT_TYPE_SQL_STATEMENT,
+		adminv1.EventType_EVENT_TYPE_SESSION_CHANGE,
+		adminv1.EventType_EVENT_TYPE_CUSTOM,
+	} {
+		demanded := false
+		var maxRate float32
+		for _, s := range b.subscribers {
+			if !demandsKind(s.filter, kind) {
+				continue
+			}
+			demanded = true
+			if r := s.rateFor(samplingKey(kind)); r > maxRate {
+				maxRate = r
+			}
+			if maxRate >= 1 {
+				break
+			}
+		}
+		if demanded && maxRate < 1 {
+			out[samplingKey(kind)] = maxRate
+		}
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }
@@ -347,13 +422,78 @@ func demandedKinds(f *adminv1.Filter) []adminv1.EventType {
 	return append([]adminv1.EventType(nil), f.Types...)
 }
 
-func cloneFloatMap(in map[string]float32) map[string]float32 {
+// samplingKey maps an EventType to its sampling-map key: the enum name
+// without the EVENT_TYPE_ prefix (e.g. "HTTP_REQUEST"), per the proto
+// contract on Subscribe.sampling_rate.
+func samplingKey(t adminv1.EventType) string {
+	return strings.TrimPrefix(t.String(), "EVENT_TYPE_")
+}
+
+// demandsKind reports whether a filter wants events of the given kind
+// (nil filter or empty Types = all kinds).
+func demandsKind(f *adminv1.Filter, t adminv1.EventType) bool {
+	if f == nil || len(f.Types) == 0 {
+		return true
+	}
+	for _, want := range f.Types {
+		if want == t {
+			return true
+		}
+	}
+	return false
+}
+
+// rateFor returns the subscription's sampling rate for a kind key.
+// Missing entries default to 1.0 (the proto contract).
+func (s *EventSubscription) rateFor(key string) float32 {
+	if s == nil {
+		return 1
+	}
+	if r, ok := s.samplingRate[key]; ok {
+		return r
+	}
+	return 1
+}
+
+// sampleResidual decides whether this subscription keeps an event of the
+// given kind. aggRate is the rate the agent already applied (the max
+// across demanding subscriptions); keeping with probability rate/aggRate
+// makes the subscription's effective end-to-end rate equal its requested
+// rate. A matched subscription always demands the kind, so aggRate >=
+// rate and the ratio is a valid probability.
+func (s *EventSubscription) sampleResidual(key string, aggRate float32) bool {
+	rate := s.rateFor(key)
+	if rate <= 0 {
+		return false
+	}
+	if rate >= 1 || aggRate <= rate {
+		return true
+	}
+	return rand.Float64() < float64(rate)/float64(aggRate)
+}
+
+// normalizeRates clones a sampling map with keys upper-cased, the
+// optional EVENT_TYPE_ prefix stripped, and values clamped to [0, 1],
+// mirroring the agent-side sampler's tolerance.
+func normalizeRates(in map[string]float32) map[string]float32 {
 	if len(in) == 0 {
 		return nil
 	}
 	out := make(map[string]float32, len(in))
 	for k, v := range in {
-		out[k] = v
+		key := strings.TrimPrefix(strings.ToUpper(strings.TrimSpace(k)), "EVENT_TYPE_")
+		if key == "" {
+			continue
+		}
+		if v < 0 {
+			v = 0
+		} else if v > 1 {
+			v = 1
+		}
+		out[key] = v
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }

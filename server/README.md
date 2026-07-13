@@ -59,15 +59,43 @@ trusted-CIDR request without the matching secret falls through to the
 bearer path instead of being trusted. Keep `--ui-trusted-cidrs` as narrow
 as your proxy's real source range.
 
-**Operators are fleet superusers; Access control is informational.** Every
-authenticated operator can perform every Data Studio mutation on every
-model of every connected node. The `ManageService.GetRbac` surface behind
-the UI's "Access control" screen is a **read-only snapshot** of each
-node's Casbin policy (the app's own authorizer); it does **not** gate the
-operator's own fleet-plane actions, which are audited but not authorized
-per verb/object. A role-scoped (e.g. read-only) operator model is future
-work. Until then, treat access to the UI listener as full fleet-admin
-access.
+**Operators are read-write by default; scope them with roles or
+`--ui-read-only`.** An authenticated operator can perform every Data
+Studio mutation on every model of every connected node, unless scoped
+down by one of two knobs:
+
+* `--ui-role-header` (default `X-Auth-Role`): when the trusted reverse
+  proxy sets this header to `viewer` (also `readonly`/`read-only`), that
+  operator's Data Studio mutations are refused with `PermissionDenied`
+  while every read surface (streams, nodes, Data Studio reads,
+  RBAC/audit) keeps working. Any other value — including absent — keeps
+  the operator read-write.
+* `--ui-read-only` (env `NUCLEUS_ADMIN_UI_READ_ONLY=1`): makes EVERY
+  operator read-only, turning the server into a pure observability
+  plane.
+
+The `ManageService.GetRbac` surface behind the UI's "Access control"
+screen remains a **read-only snapshot** of each node's Casbin policy
+(the app's own authorizer); it does **not** gate the operator's
+fleet-plane actions, which are audited and gated only by the
+viewer/read-write distinction above — per-verb/per-object operator
+authorization is still future work. Treat read-write access to the UI
+listener as full fleet-admin access.
+
+**Brute-force lockout.** Requests that PRESENT a wrong credential (bad
+bearer on either listener) are rate limited per source IP (20 failures
+per minute, then `429`); credential-less requests are never counted, so
+an unauthenticated browser can't lock anyone out.
+
+**Inactivity expiry.** An agent whose stream goes silent for longer than
+`Config.AgentInactivityTimeout` (default 45s) is marked disconnected in
+the fleet UI (the entry revives automatically if frames resume) — a hung
+peer no longer shows "online" forever.
+
+**Browser security headers.** Every UI-listener response carries a
+strict `Content-Security-Policy` (self-contained SPA, no external
+origins), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`
+and `Referrer-Policy: no-referrer`.
 
 ## Sub-packages
 

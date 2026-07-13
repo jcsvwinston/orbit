@@ -75,6 +75,11 @@ func New(cfg Config) *Server {
 		HeartbeatGrace: cfg.AgentInactivityTimeout,
 	}
 
+	// A (re)connecting agent immediately receives the current aggregate
+	// demand: without this hook an agent that restarts while UI streams
+	// are open ships nothing until some UI reopens its subscription.
+	state.OnAgentSubMode = services.PushAggregate
+
 	s := &Server{
 		cfg:    cfg,
 		state:  state,
@@ -103,13 +108,15 @@ func New(cfg Config) *Server {
 	protectedUI.Handle("/", staticUIHandler())
 	uiRoot := http.NewServeMux()
 	uiRoot.HandleFunc("/healthz", healthOK)
-	uiRoot.Handle("/", auth.UIMiddleware(auth.UIConfig{
-		BearerToken:  cfg.UIBearerToken,
-		AuthHeader:   cfg.UIAuthHeader,
-		EmailHeader:  cfg.UIEmailHeader,
-		TrustedCIDRs: cfg.UITrustedProxyCIDRs,
-		ProxySecret:  cfg.UIProxySecret,
-	})(protectedUI))
+	uiRoot.Handle("/", securityHeaders(auth.UIMiddleware(auth.UIConfig{
+		BearerToken:   cfg.UIBearerToken,
+		AuthHeader:    cfg.UIAuthHeader,
+		EmailHeader:   cfg.UIEmailHeader,
+		RoleHeader:    cfg.UIRoleHeader,
+		TrustedCIDRs:  cfg.UITrustedProxyCIDRs,
+		ProxySecret:   cfg.UIProxySecret,
+		ForceReadOnly: cfg.UIReadOnly,
+	})(protectedUI)))
 
 	s.agentSrv = newH2CServer(agentRoot, cfg.AgentTLS)
 	s.uiSrv = newH2CServer(uiRoot, cfg.UITLS)
@@ -123,6 +130,11 @@ func New(cfg Config) *Server {
 		metricsRoot.HandleFunc("/healthz", healthOK)
 		metricsRoot.Handle("/metrics", promhttp.Handler())
 		s.metricsSrv = newH2CServer(metricsRoot, nil)
+		// No long-lived streams on this listener, so full IO timeouts
+		// are safe here (unlike the agent/UI listeners — see
+		// newH2CServer).
+		s.metricsSrv.ReadTimeout = 30 * time.Second
+		s.metricsSrv.WriteTimeout = 30 * time.Second
 	}
 
 	return s
@@ -216,6 +228,12 @@ func (s *Server) Run(ctx context.Context) error {
 		"ui_addr", uiLn.Addr(),
 		"metrics_enabled", metricsLn != nil)
 
+	// Inactivity janitor: a hung peer (dead TCP without FIN) keeps its
+	// stream — and its registry entry — "connected" forever. Mark nodes
+	// stale when no frame arrives within AgentInactivityTimeout; Touch
+	// revives them if frames resume.
+	go s.expireInactiveAgents(ctx)
+
 	errCh := make(chan error, 3)
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -276,6 +294,59 @@ func (s *Server) shutdown(timeout time.Duration) error {
 		}
 	}
 	return first
+}
+
+// expireInactiveAgents periodically sweeps the registry and marks nodes
+// whose LastSeenAt is older than Config.AgentInactivityTimeout as
+// disconnected (fleet UIs see them offline; watchers get a NodeChange).
+// The entry itself is NOT evicted: if the stream is actually alive the
+// next frame's Touch flips it back to connected.
+func (s *Server) expireInactiveAgents(ctx context.Context) {
+	timeout := s.cfg.AgentInactivityTimeout
+	interval := timeout / 3
+	if interval < time.Second {
+		interval = time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			for _, info := range s.state.Nodes.Inactivity(now.UTC(), timeout) {
+				if !info.Connected {
+					continue
+				}
+				if s.state.Nodes.MarkStale(info.NodeID) {
+					s.logger.Warn("admin agent marked stale (no frames within inactivity timeout)",
+						"node_id", info.NodeID,
+						"last_seen_at", info.LastSeenAt,
+						"timeout", timeout)
+				}
+			}
+		}
+	}
+}
+
+// securityHeaders stamps browser-facing security headers on every UI
+// listener response. The SPA is fully self-contained (no external
+// scripts, styles, fonts or connections), so a strict CSP costs nothing.
+// 'unsafe-inline' is required for style only: the bundle sets inline
+// style attributes. Connect-RPC responses carry the headers too —
+// harmless on non-HTML payloads.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Content-Security-Policy",
+			"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "+
+				"img-src 'self' data:; font-src 'self'; connect-src 'self'; "+
+				"frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "no-referrer")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // staticUIHandler serves the embedded admin/ui/dist filesystem. When the
@@ -386,12 +457,21 @@ func healthOK(w http.ResponseWriter, _ *http.Request) {
 // HTTP/2 cleartext. Connect-RPC bidi streams require HTTP/2; h2c lets
 // the agent dial without TLS in dev. Production deployments should set
 // tlsConfig and front the listener with a real cert.
+//
+// Timeouts: ReadHeaderTimeout bounds header parsing and IdleTimeout
+// reclaims keep-alive connections. ReadTimeout/WriteTimeout stay
+// deliberately unset — both listeners carry long-lived streams (the
+// agent bidi stream, ControlService.StreamEvents) that a whole-request
+// IO deadline would sever mid-flight. Note IdleTimeout only applies
+// between HTTP/1.1 requests; h2c connections idle under HTTP/2 ping
+// semantics instead.
 func newH2CServer(handler http.Handler, tlsConfig *tls.Config) *http.Server {
 	h2s := &http2.Server{}
 	wrapped := h2c.NewHandler(handler, h2s)
 	srv := &http.Server{
 		Handler:           wrapped,
 		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       2 * time.Minute,
 	}
 	if tlsConfig != nil {
 		srv.TLSConfig = tlsConfig

@@ -60,7 +60,7 @@ The full configuration surface is the godoc of `ExtensionConfig`
 | `sampler`           | Per-kind sampling rate + HTTP/SQL filter from server-side `Subscribe` commands.                                   |
 | `buffer`            | Per-event-kind drop-oldest ring buffer for bridging brief disconnects.                                            |
 | `connection`        | Endpoint failover dialer with exponential backoff (cap 30s) and rate-limited disconnect WARN (1/min).             |
-| `stream`            | Bidi stream lifecycle: registration, three-goroutine recv/send/heartbeat loop, command dispatch, replay on reconnect. |
+| `stream`            | Bidi stream lifecycle: registration, three-goroutine recv/send/heartbeat loop, command dispatch, replay on reconnect. Events ship with the agent's registered NodeID (the in-process bus NodeID is host-local and does not correlate with the fleet registry). Snapshot providers: `GO_RUNTIME` and `REGISTERED_MODELS`; other types answer with a per-type error. |
 | `metrics`           | `admin_agent_*` Prometheus collectors + standalone `/metrics` + `/healthz` server.                                |
 | `rbac`              | Read-only Casbin snapshot handler for the fleet UI's Access control screen (wired from `app.Authorizer`).         |
 | `internal/testserver` | In-process h2c admin server fake for integration tests. (Internal; do not import.)                              |
