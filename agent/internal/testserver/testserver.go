@@ -54,6 +54,7 @@ type StreamSession struct {
 
 	eventsCh chan *adminv1.Event
 	regCh    chan *adminv1.NodeRegistration
+	snapCh   chan *adminv1.SnapshotResponse
 }
 
 // Start launches a new fake server on a fresh ephemeral port. The
@@ -147,6 +148,7 @@ func (s *Server) Stream(ctx context.Context, stream *connect.BidiStream[adminv1.
 		closedCh: make(chan struct{}),
 		eventsCh: make(chan *adminv1.Event, 64),
 		regCh:    make(chan *adminv1.NodeRegistration, 1),
+		snapCh:   make(chan *adminv1.SnapshotResponse, 8),
 	}
 
 	s.mu.Lock()
@@ -205,8 +207,10 @@ func (s *Server) Stream(ctx context.Context, stream *connect.BidiStream[adminv1.
 			sess.mu.Unlock()
 			return nil
 		case *adminv1.Frame_SnapshotResponse:
-			// Phase 4 wires this; the test server stores it for
-			// inspection but otherwise ignores.
+			select {
+			case sess.snapCh <- body.SnapshotResponse:
+			default:
+			}
 		}
 	}
 }
@@ -241,6 +245,33 @@ func (sess *StreamSession) SendUnsubscribe(id string) error {
 			},
 		},
 	})
+}
+
+// SendSnapshotRequest routes a SnapshotRequest command to the agent.
+func (sess *StreamSession) SendSnapshotRequest(requestID string, t adminv1.SnapshotType) error {
+	return sess.send(&adminv1.Frame{
+		Body: &adminv1.Frame_Command{
+			Command: &adminv1.Command{
+				Body: &adminv1.Command_SnapshotRequest{
+					SnapshotRequest: &adminv1.SnapshotRequest{
+						RequestId: requestID,
+						Type:      t,
+					},
+				},
+			},
+		},
+	})
+}
+
+// WaitForSnapshotResponse blocks until the agent answers a
+// SnapshotRequest or the timeout elapses.
+func (sess *StreamSession) WaitForSnapshotResponse(d time.Duration) (*adminv1.SnapshotResponse, error) {
+	select {
+	case resp := <-sess.snapCh:
+		return resp, nil
+	case <-time.After(d):
+		return nil, errors.New("testserver: timeout waiting for snapshot response")
+	}
 }
 
 // SendGoodbye pushes a server-initiated Goodbye and closes the session.

@@ -70,6 +70,20 @@ type Config struct {
 	// CIDR-only behaviour. See auth.UIMiddleware.
 	UIProxySecret string
 
+	// UIRoleHeader is the trusted-proxy header that carries the operator's
+	// role (default "X-Auth-Role"). Honoured only on the same trusted-proxy
+	// path as UIAuthHeader. Value "viewer" (or "readonly"/"read-only")
+	// makes the operator read-only: Data Studio mutations are refused with
+	// PermissionDenied. Any other value — including absent — keeps the
+	// operator read-write, preserving existing deployments.
+	UIRoleHeader string
+
+	// UIReadOnly, when true, makes EVERY UI operator read-only regardless
+	// of role header or bearer: the fleet UI can observe (streams, nodes,
+	// Data Studio reads, RBAC/audit) but every Data Studio mutation is
+	// refused. Use it to run the server as a pure observability plane.
+	UIReadOnly bool
+
 	// HTTPReplayBufferSize is the per-kind ring buffer capacity for
 	// replaying recent events to a freshly opened UI panel. Default 256.
 	HTTPReplayBufferSize    int
@@ -136,6 +150,9 @@ func (c Config) withDefaults() Config {
 	}
 	if strings.TrimSpace(c.UIEmailHeader) == "" {
 		c.UIEmailHeader = "X-Auth-Email"
+	}
+	if strings.TrimSpace(c.UIRoleHeader) == "" {
+		c.UIRoleHeader = "X-Auth-Role"
 	}
 	// MetricsAddr deliberately gets NO default: empty means disabled. (It
 	// used to be coerced to ":9091" while nothing consumed the field —
