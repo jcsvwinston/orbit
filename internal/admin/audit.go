@@ -191,7 +191,9 @@ func (p *Panel) auditMiddleware(next http.Handler) http.Handler {
 
 		recordID := r.PathValue("id")
 
-		// For updates, capture old value
+		// For updates, capture old value — redacted: excluded fields and
+		// credential-shaped names never reach the audit store, which is
+		// readable via /api/audit (see redactAuditValues).
 		var oldValue map[string]any
 		if action == "update" && recordID != "" {
 			mi, ok := p.src.Get(modelName)
@@ -201,7 +203,7 @@ func (p *Panel) auditMiddleware(next http.Handler) http.Handler {
 				if err == nil {
 					old, _ := st.Get(r.Context(), recordID)
 					if old != nil {
-						oldValue = old
+						oldValue = redactAuditValues(mi, old)
 					}
 				}
 			}

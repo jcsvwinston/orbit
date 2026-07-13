@@ -218,7 +218,7 @@ export async function getSessions(): Promise<Session[]> {
 }
 
 export async function deleteSession(sessionId: string): Promise<void> {
-  await fetchAPI(`/api/sessions/${sessionId}`, { method: 'DELETE' })
+  await fetchAPI(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' })
 }
 
 export async function getAuditLogs(params?: Record<string, string>): Promise<AuditLog[]> {
@@ -364,7 +364,10 @@ export async function toggleFeatureFlag(name: string, enabled: boolean): Promise
 }
 
 export async function exportData(format: 'csv' | 'json' | 'sql', modelName?: string): Promise<string> {
-  const response = await fetchAPI<{ url?: string; storage_key?: string; id?: string }>('/api/export', {
+  // Backend routes are /api/exports (create) and /api/exports/download
+  // (?key=). The old /api/export paths never existed — every export
+  // clicked in the UI 404'd.
+  const response = await fetchAPI<{ url?: string; storage_key?: string; id?: string }>('/api/exports', {
     method: 'POST',
     body: JSON.stringify({
       format,
@@ -376,7 +379,7 @@ export async function exportData(format: 'csv' | 'json' | 'sql', modelName?: str
   // Otherwise construct a download URL from the storage key
   const key = response.storage_key || response.id
   if (key) {
-    return buildAdminPath(`/api/export/download?key=${encodeURIComponent(key)}`)
+    return buildAdminPath(`/api/exports/download?key=${encodeURIComponent(key)}`)
   }
   return ''
 }
@@ -385,9 +388,14 @@ export async function importData(file: File): Promise<void> {
   const formData = new FormData()
   formData.append('file', file)
 
-  await fetch(buildAdminPath('/api/import/upload'), {
+  // Backend route is POST /api/imports (multipart).
+  const response = await fetch(buildAdminPath('/api/imports'), {
     method: 'POST',
     body: formData,
     credentials: 'same-origin',
   })
+  if (!response.ok) {
+    const message = await response.text()
+    throw new Error(message || `Import failed: ${response.status} ${response.statusText}`)
+  }
 }
