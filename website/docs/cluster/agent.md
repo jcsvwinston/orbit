@@ -54,6 +54,17 @@ framework runs unchanged. When it is set, the agent starts in parallel with the
 framework's `Run`, and observability events flow through the framework's
 `pkg/observability` bus into the bidi stream.
 
+## Node identity
+
+The agent resolves a stable **NodeID** — a UUIDv4 persisted at
+`${state_dir}/node_id`, with a hostname-derived ephemeral fallback when the
+state directory is unavailable. This is the identity the agent registers under
+and the value every fleet view keys on: the `Nodes` page, per-node stream
+filters, and the metrics cards. Events shipped over the stream carry this same
+NodeID (it is stamped over the in-process bus's own node label, which is
+host-local and does not correlate with the fleet registry), so an event's
+`node_id` always matches a registered node.
+
 ## Hot-path cost
 
 The agent never blocks the framework's request thread. Every producer-side path

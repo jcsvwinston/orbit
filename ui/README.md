@@ -30,14 +30,28 @@ from the repo root are thin wrappers that cd into this directory.
 
 ## Pages
 
-* `/#/dashboard` — connected node count, version mix.
-* `/#/nodes` — full registry table with labels and status.
+Grouped hash-based routing (no `react-router-dom`; the small surface area
+isn't worth the dep). The sidebar groups the routes as Observe / Fleet /
+Manage:
+
+Observe:
+* `/#/overview` — fleet snapshot: connected nodes, throughput, recent activity.
+* `/#/metrics` — per-node runtime/resource metrics (CPU, heap, GC, DB pool).
 * `/#/http` — live HTTP request stream.
 * `/#/sql` — live SQL statement stream.
-* `/#/sessions` — created/touched/destroyed session lifecycle.
+* `/#/health` — per-node health components.
 
-Hash-based routing (no `react-router-dom`); the small surface area
-isn't worth the dep.
+Fleet:
+* `/#/nodes` — registry table with labels and status; `/#/nodes/<id>` drills in.
+* `/#/sessions` — created/touched/destroyed session lifecycle stream.
+
+Manage:
+* `/#/data-studio` — browse and edit registered models on a connected agent.
+* `/#/access` — read-only Casbin policy/role snapshot (Access control).
+* `/#/audit` — fleet-plane audit log (mutations made through this server).
+
+Any Unauthenticated response swaps the shell for a not-authorized screen
+explaining the deployment auth options.
 
 ## Source layout
 
