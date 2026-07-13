@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0](https://github.com/jcsvwinston/orbit/compare/v1.2.1...v1.3.0) (2026-07-13)
+
+
+### Added
+
+* **ui:** UX del plano fleet — toasts, feedback en Data Studio, pausa con buffer, pantalla 401, accesibilidad y contraste ([#68](https://github.com/jcsvwinston/orbit/issues/68)) ([40ab5c9](https://github.com/jcsvwinston/orbit/commit/40ab5c9e8ed4d9d789e8ac9c03eadc982734eddd))
+
+
+### Fixed
+
+* **admin:** backlog del panel in-process — audit real bajo auth, redacción, lockout de login, CSRF, headers, y los dos botones fake (terminate/export) ([#67](https://github.com/jcsvwinston/orbit/issues/67)) ([607246d](https://github.com/jcsvwinston/orbit/commit/607246d13464b7ded042fb12c8fa9d326c6165a3))
+
 ## [1.2.1](https://github.com/jcsvwinston/orbit/compare/v1.2.0...v1.2.1) (2026-07-12)
 
 
