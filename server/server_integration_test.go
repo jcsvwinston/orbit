@@ -615,8 +615,10 @@ func TestServer_UIServesHTMLAt_Slash(t *testing.T) {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
 	body, _ := io.ReadAll(resp.Body)
-	if !strings.Contains(string(body), "Nucleus Admin") {
-		t.Errorf("UI content missing 'Nucleus Admin': %q", string(body)[:min(200, len(body))])
+	// The SPA shell titles itself "Orbit · Nucleus admin" (brand coherent
+	// with the sidebar); assert on the stable "Nucleus admin" substring.
+	if !strings.Contains(strings.ToLower(string(body)), "nucleus admin") {
+		t.Errorf("UI content missing the app title: %q", string(body)[:min(200, len(body))])
 	}
 }
 

@@ -4,6 +4,8 @@
 // <html>, persisted; prototype default is light).
 import { useCallback, useEffect, useState } from 'react'
 import { Layout, type NavGroup, type ThemeName } from '@/components/Layout'
+import { onUnauthorized } from '@/lib/transport'
+import { NotAuthorizedPage } from '@/pages/NotAuthorizedPage'
 import { useNodes } from '@/hooks/useNodes'
 import { OverviewPage } from '@/pages/OverviewPage'
 import { MetricsPage } from '@/pages/MetricsPage'
@@ -66,6 +68,7 @@ function initialTheme(): ThemeName {
 function App(): React.JSX.Element {
   const [route, setRoute] = useState<Route>(routeFromHash)
   const [theme, setTheme] = useState<ThemeName>(initialTheme)
+  const [unauthorized, setUnauthorized] = useState(false)
   const { nodes, isError } = useNodes()
 
   useEffect(() => {
@@ -73,6 +76,10 @@ function App(): React.JSX.Element {
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
+
+  // Any Unauthenticated RPC flips the whole shell to the not-authorized
+  // screen instead of leaking a raw network error on each page.
+  useEffect(() => onUnauthorized(() => setUnauthorized(true)), [])
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -113,13 +120,16 @@ function App(): React.JSX.Element {
 
   const { page, nodeId } = route
 
+  if (unauthorized) {
+    return <NotAuthorizedPage onRetry={() => window.location.reload()} />
+  }
+
   return (
     <Layout
       current={page}
       groups={groups}
       onNavigate={navigate}
       serverHealthy={!isError}
-      version="orbit v0.2.0"
       theme={theme}
       onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
     >

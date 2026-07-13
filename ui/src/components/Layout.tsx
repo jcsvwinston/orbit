@@ -22,7 +22,10 @@ export interface LayoutProps {
   groups: NavGroup[]
   onNavigate: (id: string) => void
   serverHealthy: boolean
-  version: string
+  // version is optional: the real fleet-server version needs a server
+  // echo RPC (deferred). We show a label only when we actually know it,
+  // rather than a hardcoded string that drifts from the real tag.
+  version?: string
   identity?: string
   theme: ThemeName
   onToggleTheme: () => void
@@ -115,10 +118,11 @@ export function Layout(props: LayoutProps) {
               {props.theme === 'dark' ? '☾' : '☀'}
             </button>
           </div>
-          <div className="font-mono text-[10.5px] text-t22">
-            {props.version}
-            {props.identity ? ` · ${props.identity}` : ''}
-          </div>
+          {(props.version || props.identity) && (
+            <div className="font-mono text-[10.5px] text-t27">
+              {[props.version, props.identity].filter(Boolean).join(' · ')}
+            </div>
+          )}
         </div>
       </aside>
       <main className="h-screen min-w-0 flex-1 overflow-y-auto">{props.children}</main>
