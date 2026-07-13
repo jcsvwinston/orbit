@@ -13,7 +13,7 @@ core de Nucleus por su `ADR-019`; Nucleus ya no lleva código de admin.
 
 ## Estado real
 
-- **v1.2.0** (major v1.0.0 el 2026-07-10; v1.2.0 paga los waivers W1/W2 del gate) — el gate vive en
+- **v1.2.1** (major v1.0.0 el 2026-07-10; v1.2.0 pagó los waivers W1/W2 del gate) — el gate vive en
   `docs/V1_GATE.md`; las superficies congeladas (raíz + `datasource`) las
   guarda `contracts/freeze_test.go` contra su baseline. Cambios
   incompatibles en esas superficies requieren un major.
@@ -27,8 +27,10 @@ core de Nucleus por su `ADR-019`; Nucleus ya no lleva código de admin.
 
 - **raíz `./` + `internal/admin/`** — el panel in-process. Es el producto real.
 - **`agent/` · `server/` · `proto/`** — observabilidad de clúster (opcional).
-  `agent/` y `server/` son en parte esqueleto (ver sus `doc.go`); la mayoría de
-  apps solo montan el panel raíz.
+  Es un plano fleet real de punta a punta (registro de nodo, RBAC real, stream
+  SQL/HTTP, listener fail-closed) con miles de líneas y tests de integración;
+  la mayoría de apps solo montan el panel raíz, pero el plano fleet NO es
+  esqueleto. Tags de componente propios (`agent/vX`, `server/vX`, `proto/vX`).
 
 ## Reglas (heredadas de la suite)
 

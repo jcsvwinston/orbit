@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.0](https://github.com/jcsvwinston/orbit/compare/server/v0.6.0...server/v0.7.0) (2026-07-13)
+
+
+### Added
+
+* cierra el backlog fleet de la auditoría v1.2.1 — telemetría que se reanuda, node_id correlacionado, sampler real, snapshots, operador read-only ([#66](https://github.com/jcsvwinston/orbit/issues/66)) ([7535bbd](https://github.com/jcsvwinston/orbit/commit/7535bbd4e3587df068b71edbdcf3481ab3e4e195))
+* **ui:** UX del plano fleet — toasts, feedback en Data Studio, pausa con buffer, pantalla 401, accesibilidad y contraste ([#68](https://github.com/jcsvwinston/orbit/issues/68)) ([40ab5c9](https://github.com/jcsvwinston/orbit/commit/40ab5c9e8ed4d9d789e8ac9c03eadc982734eddd))
+
 ## [0.6.0](https://github.com/jcsvwinston/orbit/compare/server/v0.5.0...server/v0.6.0) (2026-07-12)
 
 
