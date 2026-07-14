@@ -2,15 +2,17 @@
 // HostMetrics with every heartbeat (NodeInfo.hostMetrics via the 3s poll), so
 // the metric cards show real values with client-side rolling sparklines; the
 // "awaiting agent metrics" placeholders remain only for agents that don't
-// report yet. Component versions are still not reported — Components /
-// Recent activity keep explicit empty states instead of fabricated data.
-import type { NodeInfo } from '@/gen/nucleus/admin/v1/admin_pb'
+// report yet. Recent activity is a live node-filtered HTTP+SQL stream (the
+// node_id correlation was fixed upstream so per-node filtering works).
+import { useMemo } from 'react'
+import { Filter, EventType, type NodeInfo } from '@/gen/nucleus/admin/v1/admin_pb'
 import { useNodes } from '@/hooks/useNodes'
 import { useHostMetricSeries } from '@/hooks/useHostMetricSeries'
+import { useStreamEvents } from '@/hooks/useStreamEvents'
 import { PageBody } from '@/components/Page'
 import { Card, Chip, Dot, Label } from '@/components/ui'
-import { SEMANTIC } from '@/lib/colors'
-import { formatRelative, timestampToDate } from '@/lib/format'
+import { SEMANTIC, methodColor, sqlKindColor, statusColor } from '@/lib/colors'
+import { formatRelative, formatTime, streamRowKey, timestampToDate } from '@/lib/format'
 import { NodeStatusPill } from '@/pages/NodesPage'
 import { HostMetricCards } from '@/pages/MetricsPage'
 
@@ -74,10 +76,7 @@ export function NodeDetailPage(props: { nodeId: string }) {
                 {formatRelative(timestampToDate(node.lastSeenAt))}; showing registration info only.
               </div>
             )}
-            <div className="grid items-start gap-3.5" style={{ gridTemplateColumns: '1fr 1.3fr' }}>
-              <ComponentsCard />
-              <RecentActivityCard />
-            </div>
+            <RecentActivityCard nodeId={props.nodeId} connected={node.connected} />
           </>
         )}
       </PageBody>
@@ -175,29 +174,90 @@ function PlaceholderMetricCard(props: { label: string }) {
   )
 }
 
-function ComponentsCard() {
-  return (
-    <div className="overflow-hidden rounded-[10px] border border-t18 bg-t4">
-      <div className="border-b border-t14 px-4 py-[11px] text-[12.5px] font-semibold text-t46">
-        Components
-      </div>
-      <div className="px-4 py-[18px] text-[12px] text-t26">
-        Component versions are not reported by the agent yet.
-      </div>
-    </div>
-  )
-}
+const ACTIVITY_RENDER = 15
 
-function RecentActivityCard() {
+// RecentActivityCard is a live HTTP+SQL feed scoped to this node. It reuses
+// the same stream the HTTP/SQL pages do, filtered by node id (correlation
+// fixed upstream), and includes the server's recent-event replay so the panel
+// shows something immediately.
+function RecentActivityCard(props: { nodeId: string; connected: boolean }) {
+  const filter = useMemo(
+    () =>
+      new Filter({
+        types: [EventType.HTTP_REQUEST, EventType.SQL_STATEMENT],
+        nodeIds: [props.nodeId],
+      }),
+    [props.nodeId],
+  )
+  const stream = useStreamEvents({ filter, bufferSize: 60, includeRecent: true })
+  const rows = stream.events
+    .filter((ev) => ev.body.case === 'httpRequest' || ev.body.case === 'sqlStatement')
+    .slice(0, ACTIVITY_RENDER)
+
   return (
     <div className="overflow-hidden rounded-[10px] border border-t18 bg-t4">
-      <div className="border-b border-t14 px-4 py-[11px] text-[12.5px] font-semibold text-t46">
-        Recent activity{' '}
-        <span className="text-[11px] font-normal text-t26">— HTTP + SQL on this node</span>
+      <div className="flex items-center justify-between border-b border-t14 px-4 py-[11px]">
+        <span className="text-[12.5px] font-semibold text-t46">
+          Recent activity{' '}
+          <span className="text-[11px] font-normal text-t26">— HTTP + SQL on this node</span>
+        </span>
+        <span className="flex items-center gap-1.5 font-mono text-[10.5px] text-t26">
+          <Dot color={stream.connected ? SEMANTIC.green : SEMANTIC.red} size={6} pulse={stream.connected} />
+          {stream.connected ? 'live' : 'reconnecting'}
+        </span>
       </div>
-      <div className="px-4 py-[18px] text-[12px] text-t26">
-        No recent activity buffered for this node.
-      </div>
+      {rows.length === 0 ? (
+        <div className="px-4 py-[18px] text-[12px] text-t26">
+          {props.connected
+            ? 'No recent HTTP or SQL activity on this node yet.'
+            : 'Agent disconnected — showing buffered activity only.'}
+        </div>
+      ) : (
+        <div className="min-w-0">
+          {rows.map((ev, idx) => {
+            const time = formatTime(timestampToDate(ev.timestamp))
+            if (ev.body.case === 'httpRequest') {
+              const h = ev.body.value
+              return (
+                <div
+                  key={streamRowKey(ev.nodeId, ev.timestamp, idx)}
+                  className="grid items-center gap-2 border-t border-t10 px-4 py-[6px] font-mono text-[11px]"
+                  style={{ gridTemplateColumns: '84px 52px minmax(0,1fr) 46px' }}
+                >
+                  <span className="text-t25">{time}</span>
+                  <span className="font-semibold" style={{ color: methodColor(h.method) }}>
+                    {h.method}
+                  </span>
+                  <span className="truncate text-t39" title={h.path}>
+                    {h.path}
+                  </span>
+                  <span className="text-right" style={{ color: statusColor(h.status) }}>
+                    {h.status}
+                  </span>
+                </div>
+              )
+            }
+            if (ev.body.case !== 'sqlStatement') return null
+            const s = ev.body.value
+            return (
+              <div
+                key={streamRowKey(ev.nodeId, ev.timestamp, idx)}
+                className="grid items-center gap-2 border-t border-t10 px-4 py-[6px] font-mono text-[11px]"
+                style={{ gridTemplateColumns: '84px 52px minmax(0,1fr) 46px' }}
+              >
+                <span className="text-t25">{time}</span>
+                <span className="font-semibold" style={{ color: sqlKindColor(s.operation) }}>
+                  {s.operation.toUpperCase().slice(0, 6)}
+                </span>
+                <span className="truncate text-t39" title={s.query}>
+                  {s.query}
+                </span>
+                <span className="text-right text-t26">SQL</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
