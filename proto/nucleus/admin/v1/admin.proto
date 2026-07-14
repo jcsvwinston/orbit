@@ -329,6 +329,29 @@ message Snapshot {
   bytes payload_json = 4;
 }
 
+message GetSelfRequest {}
+
+// SelfInfo echoes back who the caller is (as resolved by the UI auth chain)
+// and what server they are talking to, so the operator can see the identity
+// their actions are audited under and the exact server build. Additive:
+// no field is required for older UIs.
+message SelfInfo {
+  // Operator identity from the auth chain: the UI user (trusted-proxy
+  // X-Auth-User), "ui-bearer" for the bearer fallback, or "" when the
+  // listener is unauthenticated.
+  string subject = 1;
+  // Optional email from the trusted proxy (X-Auth-Email).
+  string email = 2;
+  // "ui-operator" for an authenticated UI caller.
+  string role = 3;
+  // True when the operator is read-only (viewer role / --ui-read-only): the
+  // UI hides Data Studio mutation controls.
+  bool read_only = 4;
+  // The admin server's build version (debug.ReadBuildInfo; "devel" for
+  // source builds).
+  string server_version = 5;
+}
+
 // ControlService is the API the admin web UI talks to. It is unary and
 // server-streaming only — no client streaming, no bidi — so Connect-Web over
 // HTTP/1.1 works without a websocket fallback.
@@ -336,6 +359,8 @@ service ControlService {
   rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
   rpc StreamEvents(StreamEventsRequest) returns (stream Event);
   rpc GetSnapshot(GetSnapshotRequest) returns (Snapshot);
+  // GetSelf echoes the caller's identity + the server version for the UI.
+  rpc GetSelf(GetSelfRequest) returns (SelfInfo);
 }
 
 // =============================================================================
