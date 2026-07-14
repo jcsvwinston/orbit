@@ -60,6 +60,8 @@ const (
 	// ControlServiceGetSnapshotProcedure is the fully-qualified name of the ControlService's
 	// GetSnapshot RPC.
 	ControlServiceGetSnapshotProcedure = "/nucleus.admin.v1.ControlService/GetSnapshot"
+	// ControlServiceGetSelfProcedure is the fully-qualified name of the ControlService's GetSelf RPC.
+	ControlServiceGetSelfProcedure = "/nucleus.admin.v1.ControlService/GetSelf"
 	// DataStudioServiceListModelsProcedure is the fully-qualified name of the DataStudioService's
 	// ListModels RPC.
 	DataStudioServiceListModelsProcedure = "/nucleus.admin.v1.DataStudioService/ListModels"
@@ -165,6 +167,8 @@ type ControlServiceClient interface {
 	ListNodes(context.Context, *connect.Request[v1.ListNodesRequest]) (*connect.Response[v1.ListNodesResponse], error)
 	StreamEvents(context.Context, *connect.Request[v1.StreamEventsRequest]) (*connect.ServerStreamForClient[v1.Event], error)
 	GetSnapshot(context.Context, *connect.Request[v1.GetSnapshotRequest]) (*connect.Response[v1.Snapshot], error)
+	// GetSelf echoes the caller's identity + the server version for the UI.
+	GetSelf(context.Context, *connect.Request[v1.GetSelfRequest]) (*connect.Response[v1.SelfInfo], error)
 }
 
 // NewControlServiceClient constructs a client for the nucleus.admin.v1.ControlService service. By
@@ -196,6 +200,12 @@ func NewControlServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(controlServiceMethods.ByName("GetSnapshot")),
 			connect.WithClientOptions(opts...),
 		),
+		getSelf: connect.NewClient[v1.GetSelfRequest, v1.SelfInfo](
+			httpClient,
+			baseURL+ControlServiceGetSelfProcedure,
+			connect.WithSchema(controlServiceMethods.ByName("GetSelf")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -204,6 +214,7 @@ type controlServiceClient struct {
 	listNodes    *connect.Client[v1.ListNodesRequest, v1.ListNodesResponse]
 	streamEvents *connect.Client[v1.StreamEventsRequest, v1.Event]
 	getSnapshot  *connect.Client[v1.GetSnapshotRequest, v1.Snapshot]
+	getSelf      *connect.Client[v1.GetSelfRequest, v1.SelfInfo]
 }
 
 // ListNodes calls nucleus.admin.v1.ControlService.ListNodes.
@@ -221,11 +232,18 @@ func (c *controlServiceClient) GetSnapshot(ctx context.Context, req *connect.Req
 	return c.getSnapshot.CallUnary(ctx, req)
 }
 
+// GetSelf calls nucleus.admin.v1.ControlService.GetSelf.
+func (c *controlServiceClient) GetSelf(ctx context.Context, req *connect.Request[v1.GetSelfRequest]) (*connect.Response[v1.SelfInfo], error) {
+	return c.getSelf.CallUnary(ctx, req)
+}
+
 // ControlServiceHandler is an implementation of the nucleus.admin.v1.ControlService service.
 type ControlServiceHandler interface {
 	ListNodes(context.Context, *connect.Request[v1.ListNodesRequest]) (*connect.Response[v1.ListNodesResponse], error)
 	StreamEvents(context.Context, *connect.Request[v1.StreamEventsRequest], *connect.ServerStream[v1.Event]) error
 	GetSnapshot(context.Context, *connect.Request[v1.GetSnapshotRequest]) (*connect.Response[v1.Snapshot], error)
+	// GetSelf echoes the caller's identity + the server version for the UI.
+	GetSelf(context.Context, *connect.Request[v1.GetSelfRequest]) (*connect.Response[v1.SelfInfo], error)
 }
 
 // NewControlServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -253,6 +271,12 @@ func NewControlServiceHandler(svc ControlServiceHandler, opts ...connect.Handler
 		connect.WithSchema(controlServiceMethods.ByName("GetSnapshot")),
 		connect.WithHandlerOptions(opts...),
 	)
+	controlServiceGetSelfHandler := connect.NewUnaryHandler(
+		ControlServiceGetSelfProcedure,
+		svc.GetSelf,
+		connect.WithSchema(controlServiceMethods.ByName("GetSelf")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/nucleus.admin.v1.ControlService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ControlServiceListNodesProcedure:
@@ -261,6 +285,8 @@ func NewControlServiceHandler(svc ControlServiceHandler, opts ...connect.Handler
 			controlServiceStreamEventsHandler.ServeHTTP(w, r)
 		case ControlServiceGetSnapshotProcedure:
 			controlServiceGetSnapshotHandler.ServeHTTP(w, r)
+		case ControlServiceGetSelfProcedure:
+			controlServiceGetSelfHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -280,6 +306,10 @@ func (UnimplementedControlServiceHandler) StreamEvents(context.Context, *connect
 
 func (UnimplementedControlServiceHandler) GetSnapshot(context.Context, *connect.Request[v1.GetSnapshotRequest]) (*connect.Response[v1.Snapshot], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nucleus.admin.v1.ControlService.GetSnapshot is not implemented"))
+}
+
+func (UnimplementedControlServiceHandler) GetSelf(context.Context, *connect.Request[v1.GetSelfRequest]) (*connect.Response[v1.SelfInfo], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nucleus.admin.v1.ControlService.GetSelf is not implemented"))
 }
 
 // DataStudioServiceClient is a client for the nucleus.admin.v1.DataStudioService service.

@@ -16,6 +16,7 @@ import {
   useSchema,
 } from '@/hooks/useDataStudio'
 import { useNodes } from '@/hooks/useNodes'
+import { useSelf } from '@/hooks/useSelf'
 import type { ModelField, ModelInfo, Record as PBRecord } from '@/gen/nucleus/admin/v1/admin_pb'
 
 const PAGE_SIZE = 20
@@ -43,6 +44,7 @@ export function DataStudioPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
   const { nodes } = useNodes()
+  const { readOnly } = useSelf()
   const models = useModels(true, nodeId)
   const activeModel = selectedModel ?? models.data?.[0]?.name ?? null
 
@@ -134,12 +136,17 @@ export function DataStudioPage() {
                 ))}
               </select>
             )}
-            <AccentButton
-              disabled={!activeModel || !schema.data}
-              onClick={() => setEditing({ values: {} })}
-            >
-              + New record
-            </AccentButton>
+            {!readOnly && (
+              <AccentButton
+                disabled={!activeModel || !schema.data}
+                onClick={() => setEditing({ values: {} })}
+              >
+                + New record
+              </AccentButton>
+            )}
+            {readOnly && (
+              <span className="font-mono text-[10.5px] text-t30">read-only</span>
+            )}
           </span>
         }
       />
@@ -226,7 +233,7 @@ export function DataStudioPage() {
 
                 {tab === 'records' ? (
                   <>
-                    {selectedIds.size > 0 && (
+                    {!readOnly && selectedIds.size > 0 && (
                       <div className="flex items-center justify-between border-t border-t10 bg-t6 px-4 py-2">
                         <span className="font-mono text-[11px] text-t35">
                           {selectedIds.size} selected
@@ -280,6 +287,7 @@ export function DataStudioPage() {
                             : null
                       }
                       records={records.data?.items ?? []}
+                      readOnly={readOnly}
                       selectedIds={selectedIds}
                       onToggleSelect={(id) =>
                         setSelectedIds((prev) => {
@@ -412,6 +420,7 @@ function RecordsTable(props: {
   loading: boolean
   error: string | null
   deletingId: string | null
+  readOnly: boolean
   selectedIds: Set<string>
   onToggleSelect: (id: string) => void
   onToggleAll: (ids: string[], checked: boolean) => void
@@ -419,7 +428,11 @@ function RecordsTable(props: {
   onEdit: (rec: PBRecord) => void
   onDelete: (rec: PBRecord) => void
 }) {
-  const gridCols = `28px repeat(${Math.max(1, props.fields.length)}, minmax(0,1fr)) 120px`
+  const cols: string[] = []
+  if (!props.readOnly) cols.push('28px')
+  cols.push(`repeat(${Math.max(1, props.fields.length)}, minmax(0,1fr))`)
+  if (!props.readOnly) cols.push('120px')
+  const gridCols = cols.join(' ')
   const selectableIds = props.records.map(recordId).filter((id) => id !== '')
   const allSelected =
     selectableIds.length > 0 && selectableIds.every((id) => props.selectedIds.has(id))
@@ -429,21 +442,23 @@ function RecordsTable(props: {
         className="grid bg-t6 px-4 py-2 text-[10px] font-semibold uppercase tracking-[.08em] text-t26"
         style={{ gridTemplateColumns: gridCols }}
       >
-        <span className="flex items-center">
-          <input
-            type="checkbox"
-            checked={allSelected}
-            onChange={(e) => props.onToggleAll(selectableIds, e.target.checked)}
-            aria-label="Select all rows on this page"
-            disabled={selectableIds.length === 0}
-          />
-        </span>
+        {!props.readOnly && (
+          <span className="flex items-center">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={(e) => props.onToggleAll(selectableIds, e.target.checked)}
+              aria-label="Select all rows on this page"
+              disabled={selectableIds.length === 0}
+            />
+          </span>
+        )}
         {props.fields.map((f) => (
           <span key={f.name} className="truncate pr-2">
             {f.label || f.name}
           </span>
         ))}
-        <span className="text-right">Actions</span>
+        {!props.readOnly && <span className="text-right">Actions</span>}
       </div>
 
       {props.loading && (
@@ -476,15 +491,17 @@ function RecordsTable(props: {
             ].join(' ')}
             style={{ gridTemplateColumns: gridCols }}
           >
-            <span className="flex items-center">
-              <input
-                type="checkbox"
-                checked={selected}
-                disabled={rowId === ''}
-                onChange={() => props.onToggleSelect(rowId)}
-                aria-label={`Select record ${rowId}`}
-              />
-            </span>
+            {!props.readOnly && (
+              <span className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={selected}
+                  disabled={rowId === ''}
+                  onChange={() => props.onToggleSelect(rowId)}
+                  aria-label={`Select record ${rowId}`}
+                />
+              </span>
+            )}
             {props.fields.map((f) => (
               <RecordCell
                 key={f.name}
@@ -493,18 +510,20 @@ function RecordsTable(props: {
                 onNavigateFK={props.onNavigateFK}
               />
             ))}
-            <span className="flex justify-end gap-1.5">
-              {deleting ? (
-                <span className="font-mono text-[10.5px] text-t30">deleting…</span>
-              ) : (
-                <>
-                  <GhostButton onClick={() => props.onEdit(rec)}>Edit</GhostButton>
-                  <GhostButton danger onClick={() => props.onDelete(rec)}>
-                    Delete
-                  </GhostButton>
-                </>
-              )}
-            </span>
+            {!props.readOnly && (
+              <span className="flex justify-end gap-1.5">
+                {deleting ? (
+                  <span className="font-mono text-[10.5px] text-t30">deleting…</span>
+                ) : (
+                  <>
+                    <GhostButton onClick={() => props.onEdit(rec)}>Edit</GhostButton>
+                    <GhostButton danger onClick={() => props.onDelete(rec)}>
+                      Delete
+                    </GhostButton>
+                  </>
+                )}
+              </span>
+            )}
           </div>
         )
       })}

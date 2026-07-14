@@ -13,7 +13,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-import { BulkActionRequest, BulkActionResponse, CreateRecordRequest, DeleteRecordRequest, DeleteRecordResponse, Event, Frame, GetRbacRequest, GetRbacResponse, GetRecordRequest, GetSchemaRequest, GetSnapshotRequest, ListAuditRequest, ListAuditResponse, ListModelsRequest, ListModelsResponse, ListNodesRequest, ListNodesResponse, ListRecordsRequest, ModelSchema, PaginatedRecords, Record, Snapshot, StreamEventsRequest, UpdateRecordRequest } from "./admin_pb.js";
+import { BulkActionRequest, BulkActionResponse, CreateRecordRequest, DeleteRecordRequest, DeleteRecordResponse, Event, Frame, GetRbacRequest, GetRbacResponse, GetRecordRequest, GetSchemaRequest, GetSelfRequest, GetSnapshotRequest, ListAuditRequest, ListAuditResponse, ListModelsRequest, ListModelsResponse, ListNodesRequest, ListNodesResponse, ListRecordsRequest, ModelSchema, PaginatedRecords, Record, SelfInfo, Snapshot, StreamEventsRequest, UpdateRecordRequest } from "./admin_pb.js";
 import { MethodKind } from "@bufbuild/protobuf";
 
 /**
@@ -73,6 +73,17 @@ export const ControlService = {
       name: "GetSnapshot",
       I: GetSnapshotRequest,
       O: Snapshot,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * GetSelf echoes the caller's identity + the server version for the UI.
+     *
+     * @generated from rpc nucleus.admin.v1.ControlService.GetSelf
+     */
+    getSelf: {
+      name: "GetSelf",
+      I: GetSelfRequest,
+      O: SelfInfo,
       kind: MethodKind.Unary,
     },
   }

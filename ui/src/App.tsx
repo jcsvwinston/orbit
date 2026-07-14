@@ -7,6 +7,7 @@ import { Layout, type NavGroup, type ThemeName } from '@/components/Layout'
 import { onUnauthorized } from '@/lib/transport'
 import { NotAuthorizedPage } from '@/pages/NotAuthorizedPage'
 import { useNodes } from '@/hooks/useNodes'
+import { useSelf } from '@/hooks/useSelf'
 import { OverviewPage } from '@/pages/OverviewPage'
 import { MetricsPage } from '@/pages/MetricsPage'
 import { HTTPStreamPage } from '@/pages/HTTPStreamPage'
@@ -70,6 +71,7 @@ function App(): React.JSX.Element {
   const [theme, setTheme] = useState<ThemeName>(initialTheme)
   const [unauthorized, setUnauthorized] = useState(false)
   const { nodes, isError } = useNodes()
+  const { self } = useSelf()
 
   useEffect(() => {
     const onHash = (): void => setRoute(routeFromHash())
@@ -124,12 +126,21 @@ function App(): React.JSX.Element {
     return <NotAuthorizedPage onRetry={() => window.location.reload()} />
   }
 
+  // Footer: the real server version + the operator identity actions are
+  // audited under (OR-UX-P1-6).
+  const version = self?.serverVersion ? `orbit ${self.serverVersion}` : ''
+  const identity = self?.subject
+    ? `${self.subject}${self.readOnly ? ' (viewer)' : ''}`
+    : ''
+
   return (
     <Layout
       current={page}
       groups={groups}
       onNavigate={navigate}
       serverHealthy={!isError}
+      version={version}
+      identity={identity}
       theme={theme}
       onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
     >

@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"sync"
 	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/jcsvwinston/orbit/server/auth"
 	"github.com/jcsvwinston/orbit/server/nodes"
 	"github.com/jcsvwinston/orbit/server/routing"
 
@@ -41,6 +43,31 @@ func NewControlService(state *State, eventChannelSize int, snapshotTimeout time.
 		EventChannelSize: eventChannelSize,
 		SnapshotTimeout:  snapshotTimeout,
 	}
+}
+
+// GetSelf echoes the authenticated caller's identity (resolved by the UI auth
+// chain, carried in the request context) plus the server's build version, so
+// the UI can show who the operator is audited as and which server they hit.
+func (s *ControlService) GetSelf(ctx context.Context, _ *connect.Request[adminv1.GetSelfRequest]) (*connect.Response[adminv1.SelfInfo], error) {
+	id := auth.IdentityFromContext(ctx)
+	return connect.NewResponse(&adminv1.SelfInfo{
+		Subject:       id.Subject,
+		Email:         id.Email,
+		Role:          id.Role,
+		ReadOnly:      id.ReadOnly,
+		ServerVersion: serverVersion(),
+	}), nil
+}
+
+// serverVersion returns the running binary's module version — the same value
+// `admin-server --version` prints. "devel" for source builds.
+func serverVersion() string {
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		if v := bi.Main.Version; v != "" && v != "(devel)" {
+			return v
+		}
+	}
+	return "devel"
 }
 
 // ListNodes returns a stable view of every connected agent.

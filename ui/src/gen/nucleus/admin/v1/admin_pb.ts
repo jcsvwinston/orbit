@@ -1569,6 +1569,117 @@ export class Snapshot extends Message<Snapshot> {
 }
 
 /**
+ * @generated from message nucleus.admin.v1.GetSelfRequest
+ */
+export class GetSelfRequest extends Message<GetSelfRequest> {
+  constructor(data?: PartialMessage<GetSelfRequest>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "nucleus.admin.v1.GetSelfRequest";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetSelfRequest {
+    return new GetSelfRequest().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetSelfRequest {
+    return new GetSelfRequest().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetSelfRequest {
+    return new GetSelfRequest().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: GetSelfRequest | PlainMessage<GetSelfRequest> | undefined, b: GetSelfRequest | PlainMessage<GetSelfRequest> | undefined): boolean {
+    return proto3.util.equals(GetSelfRequest, a, b);
+  }
+}
+
+/**
+ * SelfInfo echoes back who the caller is (as resolved by the UI auth chain)
+ * and what server they are talking to, so the operator can see the identity
+ * their actions are audited under and the exact server build. Additive:
+ * no field is required for older UIs.
+ *
+ * @generated from message nucleus.admin.v1.SelfInfo
+ */
+export class SelfInfo extends Message<SelfInfo> {
+  /**
+   * Operator identity from the auth chain: the UI user (trusted-proxy
+   * X-Auth-User), "ui-bearer" for the bearer fallback, or "" when the
+   * listener is unauthenticated.
+   *
+   * @generated from field: string subject = 1;
+   */
+  subject = "";
+
+  /**
+   * Optional email from the trusted proxy (X-Auth-Email).
+   *
+   * @generated from field: string email = 2;
+   */
+  email = "";
+
+  /**
+   * "ui-operator" for an authenticated UI caller.
+   *
+   * @generated from field: string role = 3;
+   */
+  role = "";
+
+  /**
+   * True when the operator is read-only (viewer role / --ui-read-only): the
+   * UI hides Data Studio mutation controls.
+   *
+   * @generated from field: bool read_only = 4;
+   */
+  readOnly = false;
+
+  /**
+   * The admin server's build version (debug.ReadBuildInfo; "devel" for
+   * source builds).
+   *
+   * @generated from field: string server_version = 5;
+   */
+  serverVersion = "";
+
+  constructor(data?: PartialMessage<SelfInfo>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "nucleus.admin.v1.SelfInfo";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "subject", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "email", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "role", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "read_only", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 5, name: "server_version", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): SelfInfo {
+    return new SelfInfo().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): SelfInfo {
+    return new SelfInfo().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): SelfInfo {
+    return new SelfInfo().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: SelfInfo | PlainMessage<SelfInfo> | undefined, b: SelfInfo | PlainMessage<SelfInfo> | undefined): boolean {
+    return proto3.util.equals(SelfInfo, a, b);
+  }
+}
+
+/**
  * ModelField mirrors the relevant subset of pkg/model.FieldMeta: just
  * the parts the UI needs to render a list view, a filter panel, or an
  * edit form.
