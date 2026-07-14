@@ -1,11 +1,12 @@
 // SQL statements — live stream (design handoff "Orbit Admin", screen 4).
 // Rendering only: data wiring is the same useStreamEvents hook as before.
-import { useMemo } from 'react'
 import { PageBody, PageHeader } from '@/components/Page'
 import { StreamControls } from '@/components/StreamControls'
+import { StreamFilterBar } from '@/components/StreamFilterBar'
 import { SEMANTIC, sqlKindColor } from '@/lib/colors'
 import { useStreamEvents } from '@/hooks/useStreamEvents'
-import { Filter, EventType } from '@/gen/nucleus/admin/v1/admin_pb'
+import { useStreamFilters } from '@/hooks/useStreamFilters'
+import { useNodes } from '@/hooks/useNodes'
 import { durationToMillis, formatDuration, formatTime, streamRowKey, timestampToDate } from '@/lib/format'
 
 // Exact column template from the handoff:
@@ -20,11 +21,14 @@ const BUFFER_CAP = 160
 const RENDER_CAP = 60
 
 export function SQLStreamPage() {
-  // The filter must be referentially stable so useStreamEvents does not
-  // re-open on every render.
-  const filter = useMemo(() => new Filter({ types: [EventType.SQL_STATEMENT] }), [])
-
-  const stream = useStreamEvents({ filter, bufferSize: BUFFER_CAP, includeRecent: true })
+  const filters = useStreamFilters('sql')
+  const { nodes } = useNodes()
+  const stream = useStreamEvents({
+    filter: filters.filter,
+    samplingRate: filters.samplingRate,
+    bufferSize: BUFFER_CAP,
+    includeRecent: true,
+  })
 
   const rows = stream.events
     .filter((ev) => ev.body.case === 'sqlStatement')
@@ -46,6 +50,14 @@ export function SQLStreamPage() {
             error={stream.errorMessage}
           />
         }
+      />
+      <StreamFilterBar
+        kind="sql"
+        state={filters.state}
+        setState={filters.setState}
+        reset={filters.reset}
+        active={filters.active}
+        nodes={nodes}
       />
       <PageBody>
         <div className="overflow-hidden rounded-[10px] border border-t18 bg-t4">
