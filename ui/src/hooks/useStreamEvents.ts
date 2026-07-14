@@ -28,6 +28,11 @@ export interface UseStreamEventsOptions {
   filter: Filter
   bufferSize?: number
   includeRecent?: boolean
+  // samplingRate is the per-event-kind sampling map the server applies at
+  // fanout time (key = EventType name without the EVENT_TYPE_ prefix, e.g.
+  // "HTTP_REQUEST"; value 0.0–1.0). Must be a stable reference — like
+  // `filter`, changing it re-opens the upstream stream.
+  samplingRate?: Record<string, number>
 }
 
 export interface UseStreamEventsResult {
@@ -84,6 +89,7 @@ export function useStreamEvents(opts: UseStreamEventsOptions): UseStreamEventsRe
           const stream = controlClient.streamEvents(
             {
               filter: opts.filter,
+              samplingRate: opts.samplingRate ?? {},
               includeRecent: opts.includeRecent ?? true,
             },
             { signal: ctrl.signal },
@@ -129,7 +135,7 @@ export function useStreamEvents(opts: UseStreamEventsOptions): UseStreamEventsRe
       alive = false
       ctrl.abort()
     }
-  }, [opts.filter, opts.includeRecent, bufferSize])
+  }, [opts.filter, opts.samplingRate, opts.includeRecent, bufferSize])
 
   return {
     events,
