@@ -42,6 +42,8 @@ export function DataStudioPage() {
   const [nodeId, setNodeId] = useState('')
   // Selected record ids for bulk actions.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  // Sidebar model-name filter.
+  const [modelFilter, setModelFilter] = useState('')
 
   const { nodes } = useNodes()
   const { readOnly } = useSelf()
@@ -158,12 +160,28 @@ export function DataStudioPage() {
           {/* Model list */}
           <Card className="p-2.5">
             <Label className="px-2 pb-2 pt-0.5">Registered models</Label>
+            {(models.data ?? []).length > 8 && (
+              <input
+                type="text"
+                value={modelFilter}
+                onChange={(e) => setModelFilter(e.target.value)}
+                placeholder="Filter models…"
+                aria-label="Filter models"
+                className="mb-1.5 w-full rounded-[6px] border border-t19 bg-t8 px-2 py-1 font-mono text-[11px] text-t45 placeholder:text-t26 focus:outline-none"
+              />
+            )}
             <div className="flex flex-col gap-px">
               {models.isLoading && <div className="px-2 py-1 text-[12px] text-t30">Loading…</div>}
               {models.isError && (
                 <div className="px-2 py-1 text-[12px] text-t51">{models.error.message}</div>
               )}
-              {(models.data ?? []).map((m: ModelInfo) => {
+              {(models.data ?? [])
+                .filter((m: ModelInfo) =>
+                  modelFilter.trim() === ''
+                    ? true
+                    : m.name.toLowerCase().includes(modelFilter.trim().toLowerCase()),
+                )
+                .map((m: ModelInfo) => {
                 const active = m.name === activeModel
                 return (
                   <button

@@ -1,5 +1,6 @@
 // SQL statements — live stream (design handoff "Orbit Admin", screen 4).
 // Rendering only: data wiring is the same useStreamEvents hook as before.
+import { useState } from 'react'
 import { PageBody, PageHeader } from '@/components/Page'
 import { StreamControls } from '@/components/StreamControls'
 import { StreamFilterBar } from '@/components/StreamFilterBar'
@@ -13,8 +14,15 @@ import { durationToMillis, formatDuration, formatTime, streamRowKey, timestampTo
 // Time / Node / Kind / Statement / Duration / Rows.
 const GRID = '96px 92px 70px minmax(0,1fr) 84px 56px'
 
-// Duration turns amber when the statement takes longer than this.
-const SLOW_MS = 8
+// Duration turns amber when a statement takes longer than the operator's
+// configured threshold (persisted). Was a hardcoded 8ms.
+const SLOW_MS_KEY = 'orbit.sql.slowMs'
+const DEFAULT_SLOW_MS = 8
+
+function loadSlowMs(): number {
+  const raw = Number(window.localStorage.getItem(SLOW_MS_KEY))
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_SLOW_MS
+}
 
 // Ring buffer cap ~160, render top ~60 (handoff "Interactions & Behavior").
 const BUFFER_CAP = 160
@@ -23,6 +31,7 @@ const RENDER_CAP = 60
 export function SQLStreamPage() {
   const filters = useStreamFilters('sql')
   const { nodes } = useNodes()
+  const [slowMs, setSlowMs] = useState<number>(loadSlowMs)
   const stream = useStreamEvents({
     filter: filters.filter,
     samplingRate: filters.samplingRate,
@@ -40,15 +49,34 @@ export function SQLStreamPage() {
         title="SQL statements"
         description="Executed statements across the fleet. Argument values are masked at the source."
         actions={
-          <StreamControls
-            connected={stream.connected}
-            paused={stream.paused}
-            onTogglePause={() => stream.setPaused(!stream.paused)}
-            onClear={stream.clear}
-            count={stream.events.length}
-            pendingCount={stream.pendingCount}
-            error={stream.errorMessage}
-          />
+          <span className="flex items-center gap-2.5">
+            <label className="flex items-center gap-1.5 font-mono text-[10.5px] text-t30">
+              slow &gt;
+              <input
+                type="number"
+                min={1}
+                value={slowMs}
+                onChange={(e) => {
+                  const v = Number(e.target.value)
+                  const next = Number.isFinite(v) && v > 0 ? v : DEFAULT_SLOW_MS
+                  setSlowMs(next)
+                  window.localStorage.setItem(SLOW_MS_KEY, String(next))
+                }}
+                aria-label="Slow-statement threshold in milliseconds"
+                className="w-[52px] rounded-[6px] border border-t19 bg-t8 px-1.5 py-[3px] text-right font-mono text-[10.5px] text-t45 focus:outline-none"
+              />
+              ms
+            </label>
+            <StreamControls
+              connected={stream.connected}
+              paused={stream.paused}
+              onTogglePause={() => stream.setPaused(!stream.paused)}
+              onClear={stream.clear}
+              count={stream.events.length}
+              pendingCount={stream.pendingCount}
+              error={stream.errorMessage}
+            />
+          </span>
         }
       />
       <StreamFilterBar
@@ -102,7 +130,7 @@ export function SQLStreamPage() {
                 </span>
                 <span
                   className="text-right tabular-nums"
-                  style={{ color: ms > SLOW_MS ? SEMANTIC.amber : 'var(--t37)' }}
+                  style={{ color: ms > slowMs ? SEMANTIC.amber : 'var(--t37)' }}
                 >
                   {formatDuration(ms)}
                 </span>
