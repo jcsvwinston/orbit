@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/jcsvwinston/orbit/compare/proto/v0.3.0...proto/v0.4.0) (2026-07-14)
+
+
+### Added
+
+* GetSelf — versión del server e identidad del operador en la UI (OR-UX-P1-6, [#70](https://github.com/jcsvwinston/orbit/issues/70)) ([#83](https://github.com/jcsvwinston/orbit/issues/83)) ([550c691](https://github.com/jcsvwinston/orbit/commit/550c691a556f3584655c67a92b5d718d7b752d9f))
+
 ## [0.3.0](https://github.com/jcsvwinston/orbit/compare/proto/v0.2.0...proto/v0.3.0) (2026-07-11)
 
 
