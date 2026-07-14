@@ -1,0 +1,143 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # -------------------------------------------------------------------------
+  # The gate that was missing.
+  #
+  # Orbit is six Go modules tied together by a go.work. The workspace resolves
+  # every inter-module import from the local checkout, which means a module can
+  # compile perfectly in development while its go.mod still points at an old
+  # tag of its sibling — and that is exactly what shipped: server/go.mod pinned
+  # proto v0.3.0 while the code used adminv1.GetSelfRequest (proto v0.4.0), so
+  # `go install .../admin-server@server/v0.8.0` was broken for everyone outside
+  # this repo and no test noticed.
+  #
+  # GOWORK=off is what a consumer's toolchain does. Building each module with
+  # the workspace disabled is the only way to prove its go.mod is honest.
+  # -------------------------------------------------------------------------
+  standalone:
+    name: Standalone build (GOWORK=off) — ${{ matrix.module }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [., proto, agent, server, quarkbridge, quarkdatasource]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: go build (no workspace)
+        working-directory: ${{ matrix.module }}
+        env:
+          GOWORK: "off"
+        run: go build ./...
+      - name: go vet (no workspace)
+        working-directory: ${{ matrix.module }}
+        env:
+          GOWORK: "off"
+        run: go vet ./...
+
+  test:
+    name: Go tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      # Workspace mode here on purpose: these tests exercise the modules as a
+      # set (the server's integration tests drive a real agent), which is the
+      # combination `standalone` above cannot check.
+      - run: go test ./... -count=1
+      - run: go test ./... -count=1
+        working-directory: proto
+      - run: go test ./... -count=1
+        working-directory: agent
+      - run: go test ./... -count=1
+        working-directory: server
+      - run: go test ./... -count=1
+        working-directory: quarkbridge
+      - run: go test ./... -count=1
+        working-directory: quarkdatasource
+
+  # -------------------------------------------------------------------------
+  # Data Studio against engines people actually deploy on.
+  #
+  # The suite defaults to in-memory SQLite, which is cheap but proves little:
+  # a Postgres-only bug (Create not back-filling the primary key, because the
+  # PG driver has no LastInsertId) sat undetected behind a green SQLite run.
+  # ORBIT_TEST_DATASTUDIO_URL re-points the identical suite at a real server.
+  # -------------------------------------------------------------------------
+  datastudio-engines:
+    name: Data Studio (${{ matrix.engine }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - engine: postgres
+            url: postgres://orbit:orbit@localhost:5432/orbit?sslmode=disable
+          - engine: mysql
+            url: mysql://orbit:orbit@localhost:3306/orbit
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: orbit
+          POSTGRES_PASSWORD: orbit
+          POSTGRES_DB: orbit
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U orbit -d orbit"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: orbit
+          MYSQL_USER: orbit
+          MYSQL_PASSWORD: orbit
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost -uroot -proot"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Data Studio CRUD against ${{ matrix.engine }}
+        working-directory: server
+        env:
+          ORBIT_TEST_DATASTUDIO_URL: ${{ matrix.url }}
+        run: go test -run 'DataStudio|Manage' -count=1 -v .
+
+  ui:
+    name: UI (typecheck, lint, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run build
