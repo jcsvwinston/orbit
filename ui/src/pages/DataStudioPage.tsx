@@ -3,17 +3,19 @@
 // encoding/decoding) is preserved from the previous implementation — only the
 // rendering changed to the redesign language. The filter input is wired to
 // the hook's server-side `search` parameter (debounced).
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { PageBody, PageHeader } from '@/components/Page'
 import { AccentButton, Card, Chip, GhostButton, Label, Segmented } from '@/components/ui'
 import { useToast } from '@/components/Toast'
 import {
+  useBulkAction,
   useDeleteRecord,
   useModels,
   useRecords,
   useSaveRecord,
   useSchema,
 } from '@/hooks/useDataStudio'
+import { useNodes } from '@/hooks/useNodes'
 import type { ModelField, ModelInfo, Record as PBRecord } from '@/gen/nucleus/admin/v1/admin_pb'
 
 const PAGE_SIZE = 20
@@ -34,24 +36,36 @@ export function DataStudioPage() {
   const [editing, setEditing] = useState<{ id?: string; values: Record<string, string> } | null>(
     null,
   )
+  // nodeId scopes every Data Studio call to one connected agent ("" = the
+  // server picks any that knows the model). Empty by default.
+  const [nodeId, setNodeId] = useState('')
+  // Selected record ids for bulk actions.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
-  const models = useModels(true)
+  const { nodes } = useNodes()
+  const models = useModels(true, nodeId)
   const activeModel = selectedModel ?? models.data?.[0]?.name ?? null
 
-  const schema = useSchema(activeModel)
+  const schema = useSchema(activeModel, nodeId)
   const records = useRecords(
     activeModel && tab === 'records'
-      ? { modelName: activeModel, page, pageSize: PAGE_SIZE, search }
+      ? { modelName: activeModel, page, pageSize: PAGE_SIZE, search, nodeId }
       : null,
   )
 
   const toast = useToast()
-  const deleteMut = useDeleteRecord(activeModel ?? '')
-  const saveMut = useSaveRecord(activeModel ?? '')
+  const deleteMut = useDeleteRecord(activeModel ?? '', nodeId)
+  const saveMut = useSaveRecord(activeModel ?? '', nodeId)
+  const bulkMut = useBulkAction(activeModel ?? '', nodeId)
 
   // The row that is currently being deleted (its id), so the row can show
   // a "deleting…" state instead of appearing to hang.
   const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  // Clear the selection whenever the visible record set changes.
+  useEffect(() => {
+    setSelectedIds(new Set())
+  }, [activeModel, page, search, nodeId])
 
   // Debounce the filter input into the server-side search param.
   useEffect(() => {
@@ -80,18 +94,53 @@ export function DataStudioPage() {
     setEditing(null)
   }
 
+  // navigateToFK jumps to a foreign-key target: select the referenced model
+  // and pre-fill the search with the key value.
+  const navigateToFK = (model: string, value: string): void => {
+    setSelectedModel(model)
+    setTab('records')
+    setPage(1)
+    setSearchInput(value)
+    setSearch(value)
+    setEditing(null)
+  }
+
+  const scopeSelectClass =
+    'shrink-0 rounded-[7px] border border-t19 bg-t8 px-2.5 py-[5.5px] font-mono text-[11.5px] text-t45 focus:outline-none'
+
   return (
     <>
       <PageHeader
         title="Data Studio"
         description="Browse and edit registered models. Operations execute on a connected agent — signals, validation and tenant filters apply."
         actions={
-          <AccentButton
-            disabled={!activeModel || !schema.data}
-            onClick={() => setEditing({ values: {} })}
-          >
-            + New record
-          </AccentButton>
+          <span className="flex items-center gap-2.5">
+            {nodes.length > 0 && (
+              <select
+                value={nodeId}
+                onChange={(e) => {
+                  setNodeId(e.target.value)
+                  setSelectedModel(null)
+                }}
+                aria-label="Target node"
+                className={scopeSelectClass}
+                title="Route Data Studio operations to a specific node"
+              >
+                <option value="">any node</option>
+                {nodes.map((n) => (
+                  <option key={n.nodeId} value={n.nodeId}>
+                    {n.nodeId}
+                  </option>
+                ))}
+              </select>
+            )}
+            <AccentButton
+              disabled={!activeModel || !schema.data}
+              onClick={() => setEditing({ values: {} })}
+            >
+              + New record
+            </AccentButton>
+          </span>
         }
       />
       <PageBody>
@@ -177,6 +226,49 @@ export function DataStudioPage() {
 
                 {tab === 'records' ? (
                   <>
+                    {selectedIds.size > 0 && (
+                      <div className="flex items-center justify-between border-t border-t10 bg-t6 px-4 py-2">
+                        <span className="font-mono text-[11px] text-t35">
+                          {selectedIds.size} selected
+                        </span>
+                        <span className="flex items-center gap-2">
+                          <GhostButton onClick={() => setSelectedIds(new Set())}>
+                            Clear
+                          </GhostButton>
+                          <GhostButton
+                            danger
+                            disabled={bulkMut.isPending}
+                            onClick={() => {
+                              const ids = Array.from(selectedIds)
+                              if (!window.confirm(`Delete ${ids.length} ${activeModel} record(s)?`)) {
+                                return
+                              }
+                              bulkMut.mutate(
+                                { action: 'delete', ids },
+                                {
+                                  onSuccess: (res) => {
+                                    setSelectedIds(new Set())
+                                    if (res.failed > 0) {
+                                      toast.error(
+                                        `Deleted ${res.affected}, ${res.failed} failed: ${res.errors[0] ?? ''}`,
+                                      )
+                                    } else {
+                                      toast.success(`Deleted ${res.affected} ${activeModel} record(s)`)
+                                    }
+                                  },
+                                  onError: (err) =>
+                                    toast.error(
+                                      `Bulk delete failed: ${err instanceof Error ? err.message : String(err)}`,
+                                    ),
+                                },
+                              )
+                            }}
+                          >
+                            {bulkMut.isPending ? 'Deleting…' : `Delete ${selectedIds.size}`}
+                          </GhostButton>
+                        </span>
+                      </div>
+                    )}
                     <RecordsTable
                       fields={listFields}
                       loading={records.isLoading || schema.isLoading}
@@ -188,6 +280,26 @@ export function DataStudioPage() {
                             : null
                       }
                       records={records.data?.items ?? []}
+                      selectedIds={selectedIds}
+                      onToggleSelect={(id) =>
+                        setSelectedIds((prev) => {
+                          const next = new Set(prev)
+                          if (next.has(id)) next.delete(id)
+                          else next.add(id)
+                          return next
+                        })
+                      }
+                      onToggleAll={(ids, checked) =>
+                        setSelectedIds((prev) => {
+                          const next = new Set(prev)
+                          for (const id of ids) {
+                            if (checked) next.add(id)
+                            else next.delete(id)
+                          }
+                          return next
+                        })
+                      }
+                      onNavigateFK={navigateToFK}
                       onEdit={(rec) => {
                         const values: Record<string, string> = {}
                         for (const [k, v] of Object.entries(rec.valuesJson)) {
@@ -290,22 +402,42 @@ export function DataStudioPage() {
 /* Records tab                                                         */
 /* ------------------------------------------------------------------ */
 
+function recordId(rec: PBRecord): string {
+  return unquoteJSON(rec.valuesJson['ID'] ?? rec.valuesJson['Id'] ?? rec.valuesJson['id'] ?? '')
+}
+
 function RecordsTable(props: {
   fields: ModelField[]
   records: PBRecord[]
   loading: boolean
   error: string | null
   deletingId: string | null
+  selectedIds: Set<string>
+  onToggleSelect: (id: string) => void
+  onToggleAll: (ids: string[], checked: boolean) => void
+  onNavigateFK: (model: string, value: string) => void
   onEdit: (rec: PBRecord) => void
   onDelete: (rec: PBRecord) => void
 }) {
-  const gridCols = `repeat(${Math.max(1, props.fields.length)}, minmax(0,1fr)) 120px`
+  const gridCols = `28px repeat(${Math.max(1, props.fields.length)}, minmax(0,1fr)) 120px`
+  const selectableIds = props.records.map(recordId).filter((id) => id !== '')
+  const allSelected =
+    selectableIds.length > 0 && selectableIds.every((id) => props.selectedIds.has(id))
   return (
     <div className="min-w-0">
       <div
         className="grid bg-t6 px-4 py-2 text-[10px] font-semibold uppercase tracking-[.08em] text-t26"
         style={{ gridTemplateColumns: gridCols }}
       >
+        <span className="flex items-center">
+          <input
+            type="checkbox"
+            checked={allSelected}
+            onChange={(e) => props.onToggleAll(selectableIds, e.target.checked)}
+            aria-label="Select all rows on this page"
+            disabled={selectableIds.length === 0}
+          />
+        </span>
         {props.fields.map((f) => (
           <span key={f.name} className="truncate pr-2">
             {f.label || f.name}
@@ -331,21 +463,35 @@ function RecordsTable(props: {
       )}
 
       {props.records.map((rec, idx) => {
-        const rowId = unquoteJSON(
-          rec.valuesJson['ID'] ?? rec.valuesJson['Id'] ?? rec.valuesJson['id'] ?? '',
-        )
+        const rowId = recordId(rec)
         const deleting = props.deletingId !== null && props.deletingId === rowId
+        const selected = rowId !== '' && props.selectedIds.has(rowId)
         return (
           <div
             key={rowId || idx}
             className={[
               'grid items-center border-t border-t10 px-4 py-1.5 transition-colors hover:bg-t7',
               deleting ? 'opacity-50' : '',
+              selected ? 'bg-t8' : '',
             ].join(' ')}
             style={{ gridTemplateColumns: gridCols }}
           >
+            <span className="flex items-center">
+              <input
+                type="checkbox"
+                checked={selected}
+                disabled={rowId === ''}
+                onChange={() => props.onToggleSelect(rowId)}
+                aria-label={`Select record ${rowId}`}
+              />
+            </span>
             {props.fields.map((f) => (
-              <RecordCell key={f.name} raw={rec.valuesJson[f.name]} />
+              <RecordCell
+                key={f.name}
+                field={f}
+                raw={rec.valuesJson[f.name]}
+                onNavigateFK={props.onNavigateFK}
+              />
             ))}
             <span className="flex justify-end gap-1.5">
               {deleting ? (
@@ -366,10 +512,33 @@ function RecordsTable(props: {
   )
 }
 
-function RecordCell(props: { raw: string | undefined }) {
+function RecordCell(props: {
+  field: ModelField
+  raw: string | undefined
+  onNavigateFK: (model: string, value: string) => void
+}) {
   const text = formatCell(props.raw)
   if (text === '' || text === '∅') {
     return <span className="pr-2.5 font-mono text-[11.5px] text-t26">∅</span>
+  }
+  // Foreign-key cell → link to the referenced model, pre-filtered by the raw
+  // (untruncated) key value.
+  if (props.field.isForeignKey && props.field.foreignModel) {
+    const key = unquoteJSON(props.raw ?? '')
+    if (key !== '') {
+      return (
+        <span className="truncate pr-2.5">
+          <button
+            type="button"
+            onClick={() => props.onNavigateFK(props.field.foreignModel, key)}
+            title={`Open ${props.field.foreignModel} ${key}`}
+            className="font-mono text-[11.5px] text-accent underline decoration-dotted underline-offset-2 hover:brightness-125"
+          >
+            {text}
+          </button>
+        </span>
+      )
+    }
   }
   return <span className="truncate pr-2.5 font-mono text-[11.5px] text-t39">{text}</span>
 }
@@ -536,39 +705,108 @@ function RecordEditor(props: {
   )
 }
 
+function isDateField(f: ModelField): boolean {
+  const ht = f.htmlType.toLowerCase()
+  return (
+    ht === 'date' ||
+    ht === 'datetime' ||
+    ht === 'datetime-local' ||
+    f.goType.toLowerCase().includes('time.time')
+  )
+}
+
 function FieldEditor(props: { field: ModelField; value: string; onChange: (v: string) => void }) {
-  const isArea = props.field.htmlType === 'textarea'
+  const f = props.field
+  const isArea = f.htmlType === 'textarea'
+  const hasChoices = f.choices.length > 0
+  const isDate = isDateField(f)
   const inputClass =
     'w-full box-border rounded-[7px] border border-t19 bg-t8 px-2.5 py-[7px] font-mono text-[12px] text-t45 placeholder:text-t26 focus:outline-none'
+
+  let control: ReactNode
+  if (hasChoices) {
+    // Enum field → real <select> over the declared choices.
+    control = (
+      <select
+        value={parseDisplay(props.value)}
+        onChange={(e) => props.onChange(encodeUserValue(e.target.value, f.goType))}
+        className={inputClass}
+      >
+        <option value="">— none —</option>
+        {f.choices.map((c) => (
+          <option key={c.value} value={c.value}>
+            {c.label || c.value}
+          </option>
+        ))}
+      </select>
+    )
+  } else if (isDate) {
+    // Time field → native datetime-local picker; stored as a quoted RFC3339
+    // string. Conversion is local-time ↔ ISO.
+    control = (
+      <input
+        type="datetime-local"
+        value={rfc3339ToLocalInput(props.value)}
+        onChange={(e) => props.onChange(localInputToJSON(e.target.value))}
+        className={inputClass}
+      />
+    )
+  } else if (isArea) {
+    control = (
+      <textarea
+        rows={4}
+        value={parseDisplay(props.value)}
+        onChange={(e) => props.onChange(JSON.stringify(e.target.value))}
+        placeholder={f.goType}
+        className={`${inputClass} resize-y`}
+      />
+    )
+  } else {
+    control = (
+      <input
+        type="text"
+        value={parseDisplay(props.value)}
+        onChange={(e) => {
+          // Encode as JSON: numeric strings become numbers, "true"/"false"
+          // become booleans, everything else becomes a JSON string.
+          props.onChange(encodeUserValue(e.target.value, f.goType))
+        }}
+        placeholder={f.goType}
+        className={inputClass}
+      />
+    )
+  }
+
   return (
     <label className="block">
       <span className="mb-[5px] block text-[10px] font-semibold uppercase tracking-[.09em] text-t28">
-        {props.field.label || props.field.name}
-        {props.field.isRequired && <span className="text-t51"> *</span>}
+        {f.label || f.name}
+        {f.isRequired && <span className="text-t51"> *</span>}
       </span>
-      {isArea ? (
-        <textarea
-          rows={4}
-          value={parseDisplay(props.value)}
-          onChange={(e) => props.onChange(JSON.stringify(e.target.value))}
-          placeholder={props.field.goType}
-          className={`${inputClass} resize-y`}
-        />
-      ) : (
-        <input
-          type="text"
-          value={parseDisplay(props.value)}
-          onChange={(e) => {
-            // Encode as JSON: numeric strings become numbers, "true"/"false"
-            // become booleans, everything else becomes a JSON string.
-            props.onChange(encodeUserValue(e.target.value, props.field.goType))
-          }}
-          placeholder={props.field.goType}
-          className={inputClass}
-        />
-      )}
+      {control}
     </label>
   )
+}
+
+// rfc3339ToLocalInput converts a stored JSON value (a quoted RFC3339 string,
+// or plain) into the "YYYY-MM-DDTHH:mm" a datetime-local input expects, in
+// local time. Returns "" when the value is empty or unparseable.
+function rfc3339ToLocalInput(raw: string): string {
+  const s = parseDisplay(raw)
+  if (!s) return ''
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+// localInputToJSON converts a datetime-local value (local time) into a quoted
+// RFC3339 (UTC) JSON string. Empty input → "".
+function localInputToJSON(local: string): string {
+  if (!local) return ''
+  const d = new Date(local)
+  if (Number.isNaN(d.getTime())) return ''
+  return JSON.stringify(d.toISOString())
 }
 
 /* ------------------------------------------------------------------ */
