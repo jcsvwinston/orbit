@@ -4,25 +4,28 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { dataStudioClient } from '@/lib/transport'
-import type { ModelInfo, ModelSchema, PaginatedRecords, Record as PBRecord } from '@/gen/nucleus/admin/v1/admin_pb'
+import type { BulkActionResponse, ModelInfo, ModelSchema, PaginatedRecords, Record as PBRecord } from '@/gen/nucleus/admin/v1/admin_pb'
 
-export function useModels(includeCounts = false) {
+// nodeId targets a specific connected agent for the operation ("" = the
+// server picks any agent that knows the model). It threads through every
+// Data Studio request so a multi-node fleet can browse one node's data.
+export function useModels(includeCounts = false, nodeId = '') {
   return useQuery({
-    queryKey: ['data-studio', 'models', includeCounts],
+    queryKey: ['data-studio', 'models', includeCounts, nodeId],
     queryFn: async (): Promise<ModelInfo[]> => {
-      const resp = await dataStudioClient.listModels({ includeCounts })
+      const resp = await dataStudioClient.listModels({ includeCounts, nodeId })
       return resp.models
     },
     staleTime: 10_000,
   })
 }
 
-export function useSchema(modelName: string | null) {
+export function useSchema(modelName: string | null, nodeId = '') {
   return useQuery({
-    queryKey: ['data-studio', 'schema', modelName],
+    queryKey: ['data-studio', 'schema', modelName, nodeId],
     enabled: !!modelName,
     queryFn: async (): Promise<ModelSchema> => {
-      return dataStudioClient.getSchema({ modelName: modelName ?? '' })
+      return dataStudioClient.getSchema({ modelName: modelName ?? '', nodeId })
     },
     staleTime: 60_000,
   })
@@ -34,6 +37,7 @@ export interface ListRecordsParams {
   pageSize: number
   search?: string
   orderBy?: string
+  nodeId?: string
 }
 
 export function useRecords(params: ListRecordsParams | null) {
@@ -46,6 +50,7 @@ export function useRecords(params: ListRecordsParams | null) {
       params?.pageSize,
       params?.search,
       params?.orderBy,
+      params?.nodeId,
     ],
     enabled: !!params,
     queryFn: async (): Promise<PaginatedRecords> => {
@@ -56,18 +61,33 @@ export function useRecords(params: ListRecordsParams | null) {
         pageSize: params.pageSize,
         search: params.search ?? '',
         orderBy: params.orderBy ?? '',
+        nodeId: params.nodeId ?? '',
       })
     },
     staleTime: 0,
   })
 }
 
-export function useDeleteRecord(modelName: string) {
+export function useDeleteRecord(modelName: string, nodeId = '') {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (id: string): Promise<boolean> => {
-      const resp = await dataStudioClient.deleteRecord({ modelName, id })
+      const resp = await dataStudioClient.deleteRecord({ modelName, id, nodeId })
       return resp.deleted
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['data-studio', 'records', modelName] })
+    },
+  })
+}
+
+// useBulkAction runs a BulkAction (today: delete) over a set of record ids on
+// one model. The RPC + agent + audit are already wired; the UI just calls it.
+export function useBulkAction(modelName: string, nodeId = '') {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (vars: { action: string; ids: string[] }): Promise<BulkActionResponse> => {
+      return dataStudioClient.bulkAction({ modelName, nodeId, action: vars.action, ids: vars.ids })
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['data-studio', 'records', modelName] })
@@ -80,7 +100,7 @@ export interface SaveRecordVars {
   values: Record<string, string>
 }
 
-export function useSaveRecord(modelName: string) {
+export function useSaveRecord(modelName: string, nodeId = '') {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (vars: SaveRecordVars): Promise<PBRecord> => {
@@ -88,11 +108,13 @@ export function useSaveRecord(modelName: string) {
         return dataStudioClient.updateRecord({
           modelName,
           id: vars.id,
+          nodeId,
           record: { valuesJson: vars.values },
         })
       }
       return dataStudioClient.createRecord({
         modelName,
+        nodeId,
         record: { valuesJson: vars.values },
       })
     },
