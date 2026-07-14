@@ -1,8 +1,6 @@
 module github.com/jcsvwinston/orbit/quarkbridge
 
-go 1.26.4
-
-toolchain go1.26.5
+go 1.26.5
 
 // quarkbridge is an opt-in module that depends on BOTH Quark (the ORM whose
 // SQL it observes) and Nucleus (the framework whose observability feed it

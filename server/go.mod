@@ -1,8 +1,6 @@
 module github.com/jcsvwinston/orbit/server
 
-go 1.26.4
-
-toolchain go1.26.5
+go 1.26.5
 
 require (
 	connectrpc.com/connect v1.19.2

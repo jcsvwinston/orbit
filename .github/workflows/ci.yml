@@ -124,6 +124,25 @@ jobs:
           ORBIT_TEST_DATASTUDIO_URL: ${{ matrix.url }}
         run: go test -run 'DataStudio|Manage' -count=1 -v .
 
+  # govulncheck reports only vulnerabilities your code can actually reach, so a
+  # finding here is a real exposure, not a dependency-graph curiosity. It also
+  # covers the standard library, which is how GO-2026-5856 (an Encrypted Client
+  # Hello leak in crypto/tls, reachable from every TLS dial the agent and the
+  # Redis relay make) was found: the modules built on Go 1.26.4, where it is
+  # unfixed. The go directive is now 1.26.5, so setup-go installs a patched
+  # toolchain — this job is what stops it silently sliding back.
+  vuln:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - run: govulncheck ./...
+
   ui:
     name: UI (typecheck, lint, build)
     runs-on: ubuntu-latest
