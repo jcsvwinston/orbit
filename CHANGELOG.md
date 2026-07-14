@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.4.0](https://github.com/jcsvwinston/orbit/compare/v1.3.0...v1.4.0) (2026-07-14)
+
+
+### Added
+
+* GetSelf — versión del server e identidad del operador en la UI (OR-UX-P1-6, [#70](https://github.com/jcsvwinston/orbit/issues/70)) ([#83](https://github.com/jcsvwinston/orbit/issues/83)) ([550c691](https://github.com/jcsvwinston/orbit/commit/550c691a556f3584655c67a92b5d718d7b752d9f))
+* **ui:** barra de filtros en las páginas de stream + knob de sampling (OR-UX-P1-3, [#71](https://github.com/jcsvwinston/orbit/issues/71)) ([#78](https://github.com/jcsvwinston/orbit/issues/78)) ([5e75f4b](https://github.com/jcsvwinston/orbit/commit/5e75f4b57595331b0b11f5557a089982d0228891))
+* **ui:** bundle P2 del backlog fleet — NodeDetail Recent activity, búsqueda de modelos, SLOW_MS configurable (OR-UX-P2, [#74](https://github.com/jcsvwinston/orbit/issues/74)) ([#85](https://github.com/jcsvwinston/orbit/issues/85)) ([3575ea4](https://github.com/jcsvwinston/orbit/commit/3575ea449653c41cd0b6f490bd959f2f85a75cab))
+* **ui:** expone en Data Studio lo que el backend ya sabe hacer (OR-UX-P1-2, [#72](https://github.com/jcsvwinston/orbit/issues/72)) ([#82](https://github.com/jcsvwinston/orbit/issues/82)) ([35964f4](https://github.com/jcsvwinston/orbit/commit/35964f4be60e1fdfb1fb8042f8e8d1ee996cdee5))
+* **ui:** herramientas de revisión del audit log (OR-UX-P1-7, [#73](https://github.com/jcsvwinston/orbit/issues/73)) ([#81](https://github.com/jcsvwinston/orbit/issues/81)) ([c974f39](https://github.com/jcsvwinston/orbit/commit/c974f3908d77d679d914ae145a4b2d46428de26f))
+
 ## [1.3.0](https://github.com/jcsvwinston/orbit/compare/v1.2.1...v1.3.0) (2026-07-13)
 
 
