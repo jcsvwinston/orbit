@@ -143,6 +143,18 @@ jobs:
       - run: go install golang.org/x/vuln/cmd/govulncheck@latest
       - run: govulncheck ./...
 
+  # Keeps internal engineering vocabulary out of website/docs/**. A reader
+  # evaluating Orbit does not know what ADR-019 is or what a "contract-freeze
+  # test" freezes — those are artefacts of how we build it, not of how anyone
+  # uses it. The internal tree is untouched; only what we publish has to speak
+  # the reader's language.
+  docs:
+    name: Docs product voice
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/ci/check_docs_product_voice.sh
+
   ui:
     name: UI (typecheck, lint, build)
     runs-on: ubuntu-latest

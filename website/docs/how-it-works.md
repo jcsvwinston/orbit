@@ -34,8 +34,7 @@ the full admin offline, in a single binary, version-pinned to the module.
 
 ## Relationship to Nucleus
 
-Orbit is a "dogfooding" consumer of [Nucleus](/nucleus/): mounting a real, deep
-admin exercises and hardens the framework's extension/`Runtime` surface. The
-admin used to live in the framework core as `pkg/admin`; nucleus ADR-019
-extracted it into this module as a clean break — Nucleus itself no longer ships
-any admin code.
+Orbit is built on the same public [Nucleus](/nucleus/) extension and `Runtime`
+API that any other module uses — nothing here is a private back door. The admin
+used to live in the framework core as `pkg/admin`; it now lives in this module,
+and Nucleus itself no longer ships any admin code.
