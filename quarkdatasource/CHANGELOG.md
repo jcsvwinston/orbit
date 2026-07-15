@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.3](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v0.2.2...quarkdatasource/v0.2.3) (2026-07-15)
+
+
+### Fixed
+
+* **fleet:** OR-1 (server no compilaba standalone) + OR-2 (el token no viajaba en el stream) + el CI que faltaba ([9d143f1](https://github.com/jcsvwinston/orbit/commit/9d143f1a3234d829af9e5e7803545cf810444f83))
+* **security:** compila con Go 1.26.5 — cierra GO-2026-5856 (crypto/tls) ([ba4ac2a](https://github.com/jcsvwinston/orbit/commit/ba4ac2aad39bd66cd082860bd08bb508eea9cf5c))
+
 ## [0.2.2](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v0.2.1...quarkdatasource/v0.2.2) (2026-07-12)
 
 
