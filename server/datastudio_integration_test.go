@@ -15,7 +15,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,12 +48,57 @@ type TestArticle struct {
 	Body  string `db:"column:body" json:"body"`
 }
 
+// agentDBURL is the database the Data Studio integration tests run against.
+//
+// The default keeps the fast lane fast and dependency-free: in-memory SQLite,
+// no Docker needed. But SQLite is the one engine whose quirks Data Studio is
+// *least* likely to trip over, so a green SQLite run says little about the
+// engines people actually deploy on. Point ORBIT_TEST_DATASTUDIO_URL at a real
+// server to run the identical suite against it:
+//
+//	ORBIT_TEST_DATASTUDIO_URL='postgres://orbit:orbit@localhost:5433/orbit?sslmode=disable' go test ./server/
+//
+// The agent resolves the dialect from the live handle (db.DB.System()), so no
+// other knob has to change — which is precisely the property under test.
+func agentDBURL() string {
+	if u := strings.TrimSpace(os.Getenv("ORBIT_TEST_DATASTUDIO_URL")); u != "" {
+		return u
+	}
+	return "sqlite://:memory:"
+}
+
+// articleDDL returns the CREATE TABLE and the parameterised INSERT for the
+// fixture table on the given engine. Only the identity column and the
+// placeholder style actually differ.
+func articleDDL(system string) (create, insert string) {
+	switch system {
+	case "postgresql", "postgres":
+		return `CREATE TABLE test_articles (
+			id SERIAL PRIMARY KEY,
+			title TEXT NOT NULL,
+			body TEXT
+		)`, `INSERT INTO test_articles (id, title, body) VALUES ($1, $2, $3)`
+	case "mysql", "mariadb":
+		return `CREATE TABLE test_articles (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			title VARCHAR(255) NOT NULL,
+			body TEXT
+		)`, `INSERT INTO test_articles (id, title, body) VALUES (?, ?, ?)`
+	default: // sqlite
+		return `CREATE TABLE test_articles (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			title TEXT NOT NULL,
+			body TEXT
+		)`, `INSERT INTO test_articles (id, title, body) VALUES (?, ?, ?)`
+	}
+}
+
 func setupAgentDB(t *testing.T) (*db.DB, *model.Registry) {
 	t.Helper()
 	logger := observe.NewLogger("error", "text")
 	cfg := db.Config{
 		Engine:          db.EngineSQL,
-		DatabaseURL:     "sqlite://:memory:",
+		DatabaseURL:     agentDBURL(),
 		DatabaseMaxOpen: 1,
 		DatabaseMaxIdle: 1,
 	}
@@ -65,18 +112,30 @@ func setupAgentDB(t *testing.T) (*db.DB, *model.Registry) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mustExec(t, sqlDB, `CREATE TABLE test_articles (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		title TEXT NOT NULL,
-		body TEXT
-	)`)
+
+	system := d.System()
+	create, insert := articleDDL(system)
+
+	// A real server keeps its state between runs (and between tests in this
+	// package); :memory: SQLite does not. Drop first so both behave alike.
+	mustExec(t, sqlDB, `DROP TABLE IF EXISTS test_articles`)
+	mustExec(t, sqlDB, create)
+
 	for i := 1; i <= 3; i++ {
-		mustExec(t, sqlDB,
-			`INSERT INTO test_articles (id, title, body) VALUES (?, ?, ?)`,
+		mustExec(t, sqlDB, insert,
 			i,
 			"seed article "+strconv.Itoa(i),
 			"body "+strconv.Itoa(i),
 		)
+	}
+
+	// Postgres' SERIAL sequence does not advance when the id is supplied
+	// explicitly, so it would still hand out 1 and the first Data Studio
+	// Create would collide with the seed rows. MySQL and SQLite advance their
+	// counters on explicit inserts, so only Postgres needs the nudge.
+	if system == "postgresql" || system == "postgres" {
+		mustExec(t, sqlDB,
+			`SELECT setval(pg_get_serial_sequence('test_articles', 'id'), (SELECT MAX(id) FROM test_articles))`)
 	}
 
 	reg := model.NewRegistry()

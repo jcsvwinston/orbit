@@ -13,10 +13,9 @@ Orbit is a self-contained admin panel — Data Studio, a live request/SQL feed, 
 session viewer, RBAC management, and system metrics — that mounts **in-process**
 into any Nucleus application through the framework's extension/module API.
 
-It is a separate Go module with its own release cadence, extracted from the
-framework core (nucleus
-[ADR-019](https://github.com/jcsvwinston/nucleus/blob/main/docs/adrs/ADR-019-extract-admin-to-orbit-module.md))
-so the core stays lean and the admin evolves as its own product. You add one
+It is a separate Go module with its own release cadence. The admin was moved out
+of the framework core and into this module so the core stays lean and the admin
+evolves as its own product. You add one
 dependency and one `Mount(...)` call; Orbit reads everything it needs from the
 running app's `Runtime` and serves its **embedded** React SPA — no separate
 asset deployment, no out-of-process sidecar, and no database of its own.
@@ -46,8 +45,8 @@ single binary.
 
 ## Status
 
-The current tagged release is **v1.2.1**. The public surfaces (the root
-module and `datasource`) are frozen for the life of v1.x — a contract-freeze
-test enforces it.
+The current tagged release is **v1.2.1**. The public API — the root module and
+`datasource` — is stable for the life of v1.x: it will not change in a breaking
+way within v1.
 
 Next: [Quick start](./quick-start.md).

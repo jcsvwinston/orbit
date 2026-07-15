@@ -216,18 +216,41 @@ func (d *Dialer) warnRateLimited(err error) {
 func (d *Dialer) newClient(endpoint string) adminv1connect.AgentServiceClient {
 	opts := []connect.ClientOption{}
 	if t := strings.TrimSpace(d.cfg.Token); t != "" {
-		opts = append(opts, connect.WithInterceptors(bearerInterceptor(t)))
+		opts = append(opts, connect.WithInterceptors(bearerInterceptor{token: t}))
 	}
 	return adminv1connect.NewAgentServiceClient(d.connectClient, endpoint, opts...)
 }
 
-func bearerInterceptor(token string) connect.UnaryInterceptorFunc {
-	return func(next connect.UnaryFunc) connect.UnaryFunc {
-		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			req.Header().Set("Authorization", "Bearer "+token)
-			return next(ctx, req)
-		}
+// bearerInterceptor attaches "Authorization: Bearer <token>" to outbound
+// calls. It implements the full connect.Interceptor interface rather than
+// using connect.UnaryInterceptorFunc: the agent's only RPC is the bidi
+// stream (AgentService.Connect), and unary-only interceptors are never
+// invoked for streaming calls — so a unary-only bearer would leave the
+// stream unauthenticated and the server would reject it with 401.
+type bearerInterceptor struct {
+	token string
+}
+
+var _ connect.Interceptor = bearerInterceptor{}
+
+func (i bearerInterceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
+	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+		req.Header().Set("Authorization", "Bearer "+i.token)
+		return next(ctx, req)
 	}
+}
+
+func (i bearerInterceptor) WrapStreamingClient(next connect.StreamingClientFunc) connect.StreamingClientFunc {
+	return func(ctx context.Context, spec connect.Spec) connect.StreamingClientConn {
+		conn := next(ctx, spec)
+		conn.RequestHeader().Set("Authorization", "Bearer "+i.token)
+		return conn
+	}
+}
+
+// WrapStreamingHandler is a no-op: this interceptor is client-side only.
+func (i bearerInterceptor) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
+	return next
 }
 
 // newConnectHTTPClient builds an HTTP/2-only client.

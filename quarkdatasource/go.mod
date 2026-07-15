@@ -1,8 +1,6 @@
 module github.com/jcsvwinston/orbit/quarkdatasource
 
-go 1.26.4
-
-toolchain go1.26.5
+go 1.26.5
 
 // quarkdatasource is an opt-in module that implements Orbit's datasource
 // contract (orbit ADR-001) over a Quark ORM client, so Data Studio can browse

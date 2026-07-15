@@ -1,4 +1,4 @@
-go 1.26.4
+go 1.26.5
 
 // Orbit is the pluggable observability/admin product for Nucleus (ADR-019).
 // The root module (./) is the in-process orbit.Module consumed by host apps;
