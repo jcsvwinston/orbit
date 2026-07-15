@@ -3,6 +3,6 @@
   "quarkbridge": "0.3.1",
   "quarkdatasource": "0.2.2",
   "proto": "0.4.0",
-  "agent": "0.5.0",
+  "agent": "0.5.1",
   "server": "0.8.0"
 }
