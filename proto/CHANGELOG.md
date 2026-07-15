@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.1](https://github.com/jcsvwinston/orbit/compare/proto/v0.4.0...proto/v0.4.1) (2026-07-15)
+
+
+### Fixed
+
+* **fleet:** OR-1 (server no compilaba standalone) + OR-2 (el token no viajaba en el stream) + el CI que faltaba ([9d143f1](https://github.com/jcsvwinston/orbit/commit/9d143f1a3234d829af9e5e7803545cf810444f83))
+* **security:** compila con Go 1.26.5 — cierra GO-2026-5856 (crypto/tls) ([ba4ac2a](https://github.com/jcsvwinston/orbit/commit/ba4ac2aad39bd66cd082860bd08bb508eea9cf5c))
+
 ## [0.4.0](https://github.com/jcsvwinston/orbit/compare/proto/v0.3.0...proto/v0.4.0) (2026-07-14)
 
 
