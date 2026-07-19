@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.2](https://github.com/jcsvwinston/orbit/compare/server/v0.8.1...server/v0.8.2) (2026-07-19)
+
+
+### Fixed
+
+* pins internos alineados con los últimos tags + guards (OR5-1, OR5-3) ([bf1dedc](https://github.com/jcsvwinston/orbit/commit/bf1dedc4440e68be373f5dd71fc4034f770042b0))
+* **server:** alinea los pins internos con los últimos tags (agent v0.5.1, proto v0.4.1) ([f08e195](https://github.com/jcsvwinston/orbit/commit/f08e19529fee7bad4c555b6f6c20da4758da64ba))
+* **server:** pin de agent al tag recién cortado v0.5.2 ([c5e47e1](https://github.com/jcsvwinston/orbit/commit/c5e47e109c61ceec1c44ad421bb8b77d4476e4a8))
+* **server:** pin de agent v0.5.2 + regla de mismo-minor para la arista root ([43d312d](https://github.com/jcsvwinston/orbit/commit/43d312d3981c1524a17cdaa01082e600bf791c2e))
+* **server:** WARN con IP remota al rechazar el token de un agente (OR5-2) ([39e20e0](https://github.com/jcsvwinston/orbit/commit/39e20e0010c937c99fd2488f5d6b3d60ae84005e))
+* un token de agente rechazado ya no falla en silencio (OR5-2) ([f00e9e0](https://github.com/jcsvwinston/orbit/commit/f00e9e0b232e92ddf2c90b66cc377d19b0bdd751))
+
 ## [0.8.1](https://github.com/jcsvwinston/orbit/compare/server/v0.8.0...server/v0.8.1) (2026-07-15)
 
 
