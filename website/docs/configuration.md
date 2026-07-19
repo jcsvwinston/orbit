@@ -1,6 +1,6 @@
 ---
 title: Configuration
-sidebar_position: 3
+sidebar_position: 4
 description: The modules.orbit.* configuration reference.
 ---
 
@@ -49,5 +49,5 @@ modules:
 The `cluster_*` keys above configure the **single-process Redis relay** for
 aggregating the live feed across nodes. That is distinct from the standalone
 **agent/server fleet** model (a dedicated observability server that many agents
-stream to) documented under [Cluster observability](./cluster/overview.md).
+stream to) documented under [Fleet observability](./cluster/overview.md).
 Most applications need neither — the in-process panel works on its own.

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.3](https://github.com/jcsvwinston/orbit/compare/server/v0.8.2...server/v0.8.3) (2026-07-19)
+
+
+### Fixed
+
+* **server:** pin de agent al tag recién cortado v0.5.3 ([d0e9f2f](https://github.com/jcsvwinston/orbit/commit/d0e9f2ff98de30672552d463b4c6c7351e1c3e16))
+* **server:** pin de agent v0.5.3 ([5291433](https://github.com/jcsvwinston/orbit/commit/52914330e497041e6c90c12ee9144ab97d89270a))
+
 ## [0.8.2](https://github.com/jcsvwinston/orbit/compare/server/v0.8.1...server/v0.8.2) (2026-07-19)
 
 

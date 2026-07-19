@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.3](https://github.com/jcsvwinston/orbit/compare/agent/v0.5.2...agent/v0.5.3) (2026-07-19)
+
+
+### Fixed
+
+* **agent:** Connected() solo se cierra con el primer frame aceptado bajo auth (OR6-1) ([1376cc0](https://github.com/jcsvwinston/orbit/commit/1376cc003f24bd699a4b02482182404fb2b79d3b))
+* **agent:** go mod tidy standalone tras los tests nuevos ([7bf21a0](https://github.com/jcsvwinston/orbit/commit/7bf21a028cc625f11f6ced0de5f596d91c15049b))
+* **agent:** require_connection deja de dar por bueno un token inválido (OR6-1/OR6-2) ([ea580c2](https://github.com/jcsvwinston/orbit/commit/ea580c20045259abd706d398fa9f9b8bd729c0cc))
+* **agent:** WARN de sospecha de auth tras N ciclos sin frame aceptado (OR6-2) ([6282c72](https://github.com/jcsvwinston/orbit/commit/6282c727b097dfdf0973bd002ce99b13f241c23c))
+
 ## [0.5.2](https://github.com/jcsvwinston/orbit/compare/agent/v0.5.1...agent/v0.5.2) (2026-07-19)
 
 
