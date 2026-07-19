@@ -63,6 +63,7 @@
     ".": {
       "package-name": "github.com/jcsvwinston/orbit",
       "release-type": "go",
+      "release-as": "1.4.3",
       "include-component-in-tag": false,
       "exclude-paths": [
         "quarkbridge",
