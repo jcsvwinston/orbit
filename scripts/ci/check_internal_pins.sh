@@ -59,6 +59,15 @@ for dir in "${MODULES[@]}"; do
     want=$(awk -v p="$path" '$1 == p {print $2}' <<<"$want_list")
     if [[ "$ver" == "$want" ]]; then
       echo "ok   $gomod: $path $ver"
+    elif [[ "$path" == "$MODULE_ROOT" && "${ver%.*}" == "${want%.*}" ]]; then
+      # Root-edge exception, same minor only: the root's certification patch
+      # is cut LAST (so its commit contains every module tag as an ancestor —
+      # the umbrella's manifest-guard requires exactly that), which makes
+      # strict equality on this edge topologically impossible: a module that
+      # requires the root can never pin a tag that will only exist after the
+      # module's own tag. A patch of lag within the same minor is therefore
+      # allowed; a minor behind (the OR5-3 rot: v0.3.0 against v1.4.x) fails.
+      echo "ok   $gomod: $path $ver (root edge: same minor as $want)"
     else
       echo "FAIL $gomod: $path pinned at $ver, latest published tag is $want" >&2
       status=1
