@@ -93,7 +93,7 @@ func New(cfg Config) *Server {
 	protectedAgent.Handle(adminv1connect.NewAgentServiceHandler(services.NewAgentService(state)))
 	agentRoot := http.NewServeMux()
 	agentRoot.HandleFunc("/healthz", healthOK)
-	agentRoot.Handle("/", auth.AgentMiddleware(cfg.AgentToken)(protectedAgent))
+	agentRoot.Handle("/", auth.AgentMiddleware(cfg.AgentToken, cfg.Logger)(protectedAgent))
 
 	// UI listener: protected by UIMiddleware. /healthz is carved out the
 	// same way; everything else (ControlService, DataStudioService, and

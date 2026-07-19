@@ -153,8 +153,13 @@ func (d *Dialer) Dial(ctx context.Context) (*Result, error) {
 				"endpoint", ep, "error", err)
 			continue
 		}
+		// Deliberately NOT resetting the backoff here. The probe hits
+		// /healthz, which the admin server exempts from auth, so a
+		// successful Dial proves reachability only — not that the token
+		// is accepted. Resetting on Dial made an agent with a rejected
+		// token hammer the server at ~InitialBackoff forever (OR5-2).
+		// The agent calls ResetBackoff once the server accepts a frame.
 		client := d.newClient(ep)
-		d.resetBackoff()
 		return &Result{Client: client, Endpoint: ep}, nil
 	}
 
@@ -167,10 +172,12 @@ func (d *Dialer) Dial(ctx context.Context) (*Result, error) {
 
 // Backoff returns the duration the caller should wait before the next
 // Dial. Grows exponentially up to MaxBackoff with jitter; resets to
-// InitialBackoff on the next successful Dial.
+// InitialBackoff only when the caller invokes ResetBackoff (i.e. after
+// the admin server has actually accepted the stream, not merely after a
+// successful /healthz probe).
 //
 // Backoff advances internal state, so call it exactly once per failed
-// Dial round.
+// connect → stream cycle.
 func (d *Dialer) Backoff() time.Duration {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -191,7 +198,15 @@ func (d *Dialer) Backoff() time.Duration {
 	return sleep
 }
 
-func (d *Dialer) resetBackoff() {
+// ResetBackoff returns the backoff schedule to InitialBackoff. Call it
+// only on evidence that the server accepted the connection — in
+// practice, when the stream layer receives its first frame from the
+// server. A Dial success must NOT reset: the /healthz probe is exempt
+// from auth, so it succeeds even when the token is being rejected.
+func (d *Dialer) ResetBackoff() {
+	if d == nil {
+		return
+	}
 	d.mu.Lock()
 	d.currentBackoff = 0
 	d.lastWarnAt = time.Time{}

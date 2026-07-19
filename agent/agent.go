@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"connectrpc.com/connect"
+
 	"github.com/jcsvwinston/nucleus/pkg/db"
 	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/observability"
@@ -157,9 +159,20 @@ type Agent struct {
 	connectedOnce     chan struct{}
 	connectedOnceOnce sync.Once
 
+	// authWarnLast rate-limits the "token rejected" WARN to one per
+	// authWarnEvery per endpoint. A rejected token retries on the dial
+	// backoff cadence; without the limiter the WARN would repeat on
+	// every cycle. Guarded by authWarnMu.
+	authWarnMu   sync.Mutex
+	authWarnLast map[string]time.Time
+
 	mu     sync.Mutex
 	closed bool
 }
+
+// authWarnEvery is the minimum interval between "agent token rejected"
+// WARNs per endpoint.
+const authWarnEvery = time.Minute
 
 // New constructs an Agent. Returns ErrDisabled when no endpoints are
 // configured.
@@ -210,6 +223,7 @@ func New(cfg Config) (*Agent, error) {
 		dataStudio:    dataStudio,
 		rbac:          rbac.New(cfg.Authorizer),
 		connectedOnce: make(chan struct{}),
+		authWarnLast:  make(map[string]time.Time),
 	}, nil
 }
 
@@ -308,7 +322,11 @@ func (a *Agent) runOnce(ctx context.Context) error {
 
 	a.connectedOnceOnce.Do(func() { close(a.connectedOnce) })
 
-	a.cfg.Logger.Info("admin agent connected",
+	// Dial success only proves the endpoint answered the auth-exempt
+	// /healthz probe. Announcing "connected" here lied when the token
+	// was being rejected (OR5-2); the honest INFO moves to OnAccepted
+	// below, once the server has demonstrably accepted the stream.
+	a.cfg.Logger.Debug("admin agent endpoint reachable; opening stream",
 		"endpoint", res.Endpoint, "node_id", a.nodeID)
 
 	streamCfg := stream.Config{
@@ -323,6 +341,16 @@ func (a *Agent) runOnce(ctx context.Context) error {
 		Heartbeat:    a.cfg.HeartbeatInterval,
 		DrainTimeout: a.cfg.DrainTimeout,
 		Host:         hostmetrics.New(a.cfg.DB),
+		// First frame received from the server == stream accepted. Only
+		// now is the connection known-good: reset the dial backoff and
+		// log the "connected" INFO. Resetting earlier (at Dial time)
+		// made a rejected token retry at ~1/s forever, because /healthz
+		// is exempt from auth and kept "succeeding".
+		OnAccepted: func() {
+			a.dialer.ResetBackoff()
+			a.cfg.Logger.Info("admin agent connected",
+				"endpoint", res.Endpoint, "node_id", a.nodeID)
+		},
 	}
 	// Avoid the typed-nil-into-interface trap: only set the fields when
 	// we actually have constructed handlers.
@@ -366,8 +394,30 @@ func (a *Agent) runOnce(ctx context.Context) error {
 		}
 		return ctx.Err()
 	case err := <-streamDone:
+		if connect.CodeOf(err) == connect.CodeUnauthenticated {
+			a.warnTokenRejected(res.Endpoint)
+		}
 		return err
 	}
+}
+
+// warnTokenRejected emits the operator-visible WARN for a 401 on the
+// bidi stream, at most once per authWarnEvery per endpoint. Without it
+// a bad --agent-token failed in complete silence: the auth-exempt
+// /healthz probe kept "connecting" and the stream's 401 only surfaced
+// at Debug level (OR5-2).
+func (a *Agent) warnTokenRejected(endpoint string) {
+	a.authWarnMu.Lock()
+	now := time.Now()
+	if last, ok := a.authWarnLast[endpoint]; ok && now.Sub(last) < authWarnEvery {
+		a.authWarnMu.Unlock()
+		return
+	}
+	a.authWarnLast[endpoint] = now
+	a.authWarnMu.Unlock()
+
+	a.cfg.Logger.Warn("admin agent token rejected by admin server; check --agent-token",
+		"endpoint", endpoint, "node_id", a.nodeID)
 }
 
 func (a *Agent) updateBufferGauges(ctx context.Context, stop <-chan struct{}) {

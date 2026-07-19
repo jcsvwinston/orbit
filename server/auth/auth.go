@@ -11,6 +11,7 @@ package auth
 import (
 	"crypto/subtle"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -34,9 +35,18 @@ type Identity struct {
 // auth on the agent listener. When token is empty the middleware is a
 // pass-through (the listener is presumed bound to a private network or
 // using mTLS at the listener layer).
-func AgentMiddleware(token string) func(http.Handler) http.Handler {
+//
+// logger receives a rate-limited WARN (one per minute per remote IP,
+// with a count of the 401s suppressed in between) every time a request
+// is rejected, so an operator can see in the server log that agents
+// with a bad token are calling (OR5-2). Pass nil for slog.Default.
+func AgentMiddleware(token string, logger *slog.Logger) func(http.Handler) http.Handler {
 	expected := strings.TrimSpace(token)
+	if logger == nil {
+		logger = slog.Default()
+	}
 	limiter := newFailureLimiter()
+	warns := newWarnLimiter()
 	return func(next http.Handler) http.Handler {
 		if expected == "" {
 			return next
@@ -54,6 +64,12 @@ func AgentMiddleware(token string) func(http.Handler) http.Handler {
 				// brute-force attempt.
 				if got != "" {
 					limiter.fail(ip)
+				}
+				if suppressed, ok := warns.allow(ip); ok {
+					logger.Warn("admin server rejected agent request: invalid or missing bearer token; check the agent's --agent-token",
+						"remote_ip", ip,
+						"token_presented", got != "",
+						"suppressed_since_last_warn", suppressed)
 				}
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return

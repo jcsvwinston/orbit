@@ -88,6 +88,68 @@ func (l *failureLimiter) fail(ip string) {
 	l.windows[ip] = &failWindow{count: 1, resetAt: now.Add(failureWindow)}
 }
 
+// warnLimiter rate-limits the agent-listener 401 WARN to one per
+// warnEvery per remote IP, counting the rejections suppressed in
+// between so the log line still conveys volume. Deliberately trivial:
+// a mutex plus a last-timestamp per key, mirroring failureLimiter's
+// bounded-map hygiene (fail-open on tracking, never on auth).
+type warnLimiter struct {
+	mu      sync.Mutex
+	entries map[string]*warnEntry
+}
+
+type warnEntry struct {
+	last       time.Time
+	suppressed int
+}
+
+const (
+	warnEvery = time.Minute
+	// warnMapCap bounds the tracking map; when full, stale entries are
+	// pruned and — as a last resort — new IPs warn untracked.
+	warnMapCap = 4096
+)
+
+func newWarnLimiter() *warnLimiter {
+	return &warnLimiter{entries: make(map[string]*warnEntry)}
+}
+
+// allow reports whether a WARN for ip should be emitted now, and how
+// many rejections were suppressed since the last emitted WARN for it.
+func (l *warnLimiter) allow(ip string) (suppressed int, ok bool) {
+	if l == nil {
+		return 0, true
+	}
+	now := time.Now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	e, tracked := l.entries[ip]
+	if tracked {
+		if now.Sub(e.last) < warnEvery {
+			e.suppressed++
+			return 0, false
+		}
+		suppressed = e.suppressed
+		e.last = now
+		e.suppressed = 0
+		return suppressed, true
+	}
+	if len(l.entries) >= warnMapCap {
+		for k, w := range l.entries {
+			if now.Sub(w.last) >= warnEvery {
+				delete(l.entries, k)
+			}
+		}
+		if len(l.entries) >= warnMapCap {
+			// Tracking full even after pruning: warn untracked rather
+			// than let an attacker rotating IPs silence the log.
+			return 0, true
+		}
+	}
+	l.entries[ip] = &warnEntry{last: now}
+	return 0, true
+}
+
 // remoteIPString returns the bare remote IP for limiter keying ("" when
 // unparseable — those requests are never limited).
 func remoteIPString(r *http.Request) string {
