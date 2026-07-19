@@ -41,15 +41,25 @@ to 30 seconds — it does not give up, and it does not log `connected` until
 the server actually accepts the stream. Fix the token; the next attempt
 succeeds without a restart.
 
+## The agent logs "consecutive stream cycles ended without a single accepted frame"
+
+A companion warning to the one above: some transport failures do not carry
+the authentication error cleanly, so after three consecutive stream cycles
+in which the server never accepted a single frame, the agent raises this
+auth-suspicion warning even without seeing an explicit rejection. Unreachable
+endpoints do not trigger it — only cycles that connect and then die
+frameless. If it persists, verify `--agent-token` on both sides.
+
 ## /healthz answers, but no node ever appears
 
 `/healthz` is deliberately **exempt from authentication** on every
 listener, so it proves reachability and nothing more. A reachable server
 plus no registered node almost always means the token is being rejected —
-check both warnings above. Note that the agent's boot-time
-`RequireConnection` gate is also satisfied by reachability, so a wrong
-token will **not** fail your application's boot; the log warnings are the
-signal. See [Security](./operations/security.md#the-healthz-exemption).
+check the warnings above. The agent's boot-time `RequireConnection` gate is
+**not** satisfied by reachability: it waits for the server to accept the
+stream under authentication, so with a wrong token the boot fails at the
+deadline and the warnings tell you why.
+See [Security](./operations/security.md#the-healthz-exemption).
 
 ## A node keeps flipping between connected and offline
 

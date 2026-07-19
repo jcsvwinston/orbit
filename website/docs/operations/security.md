@@ -71,10 +71,11 @@ owning a token — but it has two consequences worth knowing:
   running there. Nothing else is exposed without credentials.
 - **Reachable is not authenticated.** The agent's dial probe hits
   `/healthz`, so a booting agent can find the server "reachable" while its
-  token is being rejected on the stream. The boot-time
-  `RequireConnection` gate is satisfied by reachability, so **a wrong
-  token does not fail the application's boot** — watch the token-rejected
-  warnings described below instead.
+  token is being rejected on the stream. The boot-time `RequireConnection`
+  gate does **not** trust that probe: it only passes once the admin server
+  accepts the agent's first stream frame under authentication — so a wrong
+  token fails the application's boot within the configured deadline, with
+  the token-rejected warnings described below explaining why.
 
 ## Read-only operators
 

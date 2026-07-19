@@ -75,7 +75,8 @@
         {"type": "generic", "path": "README.md"},
         {"type": "generic", "path": "CLAUDE.md"},
         {"type": "generic", "path": "website/docs/intro.md"},
-        {"type": "generic", "path": "website/docs/quick-start.md"}
+        {"type": "generic", "path": "website/docs/quick-start.md"},
+        {"type": "generic", "path": "website/docs/reference/release-notes.md"}
       ]
     },
     "quarkbridge": {
