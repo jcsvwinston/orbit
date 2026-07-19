@@ -180,6 +180,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: bash scripts/ci/check_docs_product_voice.sh
+      # Orbit was the only repo without a version-coherence guard, and its
+      # docs drifted three minors ("v1.2.1" published against a v1.4.1 tag)
+      # before anyone noticed (QM5-3).
+      - run: bash scripts/ci/check_docs_version_claims.sh
 
   ui:
     name: UI (typecheck, lint, build)
