@@ -72,6 +72,7 @@
         "server"
       ],
       "extra-files": [
+        {"type": "generic", "path": "README.md"},
         {"type": "generic", "path": "website/docs/intro.md"},
         {"type": "generic", "path": "website/docs/quick-start.md"}
       ]

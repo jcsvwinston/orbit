@@ -24,7 +24,7 @@ if [[ -z "$manifest_version" ]]; then
   exit 1
 fi
 
-files=(website/docs/intro.md website/docs/quick-start.md)
+files=(README.md website/docs/intro.md website/docs/quick-start.md)
 status=0
 
 for f in "${files[@]}"; do
