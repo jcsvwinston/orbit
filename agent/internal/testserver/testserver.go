@@ -186,6 +186,25 @@ func (s *Server) Stream(ctx context.Context, stream *connect.BidiStream[adminv1.
 			case s.regCh <- body.Registration:
 			default:
 			}
+			// Mirror the real admin server: services.AgentService pushes
+			// the aggregate-demand frame (services.PushAggregate) right
+			// after a registration, so the agent's first Receive — and
+			// everything hanging off stream.Config.OnAccepted: the
+			// Connected() channel, the connected INFO/gauge, the backoff
+			// reset — fires promptly. With zero UI subscribers the real
+			// server sends an Unsubscribe for the aggregate id, which is
+			// a no-op on the agent beyond acking the stream.
+			_ = sess.send(&adminv1.Frame{
+				Body: &adminv1.Frame_Command{
+					Command: &adminv1.Command{
+						Body: &adminv1.Command_Unsubscribe{
+							Unsubscribe: &adminv1.Unsubscribe{
+								SubscriptionId: "server-aggregate",
+							},
+						},
+					},
+				},
+			})
 		case *adminv1.Frame_Heartbeat:
 			sess.mu.Lock()
 			sess.heartbeats++

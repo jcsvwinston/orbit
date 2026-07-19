@@ -108,13 +108,17 @@ func (e *extension) Attach(a *app.App) error {
 		}
 		select {
 		case <-ag.Connected():
-			a.Logger.Info("admin agent reached admin server within boot deadline",
+			// Connected() closes on the first frame ACCEPTED by the admin
+			// server under auth, not on mere /healthz reachability
+			// (OR6-1) — so this INFO is evidence the token works, not
+			// just that the endpoint answered.
+			a.Logger.Info("admin agent stream accepted by admin server within boot deadline",
 				"timeout", timeout, "node_id", ag.NodeID())
 		case <-time.After(timeout):
 			cancel()
 			<-e.runDone
 			return fmt.Errorf(
-				"admin agent extension: require_connection set, no admin endpoint reached within %s",
+				"admin agent extension: require_connection set, no admin server accepted the agent stream within %s (endpoint unreachable or token rejected)",
 				timeout,
 			)
 		}

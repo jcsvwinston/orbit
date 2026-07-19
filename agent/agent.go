@@ -152,9 +152,13 @@ type Agent struct {
 	dataStudio *dstudio.Handler
 	rbac       *rbac.Handler
 
-	// connectedOnce is closed the first time Run successfully establishes
-	// a stream to any admin endpoint. Used by Extension wrappers that
-	// implement --require-admin (fail boot if no admin reachable within
+	// connectedOnce is closed the first time an admin server ACCEPTS a
+	// stream from this agent: the first frame received from the server
+	// under auth (stream.Config.OnAccepted), not merely a successful
+	// Dial. Dial success only proves the auth-exempt /healthz probe
+	// answered; closing here on Dial made require_connection pass with a
+	// rejected token (OR6-1). Used by Extension wrappers that implement
+	// require_connection (fail boot if no admin accepts a stream within
 	// a timeout). Subsequent disconnects/reconnects do NOT re-open it.
 	connectedOnce     chan struct{}
 	connectedOnceOnce sync.Once
@@ -245,14 +249,17 @@ func (a *Agent) Metrics() *metrics.Metrics {
 	return a.metrics
 }
 
-// Connected returns a channel that is closed the first time Run
-// establishes a stream to any admin endpoint. Subsequent
+// Connected returns a channel that is closed the first time an admin
+// server accepts a stream from this agent — the first frame received
+// from the server under auth (stream.Config.OnAccepted) — NOT on the
+// first successful dial: the dial's /healthz probe is auth-exempt, so
+// reachability proves nothing about the token (OR6-1). Subsequent
 // disconnects/reconnects do NOT re-open the channel.
 //
-// It is the integration point for the --require-admin path: callers
-// that need the framework to fail boot when no admin is reachable
-// select on this channel against a timeout, and abort if the timeout
-// fires first.
+// It is the integration point for the require_connection path: callers
+// that need the framework to fail boot when no admin accepts the
+// stream select on this channel against a timeout, and abort if the
+// timeout fires first.
 func (a *Agent) Connected() <-chan struct{} {
 	if a == nil {
 		ch := make(chan struct{})
@@ -317,10 +324,11 @@ func (a *Agent) runOnce(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("dial: %w", err)
 	}
-	a.metrics.Connected.WithLabelValues(res.Endpoint).Set(1)
+	// Teardown only: the gauge goes to 1 in OnAccepted below. Setting it
+	// to 1 here, on Dial, reported "connected" while the token was being
+	// rejected — /healthz is auth-exempt, so reachability proves nothing
+	// about auth (OR6-1).
 	defer a.metrics.Connected.WithLabelValues(res.Endpoint).Set(0)
-
-	a.connectedOnceOnce.Do(func() { close(a.connectedOnce) })
 
 	// Dial success only proves the endpoint answered the auth-exempt
 	// /healthz probe. Announcing "connected" here lied when the token
@@ -342,12 +350,15 @@ func (a *Agent) runOnce(ctx context.Context) error {
 		DrainTimeout: a.cfg.DrainTimeout,
 		Host:         hostmetrics.New(a.cfg.DB),
 		// First frame received from the server == stream accepted. Only
-		// now is the connection known-good: reset the dial backoff and
-		// log the "connected" INFO. Resetting earlier (at Dial time)
-		// made a rejected token retry at ~1/s forever, because /healthz
-		// is exempt from auth and kept "succeeding".
+		// now is the connection known-good: reset the dial backoff, log
+		// the "connected" INFO, flip the Connected gauge, and close the
+		// Connected() channel (the require_connection guard). Doing any
+		// of these earlier (at Dial time) treated the auth-exempt
+		// /healthz probe as proof of a working connection (OR5-2/OR6-1).
 		OnAccepted: func() {
 			a.dialer.ResetBackoff()
+			a.metrics.Connected.WithLabelValues(res.Endpoint).Set(1)
+			a.connectedOnceOnce.Do(func() { close(a.connectedOnce) })
 			a.cfg.Logger.Info("admin agent connected",
 				"endpoint", res.Endpoint, "node_id", a.nodeID)
 		},
