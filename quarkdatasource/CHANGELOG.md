@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.4](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v0.2.3...quarkdatasource/v0.2.4) (2026-07-19)
+
+
+### Fixed
+
+* pins internos alineados con los últimos tags + guards (OR5-1, OR5-3) ([bf1dedc](https://github.com/jcsvwinston/orbit/commit/bf1dedc4440e68be373f5dd71fc4034f770042b0))
+* **quarkdatasource:** alinea el require del root con el último tag (v1.4.1) ([737bfe0](https://github.com/jcsvwinston/orbit/commit/737bfe0d96a104849c693bc4ac9609ec9f82f259))
+
 ## [0.2.3](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v0.2.2...quarkdatasource/v0.2.3) (2026-07-15)
 
 
