@@ -200,7 +200,6 @@ func (s *Stream) Run(ctx context.Context) error {
 
 	// Replay the pre-disconnect ring buffer immediately after.
 	s.replayBuffer()
-	s.cfg.Metrics.Connected.WithLabelValues(s.endpointLabel()).Set(1)
 
 	// Wait for the first one to surface a result. Cancel the stream
 	// context to bring the others down, then collect.
@@ -230,15 +229,11 @@ func (s *Stream) Run(ctx context.Context) error {
 	_ = s.bidiStream.CloseRequest()
 	_ = s.bidiStream.CloseResponse()
 
-	s.cfg.Metrics.Connected.WithLabelValues(s.endpointLabel()).Set(0)
+	// The Connected gauge is owned by the agent layer: it flips to 1 in
+	// OnAccepted (first frame accepted under auth) and back to 0 when the
+	// cycle ends. Stream-open is not "connected" (OR6-1), so nothing to
+	// report here.
 	return first
-}
-
-func (s *Stream) endpointLabel() string {
-	// Best-effort: we don't have a direct handle to the endpoint here.
-	// The agent layer tracks it via the connection.Result; this label is
-	// purely informational. Empty is fine.
-	return ""
 }
 
 func (s *Stream) buildRegistration() *adminv1.Frame {
