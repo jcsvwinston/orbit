@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"connectrpc.com/connect"
@@ -163,20 +164,39 @@ type Agent struct {
 	connectedOnce     chan struct{}
 	connectedOnceOnce sync.Once
 
-	// authWarnLast rate-limits the "token rejected" WARN to one per
-	// authWarnEvery per endpoint. A rejected token retries on the dial
-	// backoff cadence; without the limiter the WARN would repeat on
-	// every cycle. Guarded by authWarnMu.
+	// authWarnLast rate-limits the operator-facing auth WARNs (the hard
+	// 401 of OR5-2 and the no-accepted-frame suspicion of OR6-2) to one
+	// per authWarnEvery per key. Both retry on the dial backoff cadence;
+	// without the limiter they would repeat on every cycle. Guarded by
+	// authWarnMu.
 	authWarnMu   sync.Mutex
 	authWarnLast map[string]time.Time
+
+	// noFrameCycles counts CONSECUTIVE stream cycles that ended without
+	// the server accepting a single frame. Incremented by runOnce when a
+	// cycle ends unaccepted, reset to 0 by OnAccepted. At
+	// noFrameCycleThreshold the agent emits the auth-suspicion WARN
+	// (OR6-2): a 401 does not reliably surface as CodeUnauthenticated —
+	// a connect-go race turns it into a plain "write envelope: EOF" on
+	// roughly alternate cycles — but "no frame ever accepted" is
+	// race-free evidence of the same condition. Atomic because
+	// OnAccepted runs on the stream's recv goroutine.
+	noFrameCycles atomic.Int32
 
 	mu     sync.Mutex
 	closed bool
 }
 
-// authWarnEvery is the minimum interval between "agent token rejected"
-// WARNs per endpoint.
+// authWarnEvery is the minimum interval between repetitions of the same
+// operator-facing auth WARN.
 const authWarnEvery = time.Minute
+
+// noFrameCycleThreshold is the number of consecutive stream cycles that
+// must end without a single accepted frame before the agent emits the
+// auth-suspicion WARN (OR6-2). Small enough to surface within seconds
+// under the default backoff (1s, 2s, 4s...), large enough that one
+// transient drop mid-handshake does not cry wolf.
+const noFrameCycleThreshold = 3
 
 // New constructs an Agent. Returns ErrDisabled when no endpoints are
 // configured.
@@ -337,6 +357,10 @@ func (a *Agent) runOnce(ctx context.Context) error {
 	a.cfg.Logger.Debug("admin agent endpoint reachable; opening stream",
 		"endpoint", res.Endpoint, "node_id", a.nodeID)
 
+	// accepted records whether the server accepted at least one frame
+	// during THIS cycle; read after streamDone to drive noFrameCycles.
+	var accepted atomic.Bool
+
 	streamCfg := stream.Config{
 		NodeID:       a.nodeID,
 		Version:      a.cfg.Version,
@@ -356,6 +380,8 @@ func (a *Agent) runOnce(ctx context.Context) error {
 		// of these earlier (at Dial time) treated the auth-exempt
 		// /healthz probe as proof of a working connection (OR5-2/OR6-1).
 		OnAccepted: func() {
+			accepted.Store(true)
+			a.noFrameCycles.Store(0)
 			a.dialer.ResetBackoff()
 			a.metrics.Connected.WithLabelValues(res.Endpoint).Set(1)
 			a.connectedOnceOnce.Do(func() { close(a.connectedOnce) })
@@ -408,27 +434,48 @@ func (a *Agent) runOnce(ctx context.Context) error {
 		if connect.CodeOf(err) == connect.CodeUnauthenticated {
 			a.warnTokenRejected(res.Endpoint)
 		}
+		if !accepted.Load() {
+			// OR6-2: the WARN above misses the cycles where the 401
+			// surfaced as a plain EOF (connect-go race). A run of cycles
+			// in which the server never accepted a single frame is the
+			// race-free symptom of the same problem, so it gets its own
+			// rate-limited WARN. Dial failures never reach this point:
+			// an unreachable endpoint is not auth suspicion.
+			if n := a.noFrameCycles.Add(1); n >= noFrameCycleThreshold {
+				a.warnRateLimited("no-accepted-frame|"+res.Endpoint,
+					"admin agent: consecutive stream cycles ended without a single accepted frame; if this persists, check --agent-token",
+					"consecutive_cycles", n, "endpoint", res.Endpoint, "node_id", a.nodeID)
+			}
+		}
 		return err
 	}
 }
 
 // warnTokenRejected emits the operator-visible WARN for a 401 on the
-// bidi stream, at most once per authWarnEvery per endpoint. Without it
-// a bad --agent-token failed in complete silence: the auth-exempt
-// /healthz probe kept "connecting" and the stream's 401 only surfaced
-// at Debug level (OR5-2).
+// bidi stream. Without it a bad --agent-token failed in complete
+// silence: the auth-exempt /healthz probe kept "connecting" and the
+// stream's 401 only surfaced at Debug level (OR5-2).
 func (a *Agent) warnTokenRejected(endpoint string) {
+	a.warnRateLimited("rejected|"+endpoint,
+		"admin agent token rejected by admin server; check --agent-token",
+		"endpoint", endpoint, "node_id", a.nodeID)
+}
+
+// warnRateLimited logs msg at WARN level at most once per authWarnEvery
+// per key. Shared by the operator-facing auth WARNs (OR5-2's hard 401,
+// OR6-2's no-accepted-frame suspicion): both retry on the dial backoff
+// cadence and would otherwise repeat every cycle.
+func (a *Agent) warnRateLimited(key, msg string, args ...any) {
 	a.authWarnMu.Lock()
 	now := time.Now()
-	if last, ok := a.authWarnLast[endpoint]; ok && now.Sub(last) < authWarnEvery {
+	if last, ok := a.authWarnLast[key]; ok && now.Sub(last) < authWarnEvery {
 		a.authWarnMu.Unlock()
 		return
 	}
-	a.authWarnLast[endpoint] = now
+	a.authWarnLast[key] = now
 	a.authWarnMu.Unlock()
 
-	a.cfg.Logger.Warn("admin agent token rejected by admin server; check --agent-token",
-		"endpoint", endpoint, "node_id", a.nodeID)
+	a.cfg.Logger.Warn(msg, args...)
 }
 
 func (a *Agent) updateBufferGauges(ctx context.Context, stop <-chan struct{}) {

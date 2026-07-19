@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"connectrpc.com/connect"
@@ -32,10 +33,17 @@ type Server struct {
 	listener net.Listener
 	url      string
 
+	// authReject, when set, makes every non-/healthz request answer 401,
+	// mimicking the real admin server's auth middleware with a rejected
+	// token (the /healthz carve-out stays open). Toggle via
+	// SetAuthReject; count rejections via RejectedStreams.
+	authReject atomic.Bool
+
 	mu         sync.Mutex
 	streams    []*StreamSession
 	regCh      chan *adminv1.NodeRegistration
 	heartbeats int
+	rejected   int
 }
 
 // StreamSession represents one bidi stream the agent has opened.
@@ -71,12 +79,26 @@ func Start() *Server {
 		w.WriteHeader(http.StatusOK)
 	})
 
+	// Auth gate in front of the mux: /healthz always passes (like the
+	// real server's auth-exempt probe), everything else 401s while
+	// SetAuthReject(true) is in effect.
+	root := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/healthz" && s.authReject.Load() {
+			s.mu.Lock()
+			s.rejected++
+			s.mu.Unlock()
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	})
+
 	// h2c so the agent (which uses an h2c-capable client) can talk to us
 	// without TLS. The canonical recipe is net.Listen + http.Server with
 	// h2c.NewHandler — httptest.NewServer's HTTP/1.1 surface does not
 	// expose the underlying connection in a way that lets h2c upgrade.
 	h2s := &http2.Server{}
-	handler := h2c.NewHandler(mux, h2s)
+	handler := h2c.NewHandler(root, h2s)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -111,6 +133,20 @@ func (s *Server) Close() {
 
 // URL returns the URL agents should connect to (e.g. http://127.0.0.1:NNNN).
 func (s *Server) URL() string { return s.url }
+
+// SetAuthReject toggles 401-for-everything-but-/healthz, mimicking the
+// real admin server rejecting the agent's token. Established streams are
+// not torn down; use SendGoodbye on the live session to force a
+// reconnect into the rejecting server.
+func (s *Server) SetAuthReject(reject bool) { s.authReject.Store(reject) }
+
+// RejectedStreams returns how many non-/healthz requests have been
+// answered with 401 so far (one per agent stream attempt).
+func (s *Server) RejectedStreams() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.rejected
+}
 
 // Listener returns the bound TCP address (host:port). Useful for tests
 // that want to break the connection by closing the listener manually.
