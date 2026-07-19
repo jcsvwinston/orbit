@@ -46,6 +46,32 @@ jobs:
         env:
           GOWORK: "off"
         run: go vet ./...
+      # Tests, not just build+vet: server/v0.8.1 shipped with its own
+      # regression test red standalone (go.mod pinned agent at the version
+      # without the fix the test checks for) and the workspace-mode `test` job
+      # could not see it. This step runs each module against what its go.mod
+      # actually resolves.
+      - name: go test (no workspace)
+        working-directory: ${{ matrix.module }}
+        env:
+          GOWORK: "off"
+        run: go test ./... -count=1
+
+  # A sibling-module require that lags the sibling's latest tag ships stale
+  # code to consumers while the workspace hides it. See the script header for
+  # the two releases that proved it.
+  internal-pins:
+    name: Internal pins == latest sibling tags
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the check compares against the full tag list
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - run: bash scripts/ci/check_internal_pins.sh
 
   test:
     name: Go tests
