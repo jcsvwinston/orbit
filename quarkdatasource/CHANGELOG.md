@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.5](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v0.2.4...quarkdatasource/v0.2.5) (2026-07-19)
+
+
+### Fixed
+
+* **quarkbridge,quarkdatasource:** alinea el require de quark con el certificado (v1.3.1) ([4f3e891](https://github.com/jcsvwinston/orbit/commit/4f3e891672458579a53d9e6bd38026387d8845a6))
+* requires de quark alineados con el certificado en los módulos puente (QM6-1) ([dd60bb7](https://github.com/jcsvwinston/orbit/commit/dd60bb7c9d37d4413e7fd058f1e7029e04ab3b81))
+
 ## [0.2.4](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v0.2.3...quarkdatasource/v0.2.4) (2026-07-19)
 
 
