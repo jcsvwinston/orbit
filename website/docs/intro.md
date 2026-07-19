@@ -41,7 +41,7 @@ single binary.
 - **Go 1.26+**
 - A **[Nucleus](/nucleus/)** application to mount into.
 - *(Optional)* **Redis** — only for the cross-node live-telemetry relay (see
-  [Cluster observability](./cluster/overview.md)).
+  [Fleet observability](./cluster/overview.md)).
 
 ## Status
 

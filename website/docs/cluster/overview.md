@@ -4,7 +4,7 @@ sidebar_position: 1
 description: Cross-node live telemetry — when and how.
 ---
 
-# Cluster observability
+# Fleet observability
 
 The in-process panel shows the live feed for **its own node**. For fleet-wide
 live telemetry — every node's HTTP and SQL events aggregated in one place —
