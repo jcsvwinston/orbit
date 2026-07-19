@@ -134,33 +134,43 @@ func TestBackoff_GrowsAndCaps(t *testing.T) {
 	}
 }
 
-func TestBackoff_ResetsAfterSuccessfulDial(t *testing.T) {
+// TestBackoff_NotResetByDial_OnlyByResetBackoff pins the OR5-2 fix: a
+// successful Dial proves only that the auth-exempt /healthz probe
+// answered, so it must NOT reset the backoff — otherwise an agent whose
+// token is being rejected retries at ~InitialBackoff forever. Only an
+// explicit ResetBackoff (issued by the agent when the server accepts
+// the stream's first frame) returns the schedule to InitialBackoff.
+func TestBackoff_NotResetByDial_OnlyByResetBackoff(t *testing.T) {
 	good, _, stop := startHealthyServer(t)
 	defer stop()
 
 	d := NewDialer(Config{
 		Endpoints:      []string{good},
 		InitialBackoff: 100 * time.Millisecond,
-		BackoffJitter:  0,
+		BackoffJitter:  0, // still applies the documented 0.5 default
 		Logger:         discardLogger(),
 	})
 
-	// Force backoff by calling it once before dial.
-	first := d.Backoff()
-	if first == 0 {
-		t.Fatal("backoff returned 0")
+	// Advance the schedule twice: bases 100ms then 200ms.
+	if got := d.Backoff(); got < 100*time.Millisecond || got > 150*time.Millisecond {
+		t.Fatalf("step 1 = %v, want in [100ms, 150ms]", got)
+	}
+	if got := d.Backoff(); got < 200*time.Millisecond || got > 300*time.Millisecond {
+		t.Fatalf("step 2 = %v, want in [200ms, 300ms]", got)
 	}
 
-	// Now a successful dial should reset.
+	// A successful Dial must NOT reset: the next base stays 400ms.
 	if _, err := d.Dial(context.Background()); err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
+	if got := d.Backoff(); got < 400*time.Millisecond || got > 600*time.Millisecond {
+		t.Errorf("after Dial: backoff = %v, want in [400ms, 600ms] (Dial must not reset)", got)
+	}
 
-	// After reset, the next Backoff returns InitialBackoff (with the
-	// default 0.5 jitter so up to 1.5x).
-	again := d.Backoff()
-	if again < 100*time.Millisecond || again > 150*time.Millisecond {
-		t.Errorf("expected reset to base 100ms (with 0.5 jitter ≤ 150ms), got %v", again)
+	// ResetBackoff (server accepted a frame) returns to InitialBackoff.
+	d.ResetBackoff()
+	if got := d.Backoff(); got < 100*time.Millisecond || got > 150*time.Millisecond {
+		t.Errorf("after ResetBackoff: backoff = %v, want in [100ms, 150ms]", got)
 	}
 }
 

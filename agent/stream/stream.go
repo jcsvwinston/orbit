@@ -86,6 +86,15 @@ type Config struct {
 	// dispatcher (agent/rbac.Handler). The stream forwards RbacRequest
 	// commands to it and ships the RbacResponse back.
 	Rbac RbacDispatcher
+
+	// OnAccepted, when non-nil, is invoked at most once per Stream, on
+	// the first frame successfully received FROM the server. That first
+	// frame is the earliest hard evidence that the server authenticated
+	// and accepted this stream (a Send success is not: the client may
+	// buffer frames locally while the server is already rejecting the
+	// call with 401). The agent uses it to reset the dial backoff and
+	// log the honest "connected" line (OR5-2).
+	OnAccepted func()
 }
 
 // RbacDispatcher answers an RBAC snapshot request. Concrete
@@ -132,6 +141,10 @@ type Stream struct {
 	// wants to send (events, heartbeats, snapshot responses, goodbye)
 	// pushes through this channel; the lone send goroutine drains it.
 	frameSendCh chan *adminv1.Frame
+
+	// acceptedOnce guards cfg.OnAccepted: fired on the first successful
+	// Receive from the server, at most once per Stream.
+	acceptedOnce sync.Once
 
 	closed atomic.Bool
 }
@@ -199,8 +212,17 @@ func (s *Stream) Run(ctx context.Context) error {
 	s.cancelAllSubscriptions()
 
 	// Drain the remaining two errors so wg.Wait below doesn't deadlock.
+	// The three loops race to report on a broken stream; when the server
+	// rejected us with 401 the sendLoop often loses the detail (its Send
+	// fails with a generic io.EOF) while the recvLoop carries the real
+	// CodeUnauthenticated. Prefer that one so the agent can tell "bad
+	// token" apart from "link dropped".
 	for i := 0; i < 2; i++ {
-		<-errCh
+		e := <-errCh
+		if connect.CodeOf(first) != connect.CodeUnauthenticated &&
+			connect.CodeOf(e) == connect.CodeUnauthenticated {
+			first = e
+		}
 	}
 	wg.Wait()
 
@@ -260,7 +282,16 @@ func (s *Stream) recvLoop() error {
 				return s.streamCtx.Err()
 			}
 			s.cfg.Metrics.StreamErrorsTotal.WithLabelValues("recv").Inc()
-			return fmt.Errorf("%w: %v", ErrTransport, err)
+			// Double-%w keeps the *connect.Error in the chain so the
+			// agent can distinguish CodeUnauthenticated (bad token)
+			// from a plain transport drop via connect.CodeOf.
+			return fmt.Errorf("%w: %w", ErrTransport, err)
+		}
+
+		// First frame from the server: hard evidence the stream was
+		// authenticated and accepted (see Config.OnAccepted).
+		if s.cfg.OnAccepted != nil {
+			s.acceptedOnce.Do(s.cfg.OnAccepted)
 		}
 
 		switch body := frame.GetBody().(type) {
@@ -292,7 +323,7 @@ func (s *Stream) sendLoop() error {
 			}
 			if err := s.bidiStream.Send(frame); err != nil {
 				s.cfg.Metrics.StreamErrorsTotal.WithLabelValues("send").Inc()
-				return fmt.Errorf("%w: %v", ErrTransport, err)
+				return fmt.Errorf("%w: %w", ErrTransport, err)
 			}
 		}
 	}
