@@ -8,12 +8,18 @@ package auth
 //     IP; credential-less requests never count.
 
 import (
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
 
 // (captureIdentity and requestFrom live in ui_proxy_secret_test.go.)
+
+func discardTestLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
 
 func TestUIMiddleware_RoleHeaderViewer_IsReadOnly(t *testing.T) {
 	var got Identity
@@ -103,7 +109,7 @@ func TestUIMiddleware_CredentiallessRequests_NeverLockOut(t *testing.T) {
 }
 
 func TestAgentMiddleware_BadToken_RateLimited(t *testing.T) {
-	h := AgentMiddleware("tok")(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	h := AgentMiddleware("tok", discardTestLogger())(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 

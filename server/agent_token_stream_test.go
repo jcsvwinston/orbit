@@ -20,6 +20,8 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -36,15 +38,19 @@ import (
 
 // startTokenServerAndAgent boots a server that requires agentToken and an
 // agent that presents agentToken. It does not wait for registration: the
-// callers disagree on whether registration is expected.
-func startTokenServerAndAgent(t *testing.T, serverToken, agentToken string) (*server.Server, *agent.Agent, *observability.Bus, func()) {
+// callers disagree on whether registration is expected. serverLogger lets
+// a caller capture the server's log output; nil discards it.
+func startTokenServerAndAgent(t *testing.T, serverToken, agentToken string, serverLogger *slog.Logger) (*server.Server, *agent.Agent, *observability.Bus, func()) {
 	t.Helper()
 
+	if serverLogger == nil {
+		serverLogger = discardLogger()
+	}
 	srv := server.New(server.Config{
 		AgentAddr:  "127.0.0.1:0",
 		UIAddr:     "127.0.0.1:0",
 		AgentToken: serverToken,
-		Logger:     discardLogger(),
+		Logger:     serverLogger,
 	})
 	srvCtx, srvCancel := context.WithCancel(context.Background())
 	srvDone := make(chan error, 1)
@@ -110,7 +116,7 @@ func waitForRegistration(srv *server.Server, nodeID string, within time.Duration
 func TestServer_AgentToken_StreamAuthenticates(t *testing.T) {
 	const token = "sekret"
 
-	srv, ag, bus, stop := startTokenServerAndAgent(t, token, token)
+	srv, ag, bus, stop := startTokenServerAndAgent(t, token, token, nil)
 	defer stop()
 
 	if !waitForRegistration(srv, ag.NodeID(), 5*time.Second) {
@@ -192,11 +198,65 @@ func TestServer_AgentToken_StreamAuthenticates(t *testing.T) {
 // TestServer_AgentToken_WrongTokenNeverRegisters is the negative control.
 // Without it, TestServer_AgentToken_StreamAuthenticates would also pass on
 // a server that ignored the token entirely.
+//
+// It additionally pins the OR5-2 server half: the rejection must leave a
+// rate-limited WARN with the remote IP in the SERVER log, so an operator
+// can see that agents with a bad token are calling.
 func TestServer_AgentToken_WrongTokenNeverRegisters(t *testing.T) {
-	srv, ag, _, stop := startTokenServerAndAgent(t, "right-token", "wrong-token")
+	var serverLog safeLogBuffer
+	logger := slog.New(slog.NewTextHandler(&serverLog, &slog.HandlerOptions{
+		Level: slog.LevelInfo, // default operator visibility
+	}))
+
+	srv, ag, _, stop := startTokenServerAndAgent(t, "right-token", "wrong-token", logger)
 	defer stop()
 
 	if waitForRegistration(srv, ag.NodeID(), 2*time.Second) {
 		t.Fatal("agent with the wrong token registered; the agent listener is not enforcing auth")
 	}
+
+	logs := serverLog.String()
+	if !strings.Contains(logs, "rejected agent request") {
+		t.Fatalf("server log has no WARN for the rejected agent:\n%s", logs)
+	}
+	warnLine := ""
+	for _, line := range strings.Split(logs, "\n") {
+		if strings.Contains(line, "rejected agent request") {
+			warnLine = line
+			break
+		}
+	}
+	if !strings.Contains(warnLine, "level=WARN") {
+		t.Errorf("rejection line is not WARN: %q", warnLine)
+	}
+	if !strings.Contains(warnLine, "remote_ip=127.0.0.1") {
+		t.Errorf("rejection WARN does not carry the remote IP: %q", warnLine)
+	}
+	if !strings.Contains(warnLine, "token_presented=true") {
+		t.Errorf("rejection WARN should mark the token as presented-and-wrong: %q", warnLine)
+	}
+	// Rate limiting: multiple rejected reconnect attempts inside the
+	// same minute for the same IP must collapse into a single WARN.
+	if n := strings.Count(logs, "rejected agent request"); n != 1 {
+		t.Errorf("rejection WARN emitted %d times, want exactly 1 (rate limit 1/min per IP)", n)
+	}
+}
+
+// safeLogBuffer is a goroutine-safe buffer for capturing slog output
+// written from server goroutines while the test goroutine reads it.
+type safeLogBuffer struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (s *safeLogBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *safeLogBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
 }
