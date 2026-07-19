@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.3](https://github.com/jcsvwinston/orbit/compare/v1.4.2...v1.4.3) (2026-07-19)
+
+
+### Chore
+
+* corta el root v1.4.3 — tag de certificación de la 6ª ronda ([ed940ff](https://github.com/jcsvwinston/orbit/commit/ed940ffd6d01b34c7032bea6497dafcc7441c892))
+
 ## [1.4.2](https://github.com/jcsvwinston/orbit/compare/v1.4.1...v1.4.2) (2026-07-19)
 
 
