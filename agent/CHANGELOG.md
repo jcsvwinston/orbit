@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.2](https://github.com/jcsvwinston/orbit/compare/agent/v0.5.1...agent/v0.5.2) (2026-07-19)
+
+
+### Fixed
+
+* **agent:** alinea el pin de proto con el último tag (v0.4.1) ([9c56b2f](https://github.com/jcsvwinston/orbit/commit/9c56b2f10e3230dc0b34b647d6259a8cf2a70c8d))
+* **agent:** un token rechazado ya no reintenta a ~1/s con logs de «connected» (OR5-2) ([8fd63a1](https://github.com/jcsvwinston/orbit/commit/8fd63a19f579ff14346a42283c1361bd3f2a4a90))
+* pins internos alineados con los últimos tags + guards (OR5-1, OR5-3) ([bf1dedc](https://github.com/jcsvwinston/orbit/commit/bf1dedc4440e68be373f5dd71fc4034f770042b0))
+* un token de agente rechazado ya no falla en silencio (OR5-2) ([f00e9e0](https://github.com/jcsvwinston/orbit/commit/f00e9e0b232e92ddf2c90b66cc377d19b0bdd751))
+
 ## [0.5.1](https://github.com/jcsvwinston/orbit/compare/agent/v0.5.0...agent/v0.5.1) (2026-07-15)
 
 
