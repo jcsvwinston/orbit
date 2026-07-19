@@ -9,7 +9,7 @@ go 1.26.5
 // it is a separate module: Quark must never enter the orbit core's dependency
 // graph, and Quark itself must not depend on Orbit.
 require (
-	github.com/jcsvwinston/orbit v0.3.0
+	github.com/jcsvwinston/orbit v1.4.1
 	github.com/jcsvwinston/quark v1.2.1
 	modernc.org/sqlite v1.50.0
 )
