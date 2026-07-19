@@ -70,10 +70,12 @@ The top-level `Agent` (`agent.go`) composes everything and exposes:
 * `New(cfg)` — constructor; `ErrDisabled` when no endpoints.
 * `Run(ctx)` — blocks until ctx cancels; reconnect loop with backoff.
 * `NodeID()` — the resolved identifier.
-* `Connected()` — channel closed on first successful stream open.
-  Used by `NewExtension(...).Attach` when `ExtensionConfig.
-  RequireConnection` is true (boot blocks until the stream opens or
-  `RequireConnectionTimeout` expires).
+* `Connected()` — channel closed on the first frame the admin server
+  accepts under auth (`stream.Config.OnAccepted`), not on dial success:
+  the dial's `/healthz` probe is auth-exempt, so reachability proves
+  nothing about the token. Used by `NewExtension(...).Attach` when
+  `ExtensionConfig.RequireConnection` is true (boot blocks until a
+  stream is accepted or `RequireConnectionTimeout` expires).
 * `Metrics()` — the Prometheus registry, in case the host wants to
   serve `/metrics` from its own port.
 

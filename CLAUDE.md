@@ -13,12 +13,17 @@ core de Nucleus por su `ADR-019`; Nucleus ya no lleva código de admin.
 
 ## Estado real
 
-- **v1.2.1** (major v1.0.0 el 2026-07-10; v1.2.0 pagó los waivers W1/W2 del gate) — el gate vive en
-  `docs/V1_GATE.md`; las superficies congeladas (raíz + `datasource`) las
-  guarda `contracts/freeze_test.go` contra su baseline. Cambios
-  incompatibles en esas superficies requieren un major.
-- **Fija Nucleus por tag** (`v1.1.0`, todos los módulos). Ver
-  `../versions.yaml` (`workspace_pins`).
+- La raíz está en **v1.4.2** <!-- x-release-please-version --> (release-please
+  reescribe esta línea en cada release del root y
+  `scripts/ci/check_docs_version_claims.sh` falla si deriva — este fichero
+  llegó a llevar tres minors de retraso y dio contexto falso de arranque). El
+  gate v1.0 vive en `docs/V1_GATE.md`; las superficies congeladas (raíz +
+  `datasource`) las guarda `contracts/freeze_test.go` contra su baseline.
+  Cambios incompatibles en esas superficies requieren un major.
+- **Fija Nucleus y Quark por tag en cada go.mod** (no por go.work): las
+  versiones certificadas del set y CUALQUIER lag declarado viven en
+  `versions.yaml` del paraguas (`quantum/`) — consúltalo ahí en vez de fiarte
+  de números escritos aquí, que es exactamente como este fichero se fosilizó.
 - **Aguas abajo de Nucleus**: consume ~15 de sus paquetes y se ata a
   `nucleus.Runtime` (`Models()`, `Session()`, `Authorizer()`, `Storage()`,
   `Observability()`, `DatabaseHandle(s)`) en `orbit.go`. Nunca toca internals.
@@ -58,8 +63,12 @@ aceptado sin sucesor.
   Orbit en lockstep) y `../docs/adr/QADR-0006` (feed SQL Quark→bus de Nucleus +
   `orbit/quarkbridge`; Data Studio sobre Quark). Coordinación de la suite: el
   `/next-session` del repo `quantum`.
-- **Tooling**: Orbit tiene `release-please` (config multi-módulo con tags de
-  componente) pero NO tiene CI de tests propio en PRs — el lane
-  `orbit-lockstep` del CI de la suite (`quantum/.github/workflows/
-  integration.yml`) es su lane de tests por diseño; verifica en local con
-  `GOWORK=off go build ./... && go test ./...` antes de fusionar.
+- **Tooling**: `release-please` (config multi-módulo con tags de componente) y
+  **CI propio completo en PRs** (`.github/workflows/ci.yml`, instalado en la
+  4ª–5ª ronda tras los fallos OR-1/OR5-1): build+vet+**test** standalone
+  (`GOWORK=off`) por cada uno de los 6 módulos, tests en workspace, guard de
+  pins internos (`check_internal_pins.sh`), Data Studio contra PG+MySQL
+  reales, govulncheck, linter de voz de docs y coherencia de versión
+  (`check_docs_version_claims.sh`), y build de la UI. El lane `orbit-lockstep`
+  de la suite (`quantum/.github/workflows/integration.yml`) prueba además
+  orbit contra el nucleus pinado del workspace.
