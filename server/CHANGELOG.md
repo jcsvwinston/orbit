@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.4](https://github.com/jcsvwinston/orbit/compare/server/v0.8.3...server/v0.8.4) (2026-07-20)
+
+
+### Fixed
+
+* **deps:** lags cross-repo a cero — nucleus v1.4.0, quark v1.3.3, root v1.4.3 en quarkdatasource ([#116](https://github.com/jcsvwinston/orbit/issues/116)) ([a38935c](https://github.com/jcsvwinston/orbit/commit/a38935c11e817e12e045cdb96028b798ab5e412c))
+* **server:** pin de agent a v0.5.4 ([#120](https://github.com/jcsvwinston/orbit/issues/120)) ([e228b45](https://github.com/jcsvwinston/orbit/commit/e228b45ee745b817d797ee72b28107f97334a314))
+
 ## [0.8.3](https://github.com/jcsvwinston/orbit/compare/server/v0.8.2...server/v0.8.3) (2026-07-19)
 
 
