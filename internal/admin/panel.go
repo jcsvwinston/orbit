@@ -522,7 +522,13 @@ func (p *Panel) warnAdminAuthDisabled() {
 }
 
 // LiveTrafficMiddleware returns non-blocking runtime observation middleware
-// that can be mounted at app-router level to capture traffic outside /admin.
+// that records requests into the live feed. In a framework-wired deployment it
+// is NOT the lane host-application traffic arrives on: ConsumeEventBus drains
+// the framework's HTTP events (emitted by the app-level middleware), so
+// mounting this at app level is unnecessary there — the panel keeps it on its
+// own SPA branch, where it also records session activity (which the bus event
+// does not carry). It remains useful for hand-wired panels that have no
+// nucleus.EventBus to consume.
 func (p *Panel) LiveTrafficMiddleware() func(http.Handler) http.Handler {
 	return p.liveTrafficMiddleware
 }
