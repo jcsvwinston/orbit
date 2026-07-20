@@ -12,8 +12,8 @@ go 1.26.5
 // the rest of orbit/* pins today. In the suite go.work this resolves to the
 // local ./nucleus checkout; standalone it resolves from the proxy.
 require (
-	github.com/jcsvwinston/nucleus v1.3.1
-	github.com/jcsvwinston/quark v1.3.1
+	github.com/jcsvwinston/nucleus v1.4.0
+	github.com/jcsvwinston/quark v1.3.3
 )
 
 require (
@@ -80,6 +80,7 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.14 // indirect
 	github.com/googleapis/gax-go/v2 v2.21.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
+	github.com/hibiken/asynq v0.25.1 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.9.2 // indirect
@@ -117,9 +118,11 @@ require (
 	github.com/prometheus/procfs v0.20.1 // indirect
 	github.com/redis/go-redis/v9 v9.14.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
+	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/sijms/go-ora/v2 v2.9.0 // indirect
+	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect
 	github.com/tinylib/msgp v1.6.1 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
