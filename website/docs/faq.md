@@ -45,10 +45,14 @@ succeeds without a restart.
 
 A companion warning to the one above: some transport failures do not carry
 the authentication error cleanly, so after three consecutive stream cycles
-in which the server never accepted a single frame, the agent raises this
-auth-suspicion warning even without seeing an explicit rejection. Unreachable
-endpoints do not trigger it — only cycles that connect and then die
-frameless. If it persists, verify `--agent-token` on both sides.
+against the same endpoint in which the server never accepted a single
+frame, the agent raises this auth-suspicion warning even without seeing an
+explicit rejection. Unreachable endpoints do not trigger it — only cycles
+that connect and then die frameless. With several configured endpoints,
+each one is counted on its own: the warning names the endpoint whose
+cycles actually died, and an accepted frame on one endpoint clears only
+that endpoint's count. If it persists, verify `--agent-token` on both
+sides.
 
 ## /healthz answers, but no node ever appears
 

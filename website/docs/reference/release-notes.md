@@ -15,6 +15,45 @@ each entry lists the fleet tags cut alongside it. The complete tag history
 lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.4.3 — 2026-07-19
+
+**New**
+
+- The agent raises an **auth-suspicion warning** when consecutive stream
+  cycles end without the server accepting a single frame. Some transport
+  failures swallow the explicit rejection, so "connects, then dies
+  frameless" is treated as evidence of a bad token even when no
+  authentication error is visible. The warning is rate-limited and is
+  never triggered by an unreachable endpoint — see the
+  [FAQ](../faq.md#the-agent-logs-consecutive-stream-cycles-ended-without-a-single-accepted-frame).
+
+**Fixed**
+
+- The `RequireConnection` boot gate now waits for real acceptance, not
+  reachability: `Connected()` only fires on the first frame the admin
+  server accepts under authentication. The dial probe hits the
+  auth-exempt `/healthz` endpoint, so a reachable server proves nothing
+  about the token — previously a wrong token could pass the gate and the
+  application booted "green" without ever being connected.
+- Module pins: the opt-in Quark integrations (`quarkbridge`,
+  `quarkdatasource`) now require Quark v1.3.1, and the server module pins
+  the agent at its latest tag — so cold-cache `go install` resolves to
+  current code.
+
+**Upgrade notes**
+
+- **A boot that passed with a rejected token will now fail.** If your
+  application sets `RequireConnection: true` and its agent token is
+  wrong, boots up to v1.4.2 could pass on mere reachability; from this
+  release the boot fails at `RequireConnectionTimeout`, with the
+  token-rejected warnings explaining why. That green was false — the
+  agent was never connected. Fix the token (see
+  [Security](../operations/security.md#rejected-tokens-are-loud)) rather
+  than widening the timeout or disabling the gate.
+
+Fleet tags: `agent/v0.5.3`, `server/v0.8.3`. Opt-in module tags:
+`quarkbridge/v0.3.3`, `quarkdatasource/v0.2.5`.
+
 ## v1.4.2 — 2026-07-19
 
 **Fixed**
