@@ -45,7 +45,19 @@ for f in "${files[@]}"; do
   done < <(grep "x-release-please-version" "$f")
 done
 
+# Content, not just the claim: the release notes must DOCUMENT the released
+# version, not merely name it. "The current release is vX" sitting above a
+# changelog whose first section is vX-1 is the same drift with better
+# camouflage — the marker line auto-updates on every release, the sections
+# do not (v1.4.3 shipped with release-notes.md starting at v1.4.2, OR7-1).
+notes="website/docs/reference/release-notes.md"
+esc_version=$(printf '%s' "$manifest_version" | sed 's/\./\\./g')
+if ! grep -qE "^## v${esc_version}([^0-9]|$)" "$notes"; then
+  echo "FAIL: $notes claims v$manifest_version but has no '## v$manifest_version' section documenting it" >&2
+  status=1
+fi
+
 if [[ $status -eq 0 ]]; then
-  echo "OK: version claims in ${files[*]} match v$manifest_version"
+  echo "OK: version claims in ${files[*]} match v$manifest_version, and $notes documents it"
 fi
 exit $status
