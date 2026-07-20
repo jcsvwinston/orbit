@@ -15,6 +15,27 @@ each entry lists the fleet tags cut alongside it. The complete tag history
 lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.4.4 — 2026-07-20
+
+**Fixed**
+
+- The agent's **auth-suspicion warning is now per endpoint**. A frame
+  accepted on one endpoint proves that endpoint's auth path and nothing
+  else: it no longer resets the frameless-cycle evidence of a sibling
+  endpoint that keeps rejecting every frame. Before this, in a failover
+  pair, one healthy endpoint could silence — or worse, mislabel — the
+  warning that belonged to the broken one; the warning now fires against
+  the endpoint that earned it, with its own evidence.
+- **Dependency alignment across every module.** The root panel and all
+  fleet modules build against nucleus v1.4.0, the Quark integrations
+  (`quarkbridge`, `quarkdatasource`) require Quark v1.3.3, and
+  `quarkdatasource` pins the current root. A cold-cache `go install` of
+  any module resolves to the same set the release was tested with — no
+  stale sibling versions.
+
+Fleet tags cut alongside this release: `agent/v0.5.4`, `server/v0.8.4`,
+`quarkbridge/v0.3.4`, `quarkdatasource/v0.2.6`.
+
 ## v1.4.3 — 2026-07-19
 
 **New**
