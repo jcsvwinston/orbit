@@ -39,6 +39,14 @@ type Server struct {
 	// SetAuthReject; count rejections via RejectedStreams.
 	authReject atomic.Bool
 
+	// healthzFail, when set, makes /healthz answer 503, taking this
+	// server out of the agent dialer's rotation: the dialer probes
+	// /healthz before opening a stream and fails over to the next
+	// configured endpoint. SetAuthReject alone cannot steer a
+	// multi-endpoint agent — the probe is auth-exempt, so a rejecting
+	// server still looks dialable. Toggle via SetHealthzFail.
+	healthzFail atomic.Bool
+
 	mu         sync.Mutex
 	streams    []*StreamSession
 	regCh      chan *adminv1.NodeRegistration
@@ -76,6 +84,10 @@ func Start() *Server {
 	mux := http.NewServeMux()
 	mux.Handle(adminv1connect.NewAgentServiceHandler(s))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		if s.healthzFail.Load() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -139,6 +151,11 @@ func (s *Server) URL() string { return s.url }
 // not torn down; use SendGoodbye on the live session to force a
 // reconnect into the rejecting server.
 func (s *Server) SetAuthReject(reject bool) { s.authReject.Store(reject) }
+
+// SetHealthzFail toggles /healthz between 200 and 503. While failing, the
+// agent's dialer skips this endpoint and fails over to the next one — use
+// it to steer a multi-endpoint agent at a chosen server.
+func (s *Server) SetHealthzFail(fail bool) { s.healthzFail.Store(fail) }
 
 // RejectedStreams returns how many non-/healthz requests have been
 // answered with 401 so far (one per agent stream attempt).

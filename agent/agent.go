@@ -172,16 +172,24 @@ type Agent struct {
 	authWarnMu   sync.Mutex
 	authWarnLast map[string]time.Time
 
-	// noFrameCycles counts CONSECUTIVE stream cycles that ended without
-	// the server accepting a single frame. Incremented by runOnce when a
-	// cycle ends unaccepted, reset to 0 by OnAccepted. At
+	// noFrameCycles counts, PER ENDPOINT, the consecutive stream cycles
+	// against that endpoint that ended without the server accepting a
+	// single frame. Incremented by runOnce when a cycle ends unaccepted,
+	// cleared for exactly one endpoint by that endpoint's OnAccepted. At
 	// noFrameCycleThreshold the agent emits the auth-suspicion WARN
 	// (OR6-2): a 401 does not reliably surface as CodeUnauthenticated —
 	// a connect-go race turns it into a plain "write envelope: EOF" on
 	// roughly alternate cycles — but "no frame ever accepted" is
-	// race-free evidence of the same condition. Atomic because
-	// OnAccepted runs on the stream's recv goroutine.
-	noFrameCycles atomic.Int32
+	// race-free evidence of the same condition.
+	//
+	// Per endpoint because the dialer fails over (OR7-2): with a single
+	// global counter, cycles rejected by endpoint A counted against
+	// whichever endpoint the agent happened to be on when the threshold
+	// tripped, and an accepted frame on A wiped the evidence accumulated
+	// against B — even though acceptance on A proves nothing about B's
+	// auth path. Same mutex and shape as authWarnLast: guarded by
+	// authWarnMu (OnAccepted runs on the stream's recv goroutine).
+	noFrameCycles map[string]int
 
 	mu     sync.Mutex
 	closed bool
@@ -191,9 +199,10 @@ type Agent struct {
 // operator-facing auth WARN.
 const authWarnEvery = time.Minute
 
-// noFrameCycleThreshold is the number of consecutive stream cycles that
-// must end without a single accepted frame before the agent emits the
-// auth-suspicion WARN (OR6-2). Small enough to surface within seconds
+// noFrameCycleThreshold is the number of consecutive stream cycles
+// against the same endpoint that must end without a single accepted
+// frame before the agent emits the auth-suspicion WARN for that
+// endpoint (OR6-2, per-endpoint since OR7-2). Small enough to surface within seconds
 // under the default backoff (1s, 2s, 4s...), large enough that one
 // transient drop mid-handshake does not cry wolf.
 const noFrameCycleThreshold = 3
@@ -248,6 +257,7 @@ func New(cfg Config) (*Agent, error) {
 		rbac:          rbac.New(cfg.Authorizer),
 		connectedOnce: make(chan struct{}),
 		authWarnLast:  make(map[string]time.Time),
+		noFrameCycles: make(map[string]int),
 	}, nil
 }
 
@@ -381,7 +391,7 @@ func (a *Agent) runOnce(ctx context.Context) error {
 		// /healthz probe as proof of a working connection (OR5-2/OR6-1).
 		OnAccepted: func() {
 			accepted.Store(true)
-			a.noFrameCycles.Store(0)
+			a.resetNoFrameCycles(res.Endpoint)
 			a.dialer.ResetBackoff()
 			a.metrics.Connected.WithLabelValues(res.Endpoint).Set(1)
 			a.connectedOnceOnce.Do(func() { close(a.connectedOnce) })
@@ -439,9 +449,11 @@ func (a *Agent) runOnce(ctx context.Context) error {
 			// surfaced as a plain EOF (connect-go race). A run of cycles
 			// in which the server never accepted a single frame is the
 			// race-free symptom of the same problem, so it gets its own
-			// rate-limited WARN. Dial failures never reach this point:
-			// an unreachable endpoint is not auth suspicion.
-			if n := a.noFrameCycles.Add(1); n >= noFrameCycleThreshold {
+			// rate-limited WARN — attributed to THIS endpoint, the one
+			// the cycle actually ran against (OR7-2). Dial failures never
+			// reach this point: an unreachable endpoint is not auth
+			// suspicion.
+			if n := a.addNoFrameCycle(res.Endpoint); n >= noFrameCycleThreshold {
 				a.warnRateLimited("no-accepted-frame|"+res.Endpoint,
 					"admin agent: consecutive stream cycles ended without a single accepted frame; if this persists, check --agent-token",
 					"consecutive_cycles", n, "endpoint", res.Endpoint, "node_id", a.nodeID)
@@ -459,6 +471,30 @@ func (a *Agent) warnTokenRejected(endpoint string) {
 	a.warnRateLimited("rejected|"+endpoint,
 		"admin agent token rejected by admin server; check --agent-token",
 		"endpoint", endpoint, "node_id", a.nodeID)
+}
+
+// addNoFrameCycle records that a stream cycle against endpoint ended
+// without the server accepting a single frame, and returns the length of
+// that endpoint's current run of frameless cycles. Runs of different
+// endpoints are independent: a cycle against A neither extends nor breaks
+// the run accumulated against B (OR7-2).
+func (a *Agent) addNoFrameCycle(endpoint string) int {
+	a.authWarnMu.Lock()
+	defer a.authWarnMu.Unlock()
+	a.noFrameCycles[endpoint]++
+	return a.noFrameCycles[endpoint]
+}
+
+// resetNoFrameCycles clears the frameless-cycle run for endpoint — and
+// only for endpoint. An accepted frame proves the auth path of the
+// endpoint that accepted it, nothing more: if B has been rejecting every
+// frame, a working token on A does not make B's accumulated evidence
+// stale, so B's run survives and still trips the suspicion WARN at its
+// own threshold (OR7-2).
+func (a *Agent) resetNoFrameCycles(endpoint string) {
+	a.authWarnMu.Lock()
+	defer a.authWarnMu.Unlock()
+	delete(a.noFrameCycles, endpoint)
 }
 
 // warnRateLimited logs msg at WARN level at most once per authWarnEvery
