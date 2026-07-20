@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.4](https://github.com/jcsvwinston/orbit/compare/v1.4.3...v1.4.4) (2026-07-20)
+
+
+### Fixed
+
+* **deps:** lags cross-repo a cero — nucleus v1.4.0, quark v1.3.3, root v1.4.3 en quarkdatasource ([#116](https://github.com/jcsvwinston/orbit/issues/116)) ([a38935c](https://github.com/jcsvwinston/orbit/commit/a38935c11e817e12e045cdb96028b798ab5e412c))
+* release notes v1.4.3 con guard de contenido, sospecha de auth por endpoint y linter que veta IDs de hallazgo (OR7-1/2/3) ([#113](https://github.com/jcsvwinston/orbit/issues/113)) ([ec06b41](https://github.com/jcsvwinston/orbit/commit/ec06b41c6c6a40158e22dd3cbe24056eed111f83))
+
 ## [1.4.3](https://github.com/jcsvwinston/orbit/compare/v1.4.2...v1.4.3) (2026-07-19)
 
 
