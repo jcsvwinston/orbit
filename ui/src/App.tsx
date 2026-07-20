@@ -4,6 +4,7 @@
 // <html>, persisted; prototype default is light).
 import { useCallback, useEffect, useState } from 'react'
 import { Layout, type NavGroup, type ThemeName } from '@/components/Layout'
+import { t } from '@/lib/i18n'
 import { onUnauthorized } from '@/lib/transport'
 import { NotAuthorizedPage } from '@/pages/NotAuthorizedPage'
 import { useNodes } from '@/hooks/useNodes'
@@ -94,28 +95,28 @@ function App(): React.JSX.Element {
 
   const groups: NavGroup[] = [
     {
-      name: 'Observe',
+      name: t.app.navObserve,
       items: [
-        { id: 'overview', label: 'Overview' },
-        { id: 'metrics', label: 'Metrics' },
-        { id: 'http', label: 'HTTP requests' },
-        { id: 'sql', label: 'SQL statements' },
-        { id: 'health', label: 'Health' },
+        { id: 'overview', label: t.app.navOverview },
+        { id: 'metrics', label: t.app.navMetrics },
+        { id: 'http', label: t.app.navHTTP },
+        { id: 'sql', label: t.app.navSQL },
+        { id: 'health', label: t.app.navHealth },
       ],
     },
     {
-      name: 'Fleet',
+      name: t.app.navFleet,
       items: [
-        { id: 'nodes', label: 'Nodes', badge: nodes.length },
-        { id: 'sessions', label: 'Sessions' },
+        { id: 'nodes', label: t.app.navNodes, badge: nodes.length },
+        { id: 'sessions', label: t.app.navSessions },
       ],
     },
     {
-      name: 'Manage',
+      name: t.app.navManage,
       items: [
-        { id: 'data-studio', label: 'Data Studio' },
-        { id: 'access', label: 'Access control' },
-        { id: 'audit', label: 'Audit log' },
+        { id: 'data-studio', label: t.app.navDataStudio },
+        { id: 'access', label: t.app.navAccess },
+        { id: 'audit', label: t.app.navAudit },
       ],
     },
   ]
@@ -128,9 +129,9 @@ function App(): React.JSX.Element {
 
   // Footer: the real server version + the operator identity actions are
   // audited under (OR-UX-P1-6).
-  const version = self?.serverVersion ? `orbit ${self.serverVersion}` : ''
+  const version = self?.serverVersion ? t.app.footerVersion(self.serverVersion) : ''
   const identity = self?.subject
-    ? `${self.subject}${self.readOnly ? ' (viewer)' : ''}`
+    ? `${self.subject}${self.readOnly ? t.app.viewerSuffix : ''}`
     : ''
 
   return (

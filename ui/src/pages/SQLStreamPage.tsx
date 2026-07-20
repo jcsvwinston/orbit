@@ -1,10 +1,12 @@
 // SQL statements — live stream (design handoff "Orbit Admin", screen 4).
 // Rendering only: data wiring is the same useStreamEvents hook as before.
+// The div-grid carries table semantics (role table/row/columnheader/cell).
 import { useState } from 'react'
 import { PageBody, PageHeader } from '@/components/Page'
 import { StreamControls } from '@/components/StreamControls'
 import { StreamFilterBar } from '@/components/StreamFilterBar'
 import { SEMANTIC, sqlKindColor } from '@/lib/colors'
+import { t } from '@/lib/i18n'
 import { useStreamEvents } from '@/hooks/useStreamEvents'
 import { useStreamFilters } from '@/hooks/useStreamFilters'
 import { useNodes } from '@/hooks/useNodes'
@@ -46,12 +48,12 @@ export function SQLStreamPage() {
   return (
     <>
       <PageHeader
-        title="SQL statements"
-        description="Executed statements across the fleet. Argument values are masked at the source."
+        title={t.sqlStream.title}
+        description={t.sqlStream.description}
         actions={
           <span className="flex items-center gap-2.5">
             <label className="flex items-center gap-1.5 font-mono text-[10.5px] text-t30">
-              slow &gt;
+              {t.sqlStream.slowPrefix}
               <input
                 type="number"
                 min={1}
@@ -62,10 +64,10 @@ export function SQLStreamPage() {
                   setSlowMs(next)
                   window.localStorage.setItem(SLOW_MS_KEY, String(next))
                 }}
-                aria-label="Slow-statement threshold in milliseconds"
+                aria-label={t.sqlStream.slowAria}
                 className="w-[52px] rounded-[6px] border border-t19 bg-t8 px-1.5 py-[3px] text-right font-mono text-[10.5px] text-t45 focus:outline-none"
               />
-              ms
+              {t.sqlStream.slowUnit}
             </label>
             <StreamControls
               connected={stream.connected}
@@ -88,21 +90,30 @@ export function SQLStreamPage() {
         nodes={nodes}
       />
       <PageBody>
-        <div className="overflow-hidden rounded-[10px] border border-t18 bg-t4">
+        <div
+          role="table"
+          aria-label={t.sqlStream.tableAria}
+          className="overflow-hidden rounded-[10px] border border-t18 bg-t4"
+        >
           <div
+            role="row"
             className="grid bg-t6 px-4 py-2 text-[10px] font-semibold uppercase tracking-[.08em] text-t30"
             style={{ gridTemplateColumns: GRID }}
           >
-            <span>Time</span>
-            <span>Node</span>
-            <span>Kind</span>
-            <span>Statement</span>
-            <span className="text-right">Duration</span>
-            <span className="text-right">Rows</span>
+            <span role="columnheader">{t.sqlStream.colTime}</span>
+            <span role="columnheader">{t.sqlStream.colNode}</span>
+            <span role="columnheader">{t.sqlStream.colKind}</span>
+            <span role="columnheader">{t.sqlStream.colStatement}</span>
+            <span role="columnheader" className="text-right">
+              {t.sqlStream.colDuration}
+            </span>
+            <span role="columnheader" className="text-right">
+              {t.sqlStream.colRows}
+            </span>
           </div>
           {rows.length === 0 && (
             <div className="border-t border-t10 px-4 py-8 text-center text-[12px] text-t26">
-              {stream.connected ? 'No events — stream is quiet' : 'Waiting for events…'}
+              {stream.connected ? t.stream.quiet : t.stream.waiting}
             </div>
           )}
           {rows.map((ev, idx) => {
@@ -113,22 +124,29 @@ export function SQLStreamPage() {
             return (
               <div
                 key={streamRowKey(ev.nodeId, ev.timestamp, idx)}
+                role="row"
                 className="grid items-center border-t border-t10 px-4 py-[6px] font-mono text-[11.5px] hover:bg-t7"
                 style={{ gridTemplateColumns: GRID }}
               >
-                <span className="text-t31">{formatTime(timestampToDate(ev.timestamp))}</span>
-                <span className="truncate text-t32">{ev.nodeId}</span>
-                <span className="font-semibold" style={{ color: sqlKindColor(sql.operation) }}>
+                <span role="cell" className="text-t31">
+                  {formatTime(timestampToDate(ev.timestamp))}
+                </span>
+                <span role="cell" className="truncate text-t32">
+                  {ev.nodeId}
+                </span>
+                <span role="cell" className="font-semibold" style={{ color: sqlKindColor(sql.operation) }}>
                   {sql.operation.toUpperCase()}
                 </span>
                 <span
+                  role="cell"
                   className={failed ? 'truncate pr-3' : 'truncate pr-3 text-t39'}
                   style={failed ? { color: SEMANTIC.red } : undefined}
-                  title={failed ? `${sql.query} — ${sql.error}` : sql.query}
+                  title={failed ? t.sqlStream.failedTitle(sql.query, sql.error) : sql.query}
                 >
                   {sql.query}
                 </span>
                 <span
+                  role="cell"
                   className="text-right tabular-nums"
                   style={{ color: ms > slowMs ? SEMANTIC.amber : 'var(--t37)' }}
                 >
@@ -136,8 +154,8 @@ export function SQLStreamPage() {
                 </span>
                 {/* 0 means "not reported" (SELECTs, unsupported drivers) —
                     render the honest dash instead of a fake zero. */}
-                <span className="text-right text-t32 tabular-nums">
-                  {sql.rowsAffected > 0n ? sql.rowsAffected.toString() : '—'}
+                <span role="cell" className="text-right text-t32 tabular-nums">
+                  {sql.rowsAffected > 0n ? sql.rowsAffected.toString() : t.common.empty}
                 </span>
               </div>
             )

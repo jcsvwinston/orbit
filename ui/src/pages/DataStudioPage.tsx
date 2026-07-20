@@ -17,13 +17,14 @@ import {
 } from '@/hooks/useDataStudio'
 import { useNodes } from '@/hooks/useNodes'
 import { useSelf } from '@/hooks/useSelf'
+import { t } from '@/lib/i18n'
 import type { ModelField, ModelInfo, Record as PBRecord } from '@/gen/nucleus/admin/v1/admin_pb'
 
 const PAGE_SIZE = 20
 
 const TABS = [
-  { id: 'records', label: 'Records' },
-  { id: 'schema', label: 'Schema' },
+  { id: 'records', label: t.dataStudio.tabRecords },
+  { id: 'schema', label: t.dataStudio.tabSchema },
 ] as const
 
 type TabID = 'records' | 'schema'
@@ -115,8 +116,8 @@ export function DataStudioPage() {
   return (
     <>
       <PageHeader
-        title="Data Studio"
-        description="Browse and edit registered models. Operations execute on a connected agent — signals, validation and tenant filters apply."
+        title={t.dataStudio.title}
+        description={t.dataStudio.description}
         actions={
           <span className="flex items-center gap-2.5">
             {nodes.length > 0 && (
@@ -126,11 +127,11 @@ export function DataStudioPage() {
                   setNodeId(e.target.value)
                   setSelectedModel(null)
                 }}
-                aria-label="Target node"
+                aria-label={t.dataStudio.targetNodeAria}
                 className={scopeSelectClass}
-                title="Route Data Studio operations to a specific node"
+                title={t.dataStudio.targetNodeTitle}
               >
-                <option value="">any node</option>
+                <option value="">{t.dataStudio.anyNode}</option>
                 {nodes.map((n) => (
                   <option key={n.nodeId} value={n.nodeId}>
                     {n.nodeId}
@@ -143,11 +144,11 @@ export function DataStudioPage() {
                 disabled={!activeModel || !schema.data}
                 onClick={() => setEditing({ values: {} })}
               >
-                + New record
+                {t.dataStudio.newRecord}
               </AccentButton>
             )}
             {readOnly && (
-              <span className="font-mono text-[10.5px] text-t30">read-only</span>
+              <span className="font-mono text-[10.5px] text-t30">{t.dataStudio.readOnly}</span>
             )}
           </span>
         }
@@ -159,19 +160,19 @@ export function DataStudioPage() {
         >
           {/* Model list */}
           <Card className="p-2.5">
-            <Label className="px-2 pb-2 pt-0.5">Registered models</Label>
+            <Label className="px-2 pb-2 pt-0.5">{t.dataStudio.registeredModels}</Label>
             {(models.data ?? []).length > 8 && (
               <input
                 type="text"
                 value={modelFilter}
                 onChange={(e) => setModelFilter(e.target.value)}
-                placeholder="Filter models…"
-                aria-label="Filter models"
+                placeholder={t.dataStudio.filterModelsPlaceholder}
+                aria-label={t.dataStudio.filterModelsAria}
                 className="mb-1.5 w-full rounded-[6px] border border-t19 bg-t8 px-2 py-1 font-mono text-[11px] text-t45 placeholder:text-t26 focus:outline-none"
               />
             )}
             <div className="flex flex-col gap-px">
-              {models.isLoading && <div className="px-2 py-1 text-[12px] text-t30">Loading…</div>}
+              {models.isLoading && <div className="px-2 py-1 text-[12px] text-t30">{t.common.loading}</div>}
               {models.isError && (
                 <div className="px-2 py-1 text-[12px] text-t51">{models.error.message}</div>
               )}
@@ -212,8 +213,9 @@ export function DataStudioPage() {
               })}
               {!models.isLoading && !models.isError && (models.data ?? []).length === 0 && (
                 <div className="px-2 py-1 text-[12px] text-t30">
-                  No agents are reporting models. Connect an agent with{' '}
-                  <code className="font-mono text-t39">Registry</code> wired in its config.
+                  {t.dataStudio.noModelsPrefix}{' '}
+                  <code className="font-mono text-t39">{t.dataStudio.noModelsRegistry}</code>{' '}
+                  {t.dataStudio.noModelsSuffix}
                 </div>
               )}
             </div>
@@ -223,7 +225,7 @@ export function DataStudioPage() {
           <Card className="min-w-0 overflow-hidden">
             {!activeModel ? (
               <div className="p-6 text-[12.5px] text-t30">
-                Select a model on the left to browse its records.
+                {t.dataStudio.selectModel}
               </div>
             ) : (
               <>
@@ -243,7 +245,7 @@ export function DataStudioPage() {
                       type="text"
                       value={searchInput}
                       onChange={(e) => setSearchInput(e.target.value)}
-                      placeholder="filter records…"
+                      placeholder={t.dataStudio.filterRecordsPlaceholder}
                       className="w-[220px] shrink-0 rounded-[7px] border border-t19 bg-t8 px-2.5 py-[5.5px] font-mono text-[11.5px] text-t45 placeholder:text-t26 focus:outline-none"
                     />
                   )}
@@ -254,18 +256,18 @@ export function DataStudioPage() {
                     {!readOnly && selectedIds.size > 0 && (
                       <div className="flex items-center justify-between border-t border-t10 bg-t6 px-4 py-2">
                         <span className="font-mono text-[11px] text-t35">
-                          {selectedIds.size} selected
+                          {t.dataStudio.selectedCount(selectedIds.size)}
                         </span>
                         <span className="flex items-center gap-2">
                           <GhostButton onClick={() => setSelectedIds(new Set())}>
-                            Clear
+                            {t.common.clear}
                           </GhostButton>
                           <GhostButton
                             danger
                             disabled={bulkMut.isPending}
                             onClick={() => {
                               const ids = Array.from(selectedIds)
-                              if (!window.confirm(`Delete ${ids.length} ${activeModel} record(s)?`)) {
+                              if (!window.confirm(t.dataStudio.confirmBulkDelete(ids.length, activeModel))) {
                                 return
                               }
                               bulkMut.mutate(
@@ -275,21 +277,21 @@ export function DataStudioPage() {
                                     setSelectedIds(new Set())
                                     if (res.failed > 0) {
                                       toast.error(
-                                        `Deleted ${res.affected}, ${res.failed} failed: ${res.errors[0] ?? ''}`,
+                                        t.dataStudio.bulkDeletePartial(res.affected, res.failed, res.errors[0] ?? ''),
                                       )
                                     } else {
-                                      toast.success(`Deleted ${res.affected} ${activeModel} record(s)`)
+                                      toast.success(t.dataStudio.bulkDeleted(res.affected, activeModel))
                                     }
                                   },
                                   onError: (err) =>
                                     toast.error(
-                                      `Bulk delete failed: ${err instanceof Error ? err.message : String(err)}`,
+                                      t.dataStudio.bulkDeleteFailed(err instanceof Error ? err.message : String(err)),
                                     ),
                                 },
                               )
                             }}
                           >
-                            {bulkMut.isPending ? 'Deleting…' : `Delete ${selectedIds.size}`}
+                            {bulkMut.isPending ? t.dataStudio.deleting : t.dataStudio.deleteSelected(selectedIds.size)}
                           </GhostButton>
                         </span>
                       </div>
@@ -342,19 +344,21 @@ export function DataStudioPage() {
                           rec.valuesJson['ID'] ?? rec.valuesJson['Id'] ?? rec.valuesJson['id'] ?? '',
                         )
                         if (!id) return
-                        if (!window.confirm(`Delete record ${id}?`)) return
+                        if (!window.confirm(t.dataStudio.confirmDelete(id))) return
                         setDeletingId(id)
                         deleteMut.mutate(id, {
                           onSuccess: () => {
-                            toast.success(`Deleted ${activeModel} ${id}`)
+                            toast.success(t.dataStudio.deleted(activeModel, id))
                           },
                           onError: (err) => {
                             // Without this the row simply "won't disappear"
                             // on an FK/permission failure, with no reason.
                             toast.error(
-                              `Couldn't delete ${activeModel} ${id}: ${
-                                err instanceof Error ? err.message : String(err)
-                              }`,
+                              t.dataStudio.deleteFailed(
+                                activeModel,
+                                id,
+                                err instanceof Error ? err.message : String(err),
+                              ),
                             )
                           },
                           onSettled: () => setDeletingId(null),
@@ -366,16 +370,16 @@ export function DataStudioPage() {
                         disabled={currentPage <= 1}
                         onClick={() => setPage((p) => Math.max(1, p - 1))}
                       >
-                        ← Prev
+                        {t.common.prevPage}
                       </GhostButton>
                       <span className="font-mono text-[10.5px] text-t30">
-                        page {currentPage}/{totalPages} · {total} records
+                        {t.dataStudio.pageInfo(currentPage, totalPages, total)}
                       </span>
                       <GhostButton
                         disabled={!records.data?.hasMore}
                         onClick={() => setPage((p) => p + 1)}
                       >
-                        Next →
+                        {t.common.nextPage}
                       </GhostButton>
                     </div>
                   </>
@@ -395,8 +399,8 @@ export function DataStudioPage() {
           <RecordEditor
             title={
               editing.id !== undefined && editing.id !== ''
-                ? `Edit record — ${editing.id}`
-                : `New ${activeModel}`
+                ? t.dataStudio.editRecordTitle(editing.id)
+                : t.dataStudio.newRecordTitle(activeModel)
             }
             schema={schema.data.fields}
             initial={editing.values}
@@ -409,8 +413,8 @@ export function DataStudioPage() {
                   setEditing(null)
                   toast.success(
                     editId !== undefined && editId !== ''
-                      ? `Saved ${activeModel} ${editId}`
-                      : `Created ${activeModel}`,
+                      ? t.dataStudio.saved(activeModel, editId)
+                      : t.dataStudio.created(activeModel),
                   )
                 },
               })
@@ -455,33 +459,34 @@ function RecordsTable(props: {
   const allSelected =
     selectableIds.length > 0 && selectableIds.every((id) => props.selectedIds.has(id))
   return (
-    <div className="min-w-0">
+    <div className="min-w-0" role="table" aria-label={t.dataStudio.tabRecords}>
       <div
+        role="row"
         className="grid bg-t6 px-4 py-2 text-[10px] font-semibold uppercase tracking-[.08em] text-t26"
         style={{ gridTemplateColumns: gridCols }}
       >
         {!props.readOnly && (
-          <span className="flex items-center">
+          <span role="columnheader" className="flex items-center">
             <input
               type="checkbox"
               checked={allSelected}
               onChange={(e) => props.onToggleAll(selectableIds, e.target.checked)}
-              aria-label="Select all rows on this page"
+              aria-label={t.dataStudio.selectAllAria}
               disabled={selectableIds.length === 0}
             />
           </span>
         )}
         {props.fields.map((f) => (
-          <span key={f.name} className="truncate pr-2">
+          <span role="columnheader" key={f.name} className="truncate pr-2">
             {f.label || f.name}
           </span>
         ))}
-        {!props.readOnly && <span className="text-right">Actions</span>}
+        {!props.readOnly && <span role="columnheader" className="text-right">{t.dataStudio.colActions}</span>}
       </div>
 
       {props.loading && (
         <div className="border-t border-t10 px-4 py-6 text-center text-[12.5px] text-t26">
-          Loading…
+          {t.common.loading}
         </div>
       )}
       {props.error !== null && (
@@ -491,7 +496,7 @@ function RecordsTable(props: {
       )}
       {!props.loading && props.error === null && props.records.length === 0 && (
         <div className="border-t border-t10 px-4 py-6 text-center text-[12.5px] text-t26">
-          No records match.
+          {t.dataStudio.noRecords}
         </div>
       )}
 
@@ -502,6 +507,7 @@ function RecordsTable(props: {
         return (
           <div
             key={rowId || idx}
+            role="row"
             className={[
               'grid items-center border-t border-t10 px-4 py-1.5 transition-colors hover:bg-t7',
               deleting ? 'opacity-50' : '',
@@ -510,13 +516,13 @@ function RecordsTable(props: {
             style={{ gridTemplateColumns: gridCols }}
           >
             {!props.readOnly && (
-              <span className="flex items-center">
+              <span role="cell" className="flex items-center">
                 <input
                   type="checkbox"
                   checked={selected}
                   disabled={rowId === ''}
                   onChange={() => props.onToggleSelect(rowId)}
-                  aria-label={`Select record ${rowId}`}
+                  aria-label={t.dataStudio.selectRecordAria(rowId)}
                 />
               </span>
             )}
@@ -529,14 +535,14 @@ function RecordsTable(props: {
               />
             ))}
             {!props.readOnly && (
-              <span className="flex justify-end gap-1.5">
+              <span role="cell" className="flex justify-end gap-1.5">
                 {deleting ? (
-                  <span className="font-mono text-[10.5px] text-t30">deleting…</span>
+                  <span className="font-mono text-[10.5px] text-t30">{t.dataStudio.deletingRow}</span>
                 ) : (
                   <>
-                    <GhostButton onClick={() => props.onEdit(rec)}>Edit</GhostButton>
+                    <GhostButton onClick={() => props.onEdit(rec)}>{t.common.edit}</GhostButton>
                     <GhostButton danger onClick={() => props.onDelete(rec)}>
-                      Delete
+                      {t.common.delete}
                     </GhostButton>
                   </>
                 )}
@@ -556,7 +562,7 @@ function RecordCell(props: {
 }) {
   const text = formatCell(props.raw)
   if (text === '' || text === '∅') {
-    return <span className="pr-2.5 font-mono text-[11.5px] text-t26">∅</span>
+    return <span role="cell" className="pr-2.5 font-mono text-[11.5px] text-t26">∅</span>
   }
   // Foreign-key cell → link to the referenced model, pre-filtered by the raw
   // (untruncated) key value.
@@ -564,11 +570,11 @@ function RecordCell(props: {
     const key = unquoteJSON(props.raw ?? '')
     if (key !== '') {
       return (
-        <span className="truncate pr-2.5">
+        <span role="cell" className="truncate pr-2.5">
           <button
             type="button"
             onClick={() => props.onNavigateFK(props.field.foreignModel, key)}
-            title={`Open ${props.field.foreignModel} ${key}`}
+            title={t.dataStudio.openFKTitle(props.field.foreignModel, key)}
             className="font-mono text-[11.5px] text-accent underline decoration-dotted underline-offset-2 hover:brightness-125"
           >
             {text}
@@ -577,7 +583,7 @@ function RecordCell(props: {
       )
     }
   }
-  return <span className="truncate pr-2.5 font-mono text-[11.5px] text-t39">{text}</span>
+  return <span role="cell" className="truncate pr-2.5 font-mono text-[11.5px] text-t39">{text}</span>
 }
 
 /* ------------------------------------------------------------------ */
@@ -588,19 +594,20 @@ const SCHEMA_GRID = '150px 110px 110px minmax(0,1fr)'
 
 function SchemaTable(props: { fields: ModelField[]; loading: boolean; error: string | null }) {
   return (
-    <div className="min-w-0">
+    <div className="min-w-0" role="table" aria-label={t.dataStudio.tabSchema}>
       <div
+        role="row"
         className="grid bg-t6 px-4 py-2 text-[10px] font-semibold uppercase tracking-[.08em] text-t26"
         style={{ gridTemplateColumns: SCHEMA_GRID }}
       >
-        <span>Field</span>
-        <span>Go type</span>
-        <span>HTML type</span>
-        <span>Flags</span>
+        <span role="columnheader">{t.dataStudio.colField}</span>
+        <span role="columnheader">{t.dataStudio.colGoType}</span>
+        <span role="columnheader">{t.dataStudio.colHtmlType}</span>
+        <span role="columnheader">{t.dataStudio.colFlags}</span>
       </div>
       {props.loading && (
         <div className="border-t border-t10 px-4 py-6 text-center text-[12.5px] text-t26">
-          Loading…
+          {t.common.loading}
         </div>
       )}
       {props.error !== null && (
@@ -611,17 +618,18 @@ function SchemaTable(props: { fields: ModelField[]; loading: boolean; error: str
       {props.fields.map((f) => (
         <div
           key={f.name}
+          role="row"
           className="grid items-center border-t border-t10 px-4 py-[7px] font-mono text-[11.5px]"
           style={{ gridTemplateColumns: SCHEMA_GRID }}
         >
-          <span className="truncate pr-2 text-t44">{f.name}</span>
-          <span className="truncate pr-2 text-accent">{f.goType}</span>
-          <span className="truncate pr-2 text-t32">{f.htmlType}</span>
-          <span className="flex flex-wrap gap-1.5">
-            {f.isRequired && <Chip>required</Chip>}
-            {f.isReadonly && <Chip>readonly</Chip>}
-            {f.isInList && <Chip>in list</Chip>}
-            {f.isExcluded && <Chip>excluded</Chip>}
+          <span role="cell" className="truncate pr-2 text-t44">{f.name}</span>
+          <span role="cell" className="truncate pr-2 text-accent">{f.goType}</span>
+          <span role="cell" className="truncate pr-2 text-t32">{f.htmlType}</span>
+          <span role="cell" className="flex flex-wrap gap-1.5">
+            {f.isRequired && <Chip>{t.dataStudio.flagRequired}</Chip>}
+            {f.isReadonly && <Chip>{t.dataStudio.flagReadonly}</Chip>}
+            {f.isInList && <Chip>{t.dataStudio.flagInList}</Chip>}
+            {f.isExcluded && <Chip>{t.dataStudio.flagExcluded}</Chip>}
           </span>
         </div>
       ))}
@@ -703,7 +711,7 @@ function RecordEditor(props: {
           <button
             type="button"
             onClick={props.onCancel}
-            aria-label="Close dialog"
+            aria-label={t.dataStudio.closeDialogAria}
             className="border-none bg-transparent text-[14px] text-t30 transition-colors hover:text-t45"
           >
             ✕
@@ -731,9 +739,9 @@ function RecordEditor(props: {
             )}
           </div>
           <div className="flex items-center justify-end gap-2 border-t border-t14 px-[18px] py-[13px]">
-            <GhostButton onClick={props.onCancel}>Cancel</GhostButton>
+            <GhostButton onClick={props.onCancel}>{t.common.cancel}</GhostButton>
             <AccentButton disabled={props.saving} onClick={() => props.onSave(values)}>
-              {props.saving ? 'Saving…' : 'Save'}
+              {props.saving ? t.common.saving : t.common.save}
             </AccentButton>
           </div>
         </form>
@@ -769,7 +777,7 @@ function FieldEditor(props: { field: ModelField; value: string; onChange: (v: st
         onChange={(e) => props.onChange(encodeUserValue(e.target.value, f.goType))}
         className={inputClass}
       >
-        <option value="">— none —</option>
+        <option value="">{t.dataStudio.noneOption}</option>
         {f.choices.map((c) => (
           <option key={c.value} value={c.value}>
             {c.label || c.value}

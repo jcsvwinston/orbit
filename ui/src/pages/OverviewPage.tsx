@@ -9,6 +9,7 @@ import { PageBody, PageHeader } from '@/components/Page'
 import { Sparkline } from '@/components/Sparkline'
 import { Card, Dot, Label, Pill } from '@/components/ui'
 import { SEMANTIC, methodColor, sqlKindColor, statusColor } from '@/lib/colors'
+import { t } from '@/lib/i18n'
 import { useNodes } from '@/hooks/useNodes'
 import { useFleetStats, formatRate } from '@/hooks/useFleetStats'
 import type { Event, NodeInfo } from '@/gen/nucleus/admin/v1/admin_pb'
@@ -82,15 +83,15 @@ export function OverviewPage() {
   return (
     <>
       <PageHeader
-        title="Overview"
-        description="360° view of the fleet — live, sampled every second."
+        title={t.overview.title}
+        description={t.overview.description}
         actions={
           connected ? (
             <Pill color={SEMANTIC.green} pulse>
-              Live
+              {t.stream.live}
             </Pill>
           ) : (
-            <Pill color={SEMANTIC.amber}>Reconnecting</Pill>
+            <Pill color={SEMANTIC.amber}>{t.stream.reconnecting}</Pill>
           )
         }
       />
@@ -98,94 +99,102 @@ export function OverviewPage() {
         {/* KPI row — 6 cards */}
         <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(6,minmax(0,1fr))' }}>
           <KpiCard
-            label="Req/s"
+            label={t.overview.kpiReqPerSec}
             value={formatRate(fleet.rps)}
             color="var(--accent)"
             spark={fleet.rpsSeries}
-            sub="HTTP events/s · 60s window"
+            sub={t.overview.kpiReqPerSecSub}
           />
           <KpiCard
-            label="Latency p95"
-            value={fleet.hasHttpTraffic ? formatMs(fleet.p95Ms) : '—'}
+            label={t.overview.kpiLatencyP95}
+            value={fleet.hasHttpTraffic ? formatMs(fleet.p95Ms) : t.common.empty}
             unit={fleet.hasHttpTraffic ? 'ms' : undefined}
             color={SEMANTIC.amber}
             spark={fleet.p95Series}
-            sub="HTTP p95 · 60s window"
+            sub={t.overview.kpiLatencyP95Sub}
           />
           <KpiCard
-            label="Error rate"
-            value={fleet.hasHttpTraffic ? fleet.errorRatePct.toFixed(1) : '—'}
+            label={t.overview.kpiErrorRate}
+            value={fleet.hasHttpTraffic ? fleet.errorRatePct.toFixed(1) : t.common.empty}
             unit={fleet.hasHttpTraffic ? '%' : undefined}
             color={errColor}
             spark={fleet.errorSeries}
-            sub="5xx share · 60s window"
+            sub={t.overview.kpiErrorRateSub}
           />
           <KpiCard
-            label="Nodes online"
+            label={t.overview.kpiNodesOnline}
             value={String(online)}
             unit={`/ ${nodes.length}`}
-            sub="ListNodes · 3s poll"
+            sub={t.overview.kpiNodesOnlineSub}
           />
           <KpiCard
-            label="Sessions"
+            label={t.overview.kpiSessions}
             value={String(fleet.sessionEventsPerMin)}
             unit="/min"
             color={SEMANTIC.violet}
             spark={fleet.sessionSeries}
-            sub="session events · 60s window"
+            sub={t.overview.kpiSessionsSub}
           />
           {dbPool.reporting ? (
             <KpiCard
-              label="DB pool"
+              label={t.overview.kpiDbPool}
               value={String(dbPool.inUse)}
-              unit={dbPool.unlimited ? 'in use' : `/ ${dbPool.maxOpen}`}
-              sub="fleet aggregate"
+              unit={dbPool.unlimited ? t.overview.kpiDbPoolInUse : `/ ${dbPool.maxOpen}`}
+              sub={t.overview.kpiDbPoolFleetSub}
             />
           ) : (
-            <KpiCard label="DB pool" value="—" sub="awaiting agent metrics" />
+            <KpiCard label={t.overview.kpiDbPool} value={t.common.empty} sub={t.overview.kpiDbPoolAwaitingSub} />
           )}
         </div>
 
         {/* Row 1 — Fleet table + Health list */}
         <div className="grid gap-3.5" style={{ gridTemplateColumns: '1.25fr 1fr' }}>
-          <Card className="overflow-hidden">
-            <FeedHeader title="Fleet" right={<FeedLink href="#/nodes">All nodes →</FeedLink>} />
+          <Card className="overflow-hidden" role="table" aria-label={t.overview.fleetTitle}>
+            <FeedHeader title={t.overview.fleetTitle} right={<FeedLink href="#/nodes">{t.overview.fleetAllNodes}</FeedLink>} />
             <div
+              role="row"
               className="grid px-4 py-[7px] text-[10px] font-semibold uppercase tracking-[.08em] text-t26"
               style={{ gridTemplateColumns: FLEET_GRID }}
             >
-              <span>Node</span>
-              <span>Version</span>
-              <span>Started</span>
-              <span>Last seen</span>
-              <span>Status</span>
+              <span role="columnheader">{t.nodes.colNodeId}</span>
+              <span role="columnheader">{t.nodes.colVersion}</span>
+              <span role="columnheader">{t.nodes.colStarted}</span>
+              <span role="columnheader">{t.nodes.colLastSeen}</span>
+              <span role="columnheader">{t.nodes.colStatus}</span>
             </div>
-            {nodes.length === 0 && <EmptyRow>No nodes registered</EmptyRow>}
+            {nodes.length === 0 && <EmptyRow>{t.overview.noNodes}</EmptyRow>}
             {nodes.map((n) => (
               <div
                 key={n.nodeId}
+                role="row"
+                tabIndex={0}
+                aria-label={t.overview.openNodeAria(n.nodeId)}
                 onClick={() => {
                   window.location.hash = `#/nodes/${encodeURIComponent(n.nodeId)}`
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') window.location.hash = `#/nodes/${encodeURIComponent(n.nodeId)}`
                 }}
                 className="grid cursor-pointer items-center border-t border-t12 px-4 py-2 font-mono text-[11.5px] hover:bg-t7"
                 style={{ gridTemplateColumns: FLEET_GRID }}
               >
-                <span className="flex min-w-0 items-center gap-[7px] text-t43">
+                <span role="cell" className="flex min-w-0 items-center gap-[7px] text-t43">
                   <Dot color={n.connected ? SEMANTIC.green : SEMANTIC.red} size={6} />
                   <span className="truncate">{n.nodeId}</span>
                 </span>
                 <span
+                  role="cell"
                   className="truncate pr-2"
                   style={{
                     color: n.version && n.version !== mainVersion ? SEMANTIC.amber : 'var(--t36)',
                   }}
                 >
-                  {n.version || '—'}
+                  {n.version || t.common.empty}
                 </span>
-                <span className="text-t34">{formatRelative(timestampToDate(n.startedAt))}</span>
-                <span className="text-t34">{formatRelative(timestampToDate(n.lastSeenAt))}</span>
-                <span style={{ color: n.connected ? SEMANTIC.green : 'var(--t26)' }}>
-                  {n.connected ? 'online' : 'offline'}
+                <span role="cell" className="text-t34">{formatRelative(timestampToDate(n.startedAt))}</span>
+                <span role="cell" className="text-t34">{formatRelative(timestampToDate(n.lastSeenAt))}</span>
+                <span role="cell" style={{ color: n.connected ? SEMANTIC.green : 'var(--t26)' }}>
+                  {n.connected ? t.overview.statusOnline : t.overview.statusOffline}
                 </span>
               </div>
             ))}
@@ -193,14 +202,14 @@ export function OverviewPage() {
 
           <Card className="overflow-hidden">
             <FeedHeader
-              title="Health"
+              title={t.overview.healthTitle}
               right={
                 <Pill color={healthy ? SEMANTIC.green : SEMANTIC.amber}>
-                  {healthy ? 'Healthy' : 'Degraded'}
+                  {healthy ? t.overview.healthy : t.overview.degraded}
                 </Pill>
               }
             />
-            {checks.length === 0 && <EmptyRow>No checks available</EmptyRow>}
+            {checks.length === 0 && <EmptyRow>{t.overview.noChecks}</EmptyRow>}
             {checks.map((c) => (
               <div
                 key={c.name}
@@ -218,29 +227,30 @@ export function OverviewPage() {
 
         {/* Row 2 — HTTP feed + SQL feed */}
         <div className="grid gap-3.5" style={{ gridTemplateColumns: '1fr 1fr' }}>
-          <Card className="overflow-hidden">
-            <FeedHeader title="HTTP requests" right={<FeedLink href="#/http">Open stream →</FeedLink>} />
-            {httpFeed.length === 0 && <EmptyRow>No HTTP events yet</EmptyRow>}
+          <Card className="overflow-hidden" role="table" aria-label={t.overview.httpFeedTitle}>
+            <FeedHeader title={t.overview.httpFeedTitle} right={<FeedLink href="#/http">{t.overview.openStream}</FeedLink>} />
+            {httpFeed.length === 0 && <EmptyRow>{t.overview.noHttpEvents}</EmptyRow>}
             {httpFeed.map((ev, i) => {
               if (ev.body.case !== 'httpRequest') return null
               const http = ev.body.value
               return (
                 <div
                   key={feedKey(ev, i)}
+                  role="row"
                   className="grid items-center border-t border-t10 px-4 py-[5.5px] font-mono text-[11px]"
                   style={{ gridTemplateColumns: HTTP_FEED_GRID }}
                 >
-                  <span className="text-t25">{formatTime(timestampToDate(ev.timestamp))}</span>
-                  <span className="font-semibold" style={{ color: methodColor(http.method) }}>
+                  <span role="cell" className="text-t25">{formatTime(timestampToDate(ev.timestamp))}</span>
+                  <span role="cell" className="font-semibold" style={{ color: methodColor(http.method) }}>
                     {http.method}
                   </span>
-                  <span className="truncate pr-2.5 text-t40" title={http.path}>
+                  <span role="cell" className="truncate pr-2.5 text-t40" title={http.path}>
                     {http.path}
                   </span>
-                  <span className="text-right" style={{ color: statusColor(http.status) }}>
+                  <span role="cell" className="text-right" style={{ color: statusColor(http.status) }}>
                     {http.status}
                   </span>
-                  <span className="text-right text-t34 tabular-nums">
+                  <span role="cell" className="text-right text-t34 tabular-nums">
                     {formatDuration(durationToMillis(http.duration))}
                   </span>
                 </div>
@@ -248,9 +258,9 @@ export function OverviewPage() {
             })}
           </Card>
 
-          <Card className="overflow-hidden">
-            <FeedHeader title="SQL statements" right={<FeedLink href="#/sql">Open stream →</FeedLink>} />
-            {sqlFeed.length === 0 && <EmptyRow>No SQL events yet</EmptyRow>}
+          <Card className="overflow-hidden" role="table" aria-label={t.overview.sqlFeedTitle}>
+            <FeedHeader title={t.overview.sqlFeedTitle} right={<FeedLink href="#/sql">{t.overview.openStream}</FeedLink>} />
+            {sqlFeed.length === 0 && <EmptyRow>{t.overview.noSqlEvents}</EmptyRow>}
             {sqlFeed.map((ev, i) => {
               if (ev.body.case !== 'sqlStatement') return null
               const sql = ev.body.value
@@ -258,17 +268,18 @@ export function OverviewPage() {
               return (
                 <div
                   key={feedKey(ev, i)}
+                  role="row"
                   className="grid items-center border-t border-t10 px-4 py-[5.5px] font-mono text-[11px]"
                   style={{ gridTemplateColumns: SQL_FEED_GRID }}
                 >
-                  <span className="text-t25">{formatTime(timestampToDate(ev.timestamp))}</span>
-                  <span className="font-semibold" style={{ color: sqlKindColor(kind) }}>
+                  <span role="cell" className="text-t25">{formatTime(timestampToDate(ev.timestamp))}</span>
+                  <span role="cell" className="font-semibold" style={{ color: sqlKindColor(kind) }}>
                     {kind}
                   </span>
-                  <span className="truncate pr-2.5 text-t38" title={sql.query}>
+                  <span role="cell" className="truncate pr-2.5 text-t38" title={sql.query}>
                     {sql.query}
                   </span>
-                  <span className="text-right text-t34 tabular-nums">
+                  <span role="cell" className="text-right text-t34 tabular-nums">
                     {formatDuration(durationToMillis(sql.duration))}
                   </span>
                 </div>
@@ -365,9 +376,9 @@ function healthChecks(nodes: NodeInfo[], streamConnected: boolean): HealthCheck[
   const now = Date.now()
   const checks: HealthCheck[] = [
     {
-      name: 'Admin event stream',
+      name: t.overview.checkEventStream,
       dot: streamConnected ? SEMANTIC.green : SEMANTIC.amber,
-      detail: streamConnected ? 'grpc-stream · connected' : 'reconnecting…',
+      detail: streamConnected ? t.overview.checkStreamConnected : t.overview.checkStreamReconnecting,
       ok: streamConnected,
     },
   ]
@@ -376,9 +387,9 @@ function healthChecks(nodes: NodeInfo[], streamConnected: boolean): HealthCheck[
     const fresh = seen !== undefined && now - seen.getTime() < FRESH_MS
     const ok = n.connected && fresh
     checks.push({
-      name: `agent ${shortId(n.nodeId)}`,
+      name: t.overview.checkAgent(shortId(n.nodeId)),
       dot: !n.connected ? SEMANTIC.red : fresh ? SEMANTIC.green : SEMANTIC.amber,
-      detail: `${n.version || 'unknown'} · seen ${formatRelative(seen)}`,
+      detail: t.overview.checkAgentDetail(n.version || t.common.unknown, formatRelative(seen)),
       ok,
     })
   }
