@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.4](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v0.3.3...quarkbridge/v0.3.4) (2026-07-20)
+
+
+### Fixed
+
+* **deps:** lags cross-repo a cero — nucleus v1.4.0, quark v1.3.3, root v1.4.3 en quarkdatasource ([#116](https://github.com/jcsvwinston/orbit/issues/116)) ([a38935c](https://github.com/jcsvwinston/orbit/commit/a38935c11e817e12e045cdb96028b798ab5e412c))
+
 ## [0.3.3](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v0.3.2...quarkbridge/v0.3.3) (2026-07-19)
 
 

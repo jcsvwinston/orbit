@@ -182,8 +182,8 @@ github.com/jackc/puddle/v2 v2.2.2 h1:PR8nw+E/1w0GLuRFSmiioY6UooMp6KJv0/61nB7icHo
 github.com/jackc/puddle/v2 v2.2.2/go.mod h1:vriiEXHvEE654aYKXXjOvZM39qJ0q+azkZFrfEOc3H4=
 github.com/jcsvwinston/nucleus v1.4.0 h1:TYGxkST1MTVmcVBYZr7wgmQWtHQRoaK0ZA2lDah6J3c=
 github.com/jcsvwinston/nucleus v1.4.0/go.mod h1:vA+pd56Fz60WYsDCdIeDZb0c2SsCty8XKqpYDZlCUos=
-github.com/jcsvwinston/orbit/agent v0.5.3 h1:DWMhkY+16cPO9QqaJN4VN7kVmIquj/nxH44s1KMUv4U=
-github.com/jcsvwinston/orbit/agent v0.5.3/go.mod h1:HyThsZpWVlnb+dW7bwo819UCUdMF9vCHeaDED3S0z9U=
+github.com/jcsvwinston/orbit/agent v0.5.4 h1:Z+Sa+9nhm+8yP6EQOeoT2v0A+tNRTeQv7w62n0eYIS0=
+github.com/jcsvwinston/orbit/agent v0.5.4/go.mod h1:Goo5G9e5AawNu5QRk+MMR7a0JRgeL+CMBFWW+j3FuE8=
 github.com/jcsvwinston/orbit/proto v0.4.1 h1:cnX0LOV/lsrkceHIkqermD1rEF1FnpFI4tHhVMteRXM=
 github.com/jcsvwinston/orbit/proto v0.4.1/go.mod h1:goLjrG7bpycQC8ox5VUX1Wfr71sEaIFCGLIFT6Ie/+8=
 github.com/klauspost/compress v1.18.5 h1:/h1gH5Ce+VWNLSWqPzOVn6XBO+vJbCNGvjoaGBFW2IE=
