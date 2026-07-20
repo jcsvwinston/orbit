@@ -30,6 +30,12 @@ optionally aggregate across nodes — either via the single-process Redis relay
 (`cluster_*` config) or the standalone
 [agent/server fleet](./cluster/overview.md).
 
+On a single node the snapshot is fed by three lanes: application HTTP requests
+and SQL statements both arrive from the framework's event bus, while session
+activity is recorded from the panel's own surface. The panel's own admin
+traffic is excluded from the request feed by default (the admin prefix is the
+default exclude pattern); remove that pattern to include it.
+
 Use `live_exclude_patterns` to keep noisy paths (health checks, static assets)
 out of the feed, and `trace_url_template` to deep-link each entry into an
 external trace explorer.

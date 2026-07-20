@@ -544,6 +544,20 @@ func (p *Panel) recordLiveRequest(r *http.Request, status int, duration time.Dur
 		UserAgent:      truncateText(strings.TrimSpace(r.UserAgent()), 320),
 		PayloadPreview: livePayloadPreview(r),
 	}
+	p.pushLiveRequest(event)
+
+	p.recordLiveSessionActivity(r, now, event.TraceID)
+}
+
+// pushLiveRequest records an already-built liveRequestEvent into the ring
+// buffer + the live event stream + the cluster relay. Shared by
+// recordLiveRequest (the liveTrafficMiddleware lane) and recordEventBusHTTP
+// (the first-party EventBus lane orbit uses), so the feed logic lives in one
+// place — the request-lane counterpart to pushLiveSQL.
+func (p *Panel) pushLiveRequest(event liveRequestEvent) {
+	if event.NodeID == "" {
+		event.NodeID = p.liveNodeID()
+	}
 	p.live.requests.push(event)
 	envelope := liveEventEnvelope{
 		NodeID:    event.NodeID,
@@ -553,8 +567,6 @@ func (p *Panel) recordLiveRequest(r *http.Request, status int, duration time.Dur
 	}
 	p.live.bus.publish(envelope)
 	p.publishLiveClusterEvent(envelope)
-
-	p.recordLiveSessionActivity(r, now, event.TraceID)
 }
 
 func (p *Panel) onModelSQLQuery(ctx context.Context, queryEvent model.SQLQueryEvent) {

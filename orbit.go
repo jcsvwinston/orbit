@@ -303,8 +303,11 @@ func (m *module) start(ctx context.Context) error {
 		}
 	}
 
-	// Feed the live SQL view from the framework's first-party event bus (covers
-	// every model.CRUD query across the app, not just the admin's own browsing).
+	// Feed the live SQL and HTTP views from the framework's first-party event
+	// bus: every model.CRUD query across the app (not just the admin's own
+	// browsing) and every host-application HTTP request (emitted by the
+	// framework's app-level middleware — the panel's own traffic middleware is
+	// not mountable at host level from here, and does not need to be).
 	m.stopObs = m.panel.ConsumeEventBus(rt.Observability())
 	return nil
 }
