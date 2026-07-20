@@ -4,6 +4,7 @@
 // sampling on all).
 import { type ReactNode } from 'react'
 import { GhostButton, Label } from '@/components/ui'
+import { t } from '@/lib/i18n'
 import type { FilterKind, StreamFilterState } from '@/hooks/useStreamFilters'
 import type { NodeInfo } from '@/gen/nucleus/admin/v1/admin_pb'
 
@@ -57,7 +58,7 @@ export function StreamFilterBar(props: StreamFilterBarProps) {
       {kind === 'http' && (
         <>
           <span className="flex items-center gap-1.5">
-            <Label>Method</Label>
+            <Label>{t.stream.filterMethod}</Label>
             {HTTP_METHODS.map((m) => (
               <ToggleChip
                 key={m}
@@ -69,7 +70,7 @@ export function StreamFilterBar(props: StreamFilterBarProps) {
             ))}
           </span>
           <span className="flex items-center gap-1.5">
-            <Label>Status</Label>
+            <Label>{t.stream.filterStatus}</Label>
             {STATUS_CLASSES.map((s) => (
               <ToggleChip
                 key={s.id}
@@ -84,8 +85,8 @@ export function StreamFilterBar(props: StreamFilterBarProps) {
             type="text"
             value={state.pathGlob}
             onChange={(e) => setState({ pathGlob: e.target.value })}
-            placeholder="path glob (/api/*)"
-            aria-label="Path glob filter"
+            placeholder={t.stream.pathGlobPlaceholder}
+            aria-label={t.stream.pathGlobAria}
             className={`${inputClass} w-[180px]`}
           />
         </>
@@ -96,21 +97,21 @@ export function StreamFilterBar(props: StreamFilterBarProps) {
           type="text"
           value={state.sqlModel}
           onChange={(e) => setState({ sqlModel: e.target.value })}
-          placeholder="model name"
-          aria-label="SQL model filter"
+          placeholder={t.stream.sqlModelPlaceholder}
+          aria-label={t.stream.sqlModelAria}
           className={`${inputClass} w-[180px]`}
         />
       )}
 
       <span className="flex items-center gap-1.5">
-        <Label>Node</Label>
+        <Label>{t.stream.filterNode}</Label>
         <select
           value={state.nodeId}
           onChange={(e) => setState({ nodeId: e.target.value })}
-          aria-label="Node filter"
+          aria-label={t.stream.nodeFilterAria}
           className={`${inputClass} max-w-[160px]`}
         >
-          <option value="">all nodes</option>
+          <option value="">{t.stream.allNodes}</option>
           {nodes.map((n) => (
             <option key={n.nodeId} value={n.nodeId}>
               {n.nodeId}
@@ -120,11 +121,11 @@ export function StreamFilterBar(props: StreamFilterBarProps) {
       </span>
 
       <span className="flex items-center gap-1.5">
-        <Label>Sample</Label>
+        <Label>{t.stream.filterSample}</Label>
         <select
           value={state.samplingPct}
           onChange={(e) => setState({ samplingPct: Number(e.target.value) })}
-          aria-label="Sampling rate"
+          aria-label={t.stream.samplingAria}
           className={`${inputClass}`}
         >
           {SAMPLING_OPTIONS.map((pct) => (
@@ -136,7 +137,7 @@ export function StreamFilterBar(props: StreamFilterBarProps) {
       </span>
 
       {active && (
-        <GhostButton onClick={reset}>Clear filters</GhostButton>
+        <GhostButton onClick={reset}>{t.stream.clearFilters}</GhostButton>
       )}
     </div>
   )

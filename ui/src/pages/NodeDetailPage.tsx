@@ -12,13 +12,14 @@ import { useStreamEvents } from '@/hooks/useStreamEvents'
 import { PageBody } from '@/components/Page'
 import { Card, Chip, Dot, Label } from '@/components/ui'
 import { SEMANTIC, methodColor, sqlKindColor, statusColor } from '@/lib/colors'
+import { t } from '@/lib/i18n'
 import { formatRelative, formatTime, streamRowKey, timestampToDate } from '@/lib/format'
 import { NodeStatusPill } from '@/pages/NodesPage'
 import { HostMetricCards } from '@/pages/MetricsPage'
 
 /** Coarse uptime from startedAt (local helper; format.ts has no uptime fn). */
 function formatUptime(started: Date | undefined): string {
-  if (!started) return '—'
+  if (!started) return t.common.empty
   let s = Math.max(0, Math.floor((Date.now() - started.getTime()) / 1000))
   const d = Math.floor(s / 86_400)
   s -= d * 86_400
@@ -32,7 +33,13 @@ function formatUptime(started: Date | undefined): string {
   return `${s}s`
 }
 
-const METRIC_SLOTS = ['CPU', 'Memory RSS', 'Goroutines', 'Heap alloc', 'GC pause p99'] as const
+const METRIC_SLOTS = [
+  t.metrics.cardCPU,
+  t.metrics.cardMemoryRSS,
+  t.metrics.cardGoroutines,
+  t.metrics.cardHeapAlloc,
+  t.metrics.cardGCPauseP99,
+] as const
 
 export function NodeDetailPage(props: { nodeId: string }) {
   const { nodes, isLoading } = useNodes()
@@ -45,7 +52,7 @@ export function NodeDetailPage(props: { nodeId: string }) {
       <PageBody className="flex flex-col gap-4">
         {node === undefined ? (
           <Card className="px-[17px] py-[13px] text-[12.5px] text-t32">
-            {isLoading ? 'Loading…' : `Node "${props.nodeId}" is not registered with this admin server.`}
+            {isLoading ? t.common.loading : t.nodeDetail.notRegistered(props.nodeId)}
           </Card>
         ) : (
           <>
@@ -72,8 +79,7 @@ export function NodeDetailPage(props: { nodeId: string }) {
                   background: `color-mix(in srgb, ${SEMANTIC.amber} 8%, transparent)`,
                 }}
               >
-                Agent disconnected — no live metrics for this node. Last report{' '}
-                {formatRelative(timestampToDate(node.lastSeenAt))}; showing registration info only.
+                {t.nodeDetail.disconnectedWarning(formatRelative(timestampToDate(node.lastSeenAt)))}
               </div>
             )}
             <RecentActivityCard nodeId={props.nodeId} connected={node.connected} />
@@ -99,7 +105,7 @@ function DetailHeader(props: { nodeId: string; node: NodeInfo | undefined }) {
           }}
           className="text-[12.5px] text-t32 transition-colors hover:text-t45"
         >
-          ← All nodes
+          {t.nodeDetail.backToNodes}
         </button>
         <h1 className="mb-0 mt-[5px] flex items-center gap-[9px] font-mono text-[17px] font-semibold text-t46">
           <Dot color={online ? SEMANTIC.green : 'var(--t26)'} size={8} pulse={online} />
@@ -130,13 +136,13 @@ function DetailHeader(props: { nodeId: string; node: NodeInfo | undefined }) {
 function InfoStrip(props: { node: NodeInfo }) {
   const n = props.node
   const cells: Array<{ label: string; value: string; mono: boolean }> = [
-    { label: 'Version', value: n.version || '—', mono: true },
-    { label: 'Uptime', value: formatUptime(timestampToDate(n.startedAt)), mono: false },
-    { label: 'Started', value: formatRelative(timestampToDate(n.startedAt)), mono: false },
-    { label: 'Last seen', value: formatRelative(timestampToDate(n.lastSeenAt)), mono: false },
+    { label: t.nodeDetail.infoVersion, value: n.version || t.common.empty, mono: true },
+    { label: t.nodeDetail.infoUptime, value: formatUptime(timestampToDate(n.startedAt)), mono: false },
+    { label: t.nodeDetail.infoStarted, value: formatRelative(timestampToDate(n.startedAt)), mono: false },
+    { label: t.nodeDetail.infoLastSeen, value: formatRelative(timestampToDate(n.lastSeenAt)), mono: false },
     {
-      label: 'Transport',
-      value: n.connected ? 'grpc-stream · connected' : 'grpc-stream · disconnected',
+      label: t.nodeDetail.infoTransport,
+      value: n.connected ? t.nodeDetail.transportConnected : t.nodeDetail.transportDisconnected,
       mono: true,
     },
   ]
@@ -166,10 +172,10 @@ function PlaceholderMetricCard(props: { label: string }) {
     <Card className="px-[17px] py-[15px]">
       <div className="flex items-baseline justify-between">
         <Label>{props.label}</Label>
-        <span className="font-mono text-[10.5px] text-t26">n/a</span>
+        <span className="font-mono text-[10.5px] text-t26">{t.metrics.notAvailable}</span>
       </div>
-      <div className="mt-2 text-[24px] font-semibold tabular-nums text-t46">—</div>
-      <div className="mt-2.5 font-mono text-[10.5px] text-t26">awaiting agent metrics</div>
+      <div className="mt-2 text-[24px] font-semibold tabular-nums text-t46">{t.common.empty}</div>
+      <div className="mt-2.5 font-mono text-[10.5px] text-t26">{t.metrics.awaitingAgentMetrics}</div>
     </Card>
   )
 }
@@ -195,22 +201,26 @@ function RecentActivityCard(props: { nodeId: string; connected: boolean }) {
     .slice(0, ACTIVITY_RENDER)
 
   return (
-    <div className="overflow-hidden rounded-[10px] border border-t18 bg-t4">
+    <div
+      role="table"
+      aria-label={t.nodeDetail.recentActivityAria}
+      className="overflow-hidden rounded-[10px] border border-t18 bg-t4"
+    >
       <div className="flex items-center justify-between border-b border-t14 px-4 py-[11px]">
         <span className="text-[12.5px] font-semibold text-t46">
-          Recent activity{' '}
-          <span className="text-[11px] font-normal text-t26">— HTTP + SQL on this node</span>
+          {t.nodeDetail.recentActivityTitle}{' '}
+          <span className="text-[11px] font-normal text-t26">{t.nodeDetail.recentActivitySub}</span>
         </span>
         <span className="flex items-center gap-1.5 font-mono text-[10.5px] text-t26">
           <Dot color={stream.connected ? SEMANTIC.green : SEMANTIC.red} size={6} pulse={stream.connected} />
-          {stream.connected ? 'live' : 'reconnecting'}
+          {stream.connected ? t.nodeDetail.live : t.nodeDetail.reconnecting}
         </span>
       </div>
       {rows.length === 0 ? (
         <div className="px-4 py-[18px] text-[12px] text-t26">
           {props.connected
-            ? 'No recent HTTP or SQL activity on this node yet.'
-            : 'Agent disconnected — showing buffered activity only.'}
+            ? t.nodeDetail.noRecentActivity
+            : t.nodeDetail.bufferedOnly}
         </div>
       ) : (
         <div className="min-w-0">
@@ -221,17 +231,18 @@ function RecentActivityCard(props: { nodeId: string; connected: boolean }) {
               return (
                 <div
                   key={streamRowKey(ev.nodeId, ev.timestamp, idx)}
+                  role="row"
                   className="grid items-center gap-2 border-t border-t10 px-4 py-[6px] font-mono text-[11px]"
                   style={{ gridTemplateColumns: '84px 52px minmax(0,1fr) 46px' }}
                 >
-                  <span className="text-t25">{time}</span>
-                  <span className="font-semibold" style={{ color: methodColor(h.method) }}>
+                  <span role="cell" className="text-t25">{time}</span>
+                  <span role="cell" className="font-semibold" style={{ color: methodColor(h.method) }}>
                     {h.method}
                   </span>
-                  <span className="truncate text-t39" title={h.path}>
+                  <span role="cell" className="truncate text-t39" title={h.path}>
                     {h.path}
                   </span>
-                  <span className="text-right" style={{ color: statusColor(h.status) }}>
+                  <span role="cell" className="text-right" style={{ color: statusColor(h.status) }}>
                     {h.status}
                   </span>
                 </div>
@@ -242,17 +253,18 @@ function RecentActivityCard(props: { nodeId: string; connected: boolean }) {
             return (
               <div
                 key={streamRowKey(ev.nodeId, ev.timestamp, idx)}
+                role="row"
                 className="grid items-center gap-2 border-t border-t10 px-4 py-[6px] font-mono text-[11px]"
                 style={{ gridTemplateColumns: '84px 52px minmax(0,1fr) 46px' }}
               >
-                <span className="text-t25">{time}</span>
-                <span className="font-semibold" style={{ color: sqlKindColor(s.operation) }}>
+                <span role="cell" className="text-t25">{time}</span>
+                <span role="cell" className="font-semibold" style={{ color: sqlKindColor(s.operation) }}>
                   {s.operation.toUpperCase().slice(0, 6)}
                 </span>
-                <span className="truncate text-t39" title={s.query}>
+                <span role="cell" className="truncate text-t39" title={s.query}>
                   {s.query}
                 </span>
-                <span className="text-right text-t26">SQL</span>
+                <span role="cell" className="text-right text-t26">{t.nodeDetail.sqlTag}</span>
               </div>
             )
           })}

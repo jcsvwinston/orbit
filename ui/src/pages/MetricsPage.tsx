@@ -9,6 +9,7 @@ import { useMemo, useState } from 'react'
 import { PageBody, PageHeader } from '@/components/Page'
 import { Card, Chip, Dot, Label, Progress, Segmented } from '@/components/ui'
 import { SEMANTIC } from '@/lib/colors'
+import { t } from '@/lib/i18n'
 import { useNodes } from '@/hooks/useNodes'
 import { useFleetStats, formatRate } from '@/hooks/useFleetStats'
 import { useHostMetricSeries, type HostMetricSeries } from '@/hooks/useHostMetricSeries'
@@ -16,12 +17,12 @@ import { timestampToDate } from '@/lib/format'
 import type { HostMetrics } from '@/gen/nucleus/admin/v1/admin_pb'
 
 const PLACEHOLDER_CARDS = [
-  { label: 'CPU', sub: 'host' },
-  { label: 'Memory RSS', sub: 'host' },
-  { label: 'Goroutines', sub: 'runtime' },
-  { label: 'Heap alloc', sub: 'runtime' },
-  { label: 'GC pause p99', sub: 'runtime' },
-  { label: 'DB pool', sub: 'sql' },
+  { label: t.metrics.cardCPU, sub: t.metrics.subHost },
+  { label: t.metrics.cardMemoryRSS, sub: t.metrics.subHost },
+  { label: t.metrics.cardGoroutines, sub: t.metrics.subRuntime },
+  { label: t.metrics.cardHeapAlloc, sub: t.metrics.subRuntime },
+  { label: t.metrics.cardGCPauseP99, sub: t.metrics.subRuntime },
+  { label: t.metrics.cardDbPool, sub: t.metrics.subSql },
 ] as const
 
 export function MetricsPage() {
@@ -47,8 +48,8 @@ export function MetricsPage() {
   return (
     <>
       <PageHeader
-        title="Metrics"
-        description="Runtime and resource consumption per node — 60 s window."
+        title={t.metrics.title}
+        description={t.metrics.description}
         actions={
           tabs.length > 0 ? (
             <Segmented options={tabs} value={current ?? ''} onChange={setSelected} />
@@ -58,7 +59,7 @@ export function MetricsPage() {
       <PageBody className="flex flex-col gap-4">
         {info === undefined ? (
           <div className="rounded-[10px] border border-t18 bg-t5 px-4 py-10 text-center text-[12px] text-t26">
-            No agents connected — per-node metrics unavailable.
+            {t.metrics.noAgents}
           </div>
         ) : (
           <>
@@ -68,8 +69,8 @@ export function MetricsPage() {
                 <Dot color={info.connected ? SEMANTIC.green : SEMANTIC.red} size={7} />
                 {info.nodeId}
               </span>
-              <span>{info.version || 'unknown'}</span>
-              <span>up {formatUptime(timestampToDate(info.startedAt))}</span>
+              <span>{info.version || t.common.unknown}</span>
+              <span>{t.metrics.uptime(formatUptime(timestampToDate(info.startedAt)))}</span>
               {Object.entries(info.labels).map(([k, v]) => (
                 <Chip key={k}>
                   {k}={v}
@@ -80,15 +81,15 @@ export function MetricsPage() {
             {/* Metric cards */}
             <div className="grid gap-3.5" style={{ gridTemplateColumns: 'repeat(3,minmax(0,1fr))' }}>
               <RealMetricCard
-                label="Req/s (node)"
-                sub="HTTP · 60s window"
+                label={t.metrics.cardReqPerSecNode}
+                sub={t.metrics.subHttpWindow}
                 value={formatRate(nodeStats?.rps ?? 0)}
                 data={nodeStats?.rpsSeries ?? []}
                 color="var(--accent)"
               />
               <RealMetricCard
-                label="Requests seen"
-                sub="client buffer"
+                label={t.metrics.cardRequestsSeen}
+                sub={t.metrics.subClientBuffer}
                 value={String(nodeStats?.requestsSeen ?? 0)}
                 unit="req"
                 data={nodeStats?.requestsSeenSeries ?? []}
@@ -122,40 +123,40 @@ export function HostMetricCards(props: { hm: HostMetrics; series: HostMetricSeri
   return (
     <>
       <RealMetricCard
-        label="CPU"
-        sub="host"
+        label={t.metrics.cardCPU}
+        sub={t.metrics.subHost}
         value={hm.cpuPercent.toFixed(1)}
         unit="%"
         data={series.cpu}
         color="var(--accent)"
       />
       <RealMetricCard
-        label="Memory RSS"
-        sub="host"
-        value={hasRss ? rssMB.toFixed(1) : '—'}
+        label={t.metrics.cardMemoryRSS}
+        sub={t.metrics.subHost}
+        value={hasRss ? rssMB.toFixed(1) : t.common.empty}
         unit={hasRss ? 'MB' : undefined}
         data={series.rssMB}
         color={SEMANTIC.blue}
-        caption={hasRss ? undefined : 'not reported on this platform'}
+        caption={hasRss ? undefined : t.metrics.rssNotReported}
       />
       <RealMetricCard
-        label="Goroutines"
-        sub="runtime"
+        label={t.metrics.cardGoroutines}
+        sub={t.metrics.subRuntime}
         value={String(hm.goroutines)}
         data={series.goroutines}
         color={SEMANTIC.violet}
       />
       <RealMetricCard
-        label="Heap alloc"
-        sub="runtime"
+        label={t.metrics.cardHeapAlloc}
+        sub={t.metrics.subRuntime}
         value={(Number(hm.heapAllocBytes) / 1_048_576).toFixed(1)}
         unit="MB"
         data={series.heapMB}
         color={SEMANTIC.green}
       />
       <RealMetricCard
-        label="GC pause p99"
-        sub="runtime"
+        label={t.metrics.cardGCPauseP99}
+        sub={t.metrics.subRuntime}
         value={hm.gcPauseP99Ms.toFixed(2)}
         unit="ms"
         data={series.gcMs}
@@ -211,8 +212,8 @@ function DbPoolCard(props: { hm: HostMetrics }) {
     <Card>
       <div style={{ padding: '15px 17px' }}>
         <div className="flex items-baseline justify-between gap-2">
-          <Label>DB pool</Label>
-          <span className="font-mono text-[10.5px] text-t26">sql</span>
+          <Label>{t.metrics.cardDbPool}</Label>
+          <span className="font-mono text-[10.5px] text-t26">{t.metrics.subSql}</span>
         </div>
         <div className="mt-2 text-[24px] font-semibold tabular-nums text-t46">
           {hasMax ? (
@@ -229,7 +230,7 @@ function DbPoolCard(props: { hm: HostMetrics }) {
             <Progress pct={(dbInUse / dbMaxOpen) * 100} height={6} color="var(--accent)" />
           )}
           <div className="font-mono text-[10.5px] tabular-nums text-t26">
-            {dbInUse} in use · {dbIdle} idle · max {hasMax ? dbMaxOpen : '—'}
+            {t.metrics.dbPoolCaption(dbInUse, dbIdle, hasMax ? String(dbMaxOpen) : t.common.empty)}
           </div>
         </div>
       </div>
@@ -248,9 +249,9 @@ function AwaitingCard(props: { label: string; sub: string }) {
           <Label>{props.label}</Label>
           <span className="font-mono text-[10.5px] text-t26">{props.sub}</span>
         </div>
-        <div className="mt-2 text-[24px] font-semibold tabular-nums text-t26">—</div>
+        <div className="mt-2 text-[24px] font-semibold tabular-nums text-t26">{t.common.empty}</div>
         <div className="mt-2.5 flex h-[38px] items-center font-mono text-[10.5px] text-t26">
-          awaiting agent metrics
+          {t.metrics.awaitingAgentMetrics}
         </div>
       </div>
     </Card>
@@ -306,7 +307,7 @@ function shortId(id: string): string {
 }
 
 function formatUptime(start: Date | undefined): string {
-  if (!start) return '—'
+  if (!start) return t.common.empty
   let s = Math.max(0, Math.floor((Date.now() - start.getTime()) / 1000))
   const d = Math.floor(s / 86_400)
   s -= d * 86_400

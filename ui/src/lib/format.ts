@@ -1,7 +1,10 @@
-// Tiny set of formatters shared by the streaming pages. Kept in one
-// place so changes (e.g. switching to a real i18n lib) hit one file.
+// Tiny set of formatters shared by the streaming pages. Kept in one place so
+// changes hit one file. User-visible copy (including the relative-time words
+// these formatters emit) lives in the central catalog, lib/i18n.ts.
 
 import type { Duration, Timestamp } from '@bufbuild/protobuf'
+
+import { t } from './i18n'
 
 export function timestampToDate(ts: Timestamp | undefined): Date | undefined {
   if (!ts) return undefined
@@ -30,17 +33,17 @@ export function formatDuration(ms: number): string {
 }
 
 export function formatRelative(date: Date | undefined): string {
-  if (!date) return '—'
+  if (!date) return t.common.empty
   const diff = Date.now() - date.getTime()
-  if (diff < 1000) return 'just now'
-  if (diff < 60_000) return `${Math.floor(diff / 1000)}s ago`
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
-  return date.toISOString().slice(0, 19).replace('T', ' ') + ' UTC'
+  if (diff < 1000) return t.time.justNow
+  if (diff < 60_000) return t.time.secondsAgo(Math.floor(diff / 1000))
+  if (diff < 3_600_000) return t.time.minutesAgo(Math.floor(diff / 60_000))
+  if (diff < 86_400_000) return t.time.hoursAgo(Math.floor(diff / 3_600_000))
+  return date.toISOString().slice(0, 19).replace('T', ' ') + t.time.utcSuffix
 }
 
 export function formatTime(date: Date | undefined): string {
-  if (!date) return '—'
+  if (!date) return t.common.empty
   const h = date.getHours().toString().padStart(2, '0')
   const m = date.getMinutes().toString().padStart(2, '0')
   const s = date.getSeconds().toString().padStart(2, '0')

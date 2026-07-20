@@ -9,6 +9,7 @@ import { useNodes } from '@/hooks/useNodes'
 import { PageBody, PageHeader } from '@/components/Page'
 import { Card, Dot, Pill } from '@/components/ui'
 import { SEMANTIC } from '@/lib/colors'
+import { t } from '@/lib/i18n'
 import { formatRelative, timestampToDate } from '@/lib/format'
 import { fleetMainVersion } from '@/lib/fleet'
 
@@ -46,13 +47,13 @@ export function HealthPage() {
 
   const checks: Check[] = [
     {
-      name: 'Control server',
+      name: t.health.controlServer,
       status: isError ? 'fail' : 'ok',
-      statusLabel: isError ? 'fail' : 'pass',
+      statusLabel: isError ? t.health.statusFail : t.health.statusPass,
       message: isError
-        ? `ControlService is not responding: ${error?.message ?? 'unknown error'}`
-        : 'ControlService is responding to ListNodes.',
-      detail: isError ? 'poll 3s · last request failed' : `poll 3s · ${nodes.length} node${nodes.length === 1 ? '' : 's'} registered`,
+        ? t.health.serverUnreachable(error?.message ?? t.common.unknownError)
+        : t.health.serverOk,
+      detail: isError ? t.health.serverFailDetail : t.health.serverOkDetail(nodes.length),
     },
     ...nodes.map((n): Check => {
       const fresh = isFresh(n, now)
@@ -60,13 +61,13 @@ export function HealthPage() {
       return {
         name: n.nodeId,
         status: fresh ? 'ok' : 'warn',
-        statusLabel: fresh ? 'pass' : n.connected ? 'stale' : 'offline',
+        statusLabel: fresh ? t.health.statusPass : n.connected ? t.health.statusStale : t.health.statusOffline,
         message: fresh
-          ? 'Agent connected; reporting over the gRPC stream.'
+          ? t.health.agentFresh
           : n.connected
-            ? 'Agent connected but has not reported recently.'
-            : 'Agent is not connected to the admin server.',
-        detail: `${n.version || 'version —'} · last seen ${seen}`,
+            ? t.health.agentStale
+            : t.health.agentOffline,
+        detail: t.health.agentDetail(n.version || t.health.versionUnknown, seen),
       }
     }),
   ]
@@ -74,11 +75,11 @@ export function HealthPage() {
   return (
     <>
       <PageHeader
-        title="Health"
-        description="Server reachability and agent freshness — the checks the backend actually reports."
+        title={t.health.title}
+        description={t.health.description}
         actions={
           <Pill color={healthy ? SEMANTIC.green : SEMANTIC.amber} pulse={healthy}>
-            {healthy ? 'Healthy' : 'Degraded'}
+            {healthy ? t.health.healthy : t.health.degraded}
           </Pill>
         }
       />
@@ -88,13 +89,13 @@ export function HealthPage() {
             <CheckCard key={c.name} check={c} />
           ))}
         </div>
-        <Card className="overflow-hidden !bg-t4">
+        <Card className="overflow-hidden !bg-t4" role="table" aria-label={t.health.connectivityAria}>
           <div className="border-b border-t14 px-4 py-[11px] text-[12.5px] font-semibold text-t46">
-            Agent connectivity
+            {t.health.connectivityTitle}
           </div>
           {nodes.length === 0 && (
             <div className="px-4 py-[18px] text-[12px] text-t26">
-              {isLoading ? 'Loading…' : 'No agents registered.'}
+              {isLoading ? t.common.loading : t.health.noAgents}
             </div>
           )}
           {nodes.map((n) => (
@@ -136,23 +137,25 @@ function AgentRow(props: { node: NodeInfo; now: number; mainVersion: string | nu
     props.mainVersion !== null && n.version !== '' && n.version !== props.mainVersion
   return (
     <div
+      role="row"
       className="grid items-center border-t border-t12 px-4 py-2 font-mono text-[11.5px]"
       style={{ gridTemplateColumns: '120px 110px 1fr 110px' }}
     >
-      <span className="flex min-w-0 items-center gap-[7px] text-t43">
+      <span role="cell" className="flex min-w-0 items-center gap-[7px] text-t43">
         <Dot color={fresh ? SEMANTIC.green : 'var(--t26)'} size={6} pulse={fresh} />
         <span className="truncate">{n.nodeId}</span>
       </span>
       <span
+        role="cell"
         className="truncate pr-2"
         style={{ color: versionMismatch ? SEMANTIC.amber : 'var(--t37)' }}
       >
-        {n.version || '—'}
+        {n.version || t.common.empty}
       </span>
-      <span className="truncate text-t29">
-        {fresh ? 'grpc-stream · connected' : 'stale'}
+      <span role="cell" className="truncate text-t29">
+        {fresh ? t.health.transportConnected : t.health.transportStale}
       </span>
-      <span className="text-right text-t32">{formatRelative(timestampToDate(n.lastSeenAt))}</span>
+      <span role="cell" className="text-right text-t32">{formatRelative(timestampToDate(n.lastSeenAt))}</span>
     </div>
   )
 }

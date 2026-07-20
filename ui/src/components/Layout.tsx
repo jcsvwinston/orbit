@@ -4,6 +4,8 @@
 // main area. PageHeader/PageBody moved to components/Page.tsx.
 import { type ReactNode } from 'react'
 
+import { t } from '@/lib/i18n'
+
 export interface NavItem {
   id: string
   label: string
@@ -58,8 +60,8 @@ export function Layout(props: LayoutProps) {
         <div className="flex items-center gap-2.5 px-4 pb-2.5 pt-[18px]">
           <OrbitGlyph />
           <div>
-            <div className="text-[13.5px] font-[650] tracking-[.01em] text-t46">Orbit</div>
-            <div className="text-[10px] uppercase tracking-[.09em] text-t27">Nucleus admin</div>
+            <div className="text-[13.5px] font-[650] tracking-[.01em] text-t46">{t.app.productName}</div>
+            <div className="text-[10px] uppercase tracking-[.09em] text-t27">{t.app.productTagline}</div>
           </div>
         </div>
         <nav className="flex-1 overflow-y-auto px-2.5 pb-2.5">
@@ -107,12 +109,12 @@ export function Layout(props: LayoutProps) {
                 className="animate-pulse-dot inline-block h-[7px] w-[7px] rounded-full"
                 style={{ background: props.serverHealthy ? 'var(--t49)' : 'var(--t51)' }}
               />
-              {props.serverHealthy ? 'Server reachable' : 'Server unreachable'}
+              {props.serverHealthy ? t.app.serverReachable : t.app.serverUnreachable}
             </div>
             <button
               type="button"
               onClick={props.onToggleTheme}
-              title={props.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+              title={props.theme === 'dark' ? t.app.switchToLight : t.app.switchToDark}
               className="rounded-[6px] border border-t20 bg-t8 px-1.5 py-0.5 font-mono text-[10px] text-t32 transition-colors hover:text-t45"
             >
               {props.theme === 'dark' ? '☾' : '☀'}

@@ -11,6 +11,8 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+
+import { t } from '@/lib/i18n'
 import { SEMANTIC } from '@/lib/colors'
 
 export type ToastKind = 'success' | 'error' | 'info'
@@ -111,7 +113,7 @@ function ToastCard(props: { toast: Toast; onDismiss: () => void }) {
       <button
         type="button"
         onClick={props.onDismiss}
-        aria-label="Dismiss notification"
+        aria-label={t.common.dismissNotification}
         className="shrink-0 text-t30 transition-colors hover:text-t45"
       >
         ✕

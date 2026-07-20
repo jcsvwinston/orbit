@@ -42,10 +42,20 @@ export function Pill(props: { color: string; pulse?: boolean; children: ReactNod
   )
 }
 
-/** Flat card: bg t5, border t18, radius 10 (no shadow). */
-export function Card(props: { className?: string; children: ReactNode }) {
+/** Flat card: bg t5, border t18, radius 10 (no shadow). Accepts an optional
+ * ARIA role + label so a card that IS a table can say so (role="table"). */
+export function Card(props: {
+  className?: string
+  children: ReactNode
+  role?: string
+  'aria-label'?: string
+}) {
   return (
-    <div className={['rounded-[10px] border border-t18 bg-t5', props.className ?? ''].join(' ')}>
+    <div
+      role={props.role}
+      aria-label={props['aria-label']}
+      className={['rounded-[10px] border border-t18 bg-t5', props.className ?? ''].join(' ')}
+    >
       {props.children}
     </div>
   )

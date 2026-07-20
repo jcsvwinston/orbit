@@ -13,6 +13,7 @@ import { PageBody, PageHeader } from '@/components/Page'
 import { Card, GhostButton, Label } from '@/components/ui'
 import { useAudit } from '@/hooks/useManage'
 import { SEMANTIC } from '@/lib/colors'
+import { t } from '@/lib/i18n'
 import type { AuditEntry } from '@/gen/nucleus/admin/v1/admin_pb'
 
 const AUDIT_GRID = '150px 170px 170px minmax(0,1fr) 110px'
@@ -27,7 +28,7 @@ function actionColor(action: string): string {
 }
 
 function formatTime(entry: AuditEntry): string {
-  if (!entry.time) return '—'
+  if (!entry.time) return t.common.empty
   return entry.time.toDate().toLocaleString(undefined, { hour12: false })
 }
 
@@ -113,14 +114,14 @@ export function AuditLogPage() {
   return (
     <>
       <PageHeader
-        title="Audit log"
-        description="Fleet-plane actions performed through this admin server (in-memory ring, newest first). Per-app admin actions live in each node's Orbit panel."
+        title={t.audit.title}
+        description={t.audit.description}
         actions={
           <span className="flex items-center gap-2.5">
             <GhostButton onClick={exportCSV} disabled={filtered.length === 0}>
-              Export CSV
+              {t.audit.exportCSV}
             </GhostButton>
-            <GhostButton onClick={refetch}>Refresh</GhostButton>
+            <GhostButton onClick={refetch}>{t.common.refresh}</GhostButton>
           </span>
         }
       />
@@ -129,27 +130,27 @@ export function AuditLogPage() {
           type="text"
           value={filters.actor}
           onChange={(e) => set({ actor: e.target.value })}
-          placeholder="actor"
-          aria-label="Filter by actor"
+          placeholder={t.audit.actorPlaceholder}
+          aria-label={t.audit.actorAria}
           className={`${inputClass} w-[150px]`}
         />
         <input
           type="text"
           value={filters.action}
           onChange={(e) => set({ action: e.target.value })}
-          placeholder="action"
-          aria-label="Filter by action"
+          placeholder={t.audit.actionPlaceholder}
+          aria-label={t.audit.actionAria}
           className={`${inputClass} w-[150px]`}
         />
         <span className="flex items-center gap-1.5">
-          <Label>Node</Label>
+          <Label>{t.audit.nodeLabel}</Label>
           <select
             value={filters.node}
             onChange={(e) => set({ node: e.target.value })}
-            aria-label="Filter by node"
+            aria-label={t.audit.nodeAria}
             className={`${inputClass} max-w-[160px]`}
           >
-            <option value="">all nodes</option>
+            <option value="">{t.audit.allNodes}</option>
             {nodeOptions.map((n) => (
               <option key={n} value={n}>
                 {n}
@@ -158,67 +159,69 @@ export function AuditLogPage() {
           </select>
         </span>
         <span className="flex items-center gap-1.5">
-          <Label>From</Label>
+          <Label>{t.audit.fromLabel}</Label>
           <input
             type="datetime-local"
             value={filters.since}
             onChange={(e) => set({ since: e.target.value })}
-            aria-label="From time"
+            aria-label={t.audit.fromAria}
             className={inputClass}
           />
         </span>
         <span className="flex items-center gap-1.5">
-          <Label>To</Label>
+          <Label>{t.audit.toLabel}</Label>
           <input
             type="datetime-local"
             value={filters.until}
             onChange={(e) => set({ until: e.target.value })}
-            aria-label="To time"
+            aria-label={t.audit.toAria}
             className={inputClass}
           />
         </span>
-        {active && <GhostButton onClick={() => set(emptyFilters)}>Clear</GhostButton>}
+        {active && <GhostButton onClick={() => set(emptyFilters)}>{t.common.clear}</GhostButton>}
       </div>
       <PageBody>
-        <Card className="overflow-hidden">
+        <Card className="overflow-hidden" role="table" aria-label={t.audit.tableAria}>
           <div
+            role="row"
             className="grid bg-t6 px-4 py-2 text-[10px] font-semibold uppercase tracking-[.08em] text-t30"
             style={{ gridTemplateColumns: AUDIT_GRID }}
           >
-            <span>Time</span>
-            <span>Actor</span>
-            <span>Action</span>
-            <span>Target</span>
-            <span className="text-right">Node</span>
+            <span role="columnheader">{t.audit.colTime}</span>
+            <span role="columnheader">{t.audit.colActor}</span>
+            <span role="columnheader">{t.audit.colAction}</span>
+            <span role="columnheader">{t.audit.colTarget}</span>
+            <span role="columnheader" className="text-right">{t.audit.colNode}</span>
           </div>
           {isError ? (
             <div className="border-t border-t10 px-4 py-6 text-center text-[12.5px] text-t30">
-              Failed to load the audit log: {error?.message ?? 'unknown error'}
+              {t.audit.loadFailed(error?.message ?? t.common.unknownError)}
             </div>
           ) : (
             <>
               {pageRows.map((a, idx) => (
                 <div
                   key={`${a.time?.toDate().getTime() ?? 0}-${idx}`}
+                  role="row"
                   className="grid items-center border-t border-t10 px-4 py-[6.5px] font-mono text-[11.5px] transition-colors hover:bg-t7"
                   style={{ gridTemplateColumns: AUDIT_GRID }}
                 >
-                  <span className="truncate pr-2.5 text-t31">{formatTime(a)}</span>
-                  <span className="truncate pr-2.5 text-t42">{a.actor}</span>
-                  <span className="truncate pr-2.5" style={{ color: actionColor(a.action) }}>
+                  <span role="cell" className="truncate pr-2.5 text-t31">{formatTime(a)}</span>
+                  <span role="cell" className="truncate pr-2.5 text-t42">{a.actor}</span>
+                  <span role="cell" className="truncate pr-2.5" style={{ color: actionColor(a.action) }}>
                     {a.action}
                   </span>
-                  <span className="truncate pr-2.5 text-t36">{a.target}</span>
-                  <span className="truncate text-right text-t32">{a.nodeId}</span>
+                  <span role="cell" className="truncate pr-2.5 text-t36">{a.target}</span>
+                  <span role="cell" className="truncate text-right text-t32">{a.nodeId}</span>
                 </div>
               ))}
               {filtered.length === 0 && (
                 <div className="border-t border-t10 px-4 py-6 text-center text-[12.5px] text-t30">
                   {isLoading
-                    ? 'Loading audit entries…'
+                    ? t.audit.loadingEntries
                     : active
-                      ? 'No entries match the current filters.'
-                      : 'No fleet-plane actions recorded yet — mutations made through Data Studio will appear here.'}
+                      ? t.audit.noMatches
+                      : t.audit.noEntries}
                 </div>
               )}
             </>
@@ -227,18 +230,16 @@ export function AuditLogPage() {
         {filtered.length > 0 && (
           <div className="mt-3 flex items-center justify-between font-mono text-[10.5px] text-t30">
             <span>
-              {filtered.length.toLocaleString()} entr{filtered.length === 1 ? 'y' : 'ies'}
-              {active ? ` (filtered from ${entries.length.toLocaleString()})` : ''}
+              {t.audit.entryCount(filtered.length)}
+              {active ? t.audit.filteredFrom(entries.length) : ''}
             </span>
             <span className="flex items-center gap-2">
               <GhostButton disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>
-                ← Prev
+                {t.common.prevPage}
               </GhostButton>
-              <span>
-                page {currentPage}/{totalPages}
-              </span>
+              <span>{t.audit.pageOf(currentPage, totalPages)}</span>
               <GhostButton disabled={currentPage >= totalPages} onClick={() => setPage(currentPage + 1)}>
-                Next →
+                {t.common.nextPage}
               </GhostButton>
             </span>
           </div>
