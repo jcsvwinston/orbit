@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.6](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v0.2.5...quarkdatasource/v0.2.6) (2026-07-20)
+
+
+### Fixed
+
+* **deps:** lags cross-repo a cero — nucleus v1.4.0, quark v1.3.3, root v1.4.3 en quarkdatasource ([#116](https://github.com/jcsvwinston/orbit/issues/116)) ([a38935c](https://github.com/jcsvwinston/orbit/commit/a38935c11e817e12e045cdb96028b798ab5e412c))
+
 ## [0.2.5](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v0.2.4...quarkdatasource/v0.2.5) (2026-07-19)
 
 
