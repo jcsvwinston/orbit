@@ -13,7 +13,7 @@ core de Nucleus por su `ADR-019`; Nucleus ya no lleva código de admin.
 
 ## Estado real
 
-- La raíz está en **v1.4.3** <!-- x-release-please-version --> (release-please
+- La raíz está en **v1.4.4** <!-- x-release-please-version --> (release-please
   reescribe esta línea en cada release del root y
   `scripts/ci/check_docs_version_claims.sh` falla si deriva — este fichero
   llegó a llevar tres minors de retraso y dio contexto falso de arranque). El
