@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.1](https://github.com/jcsvwinston/orbit/compare/server/v0.9.0...server/v0.9.1) (2026-07-22)
+
+
+### Fixed
+
+* **deps:** alinea nucleus a v1.6.0 (endurecimiento [#1](https://github.com/jcsvwinston/orbit/issues/1)) ([#134](https://github.com/jcsvwinston/orbit/issues/134)) ([8762c2b](https://github.com/jcsvwinston/orbit/commit/8762c2b4d35b4e3ee17f67d3c4731f66e6ff17b0))
+* **server:** pin de agent a v0.5.6 ([#138](https://github.com/jcsvwinston/orbit/issues/138)) ([f91b1aa](https://github.com/jcsvwinston/orbit/commit/f91b1aa6c90d5d40fda659c8d72b2ce393195fba))
+
 ## [0.9.0](https://github.com/jcsvwinston/orbit/compare/server/v0.8.4...server/v0.9.0) (2026-07-22)
 
 
