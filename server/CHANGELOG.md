@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.0](https://github.com/jcsvwinston/orbit/compare/server/v0.8.4...server/v0.9.0) (2026-07-22)
+
+
+### Added
+
+* **ui:** cierra los 3 restos de UI del backlog v1.2.1 — i18n centralizado, a11y de tablas y consolidación de tablas del panel ([#123](https://github.com/jcsvwinston/orbit/issues/123)) ([6fc0332](https://github.com/jcsvwinston/orbit/commit/6fc0332b2d6076a1746ee4a052e7335592d35b11))
+
+
+### Fixed
+
+* **deps:** alinea al set 1.9.0 — nucleus v1.5.0, quark v1.4.0 ([#126](https://github.com/jcsvwinston/orbit/issues/126)) ([02b9d2e](https://github.com/jcsvwinston/orbit/commit/02b9d2ebb5b926a5f04ea0d3f8c867ef92a13958))
+* **server:** pin de agent a v0.5.5 ([#130](https://github.com/jcsvwinston/orbit/issues/130)) ([244f321](https://github.com/jcsvwinston/orbit/commit/244f321eb38d6a9e71edbb9931e25ad6f41baf7a))
+
 ## [0.8.4](https://github.com/jcsvwinston/orbit/compare/server/v0.8.3...server/v0.8.4) (2026-07-20)
 
 
