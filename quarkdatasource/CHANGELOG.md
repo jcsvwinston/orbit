@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.7](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v0.2.6...quarkdatasource/v0.2.7) (2026-07-22)
+
+
+### Fixed
+
+* **deps:** alinea al set 1.9.0 — nucleus v1.5.0, quark v1.4.0 ([#126](https://github.com/jcsvwinston/orbit/issues/126)) ([02b9d2e](https://github.com/jcsvwinston/orbit/commit/02b9d2ebb5b926a5f04ea0d3f8c867ef92a13958))
+
 ## [0.2.6](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v0.2.5...quarkdatasource/v0.2.6) (2026-07-20)
 
 
