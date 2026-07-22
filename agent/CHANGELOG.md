@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.6](https://github.com/jcsvwinston/orbit/compare/agent/v0.5.5...agent/v0.5.6) (2026-07-22)
+
+
+### Fixed
+
+* **deps:** alinea nucleus a v1.6.0 (endurecimiento [#1](https://github.com/jcsvwinston/orbit/issues/1)) ([#134](https://github.com/jcsvwinston/orbit/issues/134)) ([8762c2b](https://github.com/jcsvwinston/orbit/commit/8762c2b4d35b4e3ee17f67d3c4731f66e6ff17b0))
+
 ## [0.5.5](https://github.com/jcsvwinston/orbit/compare/agent/v0.5.4...agent/v0.5.5) (2026-07-22)
 
 
