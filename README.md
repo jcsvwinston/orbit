@@ -40,7 +40,7 @@ single binary.
 go get github.com/jcsvwinston/orbit@latest
 ```
 
-The current tagged release is **v1.5.0**; pin that tag for reproducible builds. <!-- x-release-please-version -->
+The current tagged release is **v1.5.1**; pin that tag for reproducible builds. <!-- x-release-please-version -->
 
 **v1.0 promise:** the public surfaces (the root module and
 `datasource`) are frozen for the life of v1.x — enforced by

@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.1](https://github.com/jcsvwinston/orbit/compare/v1.5.0...v1.5.1) (2026-07-22)
+
+
+### Fixed
+
+* **ci:** estrecha la excepción root-edge a la arista root↔quarkdatasource (MAQ-3) ([#132](https://github.com/jcsvwinston/orbit/issues/132)) ([fd608ee](https://github.com/jcsvwinston/orbit/commit/fd608eec76463de11eedcb3528a92a22b8113563))
+* **deps:** alinea nucleus a v1.6.0 (endurecimiento [#1](https://github.com/jcsvwinston/orbit/issues/1)) ([#134](https://github.com/jcsvwinston/orbit/issues/134)) ([8762c2b](https://github.com/jcsvwinston/orbit/commit/8762c2b4d35b4e3ee17f67d3c4731f66e6ff17b0))
+
 ## [1.5.0](https://github.com/jcsvwinston/orbit/compare/v1.4.4...v1.5.0) (2026-07-22)
 
 
