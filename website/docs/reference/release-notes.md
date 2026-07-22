@@ -6,7 +6,7 @@ description: What changed in each Orbit release, in plain terms.
 
 # Release notes
 
-The current release is **v1.4.4**. <!-- x-release-please-version -->
+The current release is **v1.5.0**. <!-- x-release-please-version -->
 
 Versions below are the **root module** (`github.com/jcsvwinston/orbit`) —
 the one an application mounts for the in-process panel. The fleet modules
