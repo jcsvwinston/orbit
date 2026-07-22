@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.5.0](https://github.com/jcsvwinston/orbit/compare/v1.4.4...v1.5.0) (2026-07-22)
+
+
+### Added
+
+* **ui:** cierra los 3 restos de UI del backlog v1.2.1 — i18n centralizado, a11y de tablas y consolidación de tablas del panel ([#123](https://github.com/jcsvwinston/orbit/issues/123)) ([6fc0332](https://github.com/jcsvwinston/orbit/commit/6fc0332b2d6076a1746ee4a052e7335592d35b11))
+
+
+### Fixed
+
+* **admin:** el feed vivo consume también SubscribeHTTP del EventBus ([#122](https://github.com/jcsvwinston/orbit/issues/122)) ([25d2e8a](https://github.com/jcsvwinston/orbit/commit/25d2e8a410cb458d624df9f1ec95e28e1cc0fcca)), closes [#121](https://github.com/jcsvwinston/orbit/issues/121)
+* **ci:** la excepción root-edge tolera un minor de lag, no solo un patch ([#131](https://github.com/jcsvwinston/orbit/issues/131)) ([195fabe](https://github.com/jcsvwinston/orbit/commit/195fabe6b19e0d6358b6172552acd6f9bbad3672))
+* **deps:** alinea al set 1.9.0 — nucleus v1.5.0, quark v1.4.0 ([#126](https://github.com/jcsvwinston/orbit/issues/126)) ([02b9d2e](https://github.com/jcsvwinston/orbit/commit/02b9d2ebb5b926a5f04ea0d3f8c867ef92a13958))
+
 ## [1.4.4](https://github.com/jcsvwinston/orbit/compare/v1.4.3...v1.4.4) (2026-07-20)
 
 
