@@ -36,6 +36,23 @@ latest_tag() {
     | tail -1
 }
 
+# root_edge_ok <ver> <want> — true when a root-edge pin `ver` (e.g. v1.4.3) may
+# stand against the latest root tag `want` (e.g. v1.5.0): same major, and `want`'s
+# minor is the same as or exactly one ahead of `ver`'s. Rejects a pin that is
+# ahead, a different major, or two-or-more minors behind (the OR5-3 rot). Pure
+# string parsing, no external tools.
+root_edge_ok() {
+  local ver="${1#v}" want="${2#v}"
+  local vmaj="${ver%%.*}" wmaj="${want%%.*}"
+  local vrest="${ver#*.}" wrest="${want#*.}"
+  local vmin="${vrest%%.*}" wmin="${wrest%%.*}"
+  # Numeric-only guard so a malformed version never passes.
+  [[ "$vmaj$vmin$wmaj$wmin" =~ ^[0-9]+$ ]] || return 1
+  [[ "$vmaj" == "$wmaj" ]] || return 1
+  local delta=$(( wmin - vmin ))
+  (( delta == 0 || delta == 1 ))
+}
+
 # Module import path → latest tag, one line each: "<path> <tag>".
 want_list=""
 for dir in "${MODULES[@]}"; do
@@ -59,15 +76,21 @@ for dir in "${MODULES[@]}"; do
     want=$(awk -v p="$path" '$1 == p {print $2}' <<<"$want_list")
     if [[ "$ver" == "$want" ]]; then
       echo "ok   $gomod: $path $ver"
-    elif [[ "$path" == "$MODULE_ROOT" && "${ver%.*}" == "${want%.*}" ]]; then
-      # Root-edge exception, same minor only: the root's certification patch
-      # is cut LAST (so its commit contains every module tag as an ancestor —
-      # the umbrella's manifest-guard requires exactly that), which makes
-      # strict equality on this edge topologically impossible: a module that
-      # requires the root can never pin a tag that will only exist after the
-      # module's own tag. A patch of lag within the same minor is therefore
-      # allowed; a minor behind (the OR5-3 rot: v0.3.0 against v1.4.x) fails.
-      echo "ok   $gomod: $path $ver (root edge: same minor as $want)"
+    elif [[ "$path" == "$MODULE_ROOT" ]] && root_edge_ok "$ver" "$want"; then
+      # Root-edge exception: the root's certification tag is cut LAST (so its
+      # commit contains every module tag as an ancestor — the umbrella's
+      # manifest-guard requires exactly that), which makes strict equality on
+      # this edge topologically impossible: a module that requires the root can
+      # never pin a tag that will only exist after the module's own tag. The
+      # same reasoning holds when the root's tag crosses a minor (a UI/feature
+      # minor of the root): a bridge cut against the previous minor's latest
+      # cannot pin the new minor that contains it. So the edge may lag by the
+      # current minor OR exactly one minor (same major), and no further — two
+      # or more minors behind is the OR5-3 rot (v0.3.0 against v1.4.x) and
+      # still fails. The datasource contract this edge exists for is frozen
+      # since v1.0 (ADR-001), so a one-minor lag is functionally safe and here
+      # it is disclosed, not silent.
+      echo "ok   $gomod: $path $ver (root edge: lags $want by ≤1 minor, topologically forced)"
     else
       echo "FAIL $gomod: $path pinned at $ver, latest published tag is $want" >&2
       status=1
