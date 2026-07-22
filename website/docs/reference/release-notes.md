@@ -15,6 +15,36 @@ each entry lists the fleet tags cut alongside it. The complete tag history
 lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.5.0 — 2026-07-22
+
+**Fixed**
+
+- **The in-process live feed now shows HTTP traffic.** The panel mounted
+  in-process consumed only the SQL lane of the event bus, so its
+  `/api/live/snapshot` reported `requests: 0` no matter how much HTTP
+  traffic the host app served — the SQL lane worked, the HTTP lane did not.
+  The feed now also consumes the bus's HTTP events, so requests appear
+  alongside queries. **Correction to the v1.4.4 note:** that release
+  described the in-process live feed as working end to end; it did not — the
+  HTTP lane was dead until this version. The traffic middleware stays as the
+  sole source of the session lane (which needs the `*http.Request` the bus
+  event does not carry) and de-duplicates the admin prefix so events are not
+  double-counted.
+- **Dependency alignment to the 1.9.0 set.** The root panel and all fleet
+  modules build against nucleus v1.5.0, the Quark integrations
+  (`quarkbridge`, `quarkdatasource`) require Quark v1.4.0, and
+  `golang.org/x/text` is raised to v0.39.0 (GO-2026-5970) across every
+  module.
+
+**Added**
+
+- **UI backlog closed.** The last three UI items from the v1.2.1 audit land:
+  centralized i18n strings, table accessibility roles across the fleet
+  pages, and the in-process panel's two parallel tables consolidated to one.
+
+Fleet tags cut alongside this release: `agent/v0.5.5`, `server/v0.9.0`,
+`quarkbridge/v0.3.5`, `quarkdatasource/v0.2.7`.
+
 ## v1.4.4 — 2026-07-20
 
 **Fixed**
