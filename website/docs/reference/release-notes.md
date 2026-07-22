@@ -15,6 +15,21 @@ each entry lists the fleet tags cut alongside it. The complete tag history
 lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.5.1 — 2026-07-22
+
+**Changed**
+
+- **Dependency alignment.** The root panel and all fleet modules build
+  against nucleus v1.6.0 (its webhook-registration hardening); no orbit
+  behaviour changes. `golang.org/x/text` stays at v0.39.0.
+
+Fleet tags cut alongside this release: `agent/v0.5.6`, `server/v0.9.1`,
+`quarkbridge/v0.3.6` (`quarkdatasource/v0.2.7` and `proto/v0.4.1` unchanged).
+Internal continuous-integration change (not user-facing): the sibling-pin
+guard now confines its one-minor root-edge tolerance to the single
+topologically-forced `root↔quarkdatasource` edge and verifies the frozen
+datasource contract is identical across the lagging tag.
+
 ## v1.5.0 — 2026-07-22
 
 **Fixed**
