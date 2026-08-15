@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.7](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v0.3.6...quarkbridge/v0.3.7) (2026-08-15)
+
+
+### Fixed
+
+* **deps:** alinea nucleus a v1.6.1 en root, agent, server y quarkbridge (arco QCD-CLI) ([#144](https://github.com/jcsvwinston/orbit/issues/144)) ([2828aed](https://github.com/jcsvwinston/orbit/commit/2828aed324cac2c094272d2d43e32cfee152faac))
+* **deps:** alinea quark a v1.4.1 en los bridges (arco QCD-CLI) ([#139](https://github.com/jcsvwinston/orbit/issues/139)) ([65a52da](https://github.com/jcsvwinston/orbit/commit/65a52da771227706df9ed5962deb955d4d90e70a))
+
 ## [0.3.6](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v0.3.5...quarkbridge/v0.3.6) (2026-07-22)
 
 
