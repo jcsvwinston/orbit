@@ -13,7 +13,7 @@ go 1.26.6
 // local ./nucleus checkout; standalone it resolves from the proxy.
 require (
 	github.com/jcsvwinston/nucleus v1.6.0
-	github.com/jcsvwinston/quark v1.4.0
+	github.com/jcsvwinston/quark v1.4.1
 )
 
 require (
