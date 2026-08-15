@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.8](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v0.2.7...quarkdatasource/v0.2.8) (2026-08-15)
+
+
+### Fixed
+
+* **deps:** alinea quark a v1.4.1 en los bridges (arco QCD-CLI) ([#139](https://github.com/jcsvwinston/orbit/issues/139)) ([65a52da](https://github.com/jcsvwinston/orbit/commit/65a52da771227706df9ed5962deb955d4d90e70a))
+
 ## [0.2.7](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v0.2.6...quarkdatasource/v0.2.7) (2026-07-22)
 
 
