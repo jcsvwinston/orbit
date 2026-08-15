@@ -1,6 +1,6 @@
 module github.com/jcsvwinston/orbit/proto
 
-go 1.26.5
+go 1.26.6
 
 // Generated stubs (connectrpc, google.golang.org/protobuf) are committed
 // alongside this module so `go build ./...` works without buf installed.
