@@ -15,6 +15,50 @@ each entry lists the fleet tags cut alongside it. The complete tag history
 lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.6.1 — 2026-08-16
+
+**Fixed**
+
+- **These notes.** v1.6.0 shipped without its section on this page (the
+  version-claims check now enforced from the suite umbrella caught it), and
+  `quarkdatasource` still pinned root v1.4.3 — two minors behind. Both are
+  corrected: the section below documents v1.6.0, and `quarkdatasource`
+  builds against root v1.6.0.
+
+Fleet tags cut alongside this release: `quarkdatasource/v0.2.10` (all
+other modules unchanged).
+
+## v1.6.0 — 2026-08-16
+
+The developer-experience minor: the gaps the 2026-08-16
+developer-experience audit found in Orbit's onboarding surface.
+
+**Added**
+
+- **Compatibility matrix, generated.** `website/docs/reference/module-matrix.md`
+  lists the six Go modules with their published versions and cross-module
+  pins, produced by a generator with a CI freshness check — the table can
+  no longer drift from the released tags.
+
+**Fixed**
+
+- **The quick start compiles.** The first snippet a new user copies used
+  `app.Start()` — a method that does not exist on the built application.
+  It now shows the real entry point (`nucleus.Run(app)`), matching the
+  README and the minimal example.
+- **`make test` covers the six modules.** The Makefile stopped at four;
+  `quarkbridge` and `quarkdatasource` — exactly the two modules that
+  materialize the Quark↔Orbit integration — are now in every target.
+
+**Changed**
+
+- **Dependency alignment.** Root and fleet modules build against
+  nucleus v1.8.0 and quark v1.5.0.
+
+Fleet tags cut alongside this release: `agent/v0.5.11`, `server/v0.9.6`,
+`quarkbridge/v0.3.10`, `quarkdatasource/v0.2.9` (`proto/v0.4.2`
+unchanged).
+
 ## v1.5.4 — 2026-08-16
 
 **Changed**
