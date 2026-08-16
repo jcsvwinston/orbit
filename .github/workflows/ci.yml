@@ -185,6 +185,19 @@ jobs:
       # before anyone noticed (QM5-3).
       - run: bash scripts/ci/check_docs_version_claims.sh
 
+      # DX-26: the module compatibility matrix is generated from the release
+      # manifests at each root tag; a stale committed copy would answer
+      # "which agent goes with this root?" wrongly, so drift fails CI.
+      - name: module matrix freshness
+        run: |
+          git fetch --tags --quiet
+          bash scripts/ci/gen_module_matrix.sh
+          if ! git diff --quiet website/docs/reference/module-matrix.md; then
+            echo "module-matrix.md is stale. Run scripts/ci/gen_module_matrix.sh and commit." >&2
+            git --no-pager diff website/docs/reference/module-matrix.md | head -40
+            exit 1
+          fi
+
   ui:
     name: UI (typecheck, lint, build)
     runs-on: ubuntu-latest

@@ -40,7 +40,9 @@ func main() {
     if err != nil {
         panic(err)
     }
-    _ = app.Start()
+    if err := nucleus.Run(app); err != nil {
+        panic(err)
+    }
 }
 ```
 
