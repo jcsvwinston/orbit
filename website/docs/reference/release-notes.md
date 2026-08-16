@@ -15,6 +15,18 @@ each entry lists the fleet tags cut alongside it. The complete tag history
 lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.5.3 — 2026-08-16
+
+**Changed**
+
+- **`proto/v0.4.2` joins the set.** The security toolchain bump (Go 1.26.6)
+  had touched `proto/go.mod` without a release, leaving unreleased module
+  code in the certified tree; `proto/v0.4.2` publishes it (no functional
+  changes). Its ripple re-pins the module graph: `agent/v0.5.9` and
+  `server/v0.9.4` (proto and agent pins current, nothing else changes).
+  This root cut contains all of them; `quarkbridge/v0.3.8` and
+  `quarkdatasource/v0.2.8` continue from v1.5.2.
+
 ## v1.5.2 — 2026-08-16
 
 **Changed**
