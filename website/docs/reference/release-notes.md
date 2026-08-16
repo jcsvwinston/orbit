@@ -15,6 +15,22 @@ each entry lists the fleet tags cut alongside it. The complete tag history
 lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.5.2 — 2026-08-16
+
+**Changed**
+
+- **Dependency alignment.** The root panel and all fleet modules build
+  against quark v1.4.1 (its CLI repair release) and nucleus v1.6.2 (its
+  scaffold-dialect and fixture-ordering repairs); no orbit behaviour
+  changes.
+- **Security.** Go toolchain floor moves to 1.26.6 (standard-library
+  advisories), `google.golang.org/grpc` to v1.82.1 and
+  `go.opentelemetry.io/otel` to v1.44.0 — all flagged as reachable by the
+  vulnerability scanner.
+
+Fleet tags cut alongside this release: `agent/v0.5.8`, `server/v0.9.3`,
+`quarkbridge/v0.3.8`, `quarkdatasource/v0.2.8` (`proto/v0.4.1` unchanged).
+
 ## v1.5.1 — 2026-07-22
 
 **Changed**
