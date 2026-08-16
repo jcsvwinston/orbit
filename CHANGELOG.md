@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/jcsvwinston/orbit/compare/v1.6.0...v1.6.1) (2026-08-16)
+
+
+### Fixed
+
+* **release:** notas v1.6.0/v1.6.1 en el sitio y quarkdatasource sobre root v1.6.0 ([#177](https://github.com/jcsvwinston/orbit/issues/177)) ([ce467e4](https://github.com/jcsvwinston/orbit/commit/ce467e4351f1c797831756c1a30cdd5931dca15b))
+
 ## [1.6.0](https://github.com/jcsvwinston/orbit/compare/v1.5.4...v1.6.0) (2026-08-16)
 
 
