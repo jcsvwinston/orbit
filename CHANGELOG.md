@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.3](https://github.com/jcsvwinston/orbit/compare/v1.5.2...v1.5.3) (2026-08-16)
+
+
+### Chore
+
+* corta el root v1.5.3 (Release-As) ([#161](https://github.com/jcsvwinston/orbit/issues/161)) ([6ba545b](https://github.com/jcsvwinston/orbit/commit/6ba545bf0689c82e03cd7ee42fa50e0094ba1270))
+
 ## [1.5.2](https://github.com/jcsvwinston/orbit/compare/v1.5.1...v1.5.2) (2026-08-16)
 
 
