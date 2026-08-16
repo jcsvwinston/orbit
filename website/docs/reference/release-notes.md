@@ -22,8 +22,9 @@ lives on the
 - **`proto/v0.4.2` joins the set.** The security toolchain bump (Go 1.26.6)
   had touched `proto/go.mod` without a release, leaving unreleased module
   code in the certified tree; `proto/v0.4.2` publishes it (no functional
-  changes) and this root cut contains that tag. No other module moves:
-  `agent/v0.5.8`, `server/v0.9.3`, `quarkbridge/v0.3.8`,
+  changes). Its ripple re-pins the module graph: `agent/v0.5.9` and
+  `server/v0.9.4` (proto and agent pins current, nothing else changes).
+  This root cut contains all of them; `quarkbridge/v0.3.8` and
   `quarkdatasource/v0.2.8` continue from v1.5.2.
 
 ## v1.5.2 — 2026-08-16
