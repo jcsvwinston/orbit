@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.6](https://github.com/jcsvwinston/orbit/compare/server/v0.9.5...server/v0.9.6) (2026-08-16)
+
+
+### Fixed
+
+* **deps:** re-pin a quark v1.5.0 y nucleus v1.8.0 (arco DX) ([#171](https://github.com/jcsvwinston/orbit/issues/171)) ([bd6c68f](https://github.com/jcsvwinston/orbit/commit/bd6c68fa0d83688955680a5dcbc06f99b9577ceb))
+* **server:** re-pin agent v0.5.11 ([#176](https://github.com/jcsvwinston/orbit/issues/176)) ([b0982c6](https://github.com/jcsvwinston/orbit/commit/b0982c6c77c82e245d2cb229e7a50c02137be825))
+
 ## [0.9.5](https://github.com/jcsvwinston/orbit/compare/server/v0.9.4...server/v0.9.5) (2026-08-16)
 
 
