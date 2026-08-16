@@ -52,3 +52,4 @@ Released as its own Go module with component tags (`proto/vX.Y.Z`,
 via release-please) so the agent and the server can depend on the
 generated bindings by tag instead of intra-repo `replace` directives.
 Wire-compatibility rules live in `EVOLUTION.md`.
+
