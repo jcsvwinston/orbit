@@ -15,6 +15,18 @@ each entry lists the fleet tags cut alongside it. The complete tag history
 lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.5.4 — 2026-08-16
+
+**Changed**
+
+- **Dependency alignment.** The root panel and all fleet modules build
+  against nucleus v1.7.0 (global authorization sees JWT claims, S3 bucket
+  bootstrap, service health in `/healthz`); no orbit behaviour changes.
+
+Fleet tags cut alongside this release: `agent/v0.5.10`, `server/v0.9.5`,
+`quarkbridge/v0.3.9` (`quarkdatasource/v0.2.8` and `proto/v0.4.2`
+unchanged).
+
 ## v1.5.3 — 2026-08-16
 
 **Changed**
