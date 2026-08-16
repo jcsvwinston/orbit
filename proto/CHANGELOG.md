@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/jcsvwinston/orbit/compare/proto/v0.4.1...proto/v0.4.2) (2026-08-16)
+
+
+### Chore
+
+* **proto:** corta v0.4.2 — la directiva go 1.26.6 viaja en tag ([#154](https://github.com/jcsvwinston/orbit/issues/154)) ([ca15667](https://github.com/jcsvwinston/orbit/commit/ca156674dd6165efe6546c507d510106f6d6b24d))
+
 ## [0.4.1](https://github.com/jcsvwinston/orbit/compare/proto/v0.4.0...proto/v0.4.1) (2026-07-15)
 
 
