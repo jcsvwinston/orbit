@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.9](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v0.2.8...quarkdatasource/v0.2.9) (2026-08-16)
+
+
+### Fixed
+
+* **deps:** re-pin a quark v1.5.0 y nucleus v1.8.0 (arco DX) ([#171](https://github.com/jcsvwinston/orbit/issues/171)) ([bd6c68f](https://github.com/jcsvwinston/orbit/commit/bd6c68fa0d83688955680a5dcbc06f99b9577ceb))
+
 ## [0.2.8](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v0.2.7...quarkdatasource/v0.2.8) (2026-08-15)
 
 
