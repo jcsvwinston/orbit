@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.9](https://github.com/jcsvwinston/orbit/compare/agent/v0.5.8...agent/v0.5.9) (2026-08-16)
+
+
+### Fixed
+
+* **deps:** pin de proto a v0.4.2 en agent y server ([#157](https://github.com/jcsvwinston/orbit/issues/157)) ([b354553](https://github.com/jcsvwinston/orbit/commit/b354553832c288350ce13998d4c9691683d63d7e))
+
 ## [0.5.8](https://github.com/jcsvwinston/orbit/compare/agent/v0.5.7...agent/v0.5.8) (2026-08-16)
 
 
