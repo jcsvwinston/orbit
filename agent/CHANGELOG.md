@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.11](https://github.com/jcsvwinston/orbit/compare/agent/v0.5.10...agent/v0.5.11) (2026-08-16)
+
+
+### Fixed
+
+* **deps:** re-pin a quark v1.5.0 y nucleus v1.8.0 (arco DX) ([#171](https://github.com/jcsvwinston/orbit/issues/171)) ([bd6c68f](https://github.com/jcsvwinston/orbit/commit/bd6c68fa0d83688955680a5dcbc06f99b9577ceb))
+
 ## [0.5.10](https://github.com/jcsvwinston/orbit/compare/agent/v0.5.9...agent/v0.5.10) (2026-08-16)
 
 
