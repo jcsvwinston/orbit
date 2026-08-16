@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.6.0](https://github.com/jcsvwinston/orbit/compare/v1.5.4...v1.6.0) (2026-08-16)
+
+
+### Added
+
+* **dx:** arco DX de orbit — quick-start compilable, Makefile a 6 módulos y matriz de compatibilidad generada (DX-5/17/26) ([#169](https://github.com/jcsvwinston/orbit/issues/169)) ([f759f29](https://github.com/jcsvwinston/orbit/commit/f759f29c62a07ee5ae1d6b3e09d02e24cb08df38))
+
+
+### Fixed
+
+* **deps:** re-pin a quark v1.5.0 y nucleus v1.8.0 (arco DX) ([#171](https://github.com/jcsvwinston/orbit/issues/171)) ([bd6c68f](https://github.com/jcsvwinston/orbit/commit/bd6c68fa0d83688955680a5dcbc06f99b9577ceb))
+
 ## [1.5.4](https://github.com/jcsvwinston/orbit/compare/v1.5.3...v1.5.4) (2026-08-16)
 
 
