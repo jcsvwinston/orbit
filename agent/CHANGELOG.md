@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.10](https://github.com/jcsvwinston/orbit/compare/agent/v0.5.9...agent/v0.5.10) (2026-08-16)
+
+
+### Fixed
+
+* **deps:** alinea nucleus a v1.7.0 en root, agent, server y quarkbridge (arco QCD-FW) ([#163](https://github.com/jcsvwinston/orbit/issues/163)) ([525549b](https://github.com/jcsvwinston/orbit/commit/525549bf54127c436e4763340e1cecbd57c8627f))
+
 ## [0.5.9](https://github.com/jcsvwinston/orbit/compare/agent/v0.5.8...agent/v0.5.9) (2026-08-16)
 
 
