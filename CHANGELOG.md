@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.2](https://github.com/jcsvwinston/orbit/compare/v1.5.1...v1.5.2) (2026-08-16)
+
+
+### Fixed
+
+* **deps:** alinea nucleus a v1.6.1 en root, agent, server y quarkbridge (arco QCD-CLI) ([#144](https://github.com/jcsvwinston/orbit/issues/144)) ([2828aed](https://github.com/jcsvwinston/orbit/commit/2828aed324cac2c094272d2d43e32cfee152faac))
+* **deps:** alinea nucleus a v1.6.2 en root, agent, server y quarkbridge (cierre del tren QCD-CLI) ([#149](https://github.com/jcsvwinston/orbit/issues/149)) ([9d9ddb5](https://github.com/jcsvwinston/orbit/commit/9d9ddb53fb592d1a4389f3fa19c5123d49052fd9))
+
 ## [1.5.1](https://github.com/jcsvwinston/orbit/compare/v1.5.0...v1.5.1) (2026-07-22)
 
 
