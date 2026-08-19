@@ -15,6 +15,21 @@ each entry lists the fleet tags cut alongside it. The complete tag history
 lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.6.2 — 2026-08-18
+
+**Changed**
+
+- **Dependency alignment.** The root panel and the fleet modules that build
+  on the framework (`agent`, `server`, `quarkbridge`) move to nucleus
+  v1.9.1 — the server-side render layer fixes (recursive template loading,
+  prefix modules receiving the engine and session manager, template
+  function registration from the builder) and the outbox dispatcher
+  starting after extensions attach. No orbit behaviour changes.
+
+Fleet tags cut alongside this release: `agent/v0.5.12`, `server/v0.9.7`,
+`quarkbridge/v0.3.11` (`proto/v0.4.2` and `quarkdatasource/v0.2.10`
+unchanged).
+
 ## v1.6.1 — 2026-08-16
 
 **Fixed**

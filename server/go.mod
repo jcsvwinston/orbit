@@ -8,7 +8,7 @@ require (
 )
 
 require (
-	github.com/jcsvwinston/nucleus v1.8.0
+	github.com/jcsvwinston/nucleus v1.9.1
 	github.com/jcsvwinston/orbit/agent v0.5.11
 	github.com/prometheus/client_golang v1.23.2
 	golang.org/x/net v0.56.0
