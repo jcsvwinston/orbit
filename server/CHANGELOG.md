@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.7](https://github.com/jcsvwinston/orbit/compare/server/v0.9.6...server/v0.9.7) (2026-08-19)
+
+
+### Fixed
+
+* **deps:** re-pin a nucleus v1.9.1 (arco SSR + outbox) ([#180](https://github.com/jcsvwinston/orbit/issues/180)) ([abb7b22](https://github.com/jcsvwinston/orbit/commit/abb7b2272f81fc8efae8eb75ba61d9d8bbe015a2))
+* **server:** re-pin agent v0.5.12 ([#185](https://github.com/jcsvwinston/orbit/issues/185)) ([e66dbf3](https://github.com/jcsvwinston/orbit/commit/e66dbf382c20f12681a17011a7d3050e953f175b))
+
 ## [0.9.6](https://github.com/jcsvwinston/orbit/compare/server/v0.9.5...server/v0.9.6) (2026-08-16)
 
 
