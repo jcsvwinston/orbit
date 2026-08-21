@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.12](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v0.3.11...quarkbridge/v0.3.12) (2026-08-21)
+
+
+### Fixed
+
+* **deps:** alinea los requires de nucleus y quark al set certificado (nucleus v1.10.0, quark v1.5.2) ([#186](https://github.com/jcsvwinston/orbit/issues/186)) ([026cc3e](https://github.com/jcsvwinston/orbit/commit/026cc3e4a2d2d42a9ea03e754c5be6727932e60c))
+
 ## [0.3.11](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v0.3.10...quarkbridge/v0.3.11) (2026-08-19)
 
 
