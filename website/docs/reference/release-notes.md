@@ -15,6 +15,17 @@ each entry lists the fleet tags cut alongside it. The complete tag history
 lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.6.5 — 2026-08-23
+
+**Changed**
+
+- **`server` pins `agent/v0.5.13`.** The internal-pins guard requires every
+  fleet module to pin the latest published sibling tag; v1.6.4 cut
+  `agent/v0.5.13` and `server` still pinned v0.5.12. No behaviour changes.
+
+Fleet tag cut alongside this release: `server/v0.9.9` (the rest of the
+fleet is unchanged from v1.6.4).
+
 ## v1.6.4 — 2026-08-21
 
 **Changed**
