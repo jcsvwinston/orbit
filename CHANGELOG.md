@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.3](https://github.com/jcsvwinston/orbit/compare/v1.6.2...v1.6.3) (2026-08-23)
+
+
+### Fixed
+
+* **deps:** alinea los requires de nucleus y quark al set certificado (nucleus v1.10.0, quark v1.5.2) ([#186](https://github.com/jcsvwinston/orbit/issues/186)) ([026cc3e](https://github.com/jcsvwinston/orbit/commit/026cc3e4a2d2d42a9ea03e754c5be6727932e60c))
+
 ## [1.6.2](https://github.com/jcsvwinston/orbit/compare/v1.6.1...v1.6.2) (2026-08-19)
 
 
