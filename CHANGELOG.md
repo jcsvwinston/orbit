@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.4](https://github.com/jcsvwinston/orbit/compare/v1.6.3...v1.6.4) (2026-08-23)
+
+
+### Fixed
+
+* **agent:** alinea nucleus a v1.10.0 — completa la alineación del set que v1.6.3 dejó a medias ([#191](https://github.com/jcsvwinston/orbit/issues/191)) ([7b58f03](https://github.com/jcsvwinston/orbit/commit/7b58f03c9aa69ba658f6c946fddbdbfc1c7fb0bc))
+
 ## [1.6.3](https://github.com/jcsvwinston/orbit/compare/v1.6.2...v1.6.3) (2026-08-23)
 
 
