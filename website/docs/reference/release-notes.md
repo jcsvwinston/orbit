@@ -15,6 +15,22 @@ each entry lists the fleet tags cut alongside it. The complete tag history
 lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.6.3 — 2026-08-21
+
+**Changed**
+
+- **Dependency alignment.** The root panel and `server` move to nucleus
+  v1.10.0 (the vertical-slice module release: module-declared policy rows
+  and CSRF exemptions, applicable embedded migrations, embedded
+  templates); `quarkbridge` moves to nucleus v1.10.0 and quark v1.5.2;
+  `quarkdatasource` moves to quark v1.5.2 (the `migrate up` CLI fix). No
+  orbit behaviour changes — orbit modules do not use the new nucleus
+  module surfaces yet.
+
+Fleet tags cut alongside this release: `server/v0.9.8`,
+`quarkbridge/v0.3.12`, `quarkdatasource/v0.2.11` (`agent/v0.5.12` and
+`proto/v0.4.2` unchanged).
+
 ## v1.6.2 — 2026-08-18
 
 **Changed**
