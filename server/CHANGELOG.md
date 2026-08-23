@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.9](https://github.com/jcsvwinston/orbit/compare/server/v0.9.8...server/v0.9.9) (2026-08-23)
+
+
+### Fixed
+
+* **server:** pina agent/v0.5.13 — cierra la cascada interna del set 1.14.0 ([#194](https://github.com/jcsvwinston/orbit/issues/194)) ([16e8b58](https://github.com/jcsvwinston/orbit/commit/16e8b58c7ad9f9b33436b69dd605ce1da691a71e))
+
 ## [0.9.8](https://github.com/jcsvwinston/orbit/compare/server/v0.9.7...server/v0.9.8) (2026-08-21)
 
 
