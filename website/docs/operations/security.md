@@ -7,21 +7,24 @@ description: The fleet plane's two auth surfaces, and how to harden them.
 # Security
 
 The admin server exposes two listeners, and each has its own authentication
-surface. This page covers both, plus what the deliberate exceptions imply.
-(For the in-process panel's own login, sessions and RBAC, see
-[How it works](../how-it-works.md) — this page is about the standalone
-fleet plane.)
+surface. This page covers both, and spells out what the deliberate exceptions
+imply.
+
+It is about the **standalone fleet plane**. For the in-process panel's own
+login, sessions and RBAC, see [How it works](../how-it-works.md).
 
 ## Two auth planes
 
 ### Operators (the UI listener)
 
 The server does **not** implement OIDC or password login on the fleet UI.
-The canonical deployment puts an auth-aware reverse proxy (oauth2-proxy,
-nginx `auth_request`, Traefik forward-auth) in front of `--ui-addr`, and the
-proxy forwards the authenticated identity in headers. A request is
-authenticated as an operator when **either** of these succeeds, checked in
-this order:
+Identity comes from outside: the canonical deployment puts an auth-aware
+reverse proxy (oauth2-proxy, nginx `auth_request`, Traefik forward-auth) in
+front of `--ui-addr`, and that proxy forwards the authenticated user in
+headers.
+
+A request is authenticated as an operator when **either** of the following
+succeeds, checked in this order:
 
 1. **Trusted-proxy headers.** The request comes from an IP inside
    `--ui-trusted-cidrs` (default: loopback only), carries a non-empty
@@ -37,13 +40,14 @@ this order:
 Failures get a generic `401` — the response does not reveal which
 credential mode was attempted or why it failed.
 
-**Set `--ui-proxy-secret` in production.** Without it, any process that can
-source packets from a trusted CIDR (a sidecar, a host-networked container,
-another local process behind the same NAT) can forge an operator identity
-just by setting the header. The secret is compared in constant time, and a
-request that fails the secret check falls through to the bearer path rather
-than being rejected outright — a misconfigured proxy never blocks a valid
-bearer.
+**Set `--ui-proxy-secret` in production.** Without it, CIDR membership alone is
+enough to claim any identity: a sidecar, a host-networked container, or another
+local process behind the same NAT can forge an operator just by setting the
+header.
+
+The secret is compared in constant time. A request that fails the check falls
+through to the bearer path rather than being rejected outright, so a
+misconfigured proxy never blocks a valid bearer.
 
 ### Agents (the agent listener)
 
@@ -52,30 +56,32 @@ the server, `Token` in the agent's configuration. The agent attaches it to
 **every** call, including the long-lived telemetry stream itself. Token
 comparison is constant-time.
 
-The server is **fail-closed** here: it refuses to start the agent listener
-on a non-loopback interface with no token and no TLS. The
+The server is **fail-closed** here: it refuses to start the agent listener on a
+non-loopback interface with no token and no TLS. The
 `--insecure-agent-listener` override exists for networks where a firewall,
-private subnet, or service-mesh mTLS already restricts reachability — and
-the server logs a warning at boot when you use it. Treat access to the
-agent listener as fleet-write access: an unauthenticated one would let any
-host on the network register as an agent and feed the fleet plane.
+private subnet, or service-mesh mTLS already restricts reachability, and the
+server logs a warning at boot when you use it.
+
+Treat access to the agent listener as fleet-write access. An unauthenticated
+one lets any host on the network register as an agent and feed the fleet
+plane.
 
 ## The /healthz exemption
 
-`/healthz` answers `200 ok` on **both** listeners (and on the metrics
-listener) **without authentication**. That is intentional — load balancers
-and the agent's endpoint-failover dialer need to probe reachability without
-owning a token — but it has two consequences worth knowing:
+`/healthz` answers `200 ok` on **both** listeners, and on the metrics listener,
+**without authentication**. That is intentional: load balancers and the agent's
+endpoint-failover dialer need to probe reachability without owning a token. It
+has two consequences worth knowing.
 
 - Anyone who can reach a listener can learn that an Orbit admin server is
   running there. Nothing else is exposed without credentials.
-- **Reachable is not authenticated.** The agent's dial probe hits
-  `/healthz`, so a booting agent can find the server "reachable" while its
-  token is being rejected on the stream. The boot-time `RequireConnection`
-  gate does **not** trust that probe: it only passes once the admin server
-  accepts the agent's first stream frame under authentication — so a wrong
-  token fails the application's boot within the configured deadline, with
-  the token-rejected warnings described below explaining why.
+- **Reachable is not authenticated.** The agent's dial probe hits `/healthz`,
+  so a booting agent can find the server "reachable" while its token is being
+  rejected on the stream. The boot-time `RequireConnection` gate does **not**
+  trust that probe. It passes only once the admin server accepts the agent's
+  first stream frame under authentication, so a wrong token fails the
+  application's boot at the configured deadline — with the token-rejected
+  warnings described below explaining why.
 
 ## Read-only operators
 
@@ -89,27 +95,32 @@ Two mechanisms, verified in the auth chain on every request:
 - **Globally:** `--ui-read-only` marks **every** operator read-only,
   turning the server into a pure observability plane.
 
-By default, any read-write operator can run every Data Studio mutation on
-every model of every connected node — the fleet Access control screen is a
-read-only snapshot of each node's policy, not a per-verb gate on the
-operator. Mutations are attributed and recorded in the server's fleet
-Audit log, but if some operators should not write, scope them down with
-the role header or run the whole server read-only.
+Know the default they are scoping down from: **any read-write operator can run
+every Data Studio mutation on every model of every connected node.** The fleet
+Access control screen does not restrain that — it is a read-only snapshot of
+each node's policy, not a per-verb gate on the operator.
+
+Mutations are attributed and recorded in the server's fleet Audit log, which
+tells you afterwards who did what. If some operators should not be writing at
+all, use the role header or run the whole server read-only.
 
 ## Credential lockout
 
 Both listeners keep a small per-IP lockout: **20 wrong credentials within a
-minute** lock that IP out (`429 Too Many Requests`) until the window
-expires. Only requests that actually **presented** a wrong credential — a
-bad bearer, or a wrong proxy secret alongside a bearer attempt — count;
-credential-less requests (a browser hitting the SPA before signing in)
-never do, so nobody can lock operators out by poking the login page. The
-limiter exists to make online brute force of the shared tokens
-impractical; it is not a general-purpose WAF.
+minute** lock that IP out with `429 Too Many Requests` until the window
+expires.
+
+Only requests that actually **presented** a wrong credential count — a bad
+bearer, or a wrong proxy secret alongside a bearer attempt. Credential-less
+requests never do, so a browser hitting the SPA before signing in is harmless
+and nobody can lock operators out by poking the login page.
+
+The limiter exists to make online brute force of the shared tokens
+impractical. It is not a general-purpose WAF.
 
 ## Rejected tokens are loud
 
-A bad agent token used to be easy to miss, so both sides now warn:
+A bad agent token announces itself from both ends, so it cannot fail quietly:
 
 - **Server side:** a warning naming the remote IP —
   `admin server rejected agent request: invalid or missing bearer token` —
@@ -117,11 +128,11 @@ A bad agent token used to be easy to miss, so both sides now warn:
   suppressed in between.
 - **Agent side:** `admin agent token rejected by admin server; check
   --agent-token`, at most once per minute per endpoint.
-- **Backoff:** the agent's reconnect backoff only resets after the server
-  has demonstrably **accepted** the stream (first frame received). A
-  rejected token therefore retries at growing intervals up to 30 seconds —
-  not once per second forever — and the agent's `connected` log line is
-  only emitted on real acceptance.
+- **Backoff:** the agent's reconnect backoff resets only after the server has
+  demonstrably **accepted** the stream, meaning the first frame was received.
+  A rejected token therefore retries at growing intervals up to 30 seconds
+  rather than once per second forever, and the agent's `connected` log line
+  appears only on real acceptance.
 
 ## Browser-facing headers
 

@@ -9,16 +9,19 @@ description: Pluggable, in-process admin panel for the Nucleus framework.
 
 **The pluggable admin product for the [Nucleus](/nucleus/) framework.**
 
-Orbit is a self-contained admin panel — Data Studio, a live request/SQL feed, a
-session viewer, RBAC management, and system metrics — that mounts **in-process**
-into any Nucleus application through the framework's extension/module API.
+Orbit is a self-contained admin panel — Data Studio, a live request and SQL
+feed, a session viewer, RBAC management and system metrics — that mounts
+**in-process** into any Nucleus application through the framework's
+extension/module API.
 
-It is a separate Go module with its own release cadence. The admin was moved out
-of the framework core and into this module so the core stays lean and the admin
-evolves as its own product. You add one
-dependency and one `Mount(...)` call; Orbit reads everything it needs from the
-running app's `Runtime` and serves its **embedded** React SPA — no separate
-asset deployment, no out-of-process sidecar, and no database of its own.
+You add one dependency and one `Mount(...)` call. Orbit then reads everything
+it needs from the running application's `Runtime` and serves its **embedded**
+React interface. There is no separate asset deployment, no out-of-process
+sidecar and no database of its own.
+
+Orbit is a separate Go module with its own release cadence. The admin panel was
+moved out of the framework core so the core stays lean and the panel can evolve
+as its own product.
 
 ## What you get
 
@@ -32,16 +35,35 @@ asset deployment, no out-of-process sidecar, and no database of its own.
 | **Audit log** | An in-memory ring of admin actions. |
 | **Overview & Health** | Dashboard and health at a glance. |
 
-The UI ships **embedded in the binary** (`go:embed`), version-pinned to the
-Orbit module: a consumer who mounts Orbit gets the full admin offline, in a
-single binary.
+The interface ships **embedded in the binary** (`go:embed`) and version-pinned
+to the Orbit module. Mount Orbit and you get the whole admin panel offline, in
+a single binary.
+
+## How much of Orbit do you need?
+
+Most applications need only the first row. The other two are additive, and you
+can adopt them later without changing how the panel is mounted.
+
+| Shape | What it adds | What you run |
+|---|---|---|
+| **The in-process panel** | The admin panel, showing live state for **its own node**. | Nothing extra — it is inside your application binary. |
+| **The live-feed relay** | One shared live feed across the nodes of a single application. | A Redis instance. Enabled with the `cluster_*` keys in [Configuration](./configuration.md). |
+| **The fleet plane** | A dedicated, always-on observability server that outlives any one application node. | A standalone `admin-server` binary, plus an agent embedded in each node. See [Fleet observability](./cluster/overview.md). |
+
+:::note Two different things are called "cluster"
+The `cluster_*` **configuration keys** switch on the Redis live-feed relay —
+still the in-process panel, just sharing one feed between nodes. The
+**Fleet observability** section documents something else entirely: the
+standalone agent-and-server plane, which does not use Redis. Neither one
+requires the other.
+:::
 
 ## Requirements
 
 - **Go 1.26+**
 - A **[Nucleus](/nucleus/)** application to mount into.
-- *(Optional)* **Redis** — only for the cross-node live-telemetry relay (see
-  [Fleet observability](./cluster/overview.md)).
+- *(Optional)* **Redis** — only for the live-feed relay described above
+  (`cluster_*` in [Configuration](./configuration.md)).
 
 ## Status
 
