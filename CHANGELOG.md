@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.6](https://github.com/jcsvwinston/orbit/compare/v1.6.5...v1.6.6) (2026-08-24)
+
+
+### Fixed
+
+* **deps:** alinea los cinco módulos a nucleus v1.11.0 y quark v1.6.0 ([#199](https://github.com/jcsvwinston/orbit/issues/199)) ([5757805](https://github.com/jcsvwinston/orbit/commit/5757805e06974b6da52ab33fdca97cc39110f9f8))
+
 ## [1.6.5](https://github.com/jcsvwinston/orbit/compare/v1.6.4...v1.6.5) (2026-08-23)
 
 

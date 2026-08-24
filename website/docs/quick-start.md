@@ -19,7 +19,7 @@ You need Go 1.26 or newer and a Nucleus application to mount into.
 go get github.com/jcsvwinston/orbit@latest
 ```
 
-The current release is v1.6.5; pin that tag rather than `@latest` for reproducible builds. <!-- x-release-please-version -->
+The current release is v1.6.6; pin that tag rather than `@latest` for reproducible builds. <!-- x-release-please-version -->
 
 ## 2. Mount the module
 
