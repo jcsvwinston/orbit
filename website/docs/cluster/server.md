@@ -37,35 +37,37 @@ flag has a `NUCLEUS_ADMIN_*` env-var counterpart.
 
 :::warning Any authenticated operator can write to every node by default
 An authenticated UI operator can run **every Data Studio mutation on every
-model of every connected node** — the `Access control` screen is a read-only
-snapshot of each node's own policy and does **not** gate the operator's
-fleet-plane actions (they are audited, not authorized per verb/object). Scope
-operators down with:
+model of every connected node**. The `Access control` screen does not change
+that: it is a read-only snapshot of each node's own policy, and it does not
+gate the operator's fleet-plane actions, which are audited rather than
+authorized per verb and object.
 
-- `--ui-role-header` (default `X-Auth-Role`): the trusted proxy sets it to
-  `viewer` for a read-only operator (mutations refused, reads keep working);
-- `--ui-read-only`: makes **every** operator read-only — a pure observability
-  plane.
+Scope operators down with either:
 
-Also set `--ui-proxy-secret` (above) so a co-located process inside the
-trusted CIDR can't forge an operator identity with CIDR membership alone, and
-keep `--ui-trusted-cidrs` as narrow as your proxy's real source range. Treat
-read-write access to the UI listener as full fleet-admin access.
+- `--ui-role-header` (default `X-Auth-Role`) — the trusted proxy sets it to
+  `viewer` for a read-only operator: mutations refused, reads keep working;
+- `--ui-read-only` — makes **every** operator read-only, turning the server
+  into a pure observability plane.
+
+Also set `--ui-proxy-secret` (above), so a co-located process inside the
+trusted range cannot forge an operator identity with CIDR membership alone,
+and keep `--ui-trusted-cidrs` as narrow as your proxy's real source range.
+Treat read-write access to the UI listener as full fleet-admin access.
 :::
 
 ### Behind an SSO reverse proxy (recommended)
 
-The server does **not** implement OIDC; the canonical deployment runs an
+The server does **not** implement OIDC. The canonical deployment runs an
 auth-aware reverse proxy (oauth2-proxy, nginx `auth_request`, Traefik
-forward-auth) in front of `--ui-addr` and forwards the authenticated identity
-in headers:
+forward-auth) in front of `--ui-addr`, forwarding the authenticated identity in
+headers:
 
-- the proxy authenticates the user (OIDC/SSO) and sets `X-Auth-User` (and
-  optionally `X-Auth-Email`, `X-Auth-Role`) on every upstream request;
-- it also sets `X-Auth-Proxy-Secret: $NUCLEUS_ADMIN_UI_PROXY_SECRET` so the
+- the proxy authenticates the user (OIDC/SSO) and sets `X-Auth-User` — and
+  optionally `X-Auth-Email` and `X-Auth-Role` — on every upstream request;
+- it also sets `X-Auth-Proxy-Secret: $NUCLEUS_ADMIN_UI_PROXY_SECRET`, so the
   server honours those headers only from the real proxy;
-- `--ui-trusted-cidrs` lists the proxy's source network; requests from
-  outside it are never trusted.
+- `--ui-trusted-cidrs` lists the proxy's source network. Requests from outside
+  it are never trusted.
 
 An oauth2-proxy sketch:
 
@@ -77,40 +79,49 @@ An oauth2-proxy sketch:
 #   proxy_set_header X-Auth-Proxy-Secret $ui_proxy_secret;
 ```
 
-For a proxy-less setup (dev, or a trusted internal network), a bearer token
-works instead: start with `--ui-bearer` and send
+For a proxy-less setup — development, or a trusted internal network — a bearer
+token works instead: start with `--ui-bearer` and send
 `Authorization: Bearer <token>`.
 
-## Shape
+## What runs inside
 
-- **Two listeners** — one for agents, one for UIs — each with its own auth chain
-  (h2c by default, TLS when configured). `/healthz` is public on both, carved
-  out of auth for load balancers.
-- **Routing primitives** — a connected-agents registry, per-UI subscription
-  fanout (drop-newest under backpressure), a drop-oldest replay buffer for
-  `include_recent`, and request-ID correlation for snapshots, Data Studio
-  operations and RBAC snapshots.
-- **Manage surface** — the Access control screen reads a **read-only Casbin
-  snapshot** routed to a connected agent (the application's authorizer stays
-  the single writer); the Audit log screen reads the server's own
-  **fleet-plane audit ring**: mutations an operator performed THROUGH this
-  server (Data Studio create/update/delete/bulk), attributed to the identity
-  resolved by the UI auth chain and to the routed node. In-memory and
-  bounded, like event replay; per-app admin actions stay in each node's
-  in-process Orbit panel.
-- **Auth** — a shared bearer token for agents; trusted-proxy/bearer middleware
-  for UIs (the resolved operator identity travels in the request context and
-  attributes audit entries).
+**Two listeners**, one for agents and one for UIs, each with its own auth
+chain: h2c by default, TLS when configured. `/healthz` is public on both,
+carved out of auth so load balancers can probe it.
+
+**Routing primitives** move frames between them:
+
+- a registry of connected agents;
+- per-UI subscription fanout, dropping newest under backpressure;
+- a drop-oldest replay buffer serving `include_recent`;
+- request-ID correlation for snapshots, Data Studio operations and RBAC
+  snapshots.
+
+**The manage surface** reads two different stores, and it is worth knowing
+which is which:
+
+- The **Access control** screen shows a read-only Casbin snapshot routed to a
+  connected agent. The application's authorizer stays the single writer.
+- The **Audit log** screen shows the server's own fleet-plane audit ring:
+  mutations an operator performed *through this server* (Data Studio
+  create/update/delete/bulk), attributed to the identity resolved by the UI
+  auth chain and to the node the request was routed to. It is in-memory and
+  bounded, like event replay. Admin actions performed inside an application
+  stay in that node's own in-process Orbit panel.
+
+**Auth** is a shared bearer token for agents, and trusted-proxy or bearer
+middleware for UIs. The resolved operator identity travels in the request
+context, which is what attributes audit entries.
 
 ## Operational notes
 
-- `/metrics` is opt-in: `--metrics-addr` (env `NUCLEUS_ADMIN_METRICS_ADDR`)
-  runs a third listener serving the Prometheus default registry
-  (`go_*`/`process_*` collectors; server-specific collectors are future
-  work) plus `/healthz`. Unauthenticated by design — bind it to a private
-  interface. Empty (the default) disables it.
+- `/metrics` is opt-in. `--metrics-addr` (env `NUCLEUS_ADMIN_METRICS_ADDR`)
+  runs a third listener serving the Prometheus default registry — `go_*` and
+  `process_*` collectors; there are no server-specific collectors yet — plus
+  `/healthz`. It is unauthenticated by design, so bind it to a private
+  interface. Empty, the default, disables it.
 - Structured logging via `slog`, JSON or text.
 - **Per-stream events are never persisted.** The replay buffer is in-memory and
   bounded.
-- Graceful shutdown on signal: best-effort `Shutdown` with a 2-second timeout
+- Graceful shutdown on signal: a best-effort `Shutdown` with a 2-second timeout
   per listener.
