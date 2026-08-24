@@ -17,6 +17,20 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.6.6 — 2026-08-24
+
+**Changed**
+
+- **Dependency alignment.** Every module — the root panel, `server`,
+  `agent`, `quarkbridge` and `quarkdatasource` — moves to nucleus v1.11.0
+  and quark v1.6.0. Those releases bring configuration that is validated
+  the same way wherever it is loaded, a test kit that reaches the database,
+  a graceful outbox shutdown, and a preflight for native row-level security.
+  No orbit behaviour changes.
+
+Fleet tags cut alongside this release line: `agent`, `server`,
+`quarkbridge` and `quarkdatasource` (`proto` unchanged).
+
 ## v1.6.5 — 2026-08-23
 
 **Changed**
