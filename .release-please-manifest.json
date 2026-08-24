@@ -1,6 +1,6 @@
 {
   ".": "1.6.5",
-  "quarkbridge": "0.3.12",
+  "quarkbridge": "0.3.13",
   "quarkdatasource": "0.2.11",
   "proto": "0.4.2",
   "agent": "0.5.14",
