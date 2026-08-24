@@ -8,20 +8,22 @@ description: What changed in each Orbit release, in plain terms.
 
 The current release is **v1.6.5**. <!-- x-release-please-version -->
 
-Versions below are the **root module** (`github.com/jcsvwinston/orbit`) —
-the one an application mounts for the in-process panel. The fleet modules
-(`agent`, `server`, `proto`) release independently with their own tags;
-each entry lists the fleet tags cut alongside it. The complete tag history
-lives on the
+Every heading below is a version of the **root module**
+(`github.com/jcsvwinston/orbit`) — the one an application mounts for the
+in-process panel.
+
+The fleet modules (`agent`, `server`, `proto`) release independently with their
+own tags, so each entry also lists the fleet tags cut alongside it. The
+complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
 ## v1.6.5 — 2026-08-23
 
 **Changed**
 
-- **`server` pins `agent/v0.5.13`.** The internal-pins guard requires every
-  fleet module to pin the latest published sibling tag; v1.6.4 cut
-  `agent/v0.5.13` and `server` still pinned v0.5.12. No behaviour changes.
+- **`server` now pins `agent/v0.5.13`.** v1.6.4 published that agent tag, but
+  `server` was left requiring v0.5.12. Installing the server from a cold cache
+  now resolves the current agent code. No behaviour changes.
 
 Fleet tag cut alongside this release: `server/v0.9.9` (the rest of the
 fleet is unchanged from v1.6.4).
@@ -30,12 +32,11 @@ fleet is unchanged from v1.6.4).
 
 **Changed**
 
-- **`agent` completes the dependency alignment to nucleus v1.10.0.**
-  v1.6.3 aligned the root panel, `server`, `quarkbridge` and
-  `quarkdatasource` but shipped with `agent` still requiring nucleus
-  v1.9.1 — and its notes claimed agent was unchanged. The umbrella's
-  staleness guard caught the undisclosed lag; this release closes it. No
-  behaviour changes.
+- **`agent` completes the dependency alignment to nucleus v1.10.0.** v1.6.3
+  moved the root panel, `server`, `quarkbridge` and `quarkdatasource`, but
+  shipped with `agent` still requiring nucleus v1.9.1 — and said nothing about
+  it. Every module now builds against the same framework version. No behaviour
+  changes.
 
 Fleet tag cut alongside this release: `agent/v0.5.13` (the rest of the
 fleet is unchanged from v1.6.3).
@@ -75,19 +76,18 @@ unchanged).
 
 **Fixed**
 
-- **These notes.** v1.6.0 shipped without its section on this page (the
-  version-claims check now enforced from the suite umbrella caught it), and
-  `quarkdatasource` still pinned root v1.4.3 — two minors behind. Both are
-  corrected: the section below documents v1.6.0, and `quarkdatasource`
-  builds against root v1.6.0.
+- **These notes.** v1.6.0 shipped without its section on this page, and
+  `quarkdatasource` still required root v1.4.3 — two minors behind. Both are
+  corrected: the section below documents v1.6.0, and `quarkdatasource` builds
+  against root v1.6.0.
 
 Fleet tags cut alongside this release: `quarkdatasource/v0.2.10` (all
 other modules unchanged).
 
 ## v1.6.0 — 2026-08-16
 
-The developer-experience minor: the gaps the 2026-08-16
-developer-experience audit found in Orbit's onboarding surface.
+The developer-experience minor: it closes the gaps a new user hit in Orbit's
+onboarding surface.
 
 **Added**
 
@@ -165,26 +165,28 @@ Fleet tags cut alongside this release: `agent/v0.5.8`, `server/v0.9.3`,
 
 Fleet tags cut alongside this release: `agent/v0.5.6`, `server/v0.9.1`,
 `quarkbridge/v0.3.6` (`quarkdatasource/v0.2.7` and `proto/v0.4.1` unchanged).
-Internal continuous-integration change (not user-facing): the sibling-pin
-guard now confines its one-minor root-edge tolerance to the single
-topologically-forced `root↔quarkdatasource` edge and verifies the frozen
-datasource contract is identical across the lagging tag.
+Not user-facing, but worth recording: the repository's own version checks
+became stricter. The one allowance for a module lagging behind the root is now
+confined to the single edge that structurally requires it
+(`root↔quarkdatasource`), and that edge is only accepted after the frozen
+`datasource` contract is verified identical across the lagging tag.
 
 ## v1.5.0 — 2026-07-22
 
 **Fixed**
 
-- **The in-process live feed now shows HTTP traffic.** The panel mounted
-  in-process consumed only the SQL lane of the event bus, so its
-  `/api/live/snapshot` reported `requests: 0` no matter how much HTTP
-  traffic the host app served — the SQL lane worked, the HTTP lane did not.
-  The feed now also consumes the bus's HTTP events, so requests appear
-  alongside queries. **Correction to the v1.4.4 note:** that release
-  described the in-process live feed as working end to end; it did not — the
-  HTTP lane was dead until this version. The traffic middleware stays as the
-  sole source of the session lane (which needs the `*http.Request` the bus
-  event does not carry) and de-duplicates the admin prefix so events are not
-  double-counted.
+- **The in-process live feed now shows HTTP traffic.** The panel consumed only
+  the SQL lane of the event bus, so `/api/live/snapshot` reported
+  `requests: 0` however much HTTP traffic the host app served. The feed now
+  consumes the bus's HTTP events too, and requests appear alongside queries.
+
+  The traffic middleware remains the sole source of the session lane, which
+  needs the `*http.Request` that the bus event does not carry, and it
+  de-duplicates the admin prefix so events are not counted twice.
+
+  **Correction to the v1.4.4 note:** that release described the in-process
+  live feed as working end to end. It did not — the HTTP lane was dead until
+  this version.
 - **Dependency alignment to the 1.9.0 set.** The root panel and all fleet
   modules build against nucleus v1.5.0, the Quark integrations
   (`quarkbridge`, `quarkdatasource`) require Quark v1.4.0, and
@@ -193,7 +195,7 @@ datasource contract is identical across the lagging tag.
 
 **Added**
 
-- **UI backlog closed.** The last three UI items from the v1.2.1 audit land:
+- **UI backlog closed.** The last three outstanding interface items land:
   centralized i18n strings, table accessibility roles across the fleet
   pages, and the in-process panel's two parallel tables consolidated to one.
 
@@ -204,13 +206,13 @@ Fleet tags cut alongside this release: `agent/v0.5.5`, `server/v0.9.0`,
 
 **Fixed**
 
-- The agent's **auth-suspicion warning is now per endpoint**. A frame
-  accepted on one endpoint proves that endpoint's auth path and nothing
-  else: it no longer resets the frameless-cycle evidence of a sibling
-  endpoint that keeps rejecting every frame. Before this, in a failover
-  pair, one healthy endpoint could silence — or worse, mislabel — the
-  warning that belonged to the broken one; the warning now fires against
-  the endpoint that earned it, with its own evidence.
+- The agent's **auth-suspicion warning is now per endpoint**. A frame accepted
+  on one endpoint proves that endpoint's auth path and nothing else, so it no
+  longer clears the frameless-cycle evidence of a sibling endpoint that keeps
+  rejecting every frame. In a failover pair, one healthy endpoint used to be
+  able to silence — or worse, mislabel — the warning that belonged to the
+  broken one. The warning now fires against the endpoint that earned it, with
+  its own evidence.
 - **Dependency alignment across every module.** The root panel and all
   fleet modules build against nucleus v1.4.0, the Quark integrations
   (`quarkbridge`, `quarkdatasource`) require Quark v1.3.3, and

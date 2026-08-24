@@ -16,6 +16,10 @@ Orbit has two deployment shapes, and most applications only ever use the first:
    application nodes stream telemetry to through an embedded **agent**. This
    page is about deploying that.
 
+Turning on the Redis live-feed relay (the `cluster_*` keys in
+[Configuration](../configuration.md)) does not change shape 1. It adds a Redis
+instance to your infrastructure; there is still no Orbit process to deploy.
+
 ## Topology
 
 ```text
@@ -42,9 +46,9 @@ go install github.com/jcsvwinston/orbit/server/cmd/admin-server@latest
 ```
 
 `@latest` resolves the current tag of the `orbit/server` module. For
-reproducible installs, pin the tag instead of `@latest`: the current release
-is stated on the [Quick start](../quick-start.md) page and each release's
-module tags are listed in the [Release notes](../reference/release-notes.md).
+reproducible installs, pin the tag instead. The current release is stated on
+the [Quick start](../quick-start.md) page, and the module tags cut with each
+release are listed in the [Release notes](../reference/release-notes.md).
 
 ```bash
 admin-server --version   # prints the installed tag (or "devel" for source builds)
@@ -54,14 +58,15 @@ Building from a checkout works too (`cd server && go build ./cmd/admin-server`).
 
 ## Configuration
 
-Configuration comes from three sources, in order of precedence:
+Configuration comes from three sources. Highest precedence first:
 
 1. Command-line flags
 2. Environment variables (`NUCLEUS_ADMIN_*`)
 3. Built-in defaults
 
-Every flag has an environment-variable counterpart; `admin-server --help`
-prints the authoritative list. The full surface:
+Every flag has an environment-variable counterpart. `admin-server --help`
+prints the authoritative list; the tables below cover the flags you will
+actually reach for.
 
 ### Listeners
 
@@ -81,10 +86,10 @@ prints the authoritative list. The full surface:
 | `--insecure-agent-listener` | `NUCLEUS_ADMIN_INSECURE_AGENT_LISTENER` | `false` | Allow an unauthenticated agent listener on a non-loopback interface. |
 
 The server **refuses to start** when the agent listener would bind a
-non-loopback interface with no `--agent-token` and no TLS. Either
-authenticate the listener, bind it to loopback, or — only when the network
-layer already restricts who can reach it — pass `--insecure-agent-listener`.
-See [Security](./security.md).
+non-loopback interface with no `--agent-token` and no TLS. You have three ways
+out: authenticate the listener, bind it to loopback, or pass
+`--insecure-agent-listener` — and that last one only when the network layer
+already restricts who can reach it. See [Security](./security.md).
 
 ### Operator authentication
 
@@ -144,10 +149,11 @@ WantedBy=multi-user.target
 ```
 
 Keep the tokens in the `EnvironmentFile` (mode `0600`) rather than on the
-command line, where they would be visible in the process list. In this
-layout the UI listener binds loopback and your SSO reverse proxy on the same
-host forwards to it; the agent listener binds all interfaces, which is why
-the token is required.
+command line, where the process list would expose them.
+
+Read the two listener choices above as a pair. The UI listener binds loopback,
+because your SSO reverse proxy runs on the same host and forwards to it. The
+agent listener binds all interfaces, which is exactly why it needs the token.
 
 ## A container
 
@@ -200,13 +206,16 @@ a, err := app.New(cfg,
 )
 ```
 
-The agent is **fail-open** by default: with an empty `Endpoints` list the
-extension does nothing, and when the server is unreachable the application
-runs unchanged while the agent retries with exponential backoff (capped at
-30 seconds). Set `RequireConnection: true` to make the application refuse to
-boot unless an admin endpoint is reachable within
-`RequireConnectionTimeout` (default 10 seconds) — note the caveat about what
-that gate actually verifies in [Security](./security.md#the-healthz-exemption).
+The agent is **fail-open** by default, in two senses. With an empty `Endpoints`
+list the extension does nothing at all. With endpoints set but the server
+unreachable, the application still runs unchanged while the agent retries with
+exponential backoff, capped at 30 seconds.
+
+Set `RequireConnection: true` to invert that: the application then refuses to
+boot unless an admin endpoint accepts it within `RequireConnectionTimeout`
+(default 10 seconds). What that gate actually verifies is worth reading before
+you rely on it — see
+[Security](./security.md#the-healthz-exemption).
 
 The full agent configuration surface — heartbeat cadence, ring-buffer
 sizes, node labels, a standalone metrics listener — is documented in
