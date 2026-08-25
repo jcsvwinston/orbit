@@ -10,7 +10,7 @@ go 1.26.6
 // graph, and Quark itself must not depend on Orbit.
 require (
 	github.com/jcsvwinston/orbit v1.6.0
-	github.com/jcsvwinston/quark v1.6.0
+	github.com/jcsvwinston/quark v1.6.1
 	modernc.org/sqlite v1.50.0
 )
 
