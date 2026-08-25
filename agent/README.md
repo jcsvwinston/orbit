@@ -4,6 +4,11 @@ The Nucleus admin observability agent. Embeds in every framework
 process and ships events to a standalone admin server (`../server`)
 over a single Connect-RPC bidi stream.
 
+> **Framework floor.** This module builds against Nucleus and moves in
+> lockstep with the certified suite set. The exact version it requires is
+> in this module's `go.mod` — that file is the source of truth, so this
+> note cannot go stale.
+
 ## Wiring into a Nucleus app
 
 The agent owns its configuration type (`ExtensionConfig`) — the
