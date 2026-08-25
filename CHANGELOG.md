@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.3](https://github.com/jcsvwinston/orbit/compare/v1.7.2...v1.7.3) (2026-08-25)
+
+
+### Fixed
+
+* **ci:** el refresco de la matriz necesita checkout ([#245](https://github.com/jcsvwinston/orbit/issues/245)) ([b2eba1c](https://github.com/jcsvwinston/orbit/commit/b2eba1c0639bbeea59f1775cd2e5d9e030e52189))
+* **ci:** la matriz de módulos se refresca DESPUÉS del tag ([#234](https://github.com/jcsvwinston/orbit/issues/234)) ([71081a9](https://github.com/jcsvwinston/orbit/commit/71081a9bf59f73e7b7b07a2a70e23124b4b1ed87))
+
 ## [1.7.2](https://github.com/jcsvwinston/orbit/compare/v1.7.1...v1.7.2) (2026-08-25)
 
 
