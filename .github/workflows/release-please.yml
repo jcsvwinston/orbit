@@ -60,6 +60,16 @@ jobs:
       #
       # Regenerating AFTER the tag is the version that works: the tag exists,
       # the row is correct, and nothing is asked of the release PR.
+      # The release-please action does NOT check the repository out — it
+      # talks to the API. The refresh below runs git, so it needs a working
+      # tree, and it needs the full history plus tags for the generator to
+      # see every root release.
+      - name: check out for the matrix refresh
+        if: steps.release.outputs.releases_created == 'true'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: refresh the module matrix after a release
         if: steps.release.outputs.releases_created == 'true'
         run: |
