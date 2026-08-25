@@ -4,5 +4,5 @@
   "quarkdatasource": "0.2.13",
   "proto": "0.4.2",
   "agent": "0.5.16",
-  "server": "0.9.11"
+  "server": "0.9.12"
 }

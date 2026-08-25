@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.12](https://github.com/jcsvwinston/orbit/compare/server/v0.9.11...server/v0.9.12) (2026-08-25)
+
+
+### Fixed
+
+* **deps:** alinea los cinco módulos al set de parches ([#226](https://github.com/jcsvwinston/orbit/issues/226)) ([16c34d7](https://github.com/jcsvwinston/orbit/commit/16c34d76e956c7ec8df6cd9c221bcddac4cd43b2))
+* **server:** pina agent/v0.5.16 ([#240](https://github.com/jcsvwinston/orbit/issues/240)) ([48a58d0](https://github.com/jcsvwinston/orbit/commit/48a58d00e25b3551ffb2629222cd6cc7f7129727))
+
 ## [0.9.11](https://github.com/jcsvwinston/orbit/compare/server/v0.9.10...server/v0.9.11) (2026-08-25)
 
 
