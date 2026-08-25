@@ -2,6 +2,11 @@
 
 `github.com/jcsvwinston/orbit/quarkbridge`
 
+> **Framework floor.** This module builds against Nucleus and moves in
+> lockstep with the certified suite set. The exact version it requires is
+> in this module's `go.mod` — that file is the source of truth, so this
+> note cannot go stale.
+
 An opt-in [Quark](https://github.com/jcsvwinston/quark) middleware that publishes
 the SQL statements a Quark client executes onto a [Nucleus](https://github.com/jcsvwinston/nucleus)
 observability feed, so they appear in Orbit's live SQL view — correlated to the

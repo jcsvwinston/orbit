@@ -4,6 +4,11 @@ Standalone Nucleus admin observability server. Accepts agent
 connections (`AgentService.Stream`) and serves the admin web UI plus
 its `ControlService` API.
 
+> **Framework floor.** This module builds against Nucleus and moves in
+> lockstep with the certified suite set. The exact version it requires is
+> in this module's `go.mod` — that file is the source of truth, so this
+> note cannot go stale.
+
 ## Run it
 
 ```bash

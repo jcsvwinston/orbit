@@ -18,6 +18,11 @@ no separate asset deployment, no out-of-process sidecar, no database of its own.
 
 ---
 
+> **Framework floor.** Orbit builds against Nucleus and moves in lockstep
+> with the certified suite set. The exact version it requires is in
+> `go.mod` — that file is the source of truth, so this note cannot go
+> stale.
+
 ## Features
 
 | Module | What it does |
