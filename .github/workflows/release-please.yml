@@ -28,7 +28,8 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
-      - uses: googleapis/release-please-action@v4
+      - id: release
+        uses: googleapis/release-please-action@v4
         # release-please-action@v4 still declares Node 20 in its
         # action.yml. GitHub forces Node 20 JS actions to Node 24 on
         # 2026-06-02; this env var opts in early so the workflow keeps
@@ -39,3 +40,38 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+      # DX-26 follow-up: close the stale window instead of living with it.
+      #
+      # The module compatibility matrix is generated from git tags, and a tag
+      # does not exist until the release PR merges — the step above. So main's
+      # committed copy went stale at the exact moment a release landed, and
+      # the freshness check (which only runs on pull requests) slept until an
+      # unrelated PR tripped over it. In a multi-module cascade that means
+      # every remaining release PR of the round goes red for a reason that has
+      # nothing to do with its own change.
+      #
+      # The obvious alternative — teaching the generator to read
+      # .release-please-manifest.json so the release PR carries its own row —
+      # was tried and reverted: in a release PR the manifest already holds the
+      # NEW version, so the generator demanded a row the committed file did
+      # not have, turning the release PR itself red with no way to fix it
+      # (pushing a commit to a release-please branch stops its CI running).
+      #
+      # Regenerating AFTER the tag is the version that works: the tag exists,
+      # the row is correct, and nothing is asked of the release PR.
+      - name: refresh the module matrix after a release
+        if: steps.release.outputs.releases_created == 'true'
+        run: |
+          set -euo pipefail
+          git fetch --tags --quiet
+          bash scripts/ci/gen_module_matrix.sh
+          if git diff --quiet website/docs/reference/module-matrix.md; then
+            echo "module matrix already current"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add website/docs/reference/module-matrix.md
+          git commit -m "chore(docs): refresh the module matrix after the release tag"
+          git push
