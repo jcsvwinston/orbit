@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.7.0](https://github.com/jcsvwinston/orbit/compare/v1.6.7...v1.7.0) (2026-08-25)
+
+
+### Added
+
+* **docs:** orbit versiona su documentación ([#217](https://github.com/jcsvwinston/orbit/issues/217)) ([31b30c7](https://github.com/jcsvwinston/orbit/commit/31b30c7384fe47f460740b454beb802044b48633))
+
+
+### Fixed
+
+* **ci:** la matriz de módulos deja de tener ventana rancia tras cada tag ([#215](https://github.com/jcsvwinston/orbit/issues/215)) ([cd09255](https://github.com/jcsvwinston/orbit/commit/cd0925536976def3ca1c98fb18c4e2423be3a677))
+
+
+### Reverted
+
+* **ci:** la matriz vuelve a leer solo tags ([#220](https://github.com/jcsvwinston/orbit/issues/220)) ([9f6e322](https://github.com/jcsvwinston/orbit/commit/9f6e322defacd18e348cefb0925388322be38d54))
+
 ## [1.6.7](https://github.com/jcsvwinston/orbit/compare/v1.6.6...v1.6.7) (2026-08-25)
 
 
