@@ -108,9 +108,17 @@ Two runnable examples, both built by CI:
 `orbit.Config` is bound from the `modules.orbit.*` subtree of your `nucleus.yml`
 (or set it directly in Go). All fields are optional.
 
+**Precedence:** the YAML subtree is overlaid on whatever you passed to
+`orbit.Module(...)`, key by key — so Go supplies the base and `nucleus.yml`
+wins for the keys it sets. The one exception is `prefix`: the framework
+mounts the module before it binds the subtree, so `modules.orbit.prefix`
+cannot move the panel. Setting it to something other than the mount point
+fails at startup, naming both values, rather than serving a panel whose own
+links point elsewhere.
+
 | Key (`modules.orbit.*`) | Type | Default | Description |
 |---|---|---|---|
-| `prefix` | string | `/admin` | URL path orbit mounts under. |
+| `prefix` | string | `/admin` | URL path orbit mounts under. Must agree with the prefix passed to `orbit.Module(...)`; see the precedence note above. |
 | `title` | string | — | Heading shown in the UI. |
 | `environment` | string | — | Label shown in the UI (e.g. `production`). |
 | `bootstrap_username` | string | — | Admin user created on first boot. |

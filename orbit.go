@@ -30,6 +30,7 @@ import (
 	"github.com/jcsvwinston/nucleus/pkg/authz"
 	"github.com/jcsvwinston/nucleus/pkg/db"
 	"github.com/jcsvwinston/nucleus/pkg/nucleus"
+	"strings"
 )
 
 // DefaultPrefix is the URL path orbit mounts under when Config.Prefix is empty.
@@ -138,19 +139,31 @@ func Module(cfg Config) nucleus.ModuleSpec {
 	if cfg.AuditMaxSize <= 0 {
 		cfg.AuditMaxSize = defaultAuditMaxSize
 	}
-	m := &module{cfg: cfg}
+	m := newModule(cfg)
 
 	return nucleus.Module[Config]{
 		Name:   "orbit",
 		Prefix: cfg.Prefix,
 		Config: cfg,
 
-		OnStart: func(ctx context.Context, rt nucleus.Runtime, _ Config) error {
+		// The bound Config arrives here as the C parameter: the framework
+		// extracts the modules.orbit.* subtree and overlays it on the
+		// declared value. Orbit used to discard it and close over the
+		// construction-time config, so everything the README documents
+		// about configuring the panel from nucleus.yml was inert —
+		// including bootstrap_password (QCD-OR-1). Because the module IS
+		// mounted, the framework's unmounted-config warning stayed quiet
+		// too, so it was ignored in complete silence.
+		OnStart: func(ctx context.Context, rt nucleus.Runtime, bound Config) error {
+			if err := m.checkPrefixAgreement(bound); err != nil {
+				return err
+			}
+			m.cfg = m.effectiveConfig(bound)
 			m.rt = rt
 			if err := m.start(ctx); err != nil {
 				return err
 			}
-			rt.Logger().Info("orbit: admin panel ready", "prefix", cfg.Prefix)
+			rt.Logger().Info("orbit: admin panel ready", "prefix", m.cfg.Prefix)
 			return nil
 		},
 
@@ -349,4 +362,50 @@ func resolveAuthDB(alias string, defaultHandle *db.DB, handles map[string]*db.DB
 		return nil, "", fmt.Errorf("orbit: resolve auth database (alias %q): %w", alias, err)
 	}
 	return sqlDB, h.System(), nil
+}
+
+// newModule builds the module state from the construction-time config.
+func newModule(cfg Config) *module {
+	return &module{cfg: cfg}
+}
+
+// effectiveConfig resolves what the panel actually runs with.
+//
+// The framework binds modules.orbit.* ONTO the declared Config
+// (bindConfig starts from Module.Config and unmarshals the YAML subtree
+// over it), so YAML wins key by key and the Go value supplies the base.
+// This method exists to make that precedence explicit and testable rather
+// than implied — and to keep the mount prefix out of it, which
+// checkPrefixAgreement handles separately.
+func (m *module) effectiveConfig(bound Config) Config {
+	effective := bound
+	// The mount point was fixed when Module() ran; keep the panel's own
+	// notion of its prefix in agreement with it.
+	effective.Prefix = m.cfg.Prefix
+	if effective.MigrationsPath == "" {
+		effective.MigrationsPath = m.cfg.MigrationsPath
+	}
+	if effective.AuditMaxSize <= 0 {
+		effective.AuditMaxSize = m.cfg.AuditMaxSize
+	}
+	// DataSource is a Go value with no YAML representation, so it can only
+	// come from construction.
+	effective.DataSource = m.cfg.DataSource
+	return effective
+}
+
+// checkPrefixAgreement refuses a YAML prefix that disagrees with the mount
+// point.
+//
+// The framework reads Module.Prefix to mount the subtree BEFORE it binds
+// the YAML, so a different modules.orbit.prefix cannot move the panel. If
+// the hooks honoured it anyway, the panel would generate links pointing
+// somewhere it is not served — a worse outcome than ignoring the key. It
+// fails loudly instead, naming both values.
+func (m *module) checkPrefixAgreement(bound Config) error {
+	declared := strings.TrimSpace(bound.Prefix)
+	if declared == "" || declared == m.cfg.Prefix {
+		return nil
+	}
+	return fmt.Errorf("orbit: modules.orbit.prefix is %q but the module is mounted at %q — the mount point is fixed when the module is built, so this key cannot move it; set the prefix in orbit.Config(...) instead, or remove it from nucleus.yml", declared, m.cfg.Prefix)
 }
