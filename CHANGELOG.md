@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.7](https://github.com/jcsvwinston/orbit/compare/v1.6.6...v1.6.7) (2026-08-25)
+
+
+### Fixed
+
+* **deps:** publica la alineación a nucleus v1.12.0 ([#206](https://github.com/jcsvwinston/orbit/issues/206)) ([fd36b8f](https://github.com/jcsvwinston/orbit/commit/fd36b8fced103c2424309277a4e9cc8902a31e22))
+
 ## [1.6.6](https://github.com/jcsvwinston/orbit/compare/v1.6.5...v1.6.6) (2026-08-24)
 
 
