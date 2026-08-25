@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.16](https://github.com/jcsvwinston/orbit/compare/agent/v0.5.15...agent/v0.5.16) (2026-08-25)
+
+
+### Fixed
+
+* **deps:** alinea los cinco módulos al set de parches ([#226](https://github.com/jcsvwinston/orbit/issues/226)) ([16c34d7](https://github.com/jcsvwinston/orbit/commit/16c34d76e956c7ec8df6cd9c221bcddac4cd43b2))
+
 ## [0.5.15](https://github.com/jcsvwinston/orbit/compare/agent/v0.5.14...agent/v0.5.15) (2026-08-25)
 
 
