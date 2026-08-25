@@ -185,6 +185,13 @@ jobs:
       # before anyone noticed (QM5-3).
       - run: bash scripts/ci/check_docs_version_claims.sh
 
+      # El archivo versionado no se queda atrás: el snapshot más reciente no
+      # puede estar por debajo de la MINOR publicada. Una minor publicada sin
+      # snapshot deja al lector clavado en ella sin su documentación, y el
+      # sitio de la suite sirve la doc del TAG pinado — así que un snapshot
+      # añadido después del corte no llega hasta la release siguiente.
+      - run: bash scripts/ci/check_docs_archive_freshness.sh
+
       # DX-26: the module compatibility matrix is generated from the release
       # manifests at each root tag; a stale committed copy would answer
       # "which agent goes with this root?" wrongly, so drift fails CI.

@@ -57,6 +57,37 @@ aceptado sin sucesor.
   (archivo:línea), las decisiones D1–D3 y las preguntas abiertas O1–O3. **Su
   contrato es API pública → se congela en el v1.0 de Orbit.**
 
+## Documentación versionada
+
+El sitio de la suite sirve la doc ACTUAL de orbit bajo `/orbit/` y, bajo su
+ruta de versión, los snapshots de las minors publicadas. Orbit no tiene
+instalación propia de Docusaurus —su `website/` es solo `docs/`, y el sitio lo
+ensambla el paraguas (QADR-0003)— así que el corte lo hace
+`scripts/release/cut_docs_snapshot.sh` con operaciones de fichero: copia
+`website/docs`, escribe la sidebar versionada (una línea: la sidebar de orbit
+es AUTOGENERADA desde la estructura de carpetas) y añade la versión a
+`website/versions.json`.
+
+Reglas:
+
+- **Se corta antes de la release**, en el PR que la precede: el paraguas sirve
+  la doc del TAG pinado, así que un snapshot añadido después no llega al sitio
+  hasta la release siguiente.
+- **Y el último** de los cambios de documentación de la ronda: el snapshot es
+  una copia byte a byte servida para siempre bajo su ruta, de modo que un corte
+  anterior a una corrección de prosa congela el texto equivocado — y ningún
+  guard lo ve, porque la copia archivada es coherente consigo misma.
+- `check_docs_archive_freshness.sh` exige que el snapshot más reciente no quede
+  por debajo de la minor publicada. Un patch no necesita snapshot: la doc de la
+  minor sigue valiendo.
+
+**Hueco histórico declarado**: el archivo empieza en **1.6.7**, la versión
+publicada cuando se instaló el versionado. Las minors 1.0–1.5 no tienen
+snapshot y NO se van a fabricar retroactivamente — un snapshot inventado
+afirmaría que la doc de hoy fue la doc de entonces, que es exactamente la
+mentira que este mecanismo existe para impedir. El hueco se documenta; no se
+rellena.
+
 ## Contexto de suite
 
 - Secuenciación y esa integración: `../docs/adr/QADR-0005` (Nucleus→v1.0 primero,
@@ -69,6 +100,7 @@ aceptado sin sucesor.
   (`GOWORK=off`) por cada uno de los 6 módulos, tests en workspace, guard de
   pins internos (`check_internal_pins.sh`), Data Studio contra PG+MySQL
   reales, govulncheck, linter de voz de docs y coherencia de versión
-  (`check_docs_version_claims.sh`), y build de la UI. El lane `orbit-lockstep`
+  (`check_docs_version_claims.sh`), frescura del archivo versionado
+  (`check_docs_archive_freshness.sh`), y build de la UI. El lane `orbit-lockstep`
   de la suite (`quantum/.github/workflows/integration.yml`) prueba además
   orbit contra el nucleus pinado del workspace.
