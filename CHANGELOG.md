@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.2](https://github.com/jcsvwinston/orbit/compare/v1.7.1...v1.7.2) (2026-08-25)
+
+
+### Fixed
+
+* **deps:** alinea los cinco módulos al set de parches ([#226](https://github.com/jcsvwinston/orbit/issues/226)) ([16c34d7](https://github.com/jcsvwinston/orbit/commit/16c34d76e956c7ec8df6cd9c221bcddac4cd43b2))
+
 ## [1.7.1](https://github.com/jcsvwinston/orbit/compare/v1.7.0...v1.7.1) (2026-08-25)
 
 
