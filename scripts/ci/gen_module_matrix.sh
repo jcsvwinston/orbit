@@ -30,6 +30,26 @@ server/agent pair (with your fleet).
 | orbit (root) | proto | agent | server | quarkbridge | quarkdatasource |
 | --- | --- | --- | --- | --- | --- |
 HDR
+# The row for the release being CUT right now.
+#
+# The loop below reads tags, and a tag does not exist until the release PR
+# merges — so main's committed copy went stale the instant a root tag was
+# cut, and the freshness check (which only runs on PRs) slept until the next
+# unrelated PR tripped over it. That happened in two consecutive rounds.
+#
+# The working-tree manifest is the missing source: in a release PR
+# release-please has already written the version about to be cut, and the
+# five module entries already hold their just-published versions. Emitting
+# that row here makes the release PR carry its own row, so nothing is ever
+# stale afterwards. Between releases the version DOES have a tag and this
+# block emits nothing — no duplicate.
+pending=$(sed -nE 's/.*"\.": *"([^"]+)".*/\1/p' .release-please-manifest.json | head -1)
+if [ -n "$pending" ] && ! git rev-parse -q --verify "refs/tags/v$pending" >/dev/null; then
+  manifest=$(cat .release-please-manifest.json)
+  get() { printf '%s' "$manifest" | sed -nE "s/.*\"$1\": *\"([^\"]+)\".*/v\1/p" | head -1; }
+  echo "| \`v$pending\` | \`$(get proto)\` | \`$(get agent)\` | \`$(get server)\` | \`$(get quarkbridge)\` | \`$(get quarkdatasource)\` |"
+fi
+
 for tag in $(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V -r); do
   manifest=$(git show "$tag:.release-please-manifest.json" 2>/dev/null) || continue
   get() { printf '%s' "$manifest" | sed -nE "s/.*\"$1\": *\"([^\"]+)\".*/v\1/p" | head -1; }
