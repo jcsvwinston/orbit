@@ -30,25 +30,24 @@ server/agent pair (with your fleet).
 | orbit (root) | proto | agent | server | quarkbridge | quarkdatasource |
 | --- | --- | --- | --- | --- | --- |
 HDR
-# The row for the release being CUT right now.
+# NOTA sobre la ventana rancia (y sobre un arreglo que NO funciona).
 #
-# The loop below reads tags, and a tag does not exist until the release PR
-# merges — so main's committed copy went stale the instant a root tag was
-# cut, and the freshness check (which only runs on PRs) slept until the next
-# unrelated PR tripped over it. That happened in two consecutive rounds.
+# Las filas salen de los tags, y un tag no existe hasta que la release se
+# fusiona: en el instante del corte, la copia commiteada en main queda
+# desfasada, y el check de frescura —que solo corre en PRs— duerme hasta el
+# PR siguiente.
 #
-# The working-tree manifest is the missing source: in a release PR
-# release-please has already written the version about to be cut, and the
-# five module entries already hold their just-published versions. Emitting
-# that row here makes the release PR carry its own row, so nothing is ever
-# stale afterwards. Between releases the version DOES have a tag and this
-# block emits nothing — no duplicate.
-pending=$(sed -nE 's/.*"\.": *"([^"]+)".*/\1/p' .release-please-manifest.json | head -1)
-if [ -n "$pending" ] && ! git rev-parse -q --verify "refs/tags/v$pending" >/dev/null; then
-  manifest=$(cat .release-please-manifest.json)
-  get() { printf '%s' "$manifest" | sed -nE "s/.*\"$1\": *\"([^\"]+)\".*/v\1/p" | head -1; }
-  echo "| \`v$pending\` | \`$(get proto)\` | \`$(get agent)\` | \`$(get server)\` | \`$(get quarkbridge)\` | \`$(get quarkdatasource)\` |"
-fi
+# El arreglo "obvio" es leer también .release-please-manifest.json para que el
+# PR de release lleve su propia fila. Se probó y es PEOR: en el PR de release
+# el manifiesto ya dice la versión nueva, así que el generador pide una fila
+# que el fichero commiteado no tiene y el PR se pone ROJO — y no se puede
+# arreglar, porque empujar un commit a una rama de release-please la deja sin
+# disparar CI. Se cambia una ventana rancia inofensiva por una release
+# bloqueada.
+#
+# Se asume, por tanto, la ventana: dura de un tag al PR siguiente, el check la
+# caza siempre, y cerrarla es regenerar y commitear. Es un aviso legítimo, no
+# ruido.
 
 for tag in $(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V -r); do
   manifest=$(git show "$tag:.release-please-manifest.json" 2>/dev/null) || continue
