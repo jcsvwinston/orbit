@@ -17,6 +17,32 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.7.1 — 2026-08-25
+
+**Fixed**
+
+- **Configuring the panel from `nucleus.yml` now works.** The README has
+  documented a `modules.orbit.*` subtree — prefix, title, environment and
+  the bootstrap user's credentials — and the framework did its part: it
+  extracted that subtree and handed the bound configuration to the module.
+  Orbit discarded it and used the values passed in Go instead, so anyone
+  configuring the panel through YAML got the defaults with nothing to
+  indicate it. Because the module *is* mounted, the framework's warning
+  about configuration aimed at an unmounted module stayed quiet too.
+
+  It was ignored in complete silence, and that includes
+  `bootstrap_password`: someone who believed they had set the admin
+  password had not set it.
+
+  The YAML subtree is now overlaid on whatever you passed in Go, key by
+  key — Go supplies the base, YAML wins for what it sets.
+
+  One exception, and it fails loudly rather than surprising you: `prefix`.
+  The framework mounts the module before it reads the subtree, so that key
+  cannot move the panel. Setting it to something other than the mount point
+  stops startup and names both values, instead of serving a panel whose own
+  links point where it is not.
+
 ## v1.7.0 — 2026-08-25
 
 **Added**
