@@ -17,6 +17,27 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.6.7 — 2026-08-25
+
+**Changed**
+
+- **Dependency alignment.** The root panel, `server`, `agent` and
+  `quarkbridge` move to nucleus v1.12.0. That release freezes the
+  framework's default security posture against a measured baseline, adds
+  `nucleus doctor --check security` for the settings that load fine and
+  expose you anyway, and judges cookie-name prefixes when the configuration
+  file is read instead of at boot. `quarkdatasource` and `proto` do not
+  depend on the framework and are unchanged. No orbit behaviour changes.
+
+**Documentation**
+
+- Each module's README now states that it builds against Nucleus and points
+  at its own `go.mod` for the exact floor, rather than repeating a version
+  number that would go stale.
+
+Fleet tags cut alongside this release line: `agent`, `server` and
+`quarkbridge` (`proto` and `quarkdatasource` unchanged).
+
 ## v1.6.6 — 2026-08-24
 
 **Changed**
