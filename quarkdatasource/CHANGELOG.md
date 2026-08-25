@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.13](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v0.2.12...quarkdatasource/v0.2.13) (2026-08-25)
+
+
+### Fixed
+
+* **deps:** alinea los cinco módulos al set de parches ([#226](https://github.com/jcsvwinston/orbit/issues/226)) ([16c34d7](https://github.com/jcsvwinston/orbit/commit/16c34d76e956c7ec8df6cd9c221bcddac4cd43b2))
+
 ## [0.2.12](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v0.2.11...quarkdatasource/v0.2.12) (2026-08-24)
 
 
