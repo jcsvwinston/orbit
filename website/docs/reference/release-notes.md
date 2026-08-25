@@ -17,6 +17,17 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.7.2 — 2026-08-25
+
+**Changed**
+
+- **Dependency alignment.** Every module moves to nucleus v1.12.1 and quark
+  v1.6.1, both of which carry fixes from an external audit of the published
+  suite: a row-level-security preflight that certified a real cross-tenant
+  leak as correct, a module unable to declare its own mount root, and a
+  storage delete that reported success without removing anything. No orbit
+  behaviour changes.
+
 ## v1.7.1 — 2026-08-25
 
 **Fixed**
