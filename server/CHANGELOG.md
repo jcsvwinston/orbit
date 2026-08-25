@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.11](https://github.com/jcsvwinston/orbit/compare/server/v0.9.10...server/v0.9.11) (2026-08-25)
+
+
+### Fixed
+
+* **deps:** publica la alineación a nucleus v1.12.0 ([#206](https://github.com/jcsvwinston/orbit/issues/206)) ([fd36b8f](https://github.com/jcsvwinston/orbit/commit/fd36b8fced103c2424309277a4e9cc8902a31e22))
+* **server:** pina agent/v0.5.15 ([#211](https://github.com/jcsvwinston/orbit/issues/211)) ([679dc2f](https://github.com/jcsvwinston/orbit/commit/679dc2f01fbcebaccd6ffdcf288bd7d934a31f13))
+
 ## [0.9.10](https://github.com/jcsvwinston/orbit/compare/server/v0.9.9...server/v0.9.10) (2026-08-24)
 
 
