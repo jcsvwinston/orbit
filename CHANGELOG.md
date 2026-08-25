@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.1](https://github.com/jcsvwinston/orbit/compare/v1.7.0...v1.7.1) (2026-08-25)
+
+
+### Fixed
+
+* **orbit:** el binding modules.orbit.* surte efecto ([#222](https://github.com/jcsvwinston/orbit/issues/222)) ([2939955](https://github.com/jcsvwinston/orbit/commit/2939955741ead61bb95ed6ffae09bf9d52814165))
+
 ## [1.7.0](https://github.com/jcsvwinston/orbit/compare/v1.6.7...v1.7.0) (2026-08-25)
 
 
