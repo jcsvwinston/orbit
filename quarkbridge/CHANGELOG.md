@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.14](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v0.3.13...quarkbridge/v0.3.14) (2026-08-25)
+
+
+### Fixed
+
+* **deps:** publica la alineación a nucleus v1.12.0 ([#206](https://github.com/jcsvwinston/orbit/issues/206)) ([fd36b8f](https://github.com/jcsvwinston/orbit/commit/fd36b8fced103c2424309277a4e9cc8902a31e22))
+
 ## [0.3.13](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v0.3.12...quarkbridge/v0.3.13) (2026-08-24)
 
 
