@@ -17,6 +17,16 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.7.3 — 2026-08-25
+
+**Changed**
+
+- **Fleet modules aligned to the patched suite.** `agent`, `server`,
+  `quarkbridge` and `quarkdatasource` are republished against nucleus
+  v1.12.1 and quark v1.6.1, and `server` moves to `agent` v0.5.16. No orbit
+  behaviour changes; this release exists so the published module tags carry
+  the same dependency floor as the root.
+
 ## v1.7.2 — 2026-08-25
 
 **Changed**
