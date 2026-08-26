@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.16](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v0.3.15...quarkbridge/v0.3.16) (2026-08-26)
+
+
+### Fixed
+
+* **deps:** alinea a nucleus v1.13.0 ([#249](https://github.com/jcsvwinston/orbit/issues/249)) ([19d361a](https://github.com/jcsvwinston/orbit/commit/19d361a7e96d935ae1005c500c4d17b5063fa824))
+
 ## [0.3.15](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v0.3.14...quarkbridge/v0.3.15) (2026-08-25)
 
 
