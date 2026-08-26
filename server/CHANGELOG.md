@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.13](https://github.com/jcsvwinston/orbit/compare/server/v0.9.12...server/v0.9.13) (2026-08-26)
+
+
+### Fixed
+
+* **deps:** alinea a nucleus v1.13.0 ([#249](https://github.com/jcsvwinston/orbit/issues/249)) ([19d361a](https://github.com/jcsvwinston/orbit/commit/19d361a7e96d935ae1005c500c4d17b5063fa824))
+* **server:** pina agent/v0.5.17 ([#259](https://github.com/jcsvwinston/orbit/issues/259)) ([53b17b7](https://github.com/jcsvwinston/orbit/commit/53b17b72d2bc97a7b69ef8b9217876d269adbbb2))
+
 ## [0.9.12](https://github.com/jcsvwinston/orbit/compare/server/v0.9.11...server/v0.9.12) (2026-08-25)
 
 
