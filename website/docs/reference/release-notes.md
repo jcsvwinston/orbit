@@ -17,6 +17,15 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.7.4 — 2026-08-26
+
+**Changed**
+
+- **Aligned to nucleus v1.13.0**, which makes the parts of the framework
+  you are most likely to need to replace — storage backends, session
+  stores, authentication backends — pluggable by name. No orbit behaviour
+  changes.
+
 ## v1.7.3 — 2026-08-25
 
 **Changed**
