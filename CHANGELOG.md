@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.1](https://github.com/jcsvwinston/orbit/compare/v1.8.0...v1.8.1) (2026-08-27)
+
+
+### Fixed
+
+* **deps:** quarkdatasource pina el root v1.8.0 y el lag tolerado deja de ser silencioso ([#278](https://github.com/jcsvwinston/orbit/issues/278)) ([a405b92](https://github.com/jcsvwinston/orbit/commit/a405b92ef4aba363794ea519bb1524323d07ed5f))
+
 ## [1.8.0](https://github.com/jcsvwinston/orbit/compare/v1.7.4...v1.8.0) (2026-08-27)
 
 
