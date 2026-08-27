@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.10.0](https://github.com/jcsvwinston/orbit/compare/server/v0.9.13...server/v0.10.0) (2026-08-27)
+
+
+### Added
+
+* **admin:** el panel autentica por la cadena declarada, sin delegar la autorización ([#262](https://github.com/jcsvwinston/orbit/issues/262)) ([807578e](https://github.com/jcsvwinston/orbit/commit/807578e0ec72ac176f3ff19b105d7f29db259c58))
+
+
+### Fixed
+
+* **server:** pina agent/v0.6.0 ([#272](https://github.com/jcsvwinston/orbit/issues/272)) ([cc40027](https://github.com/jcsvwinston/orbit/commit/cc40027d71c4540aa82739a986bcbc37bb2cb623))
+
 ## [0.9.13](https://github.com/jcsvwinston/orbit/compare/server/v0.9.12...server/v0.9.13) (2026-08-26)
 
 
