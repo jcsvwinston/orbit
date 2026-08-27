@@ -58,22 +58,27 @@ latest_tag() {
 
 # root_edge_ok <ver> <want> — true when a root-edge pin `ver` (e.g. v1.4.3) may
 # stand against the latest root tag `want` (e.g. v1.5.0): same major, and `want`'s
-# minor is the same as or exactly one ahead of `ver`'s. Rejects a pin that is
+# minor is the same as or exactly one ahead of `ver`'s. Publishes the minor
+# distance in ROOT_EDGE_DELTA so the caller can tell a lag that is merely
+# TOLERATED (1) from one that is current (0) — see the warning below. Rejects a pin that is
 # ahead, a different major, or two-or-more minors behind (the OR5-3 rot). Pure
 # string parsing, no external tools. This is a NECESSARY condition, not a
 # sufficient one: the caller consults it ONLY for the root↔quarkdatasource edge
 # (see DATASOURCE_EDGE_MODULE) and ALSO requires the contract freeze to hold
 # (datasource_surface_frozen_across) before letting a lag stand.
+ROOT_EDGE_DELTA=""
 root_edge_ok() {
   local ver="${1#v}" want="${2#v}"
   local vmaj="${ver%%.*}" wmaj="${want%%.*}"
   local vrest="${ver#*.}" wrest="${want#*.}"
   local vmin="${vrest%%.*}" wmin="${wrest%%.*}"
+  ROOT_EDGE_DELTA=""
   # Numeric-only guard so a malformed version never passes.
   [[ "$vmaj$vmin$wmaj$wmin" =~ ^[0-9]+$ ]] || return 1
   [[ "$vmaj" == "$wmaj" ]] || return 1
   local delta=$(( wmin - vmin ))
-  (( delta == 0 || delta == 1 ))
+  (( delta == 0 || delta == 1 )) || return 1
+  ROOT_EDGE_DELTA="$delta"
 }
 
 # datasource_surface_frozen_across <ver> <want> — true when the frozen
@@ -147,6 +152,16 @@ for dir in "${MODULES[@]}"; do
       # ahead. This is the MAQ-3 narrowing.
       if datasource_surface_frozen_across "$ver" "$want"; then
         echo "ok   $gomod: $path $ver (root↔$DATASOURCE_EDGE_MODULE edge: lags $want by ≤1 minor, topologically forced; datasource contract frozen ADR-001, verified identical at both tags)"
+        # The lag is TOLERATED, not healthy. When it is a full minor behind,
+        # say so out loud on every run of the cycle: the silent green line is
+        # what let this pin rot to two minors behind the root (v1.6.0 against
+        # v1.8.0). The guard then goes red one cycle LATE — mid-certification,
+        # where unwinding it costs a new root tag and an umbrella re-pin
+        # (which is exactly what it cost). Warning during the cycle is the
+        # cheap moment to pay it.
+        if [[ "$ROOT_EDGE_DELTA" == "1" ]]; then
+          echo "WARN $gomod: $path $ver is a full minor behind $want — re-pin it THIS cycle; at two minors this guard fails and the fix needs a fresh root tag." >&2
+        fi
       else
         echo "FAIL $gomod: $path pinned at $ver — the root↔$DATASOURCE_EDGE_MODULE ≤1-minor lag is only allowed while the datasource contract is frozen (ADR-001), but its surface differs from $want. Bump the pin and 'go mod tidy'." >&2
         status=1
