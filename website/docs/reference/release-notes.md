@@ -17,6 +17,21 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.8.1 — 2026-08-27
+
+**Fixed**
+
+- **`orbit/quarkdatasource` now installs against the current root module.**
+  The optional Quark datasource module still required the root at `v1.6.0`,
+  two minor lines behind. Inside the repository nothing noticed — the
+  workspace resolves the root from the checkout — but anyone adding
+  `github.com/jcsvwinston/orbit/quarkdatasource` to a project pulled a root
+  two minors old alongside it. It now requires `v1.8.0`. The datasource
+  contract itself did not move (it has been frozen since v1.0), so nothing
+  you wrote against it changes.
+
+  Fleet tags cut alongside: `quarkdatasource/v0.2.14`.
+
 ## v1.8.0 — 2026-08-26
 
 **Added**
