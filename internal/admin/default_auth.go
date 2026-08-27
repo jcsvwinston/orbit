@@ -41,10 +41,28 @@ type DatabaseAdminAuth struct {
 	prefix  string
 	table   string
 	limiter *loginLimiter
+	// chain is the application's declared authentication chain, or nil.
+	// When set it decides WHO the credentials belong to; the admin table
+	// still decides whether that person may enter — see checkCredentials.
+	chain *auth.Chain
 }
 
 // NewDatabaseAdminAuth creates a DB-backed AdminAuth provider that validates
 // credentials against nucleus_admin_users (same table used by createuser).
+// WithAuthChain delegates credential verification to the application's
+// declared authentication chain (auth_backends), so an operator who
+// configured a corporate directory gets directory login in the admin panel
+// without orbit shipping an LDAP client.
+//
+// It delegates AUTHENTICATION only. Authorization stays here: a directory
+// user who is not in the admin table is refused. Skipping that would turn
+// an LDAP integration into a privilege escalation — every employee in the
+// company would become an administrator of this panel.
+func (a *DatabaseAdminAuth) WithAuthChain(chain *auth.Chain) *DatabaseAdminAuth {
+	a.chain = chain
+	return a
+}
+
 func NewDatabaseAdminAuth(sqlDB *sql.DB, session *auth.SessionManager, prefix string) *DatabaseAdminAuth {
 	return &DatabaseAdminAuth{
 		db:      sqlDB,
@@ -171,17 +189,7 @@ func (a *DatabaseAdminAuth) handleLoginPOST(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if found {
-		if !auth.CheckPassword(password, record.PasswordHash) {
-			a.limiter.fail(ipKey)
-			a.limiter.fail(userKey)
-			a.renderLoginPage(w, http.StatusUnauthorized, next, "Invalid credentials.", "")
-			return
-		}
-	} else {
-		// Equalize timing with the found-branch compare above; the result
-		// is deliberately discarded (see dummyPasswordHash).
-		auth.CheckPassword(password, dummyPasswordHash)
+	if !a.checkCredentials(r, username, password, record, found) {
 		a.limiter.fail(ipKey)
 		a.limiter.fail(userKey)
 		a.renderLoginPage(w, http.StatusUnauthorized, next, "Invalid credentials.", "")
@@ -420,4 +428,35 @@ func isAdminUserTableMissing(err error) bool {
 		strings.Contains(msg, "unknown table") ||
 		strings.Contains(msg, "invalid object name") ||
 		strings.Contains(msg, "ora-00942")
+}
+
+// checkCredentials verifies the password, through the application's
+// authentication chain when one is configured and against the admin
+// table's own hash otherwise.
+//
+// TWO SEPARATE QUESTIONS. The chain answers "who do these credentials
+// belong to"; `found` answers "may that person use this panel". Both must
+// be yes. Delegating the first without keeping the second would mean every
+// account in a corporate directory could administer this panel — an LDAP
+// integration turned into a privilege escalation.
+//
+// TIMING. The expensive work runs on EVERY path, before any decision is
+// returned. A user absent from the admin table costs the same as one
+// present with a wrong password, so the response time says nothing about
+// which of the two happened. Getting this order wrong would re-publish the
+// user enumerator that dummyPasswordHash exists to prevent — through the
+// chain instead of through bcrypt.
+func (a *DatabaseAdminAuth) checkCredentials(r *http.Request, username, password string, record adminLoginUserRecord, found bool) bool {
+	if a.chain != nil {
+		_, err := a.chain.Authenticate(r.Context(), username, password)
+		return err == nil && found
+	}
+
+	if found {
+		return auth.CheckPassword(password, record.PasswordHash)
+	}
+	// Equalize timing with the found-branch compare above; the result is
+	// deliberately discarded (see dummyPasswordHash).
+	auth.CheckPassword(password, dummyPasswordHash)
+	return false
 }

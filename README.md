@@ -103,6 +103,32 @@ Two runnable examples, both built by CI:
   a host app wired with the Orbit agent, shipping observability to a
   standalone [admin server](server) you run alongside it.
 
+## Signing in against your directory
+
+If the host application declares an authentication chain, the admin panel
+uses it:
+
+```yaml
+auth_backends: [ldap, local]
+```
+
+Orbit ships no LDAP client. It asks the framework's chain, so whatever the
+operator configured for the application applies to the panel too.
+
+**Authentication is delegated; authorization is not.** The chain answers
+who the credentials belong to; this panel's own admin table still decides
+whether that person may enter. A directory account that is not an
+administrator here is refused — otherwise connecting a corporate directory
+would quietly make every employee in the company an administrator of your
+admin panel.
+
+That also means a local admin row is not a bypass: with a chain configured,
+the chain still has to accept the password, so a revoked directory account
+cannot get in through a stale row.
+
+Without `auth_backends`, nothing changes: the panel validates against its
+own table exactly as before.
+
 ## Configuration
 
 `orbit.Config` is bound from the `modules.orbit.*` subtree of your `nucleus.yml`

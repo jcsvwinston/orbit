@@ -284,7 +284,12 @@ func (m *module) start(ctx context.Context) error {
 		DatabaseHandles: handles,
 		// Admin auth uses authSQL (default handle, or AuthDatabase when set) +
 		// the framework session.
-		Auth:         admin.NewDatabaseAdminAuth(authSQL, rt.Session(), m.cfg.Prefix),
+		// The panel authenticates through the application's declared chain
+		// when there is one (auth_backends), so an operator who configured
+		// a corporate directory gets directory login here too. Authorization
+		// stays local: a directory user absent from the admin table is
+		// still refused.
+		Auth:         admin.NewDatabaseAdminAuth(authSQL, rt.Session(), m.cfg.Prefix).WithAuthChain(rt.AuthChain()),
 		Session:      rt.Session(),
 		RBACEnforcer: rt.Authorizer(),
 		Store:        rt.Storage(),
