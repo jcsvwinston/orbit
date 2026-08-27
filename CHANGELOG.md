@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.0](https://github.com/jcsvwinston/orbit/compare/v1.7.4...v1.8.0) (2026-08-27)
+
+
+### Added
+
+* **admin:** el panel autentica por la cadena declarada, sin delegar la autorización ([#262](https://github.com/jcsvwinston/orbit/issues/262)) ([807578e](https://github.com/jcsvwinston/orbit/commit/807578e0ec72ac176f3ff19b105d7f29db259c58))
+
 ## [1.7.4](https://github.com/jcsvwinston/orbit/compare/v1.7.3...v1.7.4) (2026-08-26)
 
 
