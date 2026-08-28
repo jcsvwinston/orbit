@@ -6,7 +6,7 @@ description: What changed in each Orbit release, in plain terms.
 
 # Release notes
 
-The current release is **v1.8.2**. <!-- x-release-please-version -->
+The current release is **v1.8.3**. <!-- x-release-please-version -->
 
 Every heading below is a version of the **root module**
 (`github.com/jcsvwinston/orbit`) — the one an application mounts for the
@@ -16,6 +16,16 @@ The fleet modules (`agent`, `server`, `proto`) release independently with their
 own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
+
+## v1.8.3 — 2026-08-28
+
+**Changed**
+
+- **Aligned with Nucleus v1.15.1.** A packaging release of the framework —
+  it unblocked the LDAP provider's own release machinery — so nothing about
+  Orbit's behaviour changes with it. The `agent` (`v0.6.2`), `server`
+  (`v0.10.2`) and `quarkbridge` (`v0.4.2`) modules move with it, and
+  `server` pins the freshly cut `agent`.
 
 ## v1.8.2 — 2026-08-28
 

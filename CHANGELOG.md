@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.3](https://github.com/jcsvwinston/orbit/compare/v1.8.2...v1.8.3) (2026-08-28)
+
+
+### Fixed
+
+* **deps:** alinea los módulos de orbit con nucleus v1.15.1 ([#287](https://github.com/jcsvwinston/orbit/issues/287)) ([67de144](https://github.com/jcsvwinston/orbit/commit/67de144f301d044d6fa93282950270c71a5089e0))
+
 ## [1.8.2](https://github.com/jcsvwinston/orbit/compare/v1.8.1...v1.8.2) (2026-08-28)
 
 
