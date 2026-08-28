@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v0.4.1...quarkbridge/v0.4.2) (2026-08-28)
+
+
+### Fixed
+
+* **deps:** alinea los módulos de orbit con nucleus v1.15.1 ([#287](https://github.com/jcsvwinston/orbit/issues/287)) ([67de144](https://github.com/jcsvwinston/orbit/commit/67de144f301d044d6fa93282950270c71a5089e0))
+
 ## [0.4.1](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v0.4.0...quarkbridge/v0.4.1) (2026-08-28)
 
 
