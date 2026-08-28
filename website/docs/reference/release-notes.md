@@ -17,6 +17,18 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.8.4 — 2026-08-29
+
+**Changed**
+
+- **Aligned with Nucleus v1.16.0**, which moves the contracts a third-party
+  backend or storage provider implements into leaf packages and adds a
+  conformance suite for authentication backends. Nothing about Orbit's
+  behaviour changes with it: the names Orbit uses are aliases of the same
+  types. The `agent` (`v0.6.3`), `server` (`v0.10.3`) and `quarkbridge`
+  (`v0.4.3`) modules move with it, and `server` pins the freshly cut
+  `agent`.
+
 ## v1.8.3 — 2026-08-28
 
 **Changed**
