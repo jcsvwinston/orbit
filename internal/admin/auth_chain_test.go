@@ -37,7 +37,7 @@ func chainWith(t *testing.T, b *dirBackend) *auth.Chain {
 	t.Helper()
 	b.name = "dir-" + strings.ToLower(strings.ReplaceAll(t.Name(), "/", "-"))
 	name := b.Name()
-	if err := auth.RegisterBackend(name, func() (auth.Backend, error) { return b, nil }); err != nil {
+	if err := auth.RegisterBackend(name, func(auth.BackendConfig) (auth.Backend, error) { return b, nil }); err != nil {
 		t.Fatalf("register %s: %v", name, err)
 	}
 	chain, err := auth.NewChain(name)
