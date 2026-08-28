@@ -17,6 +17,16 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.8.3 — 2026-08-28
+
+**Changed**
+
+- **Aligned with Nucleus v1.15.1.** A packaging release of the framework —
+  it unblocked the LDAP provider's own release machinery — so nothing about
+  Orbit's behaviour changes with it. The `agent` (`v0.6.2`), `server`
+  (`v0.10.2`) and `quarkbridge` (`v0.4.2`) modules move with it, and
+  `server` pins the freshly cut `agent`.
+
 ## v1.8.2 — 2026-08-28
 
 **Changed**
