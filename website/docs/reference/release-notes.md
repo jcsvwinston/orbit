@@ -6,7 +6,7 @@ description: What changed in each Orbit release, in plain terms.
 
 # Release notes
 
-The current release is **v1.8.1**. <!-- x-release-please-version -->
+The current release is **v1.8.2**. <!-- x-release-please-version -->
 
 Every heading below is a version of the **root module**
 (`github.com/jcsvwinston/orbit`) — the one an application mounts for the
@@ -16,6 +16,22 @@ The fleet modules (`agent`, `server`, `proto`) release independently with their
 own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
+
+## v1.8.2 — 2026-08-28
+
+**Changed**
+
+- **Aligned with Nucleus v1.15.0.** The root module and the `agent`,
+  `server` and `quarkbridge` modules now require the framework release that
+  introduces per-backend authentication configuration and the LDAP provider.
+  No behaviour of Orbit changes with it: the panel already delegates
+  authentication to the framework's chain, and the boundary that matters is
+  unchanged — a directory user who is not an administrator here is still
+  refused, so connecting a corporate directory does not silently turn the
+  whole company into panel administrators.
+- The `agent` (`v0.6.1`), `server` (`v0.10.1`) and `quarkbridge` (`v0.4.1`)
+  modules move with it. `server` also pins the freshly cut `agent`, so
+  installing either one standalone resolves to the same set.
 
 ## v1.8.1 — 2026-08-27
 
