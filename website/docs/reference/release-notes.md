@@ -17,6 +17,17 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.8.5 — 2026-08-29
+
+**Changed**
+
+- **Aligned with Nucleus v1.16.1**, a packaging release of the framework: it
+  is the first one that cuts the LDAP provider module and the framework
+  release that contains it from the same commit, so installing either one
+  resolves to the same tree. Nothing about Orbit's behaviour changes with it.
+  The `agent` (`v0.6.4`), `server` (`v0.10.4`) and `quarkbridge` (`v0.4.4`)
+  modules move with it, and `server` pins the freshly cut `agent`.
+
 ## v1.8.4 — 2026-08-29
 
 **Changed**
