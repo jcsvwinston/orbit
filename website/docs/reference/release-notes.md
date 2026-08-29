@@ -6,7 +6,7 @@ description: What changed in each Orbit release, in plain terms.
 
 # Release notes
 
-The current release is **v1.8.6**. <!-- x-release-please-version -->
+The current release is **v1.8.7**. <!-- x-release-please-version -->
 
 Every heading below is a version of the **root module**
 (`github.com/jcsvwinston/orbit`) — the one an application mounts for the
@@ -16,6 +16,32 @@ The fleet modules (`agent`, `server`, `proto`) release independently with their
 own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
+
+## v1.8.7 — 2026-08-29
+
+**Changed**
+
+- **Aligned with Nucleus v1.17.1 and Quark v1.7.0.** Nothing in Orbit
+  changes; both are fixes in the products it requires.
+
+  Quark now recognises PostgreSQL errors reported by `lib/pq`, not only by
+  `pgx`. It classifies those errors to decide three things on its own —
+  whether to retry a transaction the engine chose as a deadlock victim,
+  whether a duplicate link row can be ignored, and whether a read should
+  fail over off an unreachable replica — and under `lib/pq` none of the
+  three recognised anything, silently. Quark also exports that
+  classification now, so an application can tell a duplicate key from any
+  other failure without importing a database driver, and it no longer
+  reports a scan error in place of the engine's own error when SQL Server
+  rejects an insert.
+
+  Nucleus v1.17.1 corrects its published documentation: archived versions
+  announced the wrong release number, and the version marker was leaking
+  into the page description shown in search results and link previews.
+
+  The `agent` (`v0.6.6`), `server` (`v0.10.6`), `quarkbridge` (`v0.4.6`)
+  and `quarkdatasource` (`v0.2.15`) modules move with it, and `server`
+  pins the freshly cut `agent`.
 
 ## v1.8.6 — 2026-08-29
 
