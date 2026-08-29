@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jcsvwinston/nucleus/pkg/auth"
+	"github.com/jcsvwinston/nucleus/pkg/db"
 )
 
 // BootstrapAdminConfig defines how the framework should initialize the first
@@ -303,22 +304,24 @@ func quoteBootstrapSQLString(raw string) string {
 	return "'" + strings.ReplaceAll(raw, "'", "''") + "'"
 }
 
+// isBootstrapDuplicateError reports whether the bootstrap INSERT was rejected
+// because the admin user already exists — the one failure the caller treats as
+// success rather than as a reason to abort startup.
+//
+// It delegates to db.IsUniqueViolation, which classifies on the code the
+// driver reports. It used to match English substrings of the driver's message
+// ("duplicate key", "unique constraint", "duplicate entry", "violates
+// unique"), and that was wrong on every server not running in English:
+// PostgreSQL, MySQL, Oracle and SQL Server all translate those messages, so a
+// PostgreSQL server with lc_messages='es_ES.utf8' answers
+//
+//	llave duplicada viola restricción de unicidad «nucleus_admin_users_username_key»
+//
+// in which none of the four substrings appears. The duplicate then went
+// unrecognised, EnsureBootstrapAdminUser returned an error, and orbit's
+// OnStart turned it into a failure to boot the application — which is what
+// happens to every replica but the winner when several start against an empty
+// admin table at once (see TestBootstrapDuplicate_* in the live test file).
 func isBootstrapDuplicateError(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	if strings.Contains(msg, "unique constraint") {
-		return true
-	}
-	if strings.Contains(msg, "duplicate key") {
-		return true
-	}
-	if strings.Contains(msg, "duplicate entry") {
-		return true
-	}
-	if strings.Contains(msg, "violates unique") {
-		return true
-	}
-	return false
+	return db.IsUniqueViolation(err)
 }
