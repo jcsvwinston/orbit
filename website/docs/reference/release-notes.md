@@ -17,6 +17,20 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.8.6 — 2026-08-29
+
+**Changed**
+
+- **Aligned with Nucleus v1.17.0**, which adds two extension seams —
+  federated sign-in for identity providers, and request interceptors that
+  register by name — and fixes a defect where installing a process-wide
+  SQL observer replaced any other. That last one matters here: Orbit's
+  live SQL view is fed by the framework's own observer, so an application
+  that watched SQL used to turn the panel's feed off by doing it. Nothing
+  in Orbit changes; the fix is in the framework it now requires. The
+  `agent` (`v0.6.5`), `server` (`v0.10.5`) and `quarkbridge` (`v0.4.5`)
+  modules move with it, and `server` pins the freshly cut `agent`.
+
 ## v1.8.5 — 2026-08-29
 
 **Changed**
