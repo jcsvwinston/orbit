@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.5](https://github.com/jcsvwinston/orbit/compare/server/v0.10.4...server/v0.10.5) (2026-08-29)
+
+
+### Fixed
+
+* **deps:** alinea los módulos de orbit con nucleus v1.17.0 ([#304](https://github.com/jcsvwinston/orbit/issues/304)) ([bd1362f](https://github.com/jcsvwinston/orbit/commit/bd1362fe0a4816a3823c4f7bb31e626686a0fba3))
+* **deps:** sube el pin de agent a v0.6.5 en server ([#309](https://github.com/jcsvwinston/orbit/issues/309)) ([9e791f3](https://github.com/jcsvwinston/orbit/commit/9e791f3d750dbdd5d62485749d2bf8c55b34c0b9))
+
 ## [0.10.4](https://github.com/jcsvwinston/orbit/compare/server/v0.10.3...server/v0.10.4) (2026-08-29)
 
 
