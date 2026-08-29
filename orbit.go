@@ -50,62 +50,62 @@ const defaultAuditMaxSize = 10000
 // is enforced by contracts/freeze_test.go.
 type Config struct {
 	// Prefix is the URL path orbit mounts under (default DefaultPrefix).
-	Prefix string `yaml:"prefix"`
+	Prefix string `yaml:"prefix" koanf:"prefix"`
 	// Title is the heading shown in the admin UI.
-	Title string `yaml:"title"`
+	Title string `yaml:"title" koanf:"title"`
 
 	// Bootstrap admin user, created on first start if it does not exist. When
 	// BootstrapPassword is empty, bootstrapping is skipped (the operator is
 	// expected to provision the admin user another way).
-	BootstrapUsername string `yaml:"bootstrap_username"`
-	BootstrapEmail    string `yaml:"bootstrap_email"`
-	BootstrapPassword string `yaml:"bootstrap_password"`
+	BootstrapUsername string `yaml:"bootstrap_username" koanf:"bootstrap_username"`
+	BootstrapEmail    string `yaml:"bootstrap_email" koanf:"bootstrap_email"`
+	BootstrapPassword string `yaml:"bootstrap_password" koanf:"bootstrap_password"`
 
 	// AuthDatabase optionally names a managed database alias whose handle backs
 	// admin authentication and the bootstrap user. Empty means use the default
 	// database. The panel itself (Data Studio etc.) always runs on the default
 	// handle; only the auth/bootstrap *sql.DB is redirected.
-	AuthDatabase string `yaml:"auth_database"`
+	AuthDatabase string `yaml:"auth_database" koanf:"auth_database"`
 
 	// Multi-tenant: set these to match the host application so the admin filters
 	// records by the request's resolved tenant. Leave disabled for single-tenant
 	// apps.
-	MultiTenantEnabled bool     `yaml:"multitenant_enabled"`
-	MultiTenantDefault string   `yaml:"multitenant_default"`
-	MultiTenantIDs     []string `yaml:"multitenant_ids"`
+	MultiTenantEnabled bool     `yaml:"multitenant_enabled" koanf:"multitenant_enabled"`
+	MultiTenantDefault string   `yaml:"multitenant_default" koanf:"multitenant_default"`
+	MultiTenantIDs     []string `yaml:"multitenant_ids" koanf:"multitenant_ids"`
 
 	// Environment is a label shown in the UI (e.g. "production"). Optional.
-	Environment string `yaml:"environment"`
+	Environment string `yaml:"environment" koanf:"environment"`
 	// MigrationsPath is the directory the migrations view reads (default "migrations").
-	MigrationsPath string `yaml:"migrations_path"`
+	MigrationsPath string `yaml:"migrations_path" koanf:"migrations_path"`
 	// AuditMaxSize caps the in-memory audit log ring buffer; zero or negative
 	// means the default of 10000 entries.
-	AuditMaxSize int `yaml:"audit_max_size"`
+	AuditMaxSize int `yaml:"audit_max_size" koanf:"audit_max_size"`
 
 	// Live view / cluster telemetry.
 
 	// LiveExcludePatterns lists path patterns excluded from the live HTTP
 	// capture feed (e.g. health checks, the admin's own polling endpoints).
-	LiveExcludePatterns []string `yaml:"live_exclude_patterns"`
+	LiveExcludePatterns []string `yaml:"live_exclude_patterns" koanf:"live_exclude_patterns"`
 	// ClusterEnabled turns on cluster-aware live telemetry: live request/SQL
 	// events are relayed between nodes over Redis so the feed shows the whole
 	// fleet, not just the local node. Best-effort — a relay failure never blocks
 	// startup.
-	ClusterEnabled bool `yaml:"cluster_enabled"`
+	ClusterEnabled bool `yaml:"cluster_enabled" koanf:"cluster_enabled"`
 	// ClusterRedisURL is the Redis URL backing the live telemetry relay.
-	ClusterRedisURL string `yaml:"cluster_redis_url"`
+	ClusterRedisURL string `yaml:"cluster_redis_url" koanf:"cluster_redis_url"`
 	// ClusterChannel is the Redis pub/sub channel the relay publishes on
 	// (default nucleus:admin:live:v1).
-	ClusterChannel string `yaml:"cluster_channel"`
+	ClusterChannel string `yaml:"cluster_channel" koanf:"cluster_channel"`
 	// ClusterNodeID is an explicit node identifier for this instance in the
 	// relay (defaults to the runtime identity).
-	ClusterNodeID string `yaml:"cluster_node_id"`
+	ClusterNodeID string `yaml:"cluster_node_id" koanf:"cluster_node_id"`
 	// ClusterToken is a shared secret the relay uses to reject untrusted
 	// (cross-tenant or spoofed) messages on the channel.
-	ClusterToken string `yaml:"cluster_token"`
+	ClusterToken string `yaml:"cluster_token" koanf:"cluster_token"`
 	// TraceURLTemplate is an external trace-explorer URL template surfaced in
 	// the UI; it supports a {trace_id} placeholder.
-	TraceURLTemplate string `yaml:"trace_url_template"`
+	TraceURLTemplate string `yaml:"trace_url_template" koanf:"trace_url_template"`
 
 	// DataSource overrides the source Data Studio browses and edits (ADR-001).
 	// Nil means the default: a Nucleus-backed adapter over the application's
@@ -114,7 +114,7 @@ type Config struct {
 	// (QADR-0006, Caso 2). Go-only wiring; not bindable from YAML. When set,
 	// the runtime field-metadata editor is disabled (it mutates the Nucleus
 	// registry, which a custom source does not necessarily have).
-	DataSource datasource.DataSource `yaml:"-"`
+	DataSource datasource.DataSource `yaml:"-" koanf:"-"`
 }
 
 // module holds the runtime-bound state captured in OnStart.
