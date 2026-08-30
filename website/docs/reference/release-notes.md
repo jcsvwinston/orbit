@@ -6,7 +6,7 @@ description: What changed in each Orbit release, in plain terms.
 
 # Release notes
 
-The current release is **v1.8.7**. <!-- x-release-please-version -->
+The current release is **v1.8.8**. <!-- x-release-please-version -->
 
 Every heading below is a version of the **root module**
 (`github.com/jcsvwinston/orbit`) — the one an application mounts for the
@@ -16,6 +16,59 @@ The fleet modules (`agent`, `server`, `proto`) release independently with their
 own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
+
+## v1.8.8 — 2026-08-30
+
+**Fixed**
+
+- **Every `modules.orbit.*` key except three now reaches the panel.** Orbit's
+  `Config` declared only `yaml` struct tags, and Nucleus binds a module's
+  configuration subtree with the `koanf` tag. Sixteen of its nineteen keys
+  were dropped in silence — including `bootstrap_username`,
+  `bootstrap_password`, `auth_database` and the whole multi-tenant block.
+  Exactly the single-word keys survived (`prefix`, `title`, `environment`),
+  because the binder falls back to matching the field name when it finds no
+  tag, and nothing in `snake_case` can map that way.
+
+  Nothing warned about this. The panel started, mounted where it was told,
+  and used the values the host application had passed in code, so an
+  operator configuring the panel from `nucleus.yml` saw a working admin that
+  was quietly ignoring most of the file.
+
+- **A duplicate bootstrap admin no longer aborts startup on a database that
+  does not speak English.** Orbit decides whether the first admin already
+  exists by classifying the error the driver returns, and it was matching
+  English fragments of the message. PostgreSQL, MySQL, Oracle and SQL Server
+  all translate those messages when the server runs in another language, so
+  the duplicate went unrecognised and the module failed to start — taking
+  the whole application with it.
+
+  To be precise about when this bites: a normal restart never reached it,
+  because the row count short-circuits before the insert. It fires on a
+  first boot with several replicas starting at once against an empty admin
+  table. One wins; the others used to crash-loop.
+
+**Changed**
+
+- **Aligned with Nucleus v1.19.0.** Three of its fixes land directly in what
+  the panel does.
+
+  The active-sessions view works again on a configured session store. Nucleus
+  wrapped every store installed from configuration in an adapter that carried
+  only three methods, and enumeration is discovered by type assertion — so
+  with `session_store: redis` or `sql` the view answered 200 with "not
+  supported" and zero rows while sessions were sitting in the store.
+
+  A backend that rejects now ends the login attempt instead of falling
+  through to the next one. This is what Orbit's own README has always
+  promised when it says a local admin row is not a bypass: a revoked
+  directory account can no longer get in through a stale local row. Note the
+  consequence, because it is not optional — a chain is a fallback for an
+  unreachable backend, not a way to serve two separate user populations.
+
+  And `storage.cleanup.enabled: false` now actually disables the cleaner,
+  which until this release deleted aged objects under the cleanup prefix on
+  every boot.
 
 ## v1.8.7 — 2026-08-29
 

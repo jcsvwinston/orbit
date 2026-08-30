@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.8.8](https://github.com/jcsvwinston/orbit/compare/v1.8.7...v1.8.8) (2026-08-30)
+
+
+### Fixed
+
+* **admin:** el duplicado del bootstrap se reconoce por código, no por el idioma del mensaje ([#320](https://github.com/jcsvwinston/orbit/issues/320)) ([074b9c4](https://github.com/jcsvwinston/orbit/commit/074b9c4464da7e06113d5dcdd442c664104e8620))
+* **config:** orbit.Config lleva tags koanf y sus claves dejan de caer en silencio ([#322](https://github.com/jcsvwinston/orbit/issues/322)) ([b4b8e9f](https://github.com/jcsvwinston/orbit/commit/b4b8e9fe1efee61faaf2c4ba48a250f74c8f5f14))
+* **deps:** sube nucleus a v1.19.0 ([#323](https://github.com/jcsvwinston/orbit/issues/323)) ([211b667](https://github.com/jcsvwinston/orbit/commit/211b6678227bd136b17f0c5d10080591836a53b6))
+
 ## [1.8.7](https://github.com/jcsvwinston/orbit/compare/v1.8.6...v1.8.7) (2026-08-29)
 
 
