@@ -17,6 +17,14 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.8.13 — 2026-08-30
+
+**Changed**
+
+- **The root module aligned on Nucleus v1.21.0.** The in-process panel now
+  builds against the certified framework release, completing the set
+  alignment the module releases began.
+
 ## v1.8.12 — 2026-08-30
 
 **Changed**
