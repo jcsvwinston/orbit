@@ -71,9 +71,11 @@ func (p *Panel) ConsumeObservability(bus *observability.Bus) func() {
 }
 
 // recordBusSQL converts a bus SQL event into the live view's shape and records
-// it in the ring buffer + the live event stream (mirrors onModelSQLQuery, but
-// sourced from the bus so it covers the whole application). The hook that
-// produced the event already truncated/sanitised Query and Args.
+// it in the ring buffer + the live event stream (mirrors recordEventBusSQL,
+// sourced from the experimental *observability.Bus instead of the first-party
+// EventBus). The hook that produced the event already truncated/sanitised
+// Query and Args (nucleus pkg/observability/hooks/sql.go) — orbit adds no
+// redaction of its own (see the AO-5 note in live.go).
 func (p *Panel) recordBusSQL(e *observability.SQLStatementEvent) {
 	if p == nil || p.live == nil || e == nil {
 		return

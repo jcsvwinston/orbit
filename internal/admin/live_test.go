@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/jcsvwinston/nucleus/pkg/db"
-	"github.com/jcsvwinston/nucleus/pkg/model"
+	"github.com/jcsvwinston/nucleus/pkg/nucleus"
 	"github.com/jcsvwinston/nucleus/pkg/observe"
 	"github.com/jcsvwinston/nucleus/pkg/router"
 )
@@ -148,11 +148,16 @@ func TestPanelLiveSnapshotEndpoint(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/health?password=secret", nil)
 	req = req.WithContext(observe.CtxWithRequestID(req.Context(), "req-2"))
 	panel.recordLiveRequest(req, http.StatusOK, 12*time.Millisecond)
-	panel.onModelSQLQuery(observe.CtxWithTraceID(context.Background(), "trace-2"), model.SQLQueryEvent{
+	// SQL reaches the live feed through the framework EventBus, whose args
+	// arrive ALREADY masked by nucleus's SQL hook (AO-5: orbit carries no
+	// redaction of its own).
+	panel.recordEventBusSQL(nucleus.SQLEvent{
+		EmittedAt: time.Now(),
+		TraceID:   "trace-2",
 		ModelName: "AdminUser",
 		Operation: "select.list",
 		Query:     "SELECT id, email FROM admin_users WHERE email = ? LIMIT ?",
-		Args:      []interface{}{"admin@example.com", 25},
+		Args:      []string{"string(17):***", "25"},
 		Duration:  9 * time.Millisecond,
 	})
 
@@ -180,6 +185,8 @@ func TestPanelLiveSnapshotEndpoint(t *testing.T) {
 	if payload.SQLBuffer.Stored == 0 {
 		t.Fatalf("expected sql buffer to store events")
 	}
+	// The feed serves the framework-masked args untouched — the mask must
+	// survive the trip through the ring buffer and the snapshot endpoint.
 	if len(payload.Queries[0].Args) == 0 || payload.Queries[0].Args[0] != "string(17):***" {
 		t.Fatalf("expected redacted string sql args, got %#v", payload.Queries[0].Args)
 	}
@@ -244,24 +251,27 @@ func TestPanelLiveSnapshotSupportsIndependentLimits(t *testing.T) {
 	panel.recordLiveRequest(reqB, http.StatusOK, 4*time.Millisecond)
 	panel.recordLiveRequest(reqC, http.StatusOK, 5*time.Millisecond)
 
-	panel.onModelSQLQuery(context.Background(), model.SQLQueryEvent{
+	panel.recordEventBusSQL(nucleus.SQLEvent{
+		EmittedAt: time.Now(),
 		ModelName: "AdminUser",
 		Operation: "select",
 		Query:     "SELECT 1",
 		Duration:  1 * time.Millisecond,
 	})
-	panel.onModelSQLQuery(context.Background(), model.SQLQueryEvent{
+	panel.recordEventBusSQL(nucleus.SQLEvent{
+		EmittedAt: time.Now(),
 		ModelName: "AdminUser",
 		Operation: "insert",
 		Query:     "INSERT INTO admin_users (email,name,active) VALUES (?,?,?)",
-		Args:      []interface{}{"a@example.com", "A", true},
+		Args:      []string{"string(13):***", "string(1):***", "true"},
 		Duration:  2 * time.Millisecond,
 	})
-	panel.onModelSQLQuery(context.Background(), model.SQLQueryEvent{
+	panel.recordEventBusSQL(nucleus.SQLEvent{
+		EmittedAt: time.Now(),
 		ModelName: "AdminUser",
 		Operation: "update",
 		Query:     "UPDATE admin_users SET name = ? WHERE id = ?",
-		Args:      []interface{}{"B", 1},
+		Args:      []string{"string(1):***", "1"},
 		Duration:  3 * time.Millisecond,
 	})
 
@@ -291,20 +301,21 @@ func TestPanelLiveSnapshotSupportsIndependentLimits(t *testing.T) {
 	}
 }
 
-func TestPanelOnModelSQLQueryPublishesEvent(t *testing.T) {
+func TestPanelEventBusSQLPublishesEvent(t *testing.T) {
 	panel, cleanup := setupPanelForTest(t, db.EngineSQL)
 	defer cleanup()
 
 	busCh, unsubscribe := panel.live.bus.subscribe()
 	defer unsubscribe()
 
-	ctx := observe.CtxWithRequestID(context.Background(), "req-sql-1")
-	ctx = observe.CtxWithTraceID(ctx, "trace-sql-1")
-	panel.onModelSQLQuery(ctx, model.SQLQueryEvent{
+	panel.recordEventBusSQL(nucleus.SQLEvent{
+		EmittedAt: time.Now(),
+		RequestID: "req-sql-1",
+		TraceID:   "trace-sql-1",
 		ModelName: "AdminUser",
 		Operation: "update",
 		Query:     "UPDATE admin_users SET name = ? WHERE id = ?",
-		Args:      []interface{}{"Alice", 7},
+		Args:      []string{"string(5):***", "7"},
 		Duration:  7 * time.Millisecond,
 	})
 
@@ -316,6 +327,8 @@ func TestPanelOnModelSQLQueryPublishesEvent(t *testing.T) {
 		if event.SQL == nil || event.SQL.TraceID != "trace-sql-1" {
 			t.Fatalf("expected sql event with trace id, got %#v", event.SQL)
 		}
+		// Args come from the framework hook already masked; the feed must
+		// pass the mask through untouched (AO-5: no orbit-side redaction).
 		if len(event.SQL.Args) == 0 || event.SQL.Args[0] != "string(5):***" {
 			t.Fatalf("expected first arg redacted, got %#v", event.SQL.Args)
 		}
