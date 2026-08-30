@@ -17,6 +17,17 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.8.12 — 2026-08-30
+
+**Changed**
+
+- **Fleet and datasource modules aligned on the current set.** `agent`,
+  `server`, `quarkbridge` and `quarkdatasource` now require Nucleus v1.21.0
+  and Quark v1.7.1, up from the previous set. The root module carries no code
+  change; this release exists to seal the aligned module tags as ancestors of
+  a certifiable root, which is what lets the suite certify with no declared
+  cross-repo lag.
+
 ## v1.8.11 — 2026-08-30
 
 **Fixed**
