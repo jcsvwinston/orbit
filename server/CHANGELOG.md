@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.8](https://github.com/jcsvwinston/orbit/compare/server/v0.10.7...server/v0.10.8) (2026-08-30)
+
+
+### Fixed
+
+* **deps:** alinea server al set (nucleus v1.21.0, agent v0.6.8) ([#344](https://github.com/jcsvwinston/orbit/issues/344)) ([ffb41c4](https://github.com/jcsvwinston/orbit/commit/ffb41c4ae99b37b450aa129e32484a8e3b91cb04))
+
 ## [0.10.7](https://github.com/jcsvwinston/orbit/compare/server/v0.10.6...server/v0.10.7) (2026-08-30)
 
 
