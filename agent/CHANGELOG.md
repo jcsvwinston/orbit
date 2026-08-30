@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.7](https://github.com/jcsvwinston/orbit/compare/agent/v0.6.6...agent/v0.6.7) (2026-08-30)
+
+
+### Fixed
+
+* **deps:** alinea todos los módulos con nucleus v1.20.1 ([#326](https://github.com/jcsvwinston/orbit/issues/326)) ([a1efcf6](https://github.com/jcsvwinston/orbit/commit/a1efcf6ca3e6f88b2d2e4da3bb3ef0c4bfe62394))
+
 ## [0.6.6](https://github.com/jcsvwinston/orbit/compare/agent/v0.6.5...agent/v0.6.6) (2026-08-29)
 
 
