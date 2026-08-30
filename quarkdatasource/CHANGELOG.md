@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.16](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v0.2.15...quarkdatasource/v0.2.16) (2026-08-30)
+
+
+### Fixed
+
+* **deps:** quarkdatasource pina orbit v1.8.10 (minor vigente), no v1.8.0 ([#335](https://github.com/jcsvwinston/orbit/issues/335)) ([42f5146](https://github.com/jcsvwinston/orbit/commit/42f514620d2811a9d7363f0484b9290b0749b685))
+
 ## [0.2.15](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v0.2.14...quarkdatasource/v0.2.15) (2026-08-29)
 
 
