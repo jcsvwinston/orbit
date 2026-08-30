@@ -6,7 +6,7 @@ description: What changed in each Orbit release, in plain terms.
 
 # Release notes
 
-The current release is **v1.8.9**. <!-- x-release-please-version -->
+The current release is **v1.8.10**. <!-- x-release-please-version -->
 
 Every heading below is a version of the **root module**
 (`github.com/jcsvwinston/orbit`) — the one an application mounts for the
@@ -16,6 +16,22 @@ The fleet modules (`agent`, `server`, `proto`) release independently with their
 own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
+
+## v1.8.10 — 2026-08-30
+
+**Changed**
+
+- **Every module aligned on Nucleus v1.20.1.** Nothing in Orbit changes.
+  Until this release the root module tracked the framework while `agent`,
+  `server` and `quarkbridge` were still pinned three releases back, at
+  v1.17.1. That is invisible to an application — Go's minimal version
+  selection raises the requirement to whatever the application itself asks
+  for — but it is exactly what the suite manifest refuses to certify, and
+  for a reason: a module pinned to a framework release nobody tests it
+  against is a compatibility claim nobody has checked.
+
+  Cut alongside it: `agent` v0.6.7, `server` v0.10.7 and `quarkbridge`
+  v0.4.7, in that order, so each module tag is an ancestor of this one.
 
 ## v1.8.9 — 2026-08-30
 
