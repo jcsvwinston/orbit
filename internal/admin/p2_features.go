@@ -150,14 +150,26 @@ func (p *Panel) handleListStorage(c *router.Context) error {
 	}
 
 	if p.store != nil {
-		files, err := listConfiguredStorage(r.Context(), p.store, storagePath)
+		// Confine the caller-supplied path to the browse root BEFORE it
+		// reaches the store. This was the store branch's only missing
+		// gate: normalizeStorageBrowsePath existed and was tested, but
+		// nothing called it, so store.List got the raw query and a
+		// storage_view session could enumerate any bucket prefix
+		// (TestListStorageConfinesPathToRoot). The filesystem branch
+		// below already confined with its own Abs+HasPrefix check.
+		confined, err := normalizeStorageBrowsePath(storagePath)
+		if err != nil {
+			return gferrors.Forbidden(err.Error())
+		}
+
+		files, err := listConfiguredStorage(r.Context(), p.store, confined)
 		if err != nil {
 			return err
 		}
 
 		return c.JSON(http.StatusOK, map[string]interface{}{
 			"backend": "store",
-			"path":    storagePath,
+			"path":    confined,
 			"files":   files,
 			"total":   len(files),
 		})
