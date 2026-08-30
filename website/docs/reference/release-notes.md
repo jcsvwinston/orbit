@@ -6,7 +6,7 @@ description: What changed in each Orbit release, in plain terms.
 
 # Release notes
 
-The current release is **v1.8.10**. <!-- x-release-please-version -->
+The current release is **v1.8.11**. <!-- x-release-please-version -->
 
 Every heading below is a version of the **root module**
 (`github.com/jcsvwinston/orbit`) — the one an application mounts for the
@@ -16,6 +16,35 @@ The fleet modules (`agent`, `server`, `proto`) release independently with their
 own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
+
+## v1.8.11 — 2026-08-30
+
+**Fixed**
+
+- **The storage browser confines the caller's path to the upload root.** With
+  a storage backend configured — the production path — the panel's file
+  browser passed the requested path straight to the store, so a session with
+  `storage_view` could list any prefix of the bucket, traversal (`../`) and
+  sibling prefixes included. The path is now confined the same way the
+  filesystem branch already was; a path outside the root is refused. The
+  guard function that promised this had existed all along but nothing called
+  it.
+
+**Changed**
+
+- **`quarkdatasource` pins the current root minor (v1.8.10, not v1.8.0).** The
+  edge from `quarkdatasource` to the root is topologically forced to lag, and
+  the pin guard tolerates one minor of it — but the pin had drifted ten
+  patches back within the same minor, one root minor bump away from failing a
+  certification mid-flight. Raised to the current minor to keep the edge
+  current.
+
+**Documentation**
+
+- Two archived documentation snapshots (v1.7.0 and v1.8.0) announced an
+  earlier version than their own, and still did so on the published site. Both
+  were corrected, and a guard — ported from the framework, which Orbit lacked
+  — now asserts every snapshot announces its own version.
 
 ## v1.8.10 — 2026-08-30
 

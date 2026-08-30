@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.11](https://github.com/jcsvwinston/orbit/compare/v1.8.10...v1.8.11) (2026-08-30)
+
+
+### Fixed
+
+* **admin:** el navegador de storage confina la ruta al root cuando hay Store configurado ([#334](https://github.com/jcsvwinston/orbit/issues/334)) ([a6c0f0c](https://github.com/jcsvwinston/orbit/commit/a6c0f0c00d718bc8b956fc169f97c7fe140f6d04))
+
 ## [1.8.10](https://github.com/jcsvwinston/orbit/compare/v1.8.9...v1.8.10) (2026-08-30)
 
 
