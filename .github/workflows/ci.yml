@@ -185,6 +185,13 @@ jobs:
       # before anyone noticed (QM5-3).
       - run: bash scripts/ci/check_docs_version_claims.sh
 
+      # check_docs_version_claims only inspects website/docs/ (the current
+      # tree). The archived snapshots drifted the same way and nothing
+      # watched them: version-1.7.0 announced "v1.6.7" and version-1.8.0
+      # "v1.7.4", stale in production. This guard (ported from nucleus)
+      # asserts every snapshot announces its own version.
+      - run: bash scripts/ci/check_versioned_docs_markers.sh
+
       # El archivo versionado no se queda atrás: el snapshot más reciente no
       # puede estar por debajo de la MINOR publicada. Una minor publicada sin
       # snapshot deja al lector clavado en ella sin su documentación, y el
