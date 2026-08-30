@@ -17,7 +17,7 @@ The tables below group the keys by what they affect.
 | Key (`modules.orbit.*`) | Type | Default | Description |
 |---|---|---|---|
 | `prefix` | string | `/admin` | URL path Orbit mounts under. |
-| `title` | string | — | Heading shown in the UI. |
+| `title` | string | `Orbit` | Heading shown in the UI: the login page, the sidebar, and the browser tab. |
 | `environment` | string | — | Label shown in the UI (e.g. `production`). |
 
 ## The bootstrap admin user
@@ -26,7 +26,7 @@ The tables below group the keys by what they affect.
 |---|---|---|---|
 | `bootstrap_username` | string | — | Admin user created on first boot. |
 | `bootstrap_email` | string | — | Email for the bootstrap user. |
-| `bootstrap_password` | string | — | Password for the bootstrap user. Leave it empty to skip bootstrapping entirely and provision the admin user another way, e.g. `nucleus createuser`. |
+| `bootstrap_password` | string | — | Password for the bootstrap user. Leave it empty to skip creating the user and provision the admin account another way, e.g. `nucleus createuser`. The `nucleus_admin_users` schema is created at mount either way, so `createuser` works without ever setting a bootstrap password. |
 | `auth_database` | string | app default | Database alias whose handle backs admin login and the bootstrap user — point it at a dedicated database to keep the admin user store away from application data. Only login and bootstrapping are redirected; the panel itself always reads through the application's default handle. |
 
 ## Data and views
@@ -34,7 +34,7 @@ The tables below group the keys by what they affect.
 | Key (`modules.orbit.*`) | Type | Default | Description |
 |---|---|---|---|
 | `migrations_path` | string | `migrations` | Directory the migrations view reads. |
-| `audit_max_size` | int | `10000` | In-memory audit-log ring size. |
+| `audit_max_size` | int | `10000` | In-memory audit-log ring size. The ring is per process and not persisted — a restart clears it (see [Audit log](./features.md#audit-log)). |
 | `multitenant_enabled` | bool | `false` | Filter records by the request's resolved tenant. |
 | `multitenant_default` | string | — | Default tenant when none is resolved. |
 | `multitenant_ids` | []string | — | Known tenant IDs for the selector UI. |

@@ -39,8 +39,9 @@ func main() {
             Title:             "Acme Admin",
             BootstrapUsername: "admin",
             BootstrapEmail:    "admin@acme.test",
-            // When BootstrapPassword is empty, bootstrapping is skipped —
-            // provision the admin user another way (e.g. nucleus createuser).
+            // When BootstrapPassword is empty, no admin user is created —
+            // provision it another way (e.g. nucleus createuser). The admin
+            // users schema is created at mount either way.
             BootstrapPassword: os.Getenv("ADMIN_BOOTSTRAP_PASSWORD"),
         })).
         Build()
@@ -63,14 +64,16 @@ that prefix, so the panel is gated from the first request.
 
 ## The bootstrap user
 
-`BootstrapPassword` decides whether Orbit creates an admin user at all:
+Orbit creates the `nucleus_admin_users` schema every time it mounts.
+`BootstrapPassword` only decides whether an admin **user** is created in it:
 
 - **Set** — on first start Orbit creates the user named by
   `BootstrapUsername`, unless that user already exists.
-- **Empty** — bootstrapping is **skipped** and no admin user is created.
-  Provision one another way, for example with the framework's
-  `nucleus createuser` command against the same database, before you try to
-  sign in.
+- **Empty** — no admin user is created. Provision one another way, for
+  example with the framework's `nucleus createuser` command against the same
+  database, before you try to sign in. Because the schema already exists
+  after the first start, `createuser` works right away — no bootstrap
+  password is ever required.
 
 Reading the password from the environment, as the snippet above does, keeps it
 out of your source tree.

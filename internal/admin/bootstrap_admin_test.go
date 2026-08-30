@@ -152,6 +152,61 @@ func TestEnsureBootstrapAdminUser_SQLite(t *testing.T) {
 	}
 }
 
+// TestEnsureBootstrapAdminUsersSchema_CreatesTableWithoutUser covers the
+// secure-default onboarding (OH-1): with an empty bootstrap password orbit
+// still materializes the nucleus_admin_users table at mount — inserting
+// nothing — so `nucleus createuser` finds the schema and can provision the
+// first admin. Before this, an empty password skipped the schema entirely and
+// the operator was locked out: no login (no user, no table) and createuser
+// refusing with "table nucleus_admin_users not found".
+func TestEnsureBootstrapAdminUsersSchema_CreatesTableWithoutUser(t *testing.T) {
+	t.Parallel()
+
+	database, err := db.New(db.Config{DatabaseURL: "sqlite://:memory:"}, nil)
+	if err != nil {
+		t.Fatalf("db.New: %v", err)
+	}
+	defer database.Close()
+	sqlDB, err := database.SqlDB()
+	if err != nil {
+		t.Fatalf("SqlDB: %v", err)
+	}
+
+	if err := EnsureBootstrapAdminUsersSchema(context.Background(), sqlDB, database.System()); err != nil {
+		t.Fatalf("EnsureBootstrapAdminUsersSchema: %v", err)
+	}
+
+	// The table exists and holds no users — the schema call must never
+	// invent an account.
+	var count int
+	if err := sqlDB.QueryRow("SELECT COUNT(*) FROM " + defaultAdminUsersTable).Scan(&count); err != nil {
+		t.Fatalf("count users (table should exist): %v", err)
+	}
+	if count != 0 {
+		t.Errorf("user count after schema-only call: got %d want 0", count)
+	}
+
+	// Idempotent: calling again against the existing table is a no-op.
+	if err := EnsureBootstrapAdminUsersSchema(context.Background(), sqlDB, database.System()); err != nil {
+		t.Fatalf("EnsureBootstrapAdminUsersSchema (second): %v", err)
+	}
+
+	// A user provisioned externally (what createuser does) is then usable —
+	// the schema the panel's auth reads is the same one this call created.
+	res, err := EnsureBootstrapAdminUser(context.Background(), sqlDB, BootstrapAdminConfig{
+		Username: "ops",
+		Email:    "ops@example.com",
+		Password: "supersecret",
+		System:   database.System(),
+	})
+	if err != nil {
+		t.Fatalf("EnsureBootstrapAdminUser after schema-only call: %v", err)
+	}
+	if !res.Created {
+		t.Error("expected the externally-provisioned user to be created")
+	}
+}
+
 // TestBootstrapInsertPlaceholders asserts the per-dialect bind
 // placeholder styles (mirroring pkg/db's schema_drift.go) and that an
 // unknown/empty dialect returns nil so the caller uses the inline-literal

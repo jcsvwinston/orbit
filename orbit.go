@@ -229,6 +229,17 @@ func (m *module) start(ctx context.Context) error {
 		}
 	}
 
+	// The admin users schema is materialized on EVERY mount, independent of the
+	// bootstrap password: with an empty password the operator provisions the
+	// admin account another way (e.g. `nucleus createuser`), and that path
+	// needs the table to exist. Gating the schema on the password left the
+	// documented secure default (empty password) with no table, no way to log
+	// in, and a createuser error whose advice ("start the app once to create
+	// the schema") did not work.
+	if err := admin.EnsureBootstrapAdminUsersSchema(ctx, authSQL, authSystem); err != nil {
+		return fmt.Errorf("orbit: ensure admin users schema: %w", err)
+	}
+
 	// Provision the bootstrap admin user (dialect-aware) before building the panel.
 	if m.cfg.BootstrapPassword != "" {
 		if _, err := admin.EnsureBootstrapAdminUser(ctx, authSQL, admin.BootstrapAdminConfig{
@@ -289,7 +300,9 @@ func (m *module) start(ctx context.Context) error {
 		// a corporate directory gets directory login here too. Authorization
 		// stays local: a directory user absent from the admin table is
 		// still refused.
-		Auth:         admin.NewDatabaseAdminAuth(authSQL, rt.Session(), m.cfg.Prefix).WithAuthChain(rt.AuthChain()),
+		// WithTitle propagates the configured Title to the login page, which
+		// renders before any authenticated API call can serve it.
+		Auth:         admin.NewDatabaseAdminAuth(authSQL, rt.Session(), m.cfg.Prefix).WithAuthChain(rt.AuthChain()).WithTitle(m.cfg.Title),
 		Session:      rt.Session(),
 		RBACEnforcer: rt.Authorizer(),
 		Store:        rt.Storage(),

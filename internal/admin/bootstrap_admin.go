@@ -121,6 +121,24 @@ func EnsureBootstrapAdminUser(ctx context.Context, sqlDB *sql.DB, cfg BootstrapA
 	return result, nil
 }
 
+// EnsureBootstrapAdminUsersSchema guarantees the admin users table exists
+// WITHOUT inserting any user. orbit's mount calls it unconditionally, so the
+// schema exists even when BootstrapPassword is empty and the operator
+// provisions the admin account another way (e.g. `nucleus createuser`, whose
+// own error message tells them to "start the app once to create the schema" —
+// advice that used to be false, because the schema was only created when a
+// bootstrap password was set, leaving the secure-default onboarding with no
+// way in).
+func EnsureBootstrapAdminUsersSchema(ctx context.Context, sqlDB *sql.DB, system string) error {
+	if sqlDB == nil {
+		return fmt.Errorf("admin bootstrap: nil sql db")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return ensureBootstrapAdminUsersTable(ctx, sqlDB, system)
+}
+
 func ensureBootstrapAdminUsersTable(ctx context.Context, sqlDB *sql.DB, system string) error {
 	query := bootstrapAdminUsersTableDDL(system)
 	if _, err := sqlDB.ExecContext(ctx, query); err != nil {
