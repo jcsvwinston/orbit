@@ -34,6 +34,12 @@ type adminAuthContextKey struct{}
 
 const adminSessionTouchKey = "__nucleus_admin_seen_at"
 
+// DefaultTitle is the product name shown in the UI when no Title is
+// configured. The panel is Orbit — it used to introduce itself as
+// "Nucleus Admin", which left the product invisible in its own interface
+// (OH-2/PR-ORB-01).
+const DefaultTitle = "Orbit"
+
 // DatabaseRuntimeInfo describes one configured DB alias for admin observability.
 type DatabaseRuntimeInfo struct {
 	Alias     string `json:"alias"`
@@ -134,8 +140,13 @@ type Panel struct {
 	observCancel    func()
 	observStopOnce  sync.Once
 
-	// Tenant resolution cache: model name -> tenant column
-	tenantFields map[string]string
+	// Tenant resolution cache: model name -> tenant column. Written and read
+	// from every request that resolves a schema/list/create (concurrently, one
+	// goroutine per request), so it is guarded by tenantFieldsMu — an unguarded
+	// map here is a fatal "concurrent map read and map write" that kills the
+	// HOST process, not just the panel.
+	tenantFieldsMu sync.RWMutex
+	tenantFields   map[string]string
 
 	// RBAC enforcer for fine-grained authorization
 	rbac *authz.Enforcer
@@ -159,7 +170,7 @@ type Panel struct {
 func NewPanel(src datasource.DataSource, logger *slog.Logger, cfg PanelConfig) *Panel {
 	cfg.Prefix = NormalizePrefix(cfg.Prefix)
 	if cfg.Title == "" {
-		cfg.Title = "Nucleus Admin"
+		cfg.Title = DefaultTitle
 	}
 	env := cfg.EnvironmentSnapshot
 	if len(env) == 0 {
@@ -559,6 +570,7 @@ func (p *Panel) handleSPA(fsys fs.FS) router.Handler {
 		}
 
 		content = injectAdminPrefix(content, NormalizePrefix(p.config.Prefix))
+		content = injectAdminTitle(content, p.config.Title)
 
 		http.ServeContent(w, r, "index.html", time.Time{}, bytes.NewReader(content))
 		return nil
@@ -900,26 +912,39 @@ func (p *Panel) authenticatedUser(r *http.Request) (*auth.User, error) {
 }
 
 // resolveTenantField returns the tenant column name for a model.
-// It caches the result for performance.
+// It caches the result for performance. The cache is hit from concurrent
+// request goroutines (handleGetSchema on every schema fetch, plus
+// list/create), so both the read and the write take tenantFieldsMu; a
+// recomputed value on a lost race is identical, so last-write-wins is fine.
 func (p *Panel) resolveTenantField(modelName string) string {
-	if field, ok := p.tenantFields[modelName]; ok {
+	p.tenantFieldsMu.RLock()
+	field, ok := p.tenantFields[modelName]
+	p.tenantFieldsMu.RUnlock()
+	if ok {
 		return field
 	}
 
+	field = p.computeTenantField(modelName)
+
+	p.tenantFieldsMu.Lock()
+	p.tenantFields[modelName] = field
+	p.tenantFieldsMu.Unlock()
+	return field
+}
+
+// computeTenantField derives the tenant column for a model from the config
+// override or the model metadata. Pure metadata lookup — no cache access.
+func (p *Panel) computeTenantField(modelName string) string {
 	mi, ok := p.src.Get(modelName)
 	if !ok {
-		p.tenantFields[modelName] = ""
 		return ""
 	}
 
 	// Check for override in config
 	if p.config.MultiTenantField != "" {
-		p.tenantFields[modelName] = p.config.MultiTenantField
 		return p.config.MultiTenantField
 	}
 
 	// Auto-detect from model metadata
-	field := mi.TenantField
-	p.tenantFields[modelName] = field
-	return field
+	return mi.TenantField
 }
