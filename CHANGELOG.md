@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.9](https://github.com/jcsvwinston/orbit/compare/v1.8.8...v1.8.9) (2026-08-30)
+
+
+### Fixed
+
+* **deps:** sube nucleus a v1.20.0 ([#324](https://github.com/jcsvwinston/orbit/issues/324)) ([5b002df](https://github.com/jcsvwinston/orbit/commit/5b002dff7638ba1194c2c8a229f7bac457295bfa))
+
 ## [1.8.8](https://github.com/jcsvwinston/orbit/compare/v1.8.7...v1.8.8) (2026-08-30)
 
 
