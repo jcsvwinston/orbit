@@ -17,6 +17,33 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.8.9 — 2026-08-30
+
+**Changed**
+
+- **Aligned with Nucleus v1.20.0.** Nothing in Orbit changes; these are
+  fixes in the framework it requires, and three of them are behaviour
+  changes worth knowing about before you upgrade.
+
+  A third-party request interceptor now sees who is calling. The chain was
+  mounted outside the bearer decode, so an interceptor got nothing from the
+  request's claims while the handler behind it saw the same request
+  authenticated. It now runs after the decode and still before the
+  default-deny layer, so it also observes requests that are about to be
+  denied. Nothing moved relative to the request ID, the real-IP resolution,
+  the rate limiter or CSRF.
+
+  `X-Real-IP` is now filtered the way `X-Forwarded-For` already was: an
+  address that is itself a trusted proxy is not a client. Under a catch-all
+  `trusted_proxies` the unfiltered fallback was a spoofing vector — a forged
+  client IP, rate-limit evasion and an audit trail recording the attacker's
+  choice. A correctly configured deployment sees no change.
+
+  `nucleus doctor --json` now exits non-zero when the report says
+  `unhealthy`. The verdict came from the text renderer only, so the same
+  report exited 1 as text and 0 as JSON — and the mode that never failed was
+  the one CI consumes.
+
 ## v1.8.8 — 2026-08-30
 
 **Fixed**
