@@ -2,6 +2,8 @@ package admin
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"sort"
@@ -46,8 +48,15 @@ type sessionOverviewResponse struct {
 	TruncatedByLimit bool             `json:"truncated_by_limit"`
 }
 
+// sessionRow is one row of the session viewer. The session token is a bearer
+// credential — whoever holds it IS that session — so the row never serializes
+// it: ID is an opaque one-way handle (see sessionHandle) that the terminate
+// endpoint resolves server-side, and TokenShort is the display prefix. Any
+// authenticated admin can list sessions (DatabaseAdminAuth.Authorize allows
+// all actions), so serving the full token here handed every admin the means
+// to replay every other admin's session.
 type sessionRow struct {
-	Token       string `json:"token"`
+	ID          string `json:"id"`
 	TokenShort  string `json:"token_short"`
 	User        string `json:"user,omitempty"`
 	FirstSeenAt string `json:"first_seen_at,omitempty"`
@@ -60,9 +69,23 @@ type sessionRow struct {
 	AgeSeconds  int64  `json:"age_seconds,omitempty"`
 	IdleSeconds int64  `json:"idle_seconds,omitempty"`
 
+	token     string // the raw bearer token — internal only, never serialized
 	firstSeen time.Time
 	lastSeen  time.Time
 	expiresAt time.Time
+}
+
+// sessionHandle derives the opaque per-session id served in sessionRow.ID:
+// a truncated SHA-256 of the token. One-way (the token cannot be recovered
+// from it) and stable, so the SPA can key rows and address the terminate
+// endpoint without ever seeing the credential.
+func sessionHandle(token string) string {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:16])
 }
 
 type sessionTelemetry struct {
@@ -165,7 +188,7 @@ func (p *Panel) handleListSessions(c *router.Context) error {
 		if !rows[i].expiresAt.Equal(rows[j].expiresAt) {
 			return rows[i].expiresAt.After(rows[j].expiresAt)
 		}
-		return rows[i].Token < rows[j].Token
+		return rows[i].token < rows[j].token
 	})
 
 	resp.CurrentActive = len(rows)
@@ -213,7 +236,8 @@ func buildSessionRow(token string, deadline time.Time, values map[string]interfa
 	}
 
 	row := sessionRow{
-		Token:      token,
+		ID:         sessionHandle(token),
+		token:      token,
 		TokenShort: shortenToken(token),
 		User:       detectSessionUser(values),
 		ExpiresAt:  formatIfSet(expiresAt),
@@ -305,9 +329,12 @@ func isSessionActiveAt(row sessionRow, ts time.Time) bool {
 	return !start.After(ts) && end.After(ts)
 }
 
-// handleTerminateSession destroys one session by token — the backend of
-// the session list's "terminate" action (the SPA shipped the button for
-// months while no DELETE route existed; it failed on every click).
+// handleTerminateSession destroys one session addressed by the opaque handle
+// the session list serves (sessionRow.ID) — the backend of the session list's
+// "terminate" action. The handle is resolved to the real token server-side,
+// so revocation works without the list ever serving the bearer credential.
+// A raw token is still accepted for compatibility (a caller that has the
+// token holds the credential already — accepting it reveals nothing new).
 func (p *Panel) handleTerminateSession(c *router.Context) error {
 	r := c.Request
 	if err := p.authorizeAction(c, "*", "terminate_sessions"); err != nil {
@@ -317,30 +344,36 @@ func (p *Panel) handleTerminateSession(c *router.Context) error {
 	if p.config.Session == nil {
 		return gferrors.BadRequest("session manager is not configured in admin panel")
 	}
-	token := strings.TrimSpace(c.Param("token"))
-	if token == "" {
-		return gferrors.BadRequest("session token is required")
+	handle := strings.TrimSpace(c.Param("token"))
+	if handle == "" {
+		return gferrors.BadRequest("session id is required")
 	}
 
 	store := p.config.Session.SCS().Store
 
-	// Existence check first so a bogus token 404s instead of "succeeding".
-	var (
-		found bool
-		err   error
-	)
-	if finder, ok := store.(interface {
-		FindCtx(context.Context, string) ([]byte, bool, error)
-	}); ok {
-		_, found, err = finder.FindCtx(r.Context(), token)
-	} else {
-		_, found, err = store.Find(token)
-	}
+	// Resolve the opaque handle to the stored token.
+	token, err := p.resolveSessionHandle(r.Context(), handle)
 	if err != nil {
-		return fmt.Errorf("admin.TerminateSession find: %w", err)
+		return fmt.Errorf("admin.TerminateSession resolve: %w", err)
+	}
+
+	// Fallback: the parameter may be a raw token (pre-handle clients).
+	found := token != ""
+	if !found {
+		token = handle
+		if finder, ok := store.(interface {
+			FindCtx(context.Context, string) ([]byte, bool, error)
+		}); ok {
+			_, found, err = finder.FindCtx(r.Context(), token)
+		} else {
+			_, found, err = store.Find(token)
+		}
+		if err != nil {
+			return fmt.Errorf("admin.TerminateSession find: %w", err)
+		}
 	}
 	if !found {
-		return gferrors.NotFound("session", shortenToken(token))
+		return gferrors.NotFound("session", shortenToken(handle))
 	}
 
 	if deleter, ok := store.(interface {
@@ -363,8 +396,29 @@ func (p *Panel) handleTerminateSession(c *router.Context) error {
 
 	return c.JSON(http.StatusOK, map[string]any{
 		"terminated":  true,
+		"id":          sessionHandle(token),
 		"token_short": shortenToken(token),
 	})
+}
+
+// resolveSessionHandle maps an opaque session handle (sessionRow.ID) back to
+// the stored token by scanning the active sessions. Returns "" when no active
+// session matches — including when the store cannot enumerate sessions, in
+// which case only the raw-token fallback can address one.
+func (p *Panel) resolveSessionHandle(ctx context.Context, handle string) (string, error) {
+	payloads, supported, err := allSessionPayloads(ctx, p.config.Session)
+	if err != nil {
+		return "", err
+	}
+	if !supported {
+		return "", nil
+	}
+	for token := range payloads {
+		if sessionHandle(token) == handle {
+			return token, nil
+		}
+	}
+	return "", nil
 }
 
 func allSessionPayloads(ctx context.Context, sm *auth.SessionManager) (map[string][]byte, bool, error) {

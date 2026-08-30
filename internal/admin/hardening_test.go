@@ -17,6 +17,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -185,6 +186,80 @@ func TestLoginRateLimit_BlocksAfterRepeatedFailures(t *testing.T) {
 	}
 	if !saw429 {
 		t.Fatal("repeated failed logins never hit 429")
+	}
+}
+
+// TestListSessions_NeverServesBearerToken locks the OH-5 fix: the session
+// list serves an opaque id + token_short, never the raw session token (a
+// bearer credential any listed admin could replay), and the terminate
+// endpoint resolves that opaque id server-side.
+func TestListSessions_NeverServesBearerToken(t *testing.T) {
+	panel, srv := adminTestServer(t)
+
+	sm := auth.NewSessionManager(auth.SessionConfig{})
+	panel.config.Session = sm
+
+	const token = "secret-bearer-token-abcdefghijklmnop"
+	deadline := time.Now().Add(time.Hour)
+	payload, err := sm.SCS().Codec.Encode(deadline, map[string]interface{}{
+		auth.SessionMetaLastSeenAtKey: time.Now().UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		t.Fatalf("encode session payload: %v", err)
+	}
+	if err := sm.SCS().Store.Commit(token, payload, deadline); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	resp, err := http.Get(srv.URL + "/api/sessions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("sessions status = %d body=%s", resp.StatusCode, raw)
+	}
+	if strings.Contains(string(raw), token) {
+		t.Fatalf("the full session token leaked into the sessions response: %s", raw)
+	}
+
+	var payloadJSON struct {
+		Sessions []map[string]any `json:"sessions"`
+	}
+	if err := json.Unmarshal(raw, &payloadJSON); err != nil {
+		t.Fatalf("decode sessions: %v", err)
+	}
+	if len(payloadJSON.Sessions) != 1 {
+		t.Fatalf("sessions = %d, want 1", len(payloadJSON.Sessions))
+	}
+	row := payloadJSON.Sessions[0]
+	if _, exists := row["token"]; exists {
+		t.Errorf("session row still has a token field: %v", row)
+	}
+	handle, _ := row["id"].(string)
+	if handle == "" || strings.Contains(token, handle) || strings.Contains(handle, token) {
+		t.Fatalf("session row id = %q — want an opaque handle unrelated to the token", handle)
+	}
+
+	// The opaque handle terminates the session server-side.
+	req, err := http.NewRequest(http.MethodDelete, srv.URL+"/api/sessions/"+handle, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delResp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delResp.Body.Close()
+	if delResp.StatusCode != http.StatusOK {
+		t.Fatalf("terminate by handle status = %d", delResp.StatusCode)
+	}
+	if _, found, _ := sm.SCS().Store.Find(token); found {
+		t.Fatal("session still exists after terminating by handle")
 	}
 }
 

@@ -17,7 +17,6 @@ import (
 
 	"github.com/jcsvwinston/nucleus/pkg/auth"
 	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
-	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/observe"
 	"github.com/jcsvwinston/nucleus/pkg/router"
 	"golang.org/x/net/websocket"
@@ -30,7 +29,6 @@ const (
 	defaultLiveSessionTTL        = 30 * time.Minute
 	defaultLiveListLimit         = 50
 	maxLiveListLimit             = 1000
-	maxLiveSQLArgs               = 16
 	liveNodeOnlineWindow         = 45 * time.Second
 	liveNodeDegradedWindow       = 3 * time.Minute
 )
@@ -102,7 +100,12 @@ type liveRequestEvent struct {
 }
 
 type liveSessionActivity struct {
-	NodeID       string `json:"node_id,omitempty"`
+	NodeID string `json:"node_id,omitempty"`
+	// SessionToken carries the opaque session handle (sessionHandle), NOT the
+	// bearer token: the live snapshot/stream is served to every authenticated
+	// admin and relayed over Redis in cluster mode, and the raw token would
+	// let any reader replay the session (same exposure as OH-5 in the session
+	// list). The JSON key is kept for wire compatibility.
 	SessionToken string `json:"session_token,omitempty"`
 	TokenShort   string `json:"token_short"`
 	UserID       string `json:"user_id,omitempty"`
@@ -569,36 +572,16 @@ func (p *Panel) pushLiveRequest(event liveRequestEvent) {
 	p.publishLiveClusterEvent(envelope)
 }
 
-func (p *Panel) onModelSQLQuery(ctx context.Context, queryEvent model.SQLQueryEvent) {
-	if p == nil || p.live == nil {
-		return
-	}
-	now := time.Now().UTC()
-	event := liveSQLEvent{
-		NodeID:     p.liveNodeID(),
-		Timestamp:  now.Format(time.RFC3339),
-		ModelName:  strings.TrimSpace(queryEvent.ModelName),
-		Operation:  truncateText(strings.TrimSpace(queryEvent.Operation), 64),
-		Query:      truncateText(compactSQL(queryEvent.Query), 640),
-		Args:       sanitizeLiveSQLArgs(queryEvent.Args),
-		DurationMS: queryEvent.Duration.Milliseconds(),
-		RequestID:  strings.TrimSpace(observe.RequestIDFromCtx(ctx)),
-		TraceID:    strings.TrimSpace(observe.TraceIDFromCtx(ctx)),
-		UserID:     strings.TrimSpace(observe.UserIDFromCtx(ctx)),
-	}
-	if queryEvent.Error != nil {
-		event.Error = truncateText(queryEvent.Error.Error(), 220)
-	}
-	p.live.sql.push(event)
-	envelope := liveEventEnvelope{
-		NodeID:    event.NodeID,
-		Type:      "db.query",
-		Timestamp: event.Timestamp,
-		SQL:       &event,
-	}
-	p.live.bus.publish(envelope)
-	p.publishLiveClusterEvent(envelope)
-}
+// NOTE (AO-5): orbit does NOT redact live SQL args itself. Every lane that
+// feeds the live SQL view — recordEventBusSQL (nucleus.EventBus) and
+// recordBusSQL (*observability.Bus) — receives args already masked by the
+// framework's SQL hook (nucleus pkg/observability/hooks/sql.go, sanitizeArg:
+// strings/bytes become "string(len):***"). The panel used to carry its own
+// copy of that masking (onModelSQLQuery + sanitizeLiveSQLArg*), but it had no
+// production caller and duplicated the switch in nucleus — a trap for anyone
+// auditing where redaction happens. It was removed; if a raw-args lane is
+// ever added, mask at the source or through the nucleus hook, not with a new
+// local copy.
 
 func compactSQL(query string) string {
 	if strings.TrimSpace(query) == "" {
@@ -606,48 +589,6 @@ func compactSQL(query string) string {
 	}
 	parts := strings.Fields(query)
 	return strings.Join(parts, " ")
-}
-
-func sanitizeLiveSQLArgs(args []interface{}) []string {
-	if len(args) == 0 {
-		return []string{}
-	}
-	limit := len(args)
-	if limit > maxLiveSQLArgs {
-		limit = maxLiveSQLArgs
-	}
-	out := make([]string, 0, limit+1)
-	for _, arg := range args[:limit] {
-		out = append(out, sanitizeLiveSQLArg(arg))
-	}
-	if len(args) > limit {
-		out = append(out, fmt.Sprintf("...(+%d more)", len(args)-limit))
-	}
-	return out
-}
-
-func sanitizeLiveSQLArg(arg interface{}) string {
-	switch v := arg.(type) {
-	case nil:
-		return "null"
-	case bool:
-		if v {
-			return "bool:true"
-		}
-		return "bool:false"
-	case int, int8, int16, int32, int64,
-		uint, uint8, uint16, uint32, uint64,
-		float32, float64:
-		return fmt.Sprintf("%v", v)
-	case time.Time:
-		return "time:" + v.UTC().Format(time.RFC3339)
-	case []byte:
-		return fmt.Sprintf("bytes(%d):***", len(v))
-	case string:
-		return fmt.Sprintf("string(%d):***", len(v))
-	default:
-		return "<redacted>"
-	}
 }
 
 func (p *Panel) recordLiveSessionActivity(r *http.Request, now time.Time, traceID string) {
@@ -662,7 +603,7 @@ func (p *Panel) recordLiveSessionActivity(r *http.Request, now time.Time, traceI
 
 	activity := liveSessionActivity{
 		NodeID:       p.liveNodeID(),
-		SessionToken: token,
+		SessionToken: sessionHandle(token),
 		TokenShort:   shortenToken(token),
 		UserID:       strings.TrimSpace(observe.UserIDFromCtx(r.Context())),
 		IP:           auth.ClientIPFromRequest(r),
