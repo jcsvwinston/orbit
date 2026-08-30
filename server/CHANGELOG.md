@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.7](https://github.com/jcsvwinston/orbit/compare/server/v0.10.6...server/v0.10.7) (2026-08-30)
+
+
+### Fixed
+
+* **deps:** alinea todos los módulos con nucleus v1.20.1 ([#326](https://github.com/jcsvwinston/orbit/issues/326)) ([a1efcf6](https://github.com/jcsvwinston/orbit/commit/a1efcf6ca3e6f88b2d2e4da3bb3ef0c4bfe62394))
+* **deps:** server re-pina agent a v0.6.7 ([#331](https://github.com/jcsvwinston/orbit/issues/331)) ([ecf4a00](https://github.com/jcsvwinston/orbit/commit/ecf4a00880d531e05a318492cd961949500fce91))
+
 ## [0.10.6](https://github.com/jcsvwinston/orbit/compare/server/v0.10.5...server/v0.10.6) (2026-08-29)
 
 
