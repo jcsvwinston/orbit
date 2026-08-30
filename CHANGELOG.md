@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.12](https://github.com/jcsvwinston/orbit/compare/v1.8.11...v1.8.12) (2026-08-30)
+
+
+### Chore
+
+* **release:** sella el set con orbit v1.8.12 (alineación de módulos) ([4a6aa80](https://github.com/jcsvwinston/orbit/commit/4a6aa801e41e27aebd54e556df03feeefa7082c0))
+
 ## [1.8.11](https://github.com/jcsvwinston/orbit/compare/v1.8.10...v1.8.11) (2026-08-30)
 
 
