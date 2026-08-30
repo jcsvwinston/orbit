@@ -107,7 +107,7 @@ func (p *Panel) handleHealthCheck(c *router.Context) error {
 		Status:    overallStatus,
 		CheckedAt: time.Now().UTC().Format(time.RFC3339),
 		Checks:    checks,
-		Version:   "Nucleus admin",
+		Version:   "Orbit",
 	})
 }
 

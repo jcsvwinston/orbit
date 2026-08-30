@@ -196,9 +196,13 @@ export async function bulkDelete(name: string, ids: number[]): Promise<{ deleted
 }
 
 export async function getSessions(): Promise<Session[]> {
+  // The backend serves an opaque per-session id (never the bearer token —
+  // that credential would let any admin replay another admin's session);
+  // the id is what DELETE /api/sessions/{id} resolves server-side.
   const response = await fetchAPI<{
     sessions?: Array<{
-      token: string
+      id: string
+      token_short?: string
       user?: string
       remote_ip?: string
       first_seen_at?: string
@@ -207,7 +211,7 @@ export async function getSessions(): Promise<Session[]> {
   }>('/api/sessions')
 
   return (response.sessions ?? []).map((session) => ({
-    id: session.token,
+    id: session.id,
     user_id: 0,
     username: session.user ?? '',
     ip: session.remote_ip ?? '',

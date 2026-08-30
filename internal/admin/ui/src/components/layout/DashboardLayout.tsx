@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { useAuth } from '@/stores/authStore'
 import { useTheme } from '@/stores/themeStore'
+import { getAdminTitle } from '@/config'
 import {
   LayoutDashboard,
   Database,
@@ -52,7 +53,7 @@ export default function DashboardLayout() {
         >
           {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
         </button>
-        <span className="font-bold text-lg">Nucleus Admin</span>
+        <span className="font-bold text-lg">{getAdminTitle()}</span>
         <button
           onClick={toggleTheme}
           className="p-2 rounded-md hover:bg-accent"
@@ -78,7 +79,7 @@ export default function DashboardLayout() {
           {/* Logo */}
           <div className="p-4 border-b border-border flex items-center justify-between">
             {sidebarOpen && (
-              <h1 className="text-xl font-bold truncate">Nucleus Admin</h1>
+              <h1 className="text-xl font-bold truncate">{getAdminTitle()}</h1>
             )}
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}

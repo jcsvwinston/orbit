@@ -33,6 +33,22 @@ export function getAdminPrefix(): string {
 }
 
 /**
+ * Get the panel title from the injected <meta> tag (the backend injects the
+ * configured `title` — orbit.Config.Title — into every served page, login
+ * included). Falls back to the product name when nothing is configured.
+ */
+export function getAdminTitle(): string {
+  if (typeof document !== 'undefined') {
+    const meta = document.querySelector<HTMLMetaElement>('meta[name="nucleus-admin-title"]')
+    const value = meta?.content?.trim()
+    if (value) {
+      return value
+    }
+  }
+  return 'Orbit'
+}
+
+/**
  * Build a full admin path by prepending the admin prefix.
  * 
  * @param path - The path relative to the admin panel root (e.g., '/api/models', '/login')
