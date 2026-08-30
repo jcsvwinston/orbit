@@ -30,6 +30,16 @@ type DSGadget struct {
 
 func (DSGadget) TableName() string { return "ds_gadgets" }
 
+// DSNote embeds BaseModel, so Delete soft-deletes (sets deleted_at) and List
+// filters the deleted rows out. Count must apply the same filter, or the
+// model badge shows rows the grid will never display (OH-4).
+type DSNote struct {
+	model.BaseModel
+	Title string `json:"title"`
+}
+
+func (DSNote) TableName() string { return "ds_notes" }
+
 func setupAdapter(t *testing.T) *Adapter {
 	t.Helper()
 	logger := observe.NewLogger("error", "text")
@@ -55,6 +65,15 @@ func setupAdapter(t *testing.T) *Adapter {
 	)`); err != nil {
 		t.Fatalf("create table: %v", err)
 	}
+	if _, err := sqlDB.Exec(`CREATE TABLE ds_notes (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		created_at DATETIME,
+		updated_at DATETIME,
+		deleted_at DATETIME,
+		title TEXT NOT NULL DEFAULT ''
+	)`); err != nil {
+		t.Fatalf("create ds_notes table: %v", err)
+	}
 
 	reg := model.NewRegistry()
 	if err := reg.Register(&DSWidget{}); err != nil {
@@ -62,6 +81,9 @@ func setupAdapter(t *testing.T) *Adapter {
 	}
 	if err := reg.Register(&DSGadget{}); err != nil {
 		t.Fatalf("register DSGadget: %v", err)
+	}
+	if err := reg.Register(&DSNote{}); err != nil {
+		t.Fatalf("register DSNote: %v", err)
 	}
 
 	return New(Config{
@@ -92,8 +114,110 @@ func TestModelInfo_Mapping(t *testing.T) {
 	if _, ok := mi.Field("Qty"); !ok {
 		t.Error("Field(\"Qty\") not found by Go name")
 	}
-	if len(a.All()) != 2 {
-		t.Errorf("All() = %d models, want 2", len(a.All()))
+	if len(a.All()) != 3 {
+		t.Errorf("All() = %d models, want 3", len(a.All()))
+	}
+}
+
+// Count must agree with List: a soft-deleted row (deleted_at set) is invisible
+// to the grid, so it must not inflate the model badge either (OH-4).
+func TestCount_ExcludesSoftDeletedRows(t *testing.T) {
+	a := setupAdapter(t)
+	ctx := context.Background()
+	st, err := a.Store("DSNote", "")
+	if err != nil {
+		t.Fatalf("Store: %v", err)
+	}
+
+	first, err := st.Create(ctx, datasource.Record{"title": "keep"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := st.Create(ctx, datasource.Record{"title": "drop"}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	// BaseModel soft-deletes: the row stays in the table with deleted_at set.
+	page, err := st.List(ctx, datasource.Query{})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(page.Items) != 2 {
+		t.Fatalf("List before delete = %d items, want 2", len(page.Items))
+	}
+	// Delete the second row (grab its id from the listing to be robust).
+	var deleteID string
+	for _, rec := range page.Items {
+		if rec["title"] == "drop" {
+			deleteID = recordID(t, rec)
+		}
+	}
+	if deleteID == "" {
+		t.Fatalf("row to delete not found in %v", page.Items)
+	}
+	if err := st.Delete(ctx, deleteID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	page, err = st.List(ctx, datasource.Query{})
+	if err != nil {
+		t.Fatalf("List after delete: %v", err)
+	}
+	if len(page.Items) != 1 || recordID(t, page.Items[0]) != recordID(t, first) {
+		t.Fatalf("List after delete = %v, want only the kept row", page.Items)
+	}
+
+	cr, err := st.Count(ctx)
+	if err != nil {
+		t.Fatalf("Count: %v", err)
+	}
+	if !cr.Present {
+		t.Fatal("Count.Present = false for an existing table")
+	}
+	if cr.Count != 1 {
+		t.Errorf("Count = %d, want 1 (soft-deleted rows must not be counted)", cr.Count)
+	}
+	if cr.IsEstimated {
+		t.Errorf("Count.IsEstimated = true; a soft-deleting model needs a real filtered count")
+	}
+}
+
+// Nucleus derives auto labels by splitting every uppercase rune, which mangles
+// acronyms ("ID" -> "I D", "APIKey" -> "A P I Key"). The adapter re-derives
+// those auto labels acronym-aware; an operator-set label is untouched (OH-8).
+func TestFieldLabels_KeepAcronymsTogether(t *testing.T) {
+	a := setupAdapter(t)
+	mi, ok := a.Get("DSNote")
+	if !ok {
+		t.Fatal("DSNote not found")
+	}
+	labels := map[string]string{}
+	for _, f := range mi.Fields {
+		labels[f.Name] = f.Label
+	}
+	if labels["ID"] != "ID" {
+		t.Errorf("label for ID = %q, want %q", labels["ID"], "ID")
+	}
+	if labels["CreatedAt"] != "Created At" {
+		t.Errorf("label for CreatedAt = %q, want %q", labels["CreatedAt"], "Created At")
+	}
+}
+
+func TestDisplayLabel(t *testing.T) {
+	cases := []struct {
+		name, label, want string
+	}{
+		{"ID", "I D", "ID"},                       // the auto-derived mangling is repaired
+		{"APIKey", "A P I Key", "API Key"},        // consecutive acronym + word
+		{"HTTPServer", "H T T P Server", "HTTP Server"},
+		{"UserID", "User I D", "User ID"},         // trailing acronym
+		{"CreatedAt", "Created At", "Created At"}, // plain CamelCase unchanged
+		{"ID", "Identifier", "Identifier"},        // operator-set label untouched
+		{"Qty", "", "Qty"},                        // empty label falls back to the name
+	}
+	for _, tc := range cases {
+		if got := displayLabel(tc.name, tc.label); got != tc.want {
+			t.Errorf("displayLabel(%q, %q) = %q, want %q", tc.name, tc.label, got, tc.want)
+		}
 	}
 }
 
