@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.13](https://github.com/jcsvwinston/orbit/compare/v1.8.12...v1.8.13) (2026-08-30)
+
+
+### Fixed
+
+* **deps:** el root de orbit alinea nucleus v1.21.0 ([#347](https://github.com/jcsvwinston/orbit/issues/347)) ([02af124](https://github.com/jcsvwinston/orbit/commit/02af124714cca97444a3ad570b5ec427e4adb810))
+
 ## [1.8.12](https://github.com/jcsvwinston/orbit/compare/v1.8.11...v1.8.12) (2026-08-30)
 
 
