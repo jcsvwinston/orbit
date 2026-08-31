@@ -329,7 +329,25 @@ export interface LiveRequest {
   status: number
   duration: number
   timestamp: string
+  requestId?: string
 }
+
+// A redacted SQL statement from the live feed (`db.query` on the event bus).
+export interface LiveQuery {
+  id: string
+  query: string
+  model?: string
+  operation?: string
+  duration: number
+  timestamp: string
+  requestId?: string
+  error?: string
+}
+
+// One row of the live feed: HTTP traffic and SQL statements interleaved.
+export type LiveFeedEntry =
+  | ({ kind: 'http' } & LiveRequest)
+  | ({ kind: 'sql' } & LiveQuery)
 
 export interface FeatureFlag {
   name: string

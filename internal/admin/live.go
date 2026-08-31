@@ -85,18 +85,21 @@ type liveStreamStats struct {
 }
 
 type liveRequestEvent struct {
-	NodeID         string `json:"node_id,omitempty"`
-	Timestamp      string `json:"timestamp"`
-	Method         string `json:"method"`
-	Path           string `json:"path"`
-	Status         int    `json:"status"`
-	DurationMS     int64  `json:"duration_ms"`
-	RequestID      string `json:"request_id,omitempty"`
-	TraceID        string `json:"trace_id,omitempty"`
-	UserID         string `json:"user_id,omitempty"`
-	RemoteIP       string `json:"remote_ip,omitempty"`
-	UserAgent      string `json:"user_agent,omitempty"`
-	PayloadPreview string `json:"payload_preview,omitempty"`
+	NodeID    string `json:"node_id,omitempty"`
+	Timestamp string `json:"timestamp"`
+	Method    string `json:"method"`
+	Path      string `json:"path"`
+	Status    int    `json:"status"`
+	// DurationMS carries decimal milliseconds (µs precision): the panel's
+	// own middleware routinely serves sub-millisecond responses, and the
+	// old integer milliseconds rendered every one of them as "0µs".
+	DurationMS     float64 `json:"duration_ms"`
+	RequestID      string  `json:"request_id,omitempty"`
+	TraceID        string  `json:"trace_id,omitempty"`
+	UserID         string  `json:"user_id,omitempty"`
+	RemoteIP       string  `json:"remote_ip,omitempty"`
+	UserAgent      string  `json:"user_agent,omitempty"`
+	PayloadPreview string  `json:"payload_preview,omitempty"`
 }
 
 type liveSessionActivity struct {
@@ -117,17 +120,18 @@ type liveSessionActivity struct {
 }
 
 type liveSQLEvent struct {
-	NodeID     string   `json:"node_id,omitempty"`
-	Timestamp  string   `json:"timestamp"`
-	ModelName  string   `json:"model_name,omitempty"`
-	Operation  string   `json:"operation"`
-	Query      string   `json:"query"`
-	Args       []string `json:"args,omitempty"`
-	DurationMS int64    `json:"duration_ms"`
-	Error      string   `json:"error,omitempty"`
-	RequestID  string   `json:"request_id,omitempty"`
-	TraceID    string   `json:"trace_id,omitempty"`
-	UserID     string   `json:"user_id,omitempty"`
+	NodeID    string   `json:"node_id,omitempty"`
+	Timestamp string   `json:"timestamp"`
+	ModelName string   `json:"model_name,omitempty"`
+	Operation string   `json:"operation"`
+	Query     string   `json:"query"`
+	Args      []string `json:"args,omitempty"`
+	// Decimal milliseconds (µs precision) — see liveRequestEvent.DurationMS.
+	DurationMS float64 `json:"duration_ms"`
+	Error      string  `json:"error,omitempty"`
+	RequestID  string  `json:"request_id,omitempty"`
+	TraceID    string  `json:"trace_id,omitempty"`
+	UserID     string  `json:"user_id,omitempty"`
 }
 
 type liveEventEnvelope struct {
@@ -539,7 +543,7 @@ func (p *Panel) recordLiveRequest(r *http.Request, status int, duration time.Dur
 		Method:         r.Method,
 		Path:           truncateText(r.URL.Path, 240),
 		Status:         status,
-		DurationMS:     duration.Milliseconds(),
+		DurationMS:     durationMillis(duration),
 		RequestID:      strings.TrimSpace(observe.RequestIDFromCtx(ctx)),
 		TraceID:        strings.TrimSpace(observe.TraceIDFromCtx(ctx)),
 		UserID:         strings.TrimSpace(observe.UserIDFromCtx(ctx)),
@@ -582,6 +586,12 @@ func (p *Panel) pushLiveRequest(event liveRequestEvent) {
 // auditing where redaction happens. It was removed; if a raw-args lane is
 // ever added, mask at the source or through the nucleus hook, not with a new
 // local copy.
+
+// durationMillis converts a duration into the decimal milliseconds the live
+// feed serializes (µs precision), so sub-millisecond timings survive the wire.
+func durationMillis(d time.Duration) float64 {
+	return float64(d.Microseconds()) / 1000.0
+}
 
 func compactSQL(query string) string {
 	if strings.TrimSpace(query) == "" {

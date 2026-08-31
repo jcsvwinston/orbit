@@ -133,7 +133,7 @@ func TestConsumeEventBusFeedsHTTPRequests(t *testing.T) {
 		t.Fatalf("expected node_id=node-app, got %q", event.NodeID)
 	}
 	if event.DurationMS != 12 {
-		t.Fatalf("expected duration_ms=12, got %d", event.DurationMS)
+		t.Fatalf("expected duration_ms=12, got %v", event.DurationMS)
 	}
 	if event.RequestID != "req-http-1" || event.TraceID != "trace-http-1" || event.UserID != "user-9" {
 		t.Fatalf("expected correlation ids preserved, got %#v", event)

@@ -87,7 +87,7 @@ func (p *Panel) recordBusSQL(e *observability.SQLStatementEvent) {
 		Operation:  truncateText(strings.TrimSpace(e.Operation), 64),
 		Query:      truncateText(compactSQL(e.Query), 640),
 		Args:       append([]string(nil), e.Args...),
-		DurationMS: e.Duration.Milliseconds(),
+		DurationMS: durationMillis(e.Duration),
 		Error:      truncateText(strings.TrimSpace(e.Err), 220),
 		RequestID:  strings.TrimSpace(e.RequestID),
 		TraceID:    strings.TrimSpace(e.TraceID),
