@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.9](https://github.com/jcsvwinston/orbit/compare/agent/v0.6.8...agent/v0.6.9) (2026-08-31)
+
+
+### Fixed
+
+* **deps:** alinea root, agent, server, quarkbridge, quarkdatasource al set (nucleus v1.22.0, quark v1.8.0) ([#360](https://github.com/jcsvwinston/orbit/issues/360)) ([2225b2c](https://github.com/jcsvwinston/orbit/commit/2225b2c746f8fd3452ce859536e8bffc8610588c))
+* **fleet:** puertas y honestidad del plano fleet (AO-3, OH-7, AO-4) ([#353](https://github.com/jcsvwinston/orbit/issues/353)) ([dd73b8e](https://github.com/jcsvwinston/orbit/commit/dd73b8e693cdad5f8263dd1a403f4ca66fb440fa))
+
 ## [0.6.8](https://github.com/jcsvwinston/orbit/compare/agent/v0.6.7...agent/v0.6.8) (2026-08-30)
 
 
