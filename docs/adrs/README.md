@@ -9,7 +9,20 @@
 
 | ID | Título | Estado | Relacionado |
 |---|---|---|---|
-| [ADR-001](ADR-001-datastudio-agnostic-datasource.md) | Data Studio agnóstico del origen de datos (contrato `datasource`) | Proposed | nucleus ADR-019 · quantum QADR-0006 |
+| [ADR-001](ADR-001-datastudio-agnostic-datasource.md) | Data Studio agnóstico del origen de datos (contrato `datasource`) | Accepted | nucleus ADR-019 · quantum QADR-0006 |
+| [ADR-003](ADR-003-plano-fleet-agente-servidor.md) | Plano fleet como subsistema opt-in (agent/server/proto, stream bidi) | Accepted · retroactivo | ADR-001 · quantum QADR-0006 |
+| [ADR-004](ADR-004-frontera-authn-delegada-authz-panel.md) | Autenticación delegada, autorización del panel propia | Accepted · retroactivo | nucleus ADR-019 |
+| [ADR-005](ADR-005-confinamiento-storage-browse.md) | El navegador de storage del panel se confina a un root fijo | Accepted · retroactivo | ADR-004 |
+
+El número **ADR-002 está reservado**: es el borrador sobre el rumbo del Data
+Studio del plano fleet (identidad por el stream vs telemetría+lectura), en
+revisión en su propia rama. Cuando aterrice hay que añadir aquí su fila — el
+guard `scripts/ci/check_adr_index.sh` fallará hasta que se haga, y eso es
+deliberado.
+
+> El estado de esta tabla es un **resumen**; la verdad vive en el frontmatter
+> de cada ADR. «Retroactivo» marca actas escritas después de ejecutar la
+> decisión, para dejar constancia — no decisiones nuevas.
 
 ## Cómo añadir un ADR nuevo
 

@@ -180,6 +180,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: bash scripts/ci/check_docs_product_voice.sh
+      # The ADR index rots silently: orbit's said "Proposed" for a record
+      # whose own frontmatter had been accepted for two months, and nucleus
+      # once had seventeen unlisted records. File/index correspondence is
+      # the checkable part, so it is checked.
+      - run: bash scripts/ci/check_adr_index.sh
       # Orbit was the only repo without a version-coherence guard, and its
       # docs drifted three minors ("v1.2.1" published against a v1.4.1 tag)
       # before anyone noticed (QM5-3).
