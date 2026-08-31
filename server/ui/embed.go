@@ -1,18 +1,19 @@
 // Package ui exposes the admin observability web UI as an embedded
 // filesystem so the admin server binary is fully self-contained.
 //
-// Build pipeline:
+// Build pipeline (no copy step — vite writes straight into this package):
 //
-//  1. `make ui-build` runs vite in admin/ui/ and writes admin/ui/dist/.
-//  2. A tiny copy step (CI: scripts/build_admin_server_ui.sh; locally:
-//     `make server-build` invokes the same logic) copies admin/ui/dist/
-//     into admin/server/ui/dist/ so the //go:embed below picks it up.
-//  3. `go build ./admin/server/cmd/admin-server` produces a binary that
-//     serves the static UI at "/" without depending on anything on disk.
+//  1. `npm run build` in ui/ (tsc -b && vite build) writes the bundle
+//     directly to server/ui/dist/ — ui/vite.config.ts sets outDir to
+//     ../server/ui/dist, so the //go:embed below picks it up as-is.
+//  2. `go build ./cmd/admin-server` (from server/; or
+//     `go build ./server/cmd/admin-server` from the workspace root)
+//     produces a binary that serves the static UI at "/" without
+//     depending on anything on disk.
 //
-// During development you run `make ui-dev` (Vite on :5173 with proxy to
-// :8080) and access the admin UI directly without going through the Go
-// embed path. The embed path is for production binaries.
+// During development you run `npm run dev` in ui/ (Vite on :5173 with a
+// proxy to :8080) and access the admin UI directly without going through
+// the Go embed path. The embed path is for production binaries.
 //
 // The built dist directory (index.html + hashed assets) is committed so
 // the binary is self-contained and `go install …/admin-server` works
@@ -46,7 +47,7 @@ func FS() fs.FS {
 
 // PlaceholderHTML is what the server serves at "/" when no dist has been
 // built. It tells operators what to do; it never ships in a real
-// release because make server-build always runs make ui-build first.
+// release because the committed server/ui/dist is what releases embed.
 const PlaceholderHTML = `<!doctype html>
 <html lang="en">
 <head>
@@ -66,8 +67,9 @@ const PlaceholderHTML = `<!doctype html>
   <h1>Nucleus Admin Observability</h1>
   <p>The server is running, but no UI has been built into this binary.</p>
   <p class="muted">From the repository root:</p>
-  <pre><code>make ui-build && make server-build</code></pre>
-  <p class="muted">Or in development, run <code>make ui-dev</code> on :5173 with the Vite proxy.</p>
+  <pre><code>cd ui && npm ci && npm run build
+cd ../server && go build ./cmd/admin-server</code></pre>
+  <p class="muted">Or in development, run <code>npm run dev</code> in <code>ui/</code> (Vite on :5173 with the proxy).</p>
   <p class="muted">Connect-RPC endpoints under <code>/nucleus.admin.v1.*</code> are functional regardless.</p>
 </main>
 </body>

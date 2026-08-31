@@ -16,6 +16,13 @@ Browse, create, edit, and delete records for every model in the application's
 registry. It is **tenant-aware** (when multitenancy is enabled) and supports
 import/export.
 
+What it lists comes entirely from the host application: a model appears
+here when your app registers it (in Nucleus, by listing the struct in a
+module's `Models`). An app that registers no models gets an empty Data
+Studio — see
+[the quick start](./quick-start.md#4-register-a-model-so-data-studio-has-something-to-show)
+for the three lines that populate it.
+
 Data Studio does not speak the framework's types directly. It reads and writes
 through a neutral data-source contract (`orbit/datasource`), with the Nucleus
 model registry as the default backend. Applications built on the

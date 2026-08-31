@@ -1,9 +1,12 @@
-# admin/ui
+# ui
 
-React + Connect-Web UI for the Nucleus admin observability server. The
+React + Connect-Web UI for the fleet admin server (`server/`). The
 production build is embedded into the admin server binary via
-`//go:embed all:dist` (see `admin/server/ui/embed.go`); the dev server
+`//go:embed all:dist` (see `server/ui/embed.go`); the dev server
 runs separately on :5173 with a Vite proxy.
+
+This is the **fleet** UI. The in-process panel's SPA is a different app
+and lives in `internal/admin/ui/` (its built `dist/` is committed).
 
 ## Day-to-day commands
 
@@ -15,7 +18,7 @@ runs separately on :5173 with a Vite proxy.
 npm run dev
 
 # Production build. Writes directly to ../server/ui/dist so the next
-# `make server-build` picks it up via go:embed.
+# `go build ./cmd/admin-server` (in server/) picks it up via go:embed.
 npm run build
 
 # Strict TypeScript type-check (no emit).
@@ -25,8 +28,9 @@ npm run typecheck
 npm run lint
 ```
 
-`make ui-dev`, `make ui-build`, `make ui-typecheck`, `make ui-lint`
-from the repo root are thin wrappers that cd into this directory.
+There are no repo-root make wrappers for these: run the npm scripts from
+this directory (CI does exactly that — `npm ci`, `npm run typecheck`,
+`npm run lint`, `npm run build`).
 
 ## Pages
 

@@ -48,7 +48,13 @@ core de Nucleus por su `ADR-019`; Nucleus ya no lleva código de admin.
 ## Decisiones arquitectónicas (`docs/adrs/`)
 
 Lee el ADR que cubra la superficie que vas a tocar antes de tocarla; no reabras
-uno aceptado sin sucesor.
+uno aceptado sin sucesor. El índice ([docs/adrs/README.md](docs/adrs/README.md))
+está guardado por `scripts/ci/check_adr_index.sh`: cada acta nueva necesita su
+fila. Además del ADR-001 hay actas retroactivas de las decisiones ya
+ejecutadas — plano fleet opt-in (ADR-003), frontera autenticación-delegada ≠
+autorización-del-panel (ADR-004) y confinamiento del navegador de storage
+(ADR-005) — y el número ADR-002 está reservado al borrador del rumbo del Data
+Studio del fleet.
 
 - **[ADR-002](docs/adrs/ADR-002-fleet-datastudio-identidad.md)** — BORRADOR sin
   decidir (D2 de la auditoría 2026-08-30): rumbo del Data Studio del plano fleet
