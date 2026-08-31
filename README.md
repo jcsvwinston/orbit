@@ -220,8 +220,15 @@ a clean break. Nucleus itself no longer ships any admin code.
 ## Development
 
 ```bash
-go build ./...        # build the root module
-go test ./...         # test it
 go work sync          # Go workspace: ./ ./agent ./proto ./quarkbridge ./quarkdatasource ./server
+make build            # go build ./... in every module
+make test             # go test ./... in every module
 ```
+
+That is the quick inner loop. CI additionally builds and tests **each of
+the six modules standalone** (`GOWORK=off`, the way a consumer's toolchain
+resolves them), verifies the protobuf stubs and the two web UIs, and runs
+the repository guards. [CONTRIBUTING.md](CONTRIBUTING.md) walks through all
+of it — read it before opening a PR. Security reports go through
+[SECURITY.md](SECURITY.md), never a public issue.
 
