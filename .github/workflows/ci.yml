@@ -229,3 +229,37 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run build
+
+  # -------------------------------------------------------------------------
+  # The embedded admin SPA ships as a COMMITTED dist (internal/admin/ui/dist,
+  # embedded via go:embed) so consumers get the panel without a Node
+  # toolchain. That makes drift silent: the dist once lagged its own source
+  # (the source said Orbit while the embedded bundle still hardcoded
+  # "Nucleus Admin" three times), and nothing noticed because the SPA has no
+  # gate at all. Rebuilding and diffing proves the committed dist is exactly
+  # what ui/src produces — the build is deterministic (vite/rollup/esbuild
+  # pinned by package-lock).
+  # -------------------------------------------------------------------------
+  admin-ui:
+    name: Admin SPA (embedded dist freshness)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: internal/admin/ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: internal/admin/ui/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - name: dist matches source
+        run: |
+          if ! git diff --quiet -- dist || [ -n "$(git status --porcelain dist)" ]; then
+            echo "internal/admin/ui/dist is stale. Run 'npm ci && npm run build' in internal/admin/ui and commit the dist." >&2
+            git status --porcelain dist >&2
+            git --no-pager diff --stat dist >&2
+            exit 1
+          fi

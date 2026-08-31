@@ -71,6 +71,19 @@ func injectAdminPrefix(content []byte, prefix string) []byte {
 	return injectHeadMeta(content, "nucleus-admin-prefix", NormalizePrefix(prefix))
 }
 
+// injectAdminTitle surfaces the configured panel title (Config.Title, default
+// "Orbit") to the SPA as a meta tag — same mechanism as the prefix — so the
+// login screen and the sidebar can render it. Served on every SPA page
+// (handleSPA) and on the login page (renderLoginPage), so the title is
+// available before any authenticated API call.
+func injectAdminTitle(content []byte, title string) []byte {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		title = DefaultTitle
+	}
+	return injectHeadMeta(content, "nucleus-admin-title", title)
+}
+
 // injectLoginMessage surfaces a login error/info message to the admin SPA as
 // a meta tag — the same mechanism as the prefix injection — so the SPA login
 // page can render feedback when a POST re-serves it (e.g. rejected

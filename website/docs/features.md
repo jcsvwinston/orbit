@@ -87,8 +87,15 @@ database connection pool.
 ## Audit log
 
 An in-memory ring of admin actions, sized by `audit_max_size` (default 10,000
-entries). It is **not** persisted: treat it as a live operational view, not a
-compliance store.
+entries). It is **not** persisted: it lives in one process, a restart or
+deploy clears it, and in a multi-replica deployment each replica keeps its
+own ring. Treat it as a live operational view, not a compliance store.
+
+If you need a durable audit trail, write it at the data layer: applications
+on the Quark ORM can enable its transactional `quark_audit` log
+(`EnableAuditLog`), which survives restarts and is written in the same
+transaction as the change. The panel's ring complements it — it also covers
+panel-only actions (logins, session terminations) that never touch a model.
 
 ## Overview & Health
 

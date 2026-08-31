@@ -131,8 +131,27 @@ func (s *store) parseID(id string) (uint, error) {
 // Count returns a (possibly estimated) row count using the dialect's statistics
 // table, falling back to COUNT(*). Present is false when the table is absent.
 // This is the panel's old modelCount, relocated behind the contract.
+//
+// A soft-deleting model (one with a deleted_at column — model.BaseModel) never
+// takes the statistics path: engine statistics count physical rows, deleted
+// ones included, while List filters them out, so the model badge would show
+// rows the grid never displays. For those models the count is a real
+// `WHERE deleted_at IS NULL` count — the same visibility rule the CRUD's
+// FindAll applies.
 func (s *store) Count(ctx context.Context) (datasource.CountResult, error) {
 	table := s.table()
+
+	if s.hasDeletedAt() {
+		var total int64
+		query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE deleted_at IS NULL", table)
+		if err := s.sqlDB.QueryRowContext(ctx, query).Scan(&total); err != nil {
+			if isTableMissingErr(err) {
+				return datasource.CountResult{Present: false}, nil
+			}
+			return datasource.CountResult{}, fmt.Errorf("datasource/nucleus: count table=%s: %w", table, err)
+		}
+		return datasource.CountResult{Count: total, IsEstimated: false, Present: true}, nil
+	}
 
 	var query string
 	estimated := false
@@ -186,6 +205,17 @@ func (s *store) TableExists(ctx context.Context) bool {
 	}
 	_ = rows.Close()
 	return rows.Err() == nil
+}
+
+// hasDeletedAt reports whether the model soft-deletes (mirrors the CRUD's own
+// hasDeletedAt: a field mapped to the deleted_at column).
+func (s *store) hasDeletedAt() bool {
+	for _, f := range s.meta.Fields {
+		if strings.EqualFold(strings.TrimSpace(f.Column), "deleted_at") {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *store) table() string {

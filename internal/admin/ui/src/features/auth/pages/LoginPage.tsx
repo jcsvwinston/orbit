@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useTheme } from '@/stores/themeStore'
-import { buildAdminPath } from '@/config'
+import { buildAdminPath, getAdminTitle } from '@/config'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -46,7 +46,7 @@ export default function LoginPage() {
               <Shield className="h-8 w-8 text-primary" />
             </div>
           </div>
-          <CardTitle className="text-2xl font-bold">Nucleus Admin</CardTitle>
+          <CardTitle className="text-2xl font-bold">{getAdminTitle()}</CardTitle>
           <CardDescription>
             Enter your credentials to access the admin panel
           </CardDescription>

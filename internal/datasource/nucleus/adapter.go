@@ -162,6 +162,57 @@ func toModelInfo(m *model.ModelMeta) datasource.ModelInfo {
 	}
 }
 
+// displayLabel returns the label the panel should show for a field. Nucleus
+// auto-derives labels by inserting a space before EVERY uppercase rune, which
+// mangles acronyms: "ID" becomes "I D", "APIKey" becomes "A P I Key" — and
+// that mangled text lands in the PK column of every model and in exported CSV
+// headers. When the stored label is exactly that auto-derivation of the Go
+// field name (i.e. nobody customized it), it is re-derived acronym-aware.
+// Any other label was set by an operator (struct tag or the runtime
+// field-metadata editor) and is passed through untouched.
+func displayLabel(name, label string) string {
+	if label == "" || label == naiveTitle(name) {
+		return acronymTitle(name)
+	}
+	return label
+}
+
+// naiveTitle replicates Nucleus's auto-label derivation for CamelCase names
+// (a space before every uppercase rune), so displayLabel can recognize an
+// untouched auto label byte for byte.
+func naiveTitle(name string) string {
+	var b strings.Builder
+	for i, r := range name {
+		if i > 0 && r >= 'A' && r <= 'Z' {
+			b.WriteByte(' ')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// acronymTitle converts a CamelCase Go name to a title keeping uppercase runs
+// together: "ID" -> "ID", "APIKey" -> "API Key", "CreatedAt" -> "Created At",
+// "UserID" -> "User ID". Word boundaries: before an uppercase that follows a
+// non-uppercase, and before the last uppercase of a run followed by lowercase.
+func acronymTitle(name string) string {
+	runes := []rune(name)
+	var b strings.Builder
+	b.Grow(len(runes) + 4)
+	for i, r := range runes {
+		if i > 0 && r >= 'A' && r <= 'Z' {
+			prev := runes[i-1]
+			prevUpper := prev >= 'A' && prev <= 'Z'
+			nextLower := i+1 < len(runes) && runes[i+1] >= 'a' && runes[i+1] <= 'z'
+			if !prevUpper || nextLower {
+				b.WriteByte(' ')
+			}
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
 func toFieldInfo(f model.FieldMeta) datasource.FieldInfo {
 	var choices []datasource.Choice
 	if len(f.Choices) > 0 {
@@ -173,7 +224,7 @@ func toFieldInfo(f model.FieldMeta) datasource.FieldInfo {
 	return datasource.FieldInfo{
 		Name:          f.Name,
 		Column:        f.Column,
-		Label:         f.Label,
+		Label:         displayLabel(f.Name, f.Label),
 		GoType:        f.GoType,
 		HTMLType:      f.HTMLType,
 		IsPK:          f.IsPK,

@@ -1,7 +1,13 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.tsx'
+import { getAdminTitle } from './config'
 import './index.css'
+
+// Reflect the configured panel title (injected by the backend as a meta tag)
+// in the browser tab. The static <title> only covers a build served without
+// the backend injection.
+document.title = getAdminTitle();
 
 // Initialize theme before React renders (avoids CSP inline script issue)
 (function () {

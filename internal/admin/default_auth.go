@@ -45,6 +45,25 @@ type DatabaseAdminAuth struct {
 	// When set it decides WHO the credentials belong to; the admin table
 	// still decides whether that person may enter — see checkCredentials.
 	chain *auth.Chain
+	// title is the heading the login page shows (Config.Title); empty means
+	// DefaultTitle. Before this the login page hardcoded "Nucleus Admin" and
+	// the configured Title never rendered anywhere (OH-2).
+	title string
+}
+
+// WithTitle sets the heading the login page renders — the panel's configured
+// Title. Returns the receiver for chaining, like WithAuthChain.
+func (a *DatabaseAdminAuth) WithTitle(title string) *DatabaseAdminAuth {
+	a.title = strings.TrimSpace(title)
+	return a
+}
+
+// loginTitle resolves the heading for the login surfaces.
+func (a *DatabaseAdminAuth) loginTitle() string {
+	if a != nil && a.title != "" {
+		return a.title
+	}
+	return DefaultTitle
 }
 
 // NewDatabaseAdminAuth creates a DB-backed AdminAuth provider that validates
@@ -239,6 +258,7 @@ func (a *DatabaseAdminAuth) renderLoginPage(w http.ResponseWriter, status int, n
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(status)
 		out := injectAdminPrefix(content, adminPrefix)
+		out = injectAdminTitle(out, a.loginTitle())
 		out = injectLoginMessage(out, errorMsg, infoMsg)
 		_, _ = w.Write(out)
 		return
@@ -246,15 +266,18 @@ func (a *DatabaseAdminAuth) renderLoginPage(w http.ResponseWriter, status int, n
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
-	_, _ = w.Write([]byte(fallbackLoginPage(adminPrefix, next, errorMsg, infoMsg)))
+	_, _ = w.Write([]byte(fallbackLoginPage(adminPrefix, a.loginTitle(), next, errorMsg, infoMsg)))
 }
 
-func fallbackLoginPage(adminPrefix, next, errorMsg, infoMsg string) string {
+func fallbackLoginPage(adminPrefix, title, next, errorMsg, infoMsg string) string {
 	var message string
 	if errorMsg != "" {
 		message = `<p role="alert">` + html.EscapeString(errorMsg) + `</p>`
 	} else if infoMsg != "" {
 		message = `<p>` + html.EscapeString(infoMsg) + `</p>`
+	}
+	if strings.TrimSpace(title) == "" {
+		title = DefaultTitle
 	}
 	return `<!doctype html>
 <html lang="en">
@@ -262,7 +285,7 @@ func fallbackLoginPage(adminPrefix, next, errorMsg, infoMsg string) string {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="nucleus-admin-prefix" content="` + html.EscapeString(adminPrefix) + `">
-  <title>Nucleus Admin Login</title>
+  <title>` + html.EscapeString(title) + ` · Login</title>
   <style>
     body { margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: system-ui, sans-serif; background: #f6f7f9; color: #15171a; }
     main { width: min(360px, calc(100vw - 32px)); background: #fff; border: 1px solid #d8dde6; border-radius: 8px; padding: 24px; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08); }
@@ -275,7 +298,7 @@ func fallbackLoginPage(adminPrefix, next, errorMsg, infoMsg string) string {
 </head>
 <body>
   <main>
-    <h1>Nucleus Admin</h1>
+    <h1>` + html.EscapeString(title) + `</h1>
     ` + message + `
     <form method="post">
       <input type="hidden" name="next" value="` + html.EscapeString(next) + `">
