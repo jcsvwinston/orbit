@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.8.14](https://github.com/jcsvwinston/orbit/compare/v1.8.13...v1.8.14) (2026-08-31)
+
+
+### Fixed
+
+* **admin:** cierra los hallazgos de la auditoría del panel in-process ([#349](https://github.com/jcsvwinston/orbit/issues/349)) ([cd38046](https://github.com/jcsvwinston/orbit/commit/cd38046353a092833540e4296c391b872eedd2ce))
+* **admin:** counts cruzados en /api/models y live feed sordo a los tipos reales del bus ([#359](https://github.com/jcsvwinston/orbit/issues/359)) ([44b8066](https://github.com/jcsvwinston/orbit/commit/44b806691e2e8a32b47593839688079566241d91))
+* **deps:** alinea root, agent, server, quarkbridge, quarkdatasource al set (nucleus v1.22.0, quark v1.8.0) ([#360](https://github.com/jcsvwinston/orbit/issues/360)) ([2225b2c](https://github.com/jcsvwinston/orbit/commit/2225b2c746f8fd3452ce859536e8bffc8610588c))
+* **fleet:** puertas y honestidad del plano fleet (AO-3, OH-7, AO-4) ([#353](https://github.com/jcsvwinston/orbit/issues/353)) ([dd73b8e](https://github.com/jcsvwinston/orbit/commit/dd73b8e693cdad5f8263dd1a403f4ca66fb440fa))
+* **release:** repara el manifest (faltaba una coma al reconciliar la cascada) ([ffc76d6](https://github.com/jcsvwinston/orbit/commit/ffc76d638fd9ae2901d1436a74c97d9d0fe89ea5))
+
 ## [1.8.13](https://github.com/jcsvwinston/orbit/compare/v1.8.12...v1.8.13) (2026-08-30)
 
 
