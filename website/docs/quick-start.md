@@ -58,6 +58,8 @@ func main() {
 
 Run the application, open `/admin`, and sign in as the bootstrap user.
 
+![Orbit's login page: a centered sign-in card titled with the configured panel name, with username and password fields](./img/orbit-login-light.png)
+
 You do not wire up any protection yourself. Orbit registers its prefix with the
 framework's default-deny RBAC and enforces its own session-based login below
 that prefix, so the panel is gated from the first request.

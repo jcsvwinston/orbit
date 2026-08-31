@@ -16,6 +16,8 @@ Browse, create, edit, and delete records for every model in the application's
 registry. It is **tenant-aware** (when multitenancy is enabled) and supports
 import/export.
 
+![Data Studio with the Articles model selected: a sidebar listing the registered models with their record counts, and a grid showing seven article records with their real column values](./img/orbit-data-studio-light.png)
+
 What it lists comes entirely from the host application: a model appears
 here when your app registers it (in Nucleus, by listing the struct in a
 module's `Models`). An app that registers no models gets an empty Data
@@ -35,6 +37,8 @@ module and set `orbit.Config.DataSource`.
 
 A real-time feed of incoming HTTP requests and executed SQL across the whole
 application, sourced from the framework's observability event bus.
+
+![The Network Inspector's request log capturing traffic against the showcase application's public API: GET and POST requests to /api/articles and /api/authors with their status codes and durations](./img/orbit-live-feed-light.png)
 
 On a single node the feed is filled from three lanes:
 
@@ -90,6 +94,8 @@ RBAC, so the admin surface is gated like any other route.
 
 Runtime and resource consumption at a glance — CPU, memory, goroutines, and the
 database connection pool.
+
+![System Pulse showing live runtime metrics of the showcase application: goroutine and heap-allocation counters, a runtime trend chart, database pool health, and outbox delivery state](./img/orbit-system-pulse-light.png)
 
 ## Audit log
 
