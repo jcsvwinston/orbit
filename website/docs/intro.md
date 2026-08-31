@@ -14,6 +14,11 @@ feed, a session viewer, RBAC management and system metrics — that mounts
 **in-process** into any Nucleus application through the framework's
 extension/module API.
 
+![Orbit's Data Studio browsing the Articles model of the showcase application: the model list with record counts on the left, and an editable grid of real records — ID, Author ID, Title, Body — on the right](./img/orbit-data-studio-light.png)
+
+*Data Studio in the [showcase application](https://github.com/jcsvwinston/nucleus/tree/main/examples/showcase_demo),
+light theme. The panel also ships a dark theme.*
+
 You add one dependency and one `Mount(...)` call. Orbit then reads everything
 it needs from the running application's `Runtime` and serves its **embedded**
 React interface. There is no separate asset deployment, no out-of-process
