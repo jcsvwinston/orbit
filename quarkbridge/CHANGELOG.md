@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.9](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v0.4.8...quarkbridge/v0.4.9) (2026-08-31)
+
+
+### Fixed
+
+* **deps:** alinea root, agent, server, quarkbridge, quarkdatasource al set (nucleus v1.22.0, quark v1.8.0) ([#360](https://github.com/jcsvwinston/orbit/issues/360)) ([2225b2c](https://github.com/jcsvwinston/orbit/commit/2225b2c746f8fd3452ce859536e8bffc8610588c))
+
 ## [0.4.8](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v0.4.7...quarkbridge/v0.4.8) (2026-08-30)
 
 
