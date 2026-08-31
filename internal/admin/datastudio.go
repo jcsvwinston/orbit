@@ -53,7 +53,11 @@ func dsCollectFilters(mi datasource.ModelInfo, values url.Values) (map[string]st
 	filters := make(map[string]string)
 	for key, vals := range values {
 		switch key {
-		case "page", "page_size", "search", "order_by", "db", "database", "db_alias":
+		// "tenant" is the explicit scope override consumed by
+		// tenantContextMiddleware (see requestTenant), not a field filter;
+		// before it was reserved here every ?tenant= list request answered
+		// 400 "invalid filter field".
+		case "page", "page_size", "search", "order_by", "db", "database", "db_alias", "tenant":
 			continue
 		}
 		if len(vals) == 0 {

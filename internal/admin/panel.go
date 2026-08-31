@@ -377,15 +377,21 @@ func (p *Panel) mountRoutes(r *router.Mux) {
 			sub.Use(p.authMiddleware)
 
 			// /api/* — authenticated at the edge, authorized per handler.
-			// They do not inherit the SPA-only observation middlewares of
-			// the nested group below, but they DO carry auditMiddleware:
-			// before this group existed the audit middleware hung only off
-			// the (GET-only) SPA branch, so under auth — the production
-			// posture — Data Studio writes were never audited. They also
-			// carry the CSRF content-type gate (see csrfContentTypeMiddleware).
+			// The middleware stack mirrors the open posture's (minus the
+			// SPA fallback): this group has grown one middleware at a time
+			// as the with-auth tests caught divergences — first
+			// auditMiddleware (Data Studio writes were never audited under
+			// auth), then tenantContextMiddleware and
+			// sessionActivityMiddleware + liveTrafficMiddleware (AO-4:
+			// under auth — the production posture — API requests resolved
+			// no tenant context, never refreshed the admin session's
+			// activity, and never fed the live traffic feed).
 			sub.Group(func(api *router.Mux) {
+				api.Use(p.tenantContextMiddleware)
 				api.Use(p.csrfContentTypeMiddleware)
 				api.Use(p.auditMiddleware)
+				api.Use(p.sessionActivityMiddleware)
+				api.Use(p.liveTrafficMiddleware)
 				p.mountAPIRoutes(api)
 			})
 
