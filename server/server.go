@@ -99,7 +99,7 @@ func New(cfg Config) *Server {
 	// same way; everything else (ControlService, DataStudioService, and
 	// the UI assets) goes through the auth chain.
 	controlSvc := services.NewControlService(state, cfg.EventChannelSize, cfg.SnapshotTimeout)
-	dataStudioSvc := services.NewDataStudioService(state, cfg.SnapshotTimeout)
+	dataStudioSvc := services.NewDataStudioService(state, cfg.SnapshotTimeout, cfg.DataStudioAllowedModels)
 	manageSvc := services.NewManageService(state, cfg.SnapshotTimeout)
 	protectedUI := http.NewServeMux()
 	protectedUI.Handle(adminv1connect.NewControlServiceHandler(controlSvc))
@@ -116,6 +116,7 @@ func New(cfg Config) *Server {
 		TrustedCIDRs:  cfg.UITrustedProxyCIDRs,
 		ProxySecret:   cfg.UIProxySecret,
 		ForceReadOnly: cfg.UIReadOnly,
+		InsecureOpen:  cfg.UIInsecureOpen,
 	})(protectedUI)))
 
 	s.agentSrv = newH2CServer(agentRoot, cfg.AgentTLS)
@@ -196,6 +197,18 @@ func (s *Server) Run(ctx context.Context) error {
 		s.logger.Warn("agent listener is exposed without authentication",
 			"agent_addr", s.cfg.AgentAddr,
 			"reason", "--insecure-agent-listener set; ensure AgentAddr is restricted at the network layer")
+	}
+	// Fail-closed: --ui-insecure-open hands an operator identity to any
+	// credential-less loopback request, so it must never combine with a
+	// UI listener reachable from off-host.
+	if s.cfg.UIInsecureOpen {
+		if agentListenerExposed(s.cfg.UIAddr) {
+			return fmt.Errorf("admin server: refusing --ui-insecure-open on non-loopback UI address %q: "+
+				"bind --ui-addr to loopback (e.g. 127.0.0.1:8080) or drop the flag", s.cfg.UIAddr)
+		}
+		s.logger.Warn("UI listener is open to credential-less loopback requests",
+			"ui_addr", s.cfg.UIAddr,
+			"reason", "--ui-insecure-open set; local development only")
 	}
 
 	agentLn, err := net.Listen("tcp", s.cfg.AgentAddr)

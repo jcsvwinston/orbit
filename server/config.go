@@ -78,6 +78,28 @@ type Config struct {
 	// operator read-write, preserving existing deployments.
 	UIRoleHeader string
 
+	// UIInsecureOpen authenticates credential-less UI requests arriving
+	// from loopback as the fixed operator "insecure-open". It exists for
+	// local development: the embedded SPA cannot present a bearer token,
+	// so without a header-setting reverse proxy a browser could never
+	// load the UI at all. Fail-closed: Run refuses to start when this is
+	// set and UIAddr is not provably loopback (e.g. ":8080" binds every
+	// interface), and a WARN is logged on boot. Never set it in any
+	// shared or production deployment. Data Studio mutations remain
+	// gated by DataStudioAllowedModels and UIReadOnly.
+	UIInsecureOpen bool
+
+	// DataStudioAllowedModels is the allowlist of model names Data Studio
+	// mutations (create/update/delete/bulk) may touch, matched
+	// case-insensitively against the model name the agents register.
+	// Deny-by-default: when the list is empty, EVERY Data Studio mutation
+	// is refused with PermissionDenied — the fleet plane executes
+	// mutations on the agent's database without the application's
+	// per-model RBAC or tenant filtering, so writes must be an explicit
+	// operator decision. The single entry "*" allows mutations on every
+	// model. Reads are never gated by this list.
+	DataStudioAllowedModels []string
+
 	// UIReadOnly, when true, makes EVERY UI operator read-only regardless
 	// of role header or bearer: the fleet UI can observe (streams, nodes,
 	// Data Studio reads, RBAC/audit) but every Data Studio mutation is

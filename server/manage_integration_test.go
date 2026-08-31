@@ -171,7 +171,7 @@ func TestManage_GetRbac_NotEnabled(t *testing.T) {
 // a Data Studio create routed through the server lands in the audit ring
 // attributed to the UI operator, and ListAudit returns it newest-first.
 func TestManage_AuditFromDataStudioMutation(t *testing.T) {
-	srv, ag, stop := startServerAndAgent(t)
+	srv, ag, stop := startServerAndAgent(t, "TestArticle")
 	defer stop()
 
 	ds := newDataStudioClient(t, "http://"+srv.UIAddr())

@@ -202,7 +202,10 @@ func dataStudioClientWithHeaders(uiURL string, headers map[string]string) adminv
 // TestServer_ReadOnlyOperator_MutationsDenied covers the role-header leg
 // of OR-SEC-P1-3.
 func TestServer_ReadOnlyOperator_MutationsDenied(t *testing.T) {
-	srv, stop := startServer(t)
+	// The model rides the mutation allowlist so the denial asserted below
+	// provably comes from the viewer role, not from the deny-by-default
+	// model gate (AO-3).
+	srv, stop := startServerCfg(t, server.Config{DataStudioAllowedModels: []string{"articles"}})
 	defer stop()
 	uiURL := "http://" + srv.UIAddr()
 
