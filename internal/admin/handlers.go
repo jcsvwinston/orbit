@@ -82,7 +82,6 @@ func (p *Panel) handleListModels(c *router.Context) error {
 
 	models := p.src.All()
 	result := make([]modelInfo, 0, len(models))
-	modelByName := make(map[string]*modelInfo, len(models))
 	for _, m := range models {
 		count := int64(0)
 		if !includeCounts {
@@ -114,11 +113,19 @@ func (p *Panel) handleListModels(c *router.Context) error {
 			}
 		}
 		result = append(result, info)
-		modelByName[m.Name] = &result[len(result)-1]
 	}
+	// Sort BEFORE indexing by pointer: modelByName holds pointers into
+	// result, and sorting after taking them left each pointer aimed at a
+	// POSITION of the slice instead of a model — with a non-alphabetical
+	// registration order, every count/database written through the map
+	// landed on the wrong model (e.g. Article's count shown on Author).
 	sort.SliceStable(result, func(i, j int) bool {
 		return result[i].Name < result[j].Name
 	})
+	modelByName := make(map[string]*modelInfo, len(result))
+	for i := range result {
+		modelByName[result[i].Name] = &result[i]
+	}
 
 	aliases := p.sortedDatabaseAliases()
 	dbRuntime := make([]runtimeDatabaseInfo, 0, len(aliases))
