@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.18](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v0.2.17...quarkdatasource/v0.2.18) (2026-08-31)
+
+
+### Fixed
+
+* **deps:** alinea root, agent, server, quarkbridge, quarkdatasource al set (nucleus v1.22.0, quark v1.8.0) ([#360](https://github.com/jcsvwinston/orbit/issues/360)) ([2225b2c](https://github.com/jcsvwinston/orbit/commit/2225b2c746f8fd3452ce859536e8bffc8610588c))
+* **quarkdatasource:** expón cada campo del Record bajo su columna de esquema ([#350](https://github.com/jcsvwinston/orbit/issues/350)) ([6beacba](https://github.com/jcsvwinston/orbit/commit/6beacba9e38fda1ed72b1bad54d533fdccf428ae))
+
 ## [0.2.17](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v0.2.16...quarkdatasource/v0.2.17) (2026-08-30)
 
 
