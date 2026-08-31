@@ -9,7 +9,7 @@ require (
 
 require (
 	github.com/jcsvwinston/nucleus v1.22.0
-	github.com/jcsvwinston/orbit/agent v0.6.8
+	github.com/jcsvwinston/orbit/agent v0.6.9
 	github.com/prometheus/client_golang v1.23.2
 	golang.org/x/net v0.56.0
 	google.golang.org/protobuf v1.36.11
