@@ -56,9 +56,11 @@ searchable, labels are humanized field names.
 - **IDs are strings at the boundary** (ADR-001 D1), narrowed to the PK field's
   Go kind. Models with a **composite primary key** (or none) are catalogued
   **read-only**: List/Count work; Get/Create/Update/Delete return an error.
-- **Records are the model's JSON object** (D2): entities round-trip through
-  `encoding/json`, so Data Studio shows exactly what the struct marshals to
-  (including `quark.Nullable` values).
+- **Records are the model's JSON object** (D2), with every schema field
+  re-keyed to its **storage column**: Quark models normally carry no json tags,
+  so the raw object would use Go-case keys (`CustomerID`) while Data Studio
+  reads cells by column (`customer_id`). Values (including `quark.Nullable`)
+  and keys outside the schema — relations, extra JSON — pass through unchanged.
 - **Search** matches any searchable column via a single OR-group built with
   Quark's expression AST (`WhereExpr`), AND-composed with exact filters —
   column names go through Quark's `SQLGuard` like any builder input.

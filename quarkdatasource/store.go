@@ -27,16 +27,53 @@ type store[T any] struct {
 	info    datasource.ModelInfo
 
 	searchCols []string // columns LIKE-matched by Query.Search
+
+	// fieldKeys pairs each schema column with the object key encoding/json
+	// uses for its struct field, in declaration order. Quark models normally
+	// carry no json tags, so entities marshal under Go-case keys ("CustomerID")
+	// while the schema declares columns ("customer_id") — the key Data
+	// Studio's grid reads. These pairs drive the normalization both ways
+	// (entityToRecord and recordToEntity). Fields excluded from JSON
+	// (json:"-") are absent.
+	fieldKeys    []fieldKey
+	jsonKeyByCol map[string]string // FieldInfo.Column -> JSON object key
+}
+
+type fieldKey struct {
+	column  string // FieldInfo.Column (storage column)
+	jsonKey string // key the struct field marshals under
 }
 
 func newStore[T any](a *Adapter, t reflect.Type, meta *quark.ModelMeta, info datasource.ModelInfo) datasource.RecordStore {
-	s := &store[T]{adapter: a, typ: t, meta: meta, info: info}
+	s := &store[T]{adapter: a, typ: t, meta: meta, info: info,
+		jsonKeyByCol: make(map[string]string, len(meta.Fields))}
 	for _, f := range info.Fields {
 		if f.IsSearch {
 			s.searchCols = append(s.searchCols, f.Column)
 		}
 	}
+	for _, f := range meta.Fields {
+		key, ok := jsonFieldKey(t.Field(f.Index))
+		if !ok {
+			continue
+		}
+		s.fieldKeys = append(s.fieldKeys, fieldKey{column: f.Column, jsonKey: key})
+		s.jsonKeyByCol[f.Column] = key
+	}
 	return s
+}
+
+// jsonFieldKey returns the object key encoding/json uses for sf, and false
+// when the field is excluded from marshaling (json:"-").
+func jsonFieldKey(sf reflect.StructField) (string, bool) {
+	tag := sf.Tag.Get("json")
+	if tag == "-" {
+		return "", false
+	}
+	if name, _, _ := strings.Cut(tag, ","); name != "" {
+		return name, true
+	}
+	return sf.Name, true
 }
 
 // applyQuery translates the neutral Query's filters and search onto a Quark
@@ -96,7 +133,7 @@ func (s *store[T]) List(ctx context.Context, q datasource.Query) (datasource.Pag
 
 	records := make([]datasource.Record, 0, len(items))
 	for i := range items {
-		rec, err := entityToRecord(&items[i])
+		rec, err := s.entityToRecord(&items[i])
 		if err != nil {
 			return datasource.Page{}, err
 		}
@@ -128,7 +165,7 @@ func (s *store[T]) Get(ctx context.Context, id string) (datasource.Record, error
 	if err != nil {
 		return nil, err
 	}
-	return entityToRecord(&entity)
+	return s.entityToRecord(&entity)
 }
 
 // Create inserts a record and returns the created row (with the
@@ -144,7 +181,7 @@ func (s *store[T]) Create(ctx context.Context, rec datasource.Record) (datasourc
 	if err := quark.For[T](ctx, s.adapter.provider).Create(entity); err != nil {
 		return nil, err
 	}
-	return entityToRecord(entity)
+	return s.entityToRecord(entity)
 }
 
 // Update applies a partial change set by PK, via Quark's UpdateMap (which can
@@ -286,10 +323,13 @@ func (s *store[T]) coerceFilterValue(column, value string) (any, error) {
 	}
 }
 
-// entityToRecord round-trips an entity through JSON, so records carry exactly
-// the JSON object the struct marshals to (ADR-001 O3 fidelity: the SPA sees
-// the same shape a JSON API over these models would emit).
-func entityToRecord(entity any) (datasource.Record, error) {
+// entityToRecord round-trips an entity through JSON and then re-keys every
+// schema field to its storage column (FieldInfo.Column) — the key Data
+// Studio's grid reads cells by. Without this, Quark models (which normally
+// have no json tags) marshal Go-case keys and every cell renders empty
+// (PR-DS-01). Keys outside the schema (relations, extra JSON) pass through
+// unchanged, preserving the round-trip fidelity ADR-001 O3 asks for.
+func (s *store[T]) entityToRecord(entity any) (datasource.Record, error) {
 	data, err := json.Marshal(entity)
 	if err != nil {
 		return nil, fmt.Errorf("quarkdatasource: marshal entity: %w", err)
@@ -298,15 +338,37 @@ func entityToRecord(entity any) (datasource.Record, error) {
 	if err := json.Unmarshal(data, &rec); err != nil {
 		return nil, fmt.Errorf("quarkdatasource: unmarshal entity: %w", err)
 	}
+	for _, fk := range s.fieldKeys {
+		if fk.jsonKey == fk.column {
+			continue
+		}
+		if v, ok := rec[fk.jsonKey]; ok {
+			delete(rec, fk.jsonKey)
+			rec[fk.column] = v
+		}
+	}
 	return rec, nil
 }
 
 // recordToEntity builds a *T from a Record via the inverse JSON round-trip,
 // after dropping PK and read-only (version) fields — the database owns those.
+// Schema keys (column or Go name) are re-keyed to the struct's JSON key first:
+// json.Unmarshal alone never matches a multi-word column ("customer_id") to
+// its Go field (CustomerID), which silently dropped those values (PR-DS-01,
+// write path). Unknown keys pass through for json.Unmarshal to resolve.
 func (s *store[T]) recordToEntity(rec datasource.Record) (*T, error) {
 	clean := make(map[string]any, len(rec))
 	for k, v := range rec {
-		if fi, ok := s.info.Field(k); ok && (fi.IsPK || fi.IsReadOnly) {
+		if fi, ok := s.info.Field(k); ok {
+			if fi.IsPK || fi.IsReadOnly {
+				continue
+			}
+			if key, ok := s.jsonKeyByCol[fi.Column]; ok {
+				clean[key] = v
+			}
+			// A schema field excluded from JSON (json:"-") is not settable
+			// through the record: dropping it mirrors what json.Unmarshal
+			// would do anyway.
 			continue
 		}
 		clean[k] = v
