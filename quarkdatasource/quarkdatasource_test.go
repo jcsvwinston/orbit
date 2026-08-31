@@ -109,9 +109,9 @@ func TestCRUD_Roundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	idNum, ok := created["ID"].(float64)
+	idNum, ok := created["id"].(float64)
 	if !ok || idNum <= 0 {
-		t.Fatalf("created record has no assigned ID: %#v", created)
+		t.Fatalf("created record has no assigned id: %#v", created)
 	}
 	id := jsonNumberString(idNum)
 
@@ -119,7 +119,7 @@ func TestCRUD_Roundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if got["Name"] != "alpha" || got["Qty"].(float64) != 5 {
+	if got["name"] != "alpha" || got["qty"].(float64) != 5 {
 		t.Errorf("Get = %v", got)
 	}
 
@@ -128,7 +128,7 @@ func TestCRUD_Roundtrip(t *testing.T) {
 		t.Fatalf("Update: %v", err)
 	}
 	got, _ = st.Get(ctx, id)
-	if got["Name"] != "beta" || got["Qty"].(float64) != 0 {
+	if got["name"] != "beta" || got["qty"].(float64) != 0 {
 		t.Errorf("after Update: %v", got)
 	}
 
@@ -176,7 +176,7 @@ func TestList_FiltersSearchOrderPagination(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List(search+filter): %v", err)
 	}
-	if page.Total != 1 || page.Items[0]["Name"] != "red screwdriver" {
+	if page.Total != 1 || page.Items[0]["name"] != "red screwdriver" {
 		t.Errorf("search+filter: total=%d items=%v", page.Total, page.Items)
 	}
 
@@ -185,7 +185,7 @@ func TestList_FiltersSearchOrderPagination(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List(order+page): %v", err)
 	}
-	if len(page.Items) != 2 || page.Items[0]["Qty"].(float64) != 3 {
+	if len(page.Items) != 2 || page.Items[0]["qty"].(float64) != 3 {
 		t.Errorf("order desc page 1: %v", page.Items)
 	}
 	if page.Total != 3 || page.TotalPages != 2 || !page.HasMore || page.IsEstimated {
@@ -264,4 +264,104 @@ func TestInvalidID(t *testing.T) {
 func jsonNumberString(f float64) string {
 	b, _ := json.Marshal(int64(f))
 	return string(b)
+}
+
+// QDInvoice mirrors the showcase's Article shape: a multi-word column
+// (customer_id) on a model WITHOUT json tags — the norm for Quark models —
+// plus one json-tagged field and one excluded from JSON. Data Studio's grid
+// reads cells by the schema's Column (snake_case), so a Record that carries
+// Go-case keys renders every cell empty (PR-DS-01).
+type QDInvoice struct {
+	ID         int64  `db:"id" pk:"true"`
+	CustomerID int64  `db:"customer_id" quark:"not_null"`
+	Note       string `db:"note" json:"custom_note"`
+	Secret     string `db:"secret" json:"-"`
+}
+
+// TestRecordKeys_ExposedByColumn is the contract test for PR-DS-01: every
+// Record the store returns (Create, Get, List) must expose each schema field
+// under FieldInfo.Column — never under the Go field name or a json tag alias.
+// Fields excluded from JSON (json:"-") stay out of the Record entirely.
+func TestRecordKeys_ExposedByColumn(t *testing.T) {
+	client, err := quark.New("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("quark.New: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	ctx := context.Background()
+	if err := client.RegisterModel(&QDInvoice{}); err != nil {
+		t.Fatalf("RegisterModel: %v", err)
+	}
+	if err := client.MigrateRegistered(ctx); err != nil {
+		t.Fatalf("MigrateRegistered: %v", err)
+	}
+	a := New(client)
+	if err := Register[QDInvoice](a); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	mi, ok := a.Get("QDInvoice")
+	if !ok {
+		t.Fatal("QDInvoice not found")
+	}
+	st, err := a.Store("QDInvoice", "")
+	if err != nil {
+		t.Fatalf("Store: %v", err)
+	}
+
+	assertKeysByColumn := func(rec datasource.Record, stage string) {
+		t.Helper()
+		for _, f := range mi.Fields {
+			if f.Column == "secret" {
+				// json:"-" keeps the field out of the JSON object; the
+				// Record must not resurrect it under any key.
+				if _, leaked := rec[f.Column]; leaked {
+					t.Errorf("%s: json:\"-\" field leaked under %q", stage, f.Column)
+				}
+			} else if _, ok := rec[f.Column]; !ok {
+				t.Errorf("%s: record misses column key %q (record: %#v)", stage, f.Column, rec)
+			}
+			if f.Name != f.Column {
+				if _, leaked := rec[f.Name]; leaked {
+					t.Errorf("%s: record leaks Go-case key %q", stage, f.Name)
+				}
+			}
+		}
+		if _, leaked := rec["custom_note"]; leaked {
+			t.Errorf("%s: record leaks json-tag key \"custom_note\" instead of the column", stage)
+		}
+	}
+
+	created, err := st.Create(ctx, datasource.Record{"customer_id": 7, "note": "n1"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	assertKeysByColumn(created, "Create")
+	// Write path of the same defect: a record keyed by a multi-word column
+	// must reach the entity (json.Unmarshal alone never matches
+	// "customer_id" to CustomerID).
+	if got, _ := created["customer_id"].(float64); got != 7 {
+		t.Errorf("Create dropped customer_id: %#v", created)
+	}
+
+	idNum, ok := created["id"].(float64)
+	if !ok || idNum <= 0 {
+		t.Fatalf("created record has no assigned id: %#v", created)
+	}
+	got, err := st.Get(ctx, jsonNumberString(idNum))
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	assertKeysByColumn(got, "Get")
+	if got["note"] != "n1" {
+		t.Errorf("Get: note = %#v, want \"n1\" under its column key", got["note"])
+	}
+
+	page, err := st.List(ctx, datasource.Query{})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("List: %d items, want 1", len(page.Items))
+	}
+	assertKeysByColumn(page.Items[0], "List")
 }

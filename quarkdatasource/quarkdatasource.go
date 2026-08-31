@@ -31,9 +31,12 @@
 //   - IDs are strings at the boundary (ADR-001 D1) and are narrowed to the PK
 //     field's Go kind. Models with a composite primary key are listed read-only:
 //     List/Count work, Get/Create/Update/Delete return an error.
-//   - Records are the model's JSON object (ADR-001 D2): the adapter round-trips
-//     entities through encoding/json, so what Data Studio shows is exactly what
-//     the struct marshals to (including quark.Nullable values).
+//   - Records are the model's JSON object (ADR-001 D2), with every schema
+//     field re-keyed to its storage column: Quark models normally carry no
+//     json tags, so the raw object would use Go-case keys ("CustomerID")
+//     while Data Studio reads cells by column ("customer_id"). Values
+//     (including quark.Nullable) and keys outside the schema — relations,
+//     extra JSON — pass through unchanged.
 //   - Delete follows Quark's semantics: soft delete when the model has a
 //     deleted_at column, hard delete otherwise.
 //   - Store's dbAlias is ignored: a Quark client is bound to one database. Use
