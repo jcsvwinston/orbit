@@ -6,7 +6,7 @@ description: What changed in each Orbit release, in plain terms.
 
 # Release notes
 
-The current release is **v1.8.13**. <!-- x-release-please-version -->
+The current release is **v1.8.14**. <!-- x-release-please-version -->
 
 Every heading below is a version of the **root module**
 (`github.com/jcsvwinston/orbit`) — the one an application mounts for the
@@ -16,6 +16,47 @@ The fleet modules (`agent`, `server`, `proto`) release independently with their
 own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
+
+## v1.8.14 — 2026-08-31
+
+The release that carries an end-to-end audit of the panel. Most of it is about
+the panel telling you the truth: about your data, about itself, and about what
+the fleet plane does and does not enforce.
+
+**The panel is Orbit.** It signed itself "Nucleus Admin" everywhere and ignored
+the `Title` you configured; both are fixed, and the docs now show what the
+panel actually looks like — the first screenshots this documentation has ever
+had, of Data Studio, the live inspector and the metrics view.
+
+**Data Studio over Quark shows your data.** Every cell rendered as "—" because
+the schema declared snake_case columns while the records arrived keyed by Go
+field names; records now expose each field under its schema column. Model
+counts were also crossed between models — a sort reordered the slice the
+counters pointed into — and rows deleted with soft-delete no longer inflate
+them.
+
+**The live inspector shows the traffic it promised.** It only accepted one
+event shape, so requests never appeared and the SQL statements Quark publishes
+were never drawn at all; both are rendered now, correlated by request, with
+durations in microseconds instead of a rounded zero.
+
+**Fixed.** A data race in the panel's tenant-field cache, reachable from every
+schema fetch. The session viewer served the full session token to any
+authenticated operator; it now shows an opaque handle. The audit log's JSON
+contract (`id`, `total_pages`, `record_id`) is coherent. Field labels no longer
+render as "I D".
+
+**Getting in is possible without a bootstrap password.** The admin schema is
+created whenever the module mounts, so `nucleus createuser` works instead of
+failing on a table that did not exist yet — and the quick start no longer ends
+on an empty panel: the minimal example registers a model, and the docs explain
+how a model reaches Data Studio.
+
+**Said plainly, not fixed.** The fleet plane's Data Studio does not apply
+per-model RBAC or tenant filtering; its package documentation claimed it did.
+The claim is gone, a deny-by-default gate for mutations is in place, and the
+direction that closes it properly is written down as a decision record.
+
 
 ## v1.8.13 — 2026-08-30
 
