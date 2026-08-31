@@ -10,7 +10,13 @@ description: The modules.orbit.* configuration reference.
 (or set directly in Go). **Every field is optional** — the zero value mounts a
 working panel under `/admin`.
 
-The tables below group the keys by what they affect.
+The tables below group the keys by what they affect. For a plain in-process
+panel, only the first four groups can ever matter, and most apps set just
+[Mounting](#mounting) and [the bootstrap user](#the-bootstrap-admin-user).
+The `cluster_*` keys belong to the **opt-in live-feed relay**: they are
+inert until `cluster_enabled` is true, and in particular **no Redis is
+required to run the panel** — `cluster_redis_url` is read only by the
+relay.
 
 ## Mounting
 

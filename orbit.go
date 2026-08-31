@@ -44,6 +44,26 @@ const defaultAuditMaxSize = 10000
 // mounts under DefaultPrefix); bound from the `modules.orbit.*` subtree of the
 // application config when mounted on a config-file app.
 //
+// The struct is flat, but its fields serve two different modes — do not let
+// the cluster vocabulary scare a plain panel setup:
+//
+//   - Panel (what almost every app uses): Prefix, Title, Bootstrap*,
+//     AuthDatabase, MultiTenant*, Environment, MigrationsPath, AuditMaxSize,
+//     LiveExcludePatterns, TraceURLTemplate. Nothing else is required; the
+//     four-field examples/minimal is a complete production shape.
+//   - Cluster live-feed relay (opt-in, off by default): the Cluster* fields.
+//     They only matter once ClusterEnabled is true; in particular, NO Redis
+//     is needed to run the panel — ClusterRedisURL is read exclusively by
+//     the relay. The standalone fleet plane (agent/, server/) is configured
+//     on its own binaries, not here.
+//   - Go-only: DataSource (not bindable from YAML).
+//
+// Grouping the Cluster* fields into a nested sub-struct would make this
+// split structural, but the flat yaml keys (cluster_enabled, ...) are part
+// of the frozen surface below, so that reshuffle is deliberately deferred
+// to a hypothetical v2; within v1.x the split lives in this comment and in
+// the configuration docs.
+//
 // Config is a frozen v1.0 surface (docs/V1_GATE.md §A-3): every field keeps
 // its name, yaml key, type, and zero-value behavior for the life of v1.x.
 // Fields may be added; none is removed or renamed without a major. The freeze
