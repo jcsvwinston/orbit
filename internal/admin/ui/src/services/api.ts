@@ -1,4 +1,4 @@
-import type { User, Session, Model, Record as AppRecord, AuditLog, RBACPolicy, HealthCheck, SystemMetrics, LiveRequest, FeatureFlag, ModelsResponse, ModelSchema, PaginatedResult, SystemSnapshot } from '@/types'
+import type { User, Session, Model, Record as AppRecord, AuditLog, RBACPolicy, HealthCheck, SystemMetrics, LiveRequest, LiveQuery, LiveFeedEntry, FeatureFlag, ModelsResponse, ModelSchema, PaginatedResult, SystemSnapshot } from '@/types'
 import { buildAdminPath } from '@/config'
 
 function isRedirectToLogin(response: Response): boolean {
@@ -321,26 +321,69 @@ export async function getSystemSnapshot(): Promise<SystemSnapshot> {
   return fetchAPI<SystemSnapshot>('/api/system/snapshot')
 }
 
-export async function getLiveRequests(): Promise<LiveRequest[]> {
+interface RawLiveRequest {
+  request_id?: string
+  timestamp: string
+  method: string
+  path: string
+  status: number
+  duration_ms: number
+}
+
+interface RawLiveQuery {
+  request_id?: string
+  timestamp: string
+  model_name?: string
+  operation?: string
+  query: string
+  duration_ms: number
+  error?: string
+}
+
+// Feed rows need stable, unique React keys; request_id repeats across the
+// SQL statements of one request, so keys get a local sequence instead.
+let liveFeedSeq = 0
+const nextFeedId = (prefix: string) => `${prefix}-${++liveFeedSeq}`
+
+export function mapLiveRequest(raw: RawLiveRequest): LiveRequest {
+  return {
+    id: nextFeedId('http'),
+    method: raw.method,
+    path: raw.path,
+    status: raw.status,
+    duration: raw.duration_ms,
+    timestamp: raw.timestamp,
+    requestId: raw.request_id,
+  }
+}
+
+export function mapLiveQuery(raw: RawLiveQuery): LiveQuery {
+  return {
+    id: nextFeedId('sql'),
+    query: raw.query,
+    model: raw.model_name,
+    operation: raw.operation,
+    duration: raw.duration_ms,
+    timestamp: raw.timestamp,
+    requestId: raw.request_id,
+    error: raw.error,
+  }
+}
+
+// getLiveFeed returns the live snapshot's HTTP requests and SQL statements as
+// one list, newest first — the same rows the `/api/live/ws` stream then
+// prepends via `http.request` / `db.query` envelopes.
+export async function getLiveFeed(): Promise<LiveFeedEntry[]> {
   const response = await fetchAPI<{
-    requests?: Array<{
-      request_id?: string
-      timestamp: string
-      method: string
-      path: string
-      status: number
-      duration_ms: number
-    }>
+    requests?: RawLiveRequest[]
+    queries?: RawLiveQuery[]
   }>('/api/live/snapshot')
 
-  return (response.requests ?? []).map((request) => ({
-    id: request.request_id ?? `${request.timestamp}-${request.method}-${request.path}`,
-    method: request.method,
-    path: request.path,
-    status: request.status,
-    duration: request.duration_ms,
-    timestamp: request.timestamp,
-  }))
+  const entries: LiveFeedEntry[] = [
+    ...(response.requests ?? []).map((r) => ({ kind: 'http' as const, ...mapLiveRequest(r) })),
+    ...(response.queries ?? []).map((q) => ({ kind: 'sql' as const, ...mapLiveQuery(q) })),
+  ]
+  return entries.sort((a, b) => (a.timestamp < b.timestamp ? 1 : a.timestamp > b.timestamp ? -1 : 0))
 }
 
 export function getLiveWebSocket(): WebSocket | null {
