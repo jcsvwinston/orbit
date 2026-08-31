@@ -9,19 +9,54 @@
 // password. With ADMIN_BOOTSTRAP_PASSWORD unset, bootstrapping is skipped
 // (no admin user is created) — the framework's secure default; provision
 // the admin another way (e.g. `nucleus createuser`) or set the variable.
+//
+// The app registers one model (Note) so Data Studio has something to show:
+// Orbit reads the host application's model registry, so a panel mounted on
+// an app with no registered models is an EMPTY panel. The notes module
+// below is the smallest wiring that makes the flagship view work.
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 
+	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/nucleus"
 	"github.com/jcsvwinston/orbit"
 )
 
+// Note is the example's only domain model. Listing it in Module.Models
+// below registers it with the framework's model registry — the same
+// registry Data Studio browses. BaseModel supplies the standard
+// id/created_at/updated_at/deleted_at columns.
+type Note struct {
+	model.BaseModel
+
+	Title string `db:"required" json:"title" validate:"required"`
+	Body  string `json:"body"`
+}
+
+// notesModule registers the Note model and creates its table. Without a
+// registered model Data Studio lists nothing; this module is what makes
+// the panel non-empty.
+func notesModule() nucleus.ModuleSpec {
+	return nucleus.Module[struct{}]{
+		Name:   "notes",
+		Models: []any{Note{}},
+		OnStart: func(_ context.Context, rt nucleus.Runtime, _ struct{}) error {
+			// Dev-mode convenience so the example is one `go run` with no
+			// migration step. Production apps manage schema with explicit
+			// SQL migrations (`nucleus migrate up`) instead.
+			return rt.AutoMigrate(Note{})
+		},
+	}.Build()
+}
+
 func main() {
 	app, err := nucleus.New().
 		FromConfigFile("nucleus.yaml").
+		Mount(notesModule()).
 		Mount(orbit.Module(orbit.Config{
 			Prefix:            "/admin",
 			Title:             "Minimal Admin",

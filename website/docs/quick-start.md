@@ -62,6 +62,66 @@ You do not wire up any protection yourself. Orbit registers its prefix with the
 framework's default-deny RBAC and enforces its own session-based login below
 that prefix, so the panel is gated from the first request.
 
+## 4. Register a model so Data Studio has something to show
+
+Orbit brings no data of its own: Data Studio browses the **host
+application's model registry**. If your app registers no models — as the
+bare snippet above does — the panel mounts and logs you in, but Data
+Studio lists zero models. That is expected, not a broken install.
+
+A model appears in Data Studio the moment your app registers it. In
+Nucleus that means listing the struct in a module's `Models` and making
+sure its table exists:
+
+```go
+import (
+    "context"
+
+    "github.com/jcsvwinston/nucleus/pkg/model"
+    "github.com/jcsvwinston/nucleus/pkg/nucleus"
+)
+
+type Note struct {
+    model.BaseModel
+
+    Title string `db:"required" json:"title" validate:"required"`
+    Body  string `json:"body"`
+}
+
+func notesModule() nucleus.ModuleSpec {
+    return nucleus.Module[struct{}]{
+        Name:   "notes",
+        Models: []any{Note{}}, // ← this line puts Note in Data Studio
+        OnStart: func(_ context.Context, rt nucleus.Runtime, _ struct{}) error {
+            // Dev-mode convenience; production apps use SQL migrations.
+            return rt.AutoMigrate(Note{})
+        },
+    }.Build()
+}
+```
+
+Mount it next to Orbit — order does not matter:
+
+```go
+nucleus.New().
+    FromConfigFile("nucleus.yml").
+    Mount(notesModule()).
+    Mount(orbit.Module(orbit.Config{ /* ... */ })).
+    Build()
+```
+
+Restart, open Data Studio, and `Note` is there — browse, create, edit,
+delete. Every model your application registers shows up the same way;
+Orbit needs no per-model configuration.
+
+Model registration is a Nucleus concept, not an Orbit one — see the
+[Nucleus quickstart](/nucleus/getting-started/quickstart) and
+[models and database](/nucleus/concepts/models-and-database) for tags,
+relations, and real migrations. The runnable
+[`examples/minimal`](https://github.com/jcsvwinston/orbit/tree/main/examples/minimal)
+in the repository is exactly this page as a program: one `Note` model, one
+`Mount`, a populated Data Studio.
+
 ## The bootstrap user
 
 Orbit creates the `nucleus_admin_users` schema every time it mounts.
