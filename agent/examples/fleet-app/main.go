@@ -3,18 +3,23 @@
 // observability over a bidi stream to a standalone admin server
 // (orbit/server) so an operator can watch the fleet from one place.
 //
-// End-to-end, two processes:
+// End-to-end, two processes (this app serves on :8000 so the admin
+// server's UI can keep :8080):
 //
 //  1. Start the admin server (from the orbit/server module):
 //
-//     go run ./cmd/admin-server --agent-addr=127.0.0.1:9090
+//     go run ./cmd/admin-server --agent-addr=127.0.0.1:9090 --ui-addr=127.0.0.1:8080 --ui-insecure-open
+//
+//     --ui-insecure-open makes the UI loadable from a plain browser in
+//     local dev (loopback only); without it the UI listener expects a
+//     header-setting reverse proxy or a bearer and answers 401.
 //
 //  2. Start this app pointing at it:
 //
 //     ORBIT_ADMIN_ENDPOINT=http://127.0.0.1:9090 go run .
 //
-// Open the admin server's UI (its --ui-addr, default :8080) and this node
-// appears in the topology; traffic to this app streams into the live feed.
+// Open http://127.0.0.1:8080 and this node appears in the topology;
+// traffic to this app (http://127.0.0.1:8000) streams into the live feed.
 //
 // With ORBIT_ADMIN_ENDPOINT unset the agent stays disabled and the app runs
 // unchanged — the agent is strictly opt-in and fail-open, never on the

@@ -115,6 +115,15 @@ type UIConfig struct {
 	// regardless of role header or credential mode. See
 	// Config.UIReadOnly.
 	ForceReadOnly bool
+
+	// InsecureOpen, when true, authenticates a credential-less request
+	// whose remote address is loopback as the fixed operator
+	// "insecure-open". Local-development convenience ONLY (the embedded
+	// SPA cannot present a bearer, so without a header-setting reverse
+	// proxy a browser can never load the UI). The server refuses to
+	// start with this set on a non-loopback UI listener; see
+	// Config.UIInsecureOpen.
+	InsecureOpen bool
 }
 
 // ProxySecretHeader is the header the trusted proxy uses to present
@@ -180,6 +189,17 @@ func UIMiddleware(cfg UIConfig) func(http.Handler) http.Handler {
 				// credential-less requests do not.
 				if got != "" {
 					limiter.fail(ip)
+				}
+			}
+			// 3) insecure-open dev fallback: loopback requests only, and
+			// only when the operator explicitly opted in (--ui-insecure-open).
+			// A request that PRESENTED a credential and failed above never
+			// falls through here.
+			if cfg.InsecureOpen && bearerFromHeader(r) == "" {
+				if from := remoteIP(r); from != nil && from.IsLoopback() {
+					id := Identity{Subject: "insecure-open", Role: "ui-operator", ReadOnly: cfg.ForceReadOnly}
+					next.ServeHTTP(w, r.WithContext(WithIdentity(r.Context(), id)))
+					return
 				}
 			}
 			http.Error(w, "unauthorized", http.StatusUnauthorized)

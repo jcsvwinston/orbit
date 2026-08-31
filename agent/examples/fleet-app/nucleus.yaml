@@ -1,4 +1,6 @@
-port: 8080
+# 8000, not 8080: the admin server's UI listener defaults to :8080, and
+# the README runs both processes on one machine.
+port: 8000
 log_level: info
 log_format: text
 
