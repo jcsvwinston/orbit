@@ -47,9 +47,14 @@ core de Nucleus por su `ADR-019`; Nucleus ya no lleva código de admin.
 
 ## Decisiones arquitectónicas (`docs/adrs/`)
 
-Primer ADR de Orbit. Léelo antes de tocar la superficie que cubre; no reabras uno
-aceptado sin sucesor.
+Lee el ADR que cubra la superficie que vas a tocar antes de tocarla; no reabras
+uno aceptado sin sucesor.
 
+- **[ADR-002](docs/adrs/ADR-002-fleet-datastudio-identidad.md)** — BORRADOR sin
+  decidir (D2 de la auditoría 2026-08-30): rumbo del Data Studio del plano fleet
+  — propagar identidad por el stream (consumir el contrato datasource) vs
+  declarar el fleet telemetría+lectura. No implementar ninguna dirección sin
+  aceptar el ADR.
 - **[ADR-001](docs/adrs/ADR-001-datastudio-agnostic-datasource.md)** — Data Studio
   agnóstico del origen de datos: contrato neutral `datasource`
   (`ModelSource`/`RecordStore`/`DataSource`) para que el panel deje de hablar tipos

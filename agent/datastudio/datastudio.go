@@ -2,8 +2,35 @@
 // frames sent by the admin server. The admin server has no direct DB
 // access; it routes UI Data Studio operations to a connected agent
 // over the existing bidi stream. The agent executes the operation
-// locally via pkg/model.CRUD (preserving signals, validation,
-// multi-tenant resolution, RBAC) and sends a DataStudioResponse back.
+// locally via a pkg/model.CRUD built directly on the database handle
+// and sends a DataStudioResponse back.
+//
+// SECURITY MODEL — read before wiring this into an app. The handler
+// executes with the AGENT'S OWN database access, not the operator's:
+// no operator identity crosses the bidi stream, so the application's
+// per-request machinery does NOT run here. Concretely:
+//
+//   - NO per-model RBAC: the app's Authorizer is never consulted; any
+//     operation the admin server dispatches runs against the DB.
+//   - NO multi-tenant resolution or filtering: there is no tenant in
+//     the context, so reads span every tenant's rows and writes carry
+//     whatever tenant values the request supplies.
+//   - NO signals: the CRUD is constructed with a nil signals bus, so
+//     bus subscribers (PreCreate/PostCreate/…) never fire. Hooks that
+//     live on the model's own Config (BeforeCreate etc.) still run,
+//     because they travel with the model metadata.
+//   - Field-level handling only: primary-key/read-only/excluded fields
+//     are respected when decoding records, and values are converted to
+//     the field's Go type; the app's request-level validation does not
+//     run.
+//
+// The defensible gates live on the ADMIN SERVER: operator read-only
+// roles (viewer / --ui-read-only) and the per-model mutation allowlist
+// (--datastudio-allowed-models, deny-by-default). Only enable this
+// handler on agents whose whole database may be exposed to every
+// read-write operator of the admin server. Propagating a real operator
+// identity across the stream is an open direction — see
+// docs/adrs/ADR-002-fleet-datastudio-identidad.md in the repo root.
 //
 // Construction is opt-in: pass a non-nil *model.Registry and at least
 // one *db.DB in the agent's Config. When the registry is nil, the
