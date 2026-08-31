@@ -16,6 +16,15 @@ its `ControlService` API.
 go build -o bin/admin-server ./cmd/admin-server
 ./bin/admin-server      # default flags: agents :9090, UI :8080
 
+# Local development: see the UI in a plain browser. Without a
+# header-setting reverse proxy every UI request answers 401 (the SPA
+# cannot present a bearer), so opt in to the loopback-only dev mode:
+./bin/admin-server \
+  --agent-addr=127.0.0.1:9090 \
+  --ui-addr=127.0.0.1:8080 \
+  --ui-insecure-open
+# then open http://127.0.0.1:8080
+
 # Production-flavoured invocation:
 ./bin/admin-server \
   --agent-addr=:9090 \
@@ -64,17 +73,23 @@ trusted-CIDR request without the matching secret falls through to the
 bearer path instead of being trusted. Keep `--ui-trusted-cidrs` as narrow
 as your proxy's real source range.
 
-**Operators are read-write by default; scope them with roles or
-`--ui-read-only`.** An authenticated operator can perform every Data
-Studio mutation on every model of every connected node, unless scoped
-down by one of two knobs:
+**Data Studio mutations are deny-by-default; open models explicitly
+with `--datastudio-allowed-models`.** Fleet-plane mutations run on the
+agent's database WITHOUT the application's per-model RBAC or tenant
+filtering (no operator identity crosses the agent stream), so which
+models the fleet may write is an explicit server-side decision:
 
+* `--datastudio-allowed-models` (env
+  `NUCLEUS_ADMIN_DATASTUDIO_ALLOWED_MODELS`): comma-separated model
+  names Data Studio may mutate (create/update/delete/bulk). **Empty —
+  the default — refuses every mutation** with `PermissionDenied`;
+  `"*"` allows all models. Reads are not gated by this list.
 * `--ui-role-header` (default `X-Auth-Role`): when the trusted reverse
   proxy sets this header to `viewer` (also `readonly`/`read-only`), that
   operator's Data Studio mutations are refused with `PermissionDenied`
   while every read surface (streams, nodes, Data Studio reads,
   RBAC/audit) keeps working. Any other value — including absent — keeps
-  the operator read-write.
+  the operator read-write (still subject to the model allowlist).
 * `--ui-read-only` (env `NUCLEUS_ADMIN_UI_READ_ONLY=1`): makes EVERY
   operator read-only, turning the server into a pure observability
   plane.
@@ -82,10 +97,20 @@ down by one of two knobs:
 The `ManageService.GetRbac` surface behind the UI's "Access control"
 screen remains a **read-only snapshot** of each node's Casbin policy
 (the app's own authorizer); it does **not** gate the operator's
-fleet-plane actions, which are audited and gated only by the
-viewer/read-write distinction above — per-verb/per-object operator
-authorization is still future work. Treat read-write access to the UI
-listener as full fleet-admin access.
+fleet-plane actions, which are audited and gated only by the model
+allowlist and the viewer/read-write distinction above — per-operator,
+per-verb authorization is still future work (see
+`docs/adrs/ADR-002-fleet-datastudio-identidad.md` in the repo root).
+Treat read-write access to the UI listener as admin access over every
+allowlisted model of every connected node.
+
+**`--ui-insecure-open` is local-development only.** It authenticates
+any credential-less loopback request as the fixed operator
+`insecure-open`, because the embedded SPA cannot present a bearer and a
+browser cannot set trusted-proxy headers — without it the UI is
+unreachable without a reverse proxy. The server refuses to start with
+this flag on a non-loopback `--ui-addr` and logs a `WARN` on boot. A
+request that presents a wrong credential is still rejected.
 
 **Brute-force lockout.** Requests that PRESENT a wrong credential (bad
 bearer on either listener) are rate limited per source IP (20 failures

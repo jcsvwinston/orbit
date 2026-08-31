@@ -18,6 +18,21 @@ cd server && go build -o bin/admin-server ./cmd/admin-server
 ./bin/admin-server      # defaults: agents on :9090, UI on :8080
 ```
 
+For local development, make the UI loadable from a plain browser (without
+a reverse proxy every UI request answers 401, because the SPA cannot
+present a bearer token):
+
+```bash
+./bin/admin-server \
+  --agent-addr=127.0.0.1:9090 \
+  --ui-addr=127.0.0.1:8080 \
+  --ui-insecure-open
+# then open http://127.0.0.1:8080
+```
+
+`--ui-insecure-open` only works on a loopback `--ui-addr` (the server
+refuses to start otherwise) and is for local development only.
+
 A production-flavoured invocation:
 
 ```bash
@@ -35,15 +50,22 @@ A production-flavoured invocation:
 Run `./bin/admin-server --help` (or `--version`) for the full surface. Every
 flag has a `NUCLEUS_ADMIN_*` env-var counterpart.
 
-:::warning Any authenticated operator can write to every node by default
-An authenticated UI operator can run **every Data Studio mutation on every
-model of every connected node**. The `Access control` screen does not change
-that: it is a read-only snapshot of each node's own policy, and it does not
-gate the operator's fleet-plane actions, which are audited rather than
+:::warning Fleet mutations bypass the app's RBAC and tenant filtering
+A Data Studio operation routed through the fleet plane executes on the
+agent with the agent's own database access: **no operator identity crosses
+the stream**, so the application's per-model RBAC and multi-tenant
+filtering do not run. The `Access control` screen does not change that: it
+is a read-only snapshot of each node's own policy, and it does not gate
+the operator's fleet-plane actions, which are audited rather than
 authorized per verb and object.
 
-Scope operators down with either:
+Because of that, **Data Studio mutations are refused by default**. The
+gates, all server-side:
 
+- `--datastudio-allowed-models` — comma-separated model names Data Studio
+  may mutate (create/update/delete/bulk). Empty (the default) refuses
+  every mutation with `PermissionDenied`; `"*"` allows all models. Reads
+  are not gated by this list.
 - `--ui-role-header` (default `X-Auth-Role`) — the trusted proxy sets it to
   `viewer` for a read-only operator: mutations refused, reads keep working;
 - `--ui-read-only` — makes **every** operator read-only, turning the server
@@ -52,7 +74,8 @@ Scope operators down with either:
 Also set `--ui-proxy-secret` (above), so a co-located process inside the
 trusted range cannot forge an operator identity with CIDR membership alone,
 and keep `--ui-trusted-cidrs` as narrow as your proxy's real source range.
-Treat read-write access to the UI listener as full fleet-admin access.
+Treat read-write access to the UI listener as admin access over every
+allowlisted model of every connected node.
 :::
 
 ### Behind an SSO reverse proxy (recommended)

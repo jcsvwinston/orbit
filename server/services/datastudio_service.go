@@ -25,15 +25,39 @@ import (
 type DataStudioService struct {
 	state   *State
 	Timeout time.Duration
+
+	// allowedModels is the lower-cased mutation allowlist
+	// (Config.DataStudioAllowedModels); allowAllModels is the "*" entry.
+	// Deny-by-default: both zero → every mutation is refused.
+	allowedModels  map[string]struct{}
+	allowAllModels bool
 }
 
 // NewDataStudioService constructs the handler. timeout <= 0 defaults
-// to 10s.
-func NewDataStudioService(state *State, timeout time.Duration) *DataStudioService {
+// to 10s. allowedModels is the per-model mutation allowlist (see
+// Config.DataStudioAllowedModels): empty refuses every mutation, the
+// single entry "*" allows them on every model.
+func NewDataStudioService(state *State, timeout time.Duration, allowedModels []string) *DataStudioService {
 	if timeout <= 0 {
 		timeout = 10 * time.Second
 	}
-	return &DataStudioService{state: state, Timeout: timeout}
+	s := &DataStudioService{
+		state:         state,
+		Timeout:       timeout,
+		allowedModels: make(map[string]struct{}, len(allowedModels)),
+	}
+	for _, m := range allowedModels {
+		m = strings.ToLower(strings.TrimSpace(m))
+		if m == "" {
+			continue
+		}
+		if m == "*" {
+			s.allowAllModels = true
+			continue
+		}
+		s.allowedModels[m] = struct{}{}
+	}
+	return s
 }
 
 // ListModels: returns the union of every connected agent's registered
@@ -106,7 +130,7 @@ func (s *DataStudioService) GetRecord(_ context.Context, req *connect.Request[ad
 }
 
 func (s *DataStudioService) CreateRecord(ctx context.Context, req *connect.Request[adminv1.CreateRecordRequest]) (*connect.Response[adminv1.Record], error) {
-	if err := requireWrite(ctx); err != nil {
+	if err := s.requireWrite(ctx, req.Msg.GetModelName()); err != nil {
 		return nil, err
 	}
 	body := req.Msg
@@ -123,7 +147,7 @@ func (s *DataStudioService) CreateRecord(ctx context.Context, req *connect.Reque
 }
 
 func (s *DataStudioService) UpdateRecord(ctx context.Context, req *connect.Request[adminv1.UpdateRecordRequest]) (*connect.Response[adminv1.Record], error) {
-	if err := requireWrite(ctx); err != nil {
+	if err := s.requireWrite(ctx, req.Msg.GetModelName()); err != nil {
 		return nil, err
 	}
 	body := req.Msg
@@ -140,7 +164,7 @@ func (s *DataStudioService) UpdateRecord(ctx context.Context, req *connect.Reque
 }
 
 func (s *DataStudioService) DeleteRecord(ctx context.Context, req *connect.Request[adminv1.DeleteRecordRequest]) (*connect.Response[adminv1.DeleteRecordResponse], error) {
-	if err := requireWrite(ctx); err != nil {
+	if err := s.requireWrite(ctx, req.Msg.GetModelName()); err != nil {
 		return nil, err
 	}
 	body := req.Msg
@@ -157,7 +181,7 @@ func (s *DataStudioService) DeleteRecord(ctx context.Context, req *connect.Reque
 }
 
 func (s *DataStudioService) BulkAction(ctx context.Context, req *connect.Request[adminv1.BulkActionRequest]) (*connect.Response[adminv1.BulkActionResponse], error) {
-	if err := requireWrite(ctx); err != nil {
+	if err := s.requireWrite(ctx, req.Msg.GetModelName()); err != nil {
 		return nil, err
 	}
 	body := req.Msg
@@ -254,13 +278,31 @@ var _ adminv1connect.DataStudioServiceHandler = (*DataStudioService)(nil)
 
 // requireWrite refuses the call when the authenticated operator is
 // read-only (viewer role via the trusted proxy, or a server running
-// with Config.UIReadOnly). Reads are never gated here.
-func requireWrite(ctx context.Context) error {
+// with Config.UIReadOnly), or when the target model is not on the
+// mutation allowlist (Config.DataStudioAllowedModels, deny-by-default).
+// The allowlist exists because the agent executes the mutation on its
+// database WITHOUT the application's per-model RBAC or tenant filtering
+// — no operator identity crosses the stream — so which models the fleet
+// plane may write is an explicit server-side decision. Reads are never
+// gated here.
+func (s *DataStudioService) requireWrite(ctx context.Context, modelName string) error {
 	if auth.IdentityFromContext(ctx).ReadOnly {
 		return connect.NewError(connect.CodePermissionDenied,
 			errors.New("admin server: operator is read-only; data studio mutations are disabled"))
 	}
-	return nil
+	if s.allowAllModels {
+		return nil
+	}
+	if _, ok := s.allowedModels[strings.ToLower(strings.TrimSpace(modelName))]; ok {
+		return nil
+	}
+	if len(s.allowedModels) == 0 {
+		return connect.NewError(connect.CodePermissionDenied,
+			errors.New("admin server: data studio mutations are disabled by default; "+
+				"allow specific models with --datastudio-allowed-models (Config.DataStudioAllowedModels), or \"*\" for all"))
+	}
+	return connect.NewError(connect.CodePermissionDenied,
+		fmt.Errorf("admin server: model %q is not on the data studio mutation allowlist (--datastudio-allowed-models)", modelName))
 }
 
 // audit records a fleet-plane action in the server's audit ring,

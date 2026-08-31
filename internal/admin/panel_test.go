@@ -788,8 +788,16 @@ func TestPanel_ListRecords_RejectsUnknownDatabaseAlias(t *testing.T) {
 	}
 }
 
+// setupPanelForTest builds a panel in the WITH-AUTH posture (AO-4): an
+// auth provider is configured and every request authenticates as an
+// admin, so the ~50 flows built on this helper exercise the same
+// mounting branch as production (edge authMiddleware + CSRF gate +
+// audit), not the open dev-only posture. Tests that need the open
+// posture call setupPanelForTestWithAuth(t, engine, nil) explicitly.
 func setupPanelForTest(t *testing.T, engine db.Engine) (*Panel, func()) {
-	return setupPanelForTestWithAuth(t, engine, nil)
+	return setupPanelForTestWithAuth(t, engine, &testAdminAuth{
+		user: &auth.User{ID: "1", Username: "admin", Role: "admin"},
+	})
 }
 
 func firstMatch(input, pattern string) string {

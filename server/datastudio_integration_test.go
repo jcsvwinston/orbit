@@ -152,14 +152,18 @@ func mustExec(t *testing.T, sqlDB *sql.DB, q string, args ...interface{}) {
 	}
 }
 
-func startServerAndAgent(t *testing.T) (srv *server.Server, ag *agent.Agent, stop func()) {
+// startServerAndAgent boots a real server + agent pair. allowedModels
+// feeds Config.DataStudioAllowedModels: tests that mutate must opt their
+// model in explicitly (or pass "*"), mirroring real deployments.
+func startServerAndAgent(t *testing.T, allowedModels ...string) (srv *server.Server, ag *agent.Agent, stop func()) {
 	t.Helper()
 
 	srvLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv = server.New(server.Config{
-		AgentAddr: "127.0.0.1:0",
-		UIAddr:    "127.0.0.1:0",
-		Logger:    srvLogger,
+		AgentAddr:               "127.0.0.1:0",
+		UIAddr:                  "127.0.0.1:0",
+		DataStudioAllowedModels: allowedModels,
+		Logger:                  srvLogger,
 	})
 
 	srvCtx, srvCancel := context.WithCancel(context.Background())
@@ -300,9 +304,10 @@ func TestDataStudio_ListRecords(t *testing.T) {
 	}
 }
 
-// TestDataStudio_CreateUpdateDelete drives the full write surface.
+// TestDataStudio_CreateUpdateDelete drives the full write surface. The
+// model rides the mutation allowlist explicitly (deny-by-default, AO-3).
 func TestDataStudio_CreateUpdateDelete(t *testing.T) {
-	srv, _, stop := startServerAndAgent(t)
+	srv, _, stop := startServerAndAgent(t, "TestArticle")
 	defer stop()
 
 	client := newDataStudioClient(t, "http://"+srv.UIAddr())
