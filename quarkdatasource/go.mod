@@ -10,9 +10,11 @@ go 1.26.6
 // graph, and Quark itself must not depend on Orbit.
 require (
 	github.com/jcsvwinston/orbit v1.8.13
-	github.com/jcsvwinston/quark v1.8.0
-	modernc.org/sqlite v1.50.0
+	github.com/jcsvwinston/quark v1.9.0
+	modernc.org/sqlite v1.50.0 // indirect
 )
+
+require github.com/jcsvwinston/quark/drivers/sqlite v0.1.0
 
 require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
@@ -31,7 +33,6 @@ require (
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/mattn/go-sqlite3 v1.14.16 // indirect
 	github.com/microsoft/go-mssqldb v1.10.0 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect

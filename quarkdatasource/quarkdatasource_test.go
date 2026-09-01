@@ -6,7 +6,12 @@ import (
 	"testing"
 
 	"github.com/jcsvwinston/quark"
-	_ "modernc.org/sqlite"
+	// El módulo, no el driver a secas: registra el driver Y los predicados de
+	// clasificación de errores (quark ADR-0023). Con el driver suelto,
+	// IsUniqueViolation y el reintento de deadlocks no fallan — contestan
+	// false —, así que un test que dependiera de ellos pasaría en verde
+	// midiendo otra cosa.
+	_ "github.com/jcsvwinston/quark/drivers/sqlite"
 
 	"github.com/jcsvwinston/orbit/datasource"
 )
