@@ -17,6 +17,38 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.8.15 — 2026-09-02
+
+An alignment release: Orbit moves to Nucleus v1.23.0 and Quark v1.9.0, which
+take the database drivers, the cloud storage backends and the telemetry
+exporters out of the framework and into modules of their own.
+
+**Nothing in Orbit changes.** The panel does not open databases — it uses the
+`*sql.DB` your application hands it — so all six modules build against the new
+versions untouched.
+
+**What your application needs to know.** The host application now links the
+driver for its own engine, one blank import:
+
+```go
+import _ "github.com/jcsvwinston/nucleus/drivers/postgres"
+```
+
+or `nucleus add postgres`, which writes it for you. Your configuration does
+not change. If you mount Orbit in an application that has not added its driver
+module, the application stops at startup with an error naming the import —
+before Orbit is reached.
+
+Worth knowing if you rely on the admin bootstrap: the driver module registers
+the driver **and** how that driver reports a unique-constraint violation.
+Without the classifier the framework's predicate does not fail, it answers
+"no", and a duplicate administrator username would surface as an internal
+error rather than as the duplicate it is. Importing the module — rather than
+the driver package on its own — gets both halves.
+
+Fleet tags cut alongside: `agent/v0.6.10`, `server/v0.10.10`,
+`quarkbridge/v0.4.10`, `quarkdatasource/v0.2.19`. `proto` stays at `v0.4.2`.
+
 ## v1.8.14 — 2026-08-31
 
 The release that carries an end-to-end audit of the panel. Most of it is about
