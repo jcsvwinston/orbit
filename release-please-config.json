@@ -4,7 +4,7 @@
   "tag-separator": "/",
   "bump-minor-pre-major": true,
   "bump-patch-for-minor-pre-major": false,
-  "separate-pull-requests": true,
+  "separate-pull-requests": false,
   "draft": false,
   "prerelease": false,
   "changelog-sections": [
@@ -72,11 +72,26 @@
         "server"
       ],
       "extra-files": [
-        {"type": "generic", "path": "README.md"},
-        {"type": "generic", "path": "CLAUDE.md"},
-        {"type": "generic", "path": "website/docs/intro.md"},
-        {"type": "generic", "path": "website/docs/quick-start.md"},
-        {"type": "generic", "path": "website/docs/reference/release-notes.md"}
+        {
+          "type": "generic",
+          "path": "README.md"
+        },
+        {
+          "type": "generic",
+          "path": "CLAUDE.md"
+        },
+        {
+          "type": "generic",
+          "path": "website/docs/intro.md"
+        },
+        {
+          "type": "generic",
+          "path": "website/docs/quick-start.md"
+        },
+        {
+          "type": "generic",
+          "path": "website/docs/reference/release-notes.md"
+        }
       ]
     },
     "quarkbridge": {
