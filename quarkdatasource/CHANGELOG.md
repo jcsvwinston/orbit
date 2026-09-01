@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.19](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v0.2.18...quarkdatasource/v0.2.19) (2026-09-01)
+
+
+### Fixed
+
+* **deps:** alinea los seis módulos al set (nucleus v1.23.0, quark v1.9.0) ([#362](https://github.com/jcsvwinston/orbit/issues/362)) ([2ac266c](https://github.com/jcsvwinston/orbit/commit/2ac266c93a8597414c1130567a8218e03ef8ec5f))
+
 ## [0.2.18](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v0.2.17...quarkdatasource/v0.2.18) (2026-08-31)
 
 
