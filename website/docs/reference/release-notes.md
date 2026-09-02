@@ -17,6 +17,21 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.8.16 — 2026-09-02
+
+A pin fix. `server` was requiring `agent v0.6.9` while `agent/v0.6.10` was
+already published — the alignment script runs before the tags are cut, so it
+fixes the sibling at whatever was current then and the cut publishes the next
+one immediately after.
+
+It matters here in a way the same lag would not elsewhere: `go install
+github.com/jcsvwinston/orbit/server/cmd/admin-server@server/vX` resolves the
+agent that `server` requires, and nothing else in that build raises it, so the
+binary would ship the older agent.
+
+Fleet tags cut alongside: `server/v0.10.11`. Everything else is unchanged from
+v1.8.15.
+
 ## v1.8.15 — 2026-09-02
 
 An alignment release: Orbit moves to Nucleus v1.23.0 and Quark v1.9.0, which
