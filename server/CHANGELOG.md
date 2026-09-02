@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.11](https://github.com/jcsvwinston/orbit/compare/server/v0.10.10...server/v0.10.11) (2026-09-02)
+
+
+### Fixed
+
+* **server:** pina agent v0.6.10, el tag que acaba de salir ([#370](https://github.com/jcsvwinston/orbit/issues/370)) ([405572f](https://github.com/jcsvwinston/orbit/commit/405572f078b331e0f618118f64afd4be955e4653))
+
 ## [0.10.10](https://github.com/jcsvwinston/orbit/compare/server/v0.10.9...server/v0.10.10) (2026-09-01)
 
 
