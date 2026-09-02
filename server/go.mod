@@ -9,7 +9,10 @@ require (
 
 require (
 	github.com/jcsvwinston/nucleus v1.23.0
-	github.com/jcsvwinston/orbit/agent v0.6.9
+	github.com/jcsvwinston/nucleus/drivers/mysql v0.1.0
+	github.com/jcsvwinston/nucleus/drivers/postgres v0.1.0
+	github.com/jcsvwinston/nucleus/drivers/sqlite v0.1.0
+	github.com/jcsvwinston/orbit/agent v0.6.10
 	github.com/prometheus/client_golang v1.23.2
 	golang.org/x/net v0.57.0
 	google.golang.org/protobuf v1.36.12
@@ -45,9 +48,6 @@ require (
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.9.2 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
-	github.com/jcsvwinston/nucleus/drivers/mysql v0.1.0 // indirect
-	github.com/jcsvwinston/nucleus/drivers/postgres v0.1.0 // indirect
-	github.com/jcsvwinston/nucleus/drivers/sqlite v0.1.0 // indirect
 	github.com/knadh/koanf/maps v0.1.2 // indirect
 	github.com/knadh/koanf/parsers/yaml v1.1.0 // indirect
 	github.com/knadh/koanf/providers/env v1.1.0 // indirect
