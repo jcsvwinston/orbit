@@ -21,6 +21,16 @@
 // bridge is a Middleware (which receives ctx) rather than a QueryObserver
 // (which does not) — without ctx the feed would lose the link to the request.
 //
+// # Model names
+//
+// Quark has no model registry the bridge could consult, and a Middleware sees
+// only the rendered SQL, so ModelName is derived from the statement's primary
+// table (FROM/INTO/UPDATE/DELETE FROM). That is the TABLE name, which is what
+// the fleet's sql_models filter then matches for bridged statements; map
+// tables to your own model names with WithModelNames when they differ.
+// Statements without a recognisable table (DDL, CTE-first queries) carry an
+// empty ModelName, exactly as before.
+//
 // # Redaction
 //
 // By default bind arguments are masked exactly the way Nucleus masks its own
@@ -80,10 +90,11 @@ const (
 // feed. Construct it with New and pass it to quark.WithMiddleware. It is safe
 // for concurrent use: it holds only immutable configuration.
 type Middleware struct {
-	sink      SQLSink
-	nodeID    string
-	redaction RedactionMode
-	now       func() time.Time
+	sink       SQLSink
+	nodeID     string
+	redaction  RedactionMode
+	modelNames map[string]string
+	now        func() time.Time
 }
 
 // Option configures a Middleware.
@@ -99,6 +110,18 @@ func WithNodeID(id string) Option {
 // WithRedaction sets how bind arguments are exposed. The default is RedactArgs.
 func WithRedaction(mode RedactionMode) Option {
 	return func(m *Middleware) { m.redaction = mode }
+}
+
+// WithModelNames maps table names (as they appear in SQL, matched
+// case-insensitively) to the model names published on events. Tables absent
+// from the map publish their table name.
+func WithModelNames(tableToModel map[string]string) Option {
+	return func(m *Middleware) {
+		m.modelNames = make(map[string]string, len(tableToModel))
+		for table, model := range tableToModel {
+			m.modelNames[strings.ToLower(strings.TrimSpace(table))] = strings.TrimSpace(model)
+		}
+	}
 }
 
 // New returns a Middleware that publishes to sink. A nil sink makes every
@@ -152,10 +175,10 @@ func (m *Middleware) WrapQueryRow(next quark.QueryRowFunc) quark.QueryRowFunc {
 	}
 }
 
-// publish maps one executed statement to a nucleus.SQLEvent and emits it. The
-// ModelName field is left empty: the model/table name is known to Quark's
-// QueryObserver but not to a Middleware, which sees only the rendered SQL.
-// Operation is therefore derived from the leading SQL keyword.
+// publish maps one executed statement to a nucleus.SQLEvent and emits it.
+// A Middleware sees only the rendered SQL (Quark's QueryObserver knows the
+// table but receives no ctx), so both Operation and ModelName are derived
+// from the statement: the leading keyword and the primary table.
 func (m *Middleware) publish(ctx context.Context, start time.Time, sqlStr string, args []any, execErr error) {
 	if m.sink == nil {
 		return
@@ -164,6 +187,7 @@ func (m *Middleware) publish(ctx context.Context, start time.Time, sqlStr string
 	ev := nucleus.SQLEvent{
 		EmittedAt: end,
 		NodeID:    m.nodeID,
+		ModelName: m.modelName(sqlStr),
 		Operation: operationOf(sqlStr),
 		Query:     compact(sqlStr),
 		Args:      m.renderArgs(args),
@@ -176,6 +200,80 @@ func (m *Middleware) publish(ctx context.Context, start time.Time, sqlStr string
 		ev.Err = execErr.Error()
 	}
 	m.sink.EmitSQL(ev)
+}
+
+// modelName resolves the statement's primary table to a model name.
+func (m *Middleware) modelName(sqlStr string) string {
+	table := tableOf(sqlStr)
+	if table == "" {
+		return ""
+	}
+	if mapped, ok := m.modelNames[strings.ToLower(table)]; ok && mapped != "" {
+		return mapped
+	}
+	return table
+}
+
+// tableOf returns the primary table of a DML statement: the identifier after
+// the first FROM (SELECT, DELETE), INTO (INSERT/REPLACE) or UPDATE keyword.
+// Quoting and schema qualification are stripped ("public"."users" → users).
+// Returns "" when no such keyword names an identifier.
+func tableOf(sqlStr string) string {
+	tokens := strings.Fields(sqlStr)
+	if len(tokens) == 0 {
+		return ""
+	}
+	want := ""
+	switch strings.ToUpper(tokens[0]) {
+	case "SELECT", "DELETE":
+		want = "FROM"
+	case "INSERT", "REPLACE":
+		want = "INTO"
+	case "UPDATE":
+		want = "UPDATE"
+	default:
+		return ""
+	}
+	for i, tok := range tokens {
+		if !strings.EqualFold(tok, want) || i+1 >= len(tokens) {
+			continue
+		}
+		return cleanIdentifier(tokens[i+1])
+	}
+	return ""
+}
+
+// cleanIdentifier strips quoting, a trailing "(" or "," and the schema
+// prefix from a SQL identifier token. It returns "" for a token that starts a
+// subquery or is not an identifier.
+func cleanIdentifier(tok string) string {
+	tok = strings.TrimRight(tok, ",;")
+	if i := strings.IndexByte(tok, '('); i >= 0 {
+		tok = tok[:i]
+	}
+	if tok == "" {
+		return ""
+	}
+	if i := strings.LastIndexByte(tok, '.'); i >= 0 {
+		tok = tok[i+1:]
+	}
+	tok = strings.Trim(tok, "`\"[]")
+	if tok == "" || !isIdentifier(tok) {
+		return ""
+	}
+	return tok
+}
+
+func isIdentifier(s string) bool {
+	for i, r := range s {
+		switch {
+		case r == '_', r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z':
+		case r >= '0' && r <= '9' && i > 0:
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // operationOf returns the upper-cased leading keyword of the statement
