@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -89,8 +90,13 @@ func New(cfg Config) *Server {
 	// AgentService listener: protected by AgentMiddleware. /healthz is
 	// carved out BEFORE auth so load balancers and the agent's dialer can
 	// probe without owning the token.
+	// Every Connect handler caps the size of a single inbound message
+	// (WithReadMaxBytes): without it a peer can push a frame of hundreds of
+	// megabytes that the replay ring then retains. 4 MiB is far above any
+	// legitimate event or Data Studio payload.
+	handlerOpts := []connect.HandlerOption{connect.WithReadMaxBytes(maxMessageBytes)}
 	protectedAgent := http.NewServeMux()
-	protectedAgent.Handle(adminv1connect.NewAgentServiceHandler(services.NewAgentService(state)))
+	protectedAgent.Handle(adminv1connect.NewAgentServiceHandler(services.NewAgentService(state), handlerOpts...))
 	agentRoot := http.NewServeMux()
 	agentRoot.HandleFunc("/healthz", healthOK)
 	agentRoot.Handle("/", auth.AgentMiddleware(cfg.AgentToken, cfg.Logger)(protectedAgent))
@@ -102,9 +108,9 @@ func New(cfg Config) *Server {
 	dataStudioSvc := services.NewDataStudioService(state, cfg.SnapshotTimeout, cfg.DataStudioAllowedModels)
 	manageSvc := services.NewManageService(state, cfg.SnapshotTimeout)
 	protectedUI := http.NewServeMux()
-	protectedUI.Handle(adminv1connect.NewControlServiceHandler(controlSvc))
-	protectedUI.Handle(adminv1connect.NewDataStudioServiceHandler(dataStudioSvc))
-	protectedUI.Handle(adminv1connect.NewManageServiceHandler(manageSvc))
+	protectedUI.Handle(adminv1connect.NewControlServiceHandler(controlSvc, handlerOpts...))
+	protectedUI.Handle(adminv1connect.NewDataStudioServiceHandler(dataStudioSvc, handlerOpts...))
+	protectedUI.Handle(adminv1connect.NewManageServiceHandler(manageSvc, handlerOpts...))
 	protectedUI.Handle("/", staticUIHandler())
 	uiRoot := http.NewServeMux()
 	uiRoot.HandleFunc("/healthz", healthOK)
@@ -119,8 +125,8 @@ func New(cfg Config) *Server {
 		InsecureOpen:  cfg.UIInsecureOpen,
 	})(protectedUI)))
 
-	s.agentSrv = newH2CServer(agentRoot, cfg.AgentTLS)
-	s.uiSrv = newH2CServer(uiRoot, cfg.UITLS)
+	s.agentSrv = newHTTPServer(agentRoot, cfg.AgentTLS)
+	s.uiSrv = newHTTPServer(uiRoot, cfg.UITLS)
 
 	// Optional metrics listener (Config.MetricsAddr): Prometheus default
 	// registry (go_* and process_* collectors; server-specific collectors
@@ -130,10 +136,10 @@ func New(cfg Config) *Server {
 		metricsRoot := http.NewServeMux()
 		metricsRoot.HandleFunc("/healthz", healthOK)
 		metricsRoot.Handle("/metrics", promhttp.Handler())
-		s.metricsSrv = newH2CServer(metricsRoot, nil)
+		s.metricsSrv = newHTTPServer(metricsRoot, nil)
 		// No long-lived streams on this listener, so full IO timeouts
 		// are safe here (unlike the agent/UI listeners — see
-		// newH2CServer).
+		// newHTTPServer).
 		s.metricsSrv.ReadTimeout = 30 * time.Second
 		s.metricsSrv.WriteTimeout = 30 * time.Second
 	}
@@ -198,6 +204,12 @@ func (s *Server) Run(ctx context.Context) error {
 			"agent_addr", s.cfg.AgentAddr,
 			"reason", "--insecure-agent-listener set; ensure AgentAddr is restricted at the network layer")
 	}
+	// Fail-fast: a malformed --ui-trusted-cidrs entry used to be dropped
+	// silently, which turned a typo into "trust nobody but loopback" (or
+	// worse, into the operator believing a proxy network was trusted).
+	if err := auth.ValidateTrustedCIDRs(s.cfg.UITrustedProxyCIDRs); err != nil {
+		return err
+	}
 	// Fail-closed: --ui-insecure-open hands an operator identity to any
 	// credential-less loopback request, so it must never combine with a
 	// UI listener reachable from off-host.
@@ -220,6 +232,13 @@ func (s *Server) Run(ctx context.Context) error {
 		_ = agentLn.Close()
 		return fmt.Errorf("admin server: listen ui %s: %w", s.cfg.UIAddr, err)
 	}
+	// TLS is applied at the listener, not left on http.Server.TLSConfig:
+	// Serve(ln) ignores TLSConfig entirely, so for several releases
+	// --agent-cert/--ui-cert loaded a certificate and then served h2c in
+	// the clear while logging agent_tls=true. Wrapping the listener is
+	// what makes the flag mean what it says.
+	agentLn = wrapTLS(agentLn, s.cfg.AgentTLS)
+	uiLn = wrapTLS(uiLn, s.cfg.UITLS)
 	var metricsLn net.Listener
 	if s.metricsSrv != nil {
 		metricsLn, err = net.Listen("tcp", s.cfg.MetricsAddr)
@@ -238,7 +257,10 @@ func (s *Server) Run(ctx context.Context) error {
 
 	s.logger.Info("admin server starting",
 		"agent_addr", agentLn.Addr(),
+		"agent_tls", s.cfg.AgentTLS != nil,
+		"agent_mtls", tlsRequiresClientCert(s.cfg.AgentTLS),
 		"ui_addr", uiLn.Addr(),
+		"ui_tls", s.cfg.UITLS != nil,
 		"metrics_enabled", metricsLn != nil)
 
 	// Inactivity janitor: a hung peer (dead TCP without FIN) keeps its
@@ -408,24 +430,56 @@ func spaHandler(fsys fs.FS) http.Handler {
 }
 
 // agentListenerGuard decides whether the agent listener may start. An
-// unauthenticated listener (AgentToken == "" && AgentTLS == nil) on a
-// non-loopback interface would let any host on the network register as an
-// agent, drive Data Studio CRUD, read RBAC snapshots and inject fleet
-// events. It returns:
+// unauthenticated listener (AgentToken == "" and no client-certificate
+// requirement) on a non-loopback interface would let any host on the
+// network register as an agent, drive Data Studio CRUD, read RBAC
+// snapshots and inject fleet events.
+//
+// Server-side TLS alone (a certificate without ClientAuth) encrypts the
+// wire but authenticates nobody: any client can complete the handshake.
+// It therefore does NOT satisfy the guard; only a config that requires
+// and verifies a client certificate (mutual TLS) counts as authentication.
+// The guard returns:
 //
 //   - err != nil  → the listener must be refused (caller returns it).
 //   - warn == true → the listener starts exposed-and-unauthenticated only
 //     because InsecureAgentListener overrode the guard; the caller logs it.
 //   - (false, nil) → the listener is authenticated or loopback; start it.
 func (c Config) agentListenerGuard() (warn bool, err error) {
-	if !agentListenerExposed(c.AgentAddr) || c.AgentToken != "" || c.AgentTLS != nil {
+	if !agentListenerExposed(c.AgentAddr) || c.AgentToken != "" || tlsRequiresClientCert(c.AgentTLS) {
 		return false, nil
 	}
 	if !c.InsecureAgentListener {
 		return false, fmt.Errorf("admin server: refusing to start the agent listener on non-loopback address %q without authentication: "+
-			"set --agent-token or --agent-cert/--agent-key, bind --agent-addr to loopback, or pass --insecure-agent-listener to override", c.AgentAddr)
+			"set --agent-token, require client certificates (--agent-client-ca with --agent-cert/--agent-key), "+
+			"bind --agent-addr to loopback, or pass --insecure-agent-listener to override", c.AgentAddr)
 	}
 	return true, nil
+}
+
+// tlsRequiresClientCert reports whether cfg authenticates its peers: it
+// must require a client certificate AND verify it against ClientCAs.
+// RequireAnyClientCert accepts any certificate without verification, so
+// it does not count.
+func tlsRequiresClientCert(cfg *tls.Config) bool {
+	return cfg != nil && cfg.ClientAuth == tls.RequireAndVerifyClientCert
+}
+
+// maxMessageBytes caps one inbound Connect message on every handler.
+const maxMessageBytes = 4 << 20
+
+// wrapTLS returns ln unchanged when cfg is nil; otherwise a TLS listener
+// that negotiates HTTP/2 (Connect bidi streams need it) with HTTP/1.1 as
+// fallback for plain clients such as load-balancer probes.
+func wrapTLS(ln net.Listener, cfg *tls.Config) net.Listener {
+	if cfg == nil {
+		return ln
+	}
+	c := cfg.Clone()
+	if len(c.NextProtos) == 0 {
+		c.NextProtos = []string{"h2", "http/1.1"}
+	}
+	return tls.NewListener(ln, c)
 }
 
 // agentListenerExposed reports whether addr binds an interface reachable
@@ -466,10 +520,12 @@ func healthOK(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte("ok\n"))
 }
 
-// newH2CServer constructs an http.Server that serves both HTTP/1.1 and
-// HTTP/2 cleartext. Connect-RPC bidi streams require HTTP/2; h2c lets
-// the agent dial without TLS in dev. Production deployments should set
-// tlsConfig and front the listener with a real cert.
+// newHTTPServer constructs an http.Server that serves HTTP/1.1 and HTTP/2.
+// Without tlsConfig the server speaks cleartext HTTP/2 (h2c) so the agent
+// can dial without TLS in dev. With tlsConfig the listener is wrapped by
+// wrapTLS in Run and HTTP/2 is negotiated through ALPN, so the h2c
+// upgrade path is not installed: a cleartext request on a TLS listener
+// must fail the handshake, not be served.
 //
 // Timeouts: ReadHeaderTimeout bounds header parsing and IdleTimeout
 // reclaims keep-alive connections. ReadTimeout/WriteTimeout stay
@@ -478,16 +534,21 @@ func healthOK(w http.ResponseWriter, _ *http.Request) {
 // IO deadline would sever mid-flight. Note IdleTimeout only applies
 // between HTTP/1.1 requests; h2c connections idle under HTTP/2 ping
 // semantics instead.
-func newH2CServer(handler http.Handler, tlsConfig *tls.Config) *http.Server {
+func newHTTPServer(handler http.Handler, tlsConfig *tls.Config) *http.Server {
 	h2s := &http2.Server{}
-	wrapped := h2c.NewHandler(handler, h2s)
 	srv := &http.Server{
-		Handler:           wrapped,
+		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 	}
-	if tlsConfig != nil {
-		srv.TLSConfig = tlsConfig
+	if tlsConfig == nil {
+		srv.Handler = h2c.NewHandler(handler, h2s)
+		return srv
 	}
+	srv.TLSConfig = tlsConfig
+	// ConfigureServer registers the HTTP/2 connection handler for the
+	// "h2" ALPN protocol; without it a TLS listener would serve HTTP/1.1
+	// only and every Connect bidi stream would fail.
+	_ = http2.ConfigureServer(srv, h2s)
 	return srv
 }

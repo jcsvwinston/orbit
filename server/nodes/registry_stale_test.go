@@ -18,7 +18,7 @@ func TestRegistry_MarkStaleAndTouchRevive(t *testing.T) {
 	changes, stop := r.Watch()
 	defer stop()
 
-	_, deregister := r.Add(ctx, NodeInfo{NodeID: "node-a"}, 4)
+	_, deregister := r.Add(ctx, nil, NodeInfo{NodeID: "node-a"}, 4)
 	defer deregister()
 	<-changes // connect notification
 

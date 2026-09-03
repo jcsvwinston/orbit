@@ -13,7 +13,7 @@ func TestRegistry_AddListLookup(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	entry, deregister := r.Add(ctx, NodeInfo{
+	entry, deregister := r.Add(ctx, nil, NodeInfo{
 		NodeID: "node-a", Version: "v1",
 	}, 8)
 	defer deregister()
@@ -36,7 +36,7 @@ func TestRegistry_RemoveOnDeregister(t *testing.T) {
 	r := New()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, deregister := r.Add(ctx, NodeInfo{NodeID: "node-a"}, 8)
+	_, deregister := r.Add(ctx, nil, NodeInfo{NodeID: "node-a"}, 8)
 	deregister()
 	deregister() // idempotent
 
@@ -50,7 +50,7 @@ func TestRegistry_TryEnqueue_NonBlocking(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	entry, deregister := r.Add(ctx, NodeInfo{NodeID: "node-a"}, 1)
+	entry, deregister := r.Add(ctx, nil, NodeInfo{NodeID: "node-a"}, 1)
 	defer deregister()
 
 	frame := &adminv1.Frame{Body: &adminv1.Frame_Heartbeat{Heartbeat: &adminv1.Heartbeat{}}}
@@ -67,7 +67,7 @@ func TestRegistry_Touch(t *testing.T) {
 	r := New()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, deregister := r.Add(ctx, NodeInfo{NodeID: "node-a", LastSeenAt: time.Now().UTC().Add(-time.Hour)}, 8)
+	_, deregister := r.Add(ctx, nil, NodeInfo{NodeID: "node-a", LastSeenAt: time.Now().UTC().Add(-time.Hour)}, 8)
 	defer deregister()
 
 	r.Touch("node-a", time.Now().UTC())
@@ -84,7 +84,7 @@ func TestRegistry_Watch(t *testing.T) {
 
 	ctx, ctxCancel := context.WithCancel(context.Background())
 	defer ctxCancel()
-	_, dereg := r.Add(ctx, NodeInfo{NodeID: "node-a"}, 8)
+	_, dereg := r.Add(ctx, nil, NodeInfo{NodeID: "node-a"}, 8)
 
 	select {
 	case change := <-ch:
@@ -104,5 +104,44 @@ func TestRegistry_Watch(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("did not receive disconnect notification")
+	}
+}
+
+// TestRegistry_ReconnectCancelsSupersededStream pins the fix for the
+// duplicate-stream bug: an agent that reconnects under the same NodeID
+// before its old stream noticed the disconnect used to leave both
+// streams alive (Add's eviction was a no-op closeOnce.Do), so every event
+// reached the fleet twice. Add now cancels the superseded stream.
+func TestRegistry_ReconnectCancelsSupersededStream(t *testing.T) {
+	r := New()
+
+	oldCtx, oldCancel := context.WithCancel(context.Background())
+	oldEntry, oldDereg := r.Add(oldCtx, oldCancel, NodeInfo{NodeID: "node-a"}, 4)
+
+	newCtx, newCancel := context.WithCancel(context.Background())
+	defer newCancel()
+	newEntry, newDereg := r.Add(newCtx, newCancel, NodeInfo{NodeID: "node-a"}, 4)
+	defer newDereg()
+
+	select {
+	case <-oldEntry.CtxDone:
+	case <-time.After(time.Second):
+		t.Fatal("old stream context was not cancelled on reconnect")
+	}
+	if newCtx.Err() != nil {
+		t.Fatal("the new stream must stay alive")
+	}
+	if e, ok := r.Lookup("node-a"); !ok || e != newEntry {
+		t.Fatal("registry must point at the new entry")
+	}
+
+	// The old handler's deferred deregister runs after the cancel; it
+	// must not evict the new entry.
+	oldDereg()
+	if e, ok := r.Lookup("node-a"); !ok || e != newEntry {
+		t.Fatal("old handler's deregister evicted the new entry")
+	}
+	if TryEnqueue(oldEntry, &adminv1.Frame{}) {
+		t.Fatal("enqueue on the superseded entry must fail once its stream is cancelled")
 	}
 }

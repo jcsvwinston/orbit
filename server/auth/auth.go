@@ -1,7 +1,11 @@
 // Package auth holds the two thin auth surfaces of the admin server:
 //
-//   - Agent: shared bearer token (today) or mTLS (Phase 6). Validated on
-//     every Connect-RPC call from an agent.
+//   - Agent: shared bearer token, and/or a client certificate when the
+//     agent listener runs mutual TLS (Config.AgentTLS with ClientAuth =
+//     RequireAndVerifyClientCert, set by --agent-client-ca). The TLS
+//     handshake itself rejects clients without a valid certificate; this
+//     package only attributes the resulting identity. Validated on every
+//     Connect-RPC call from an agent.
 //   - UI: trusted-proxy header pass-through (X-Auth-User / X-Auth-Email)
 //     with optional bearer fallback. Per decision 14, the canonical
 //     deployment runs oauth2-proxy or equivalent in front of the UI
@@ -11,6 +15,7 @@ package auth
 import (
 	"crypto/subtle"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -32,9 +37,11 @@ type Identity struct {
 }
 
 // AgentMiddleware returns an http middleware that enforces shared-token
-// auth on the agent listener. When token is empty the middleware is a
-// pass-through (the listener is presumed bound to a private network or
-// using mTLS at the listener layer).
+// auth on the agent listener. When token is empty no credential is
+// checked here: the listener is presumed bound to a private network, or
+// the TLS listener already required and verified a client certificate
+// (mutual TLS), in which case the peer certificate's Common Name is
+// attached to the request context as Identity{Subject: "agent:<CN>"}.
 //
 // logger receives a rate-limited WARN (one per minute per remote IP,
 // with a count of the 401s suppressed in between) every time a request
@@ -49,7 +56,9 @@ func AgentMiddleware(token string, logger *slog.Logger) func(http.Handler) http.
 	warns := newWarnLimiter()
 	return func(next http.Handler) http.Handler {
 		if expected == "" {
-			return next
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				next.ServeHTTP(w, withPeerCertIdentity(r))
+			})
 		}
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ip := remoteIPString(r)
@@ -74,9 +83,25 @@ func AgentMiddleware(token string, logger *slog.Logger) func(http.Handler) http.
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
-			next.ServeHTTP(w, r)
+			next.ServeHTTP(w, withPeerCertIdentity(r))
 		})
 	}
+}
+
+// withPeerCertIdentity attaches Identity{Subject: "agent:<CN>", Role:
+// "agent"} when the request arrived over a TLS connection that presented
+// a verified client certificate. Certificates are only present in r.TLS
+// when the listener's tls.Config asked for them, so on a token-only or
+// h2c listener this is a no-op.
+func withPeerCertIdentity(r *http.Request) *http.Request {
+	if r == nil || r.TLS == nil || len(r.TLS.VerifiedChains) == 0 || len(r.TLS.PeerCertificates) == 0 {
+		return r
+	}
+	cn := strings.TrimSpace(r.TLS.PeerCertificates[0].Subject.CommonName)
+	if cn == "" {
+		return r
+	}
+	return r.WithContext(WithIdentity(r.Context(), Identity{Subject: "agent:" + cn, Role: "agent"}))
 }
 
 // UIConfig groups the UI-listener auth knobs.
@@ -134,7 +159,12 @@ const ProxySecretHeader = "X-Auth-Proxy-Secret"
 // UIMiddleware authenticates UI requests. It returns a generic 401 on
 // failure rather than leaking which credential mode was attempted.
 func UIMiddleware(cfg UIConfig) func(http.Handler) http.Handler {
-	trusted := parseCIDRs(cfg.TrustedCIDRs)
+	// A malformed entry is refused at boot by ValidateTrustedCIDRs; if a
+	// caller bypassed that, fail closed here: trust nobody.
+	trusted, err := parseCIDRs(cfg.TrustedCIDRs)
+	if err != nil {
+		trusted = nil
+	}
 	authHeader := strings.TrimSpace(cfg.AuthHeader)
 	if authHeader == "" {
 		authHeader = "X-Auth-User"
@@ -219,36 +249,25 @@ func readOnlyRole(v string) bool {
 	}
 }
 
-// IdentityFromRequest extracts the configured identity. Returns
-// ("", "") for the agent path; UIs may have non-empty values.
-func IdentityFromRequest(r *http.Request, cfg UIConfig) Identity {
-	if r == nil {
-		return Identity{Role: "unknown"}
-	}
-	user := strings.TrimSpace(r.Header.Get(cfg.AuthHeader))
-	if user != "" {
-		return Identity{
-			Subject: user,
-			Email:   strings.TrimSpace(r.Header.Get(cfg.EmailHeader)),
-			Role:    "ui-operator",
-		}
-	}
-	if strings.TrimSpace(bearerFromHeader(r)) != "" {
-		return Identity{Subject: "ui-bearer", Role: "ui-operator"}
-	}
-	return Identity{Role: "ui-anonymous"}
-}
-
-// ErrTrustedProxyMisconfigured is returned by parseCIDRs when an entry
-// is malformed and the caller asked to fail-fast.
+// ErrTrustedProxyMisconfigured is returned by ValidateTrustedCIDRs (and
+// wrapped by parseCIDRs) when a trusted-proxy CIDR entry is malformed.
 var ErrTrustedProxyMisconfigured = errors.New("admin server: malformed trusted_cidrs entry")
 
-func parseCIDRs(cidrs []string) []*net.IPNet {
+// ValidateTrustedCIDRs reports whether every entry parses as a CIDR. The
+// server calls it at boot so a typo in --ui-trusted-cidrs refuses to
+// start instead of being dropped silently (which used to leave the
+// operator believing a proxy network was trusted when it was not).
+func ValidateTrustedCIDRs(cidrs []string) error {
+	_, err := parseCIDRs(cidrs)
+	return err
+}
+
+func parseCIDRs(cidrs []string) ([]*net.IPNet, error) {
 	if len(cidrs) == 0 {
 		// Defaults: localhost only.
 		_, v4loop, _ := net.ParseCIDR("127.0.0.1/32")
 		_, v6loop, _ := net.ParseCIDR("::1/128")
-		return []*net.IPNet{v4loop, v6loop}
+		return []*net.IPNet{v4loop, v6loop}, nil
 	}
 	out := make([]*net.IPNet, 0, len(cidrs))
 	for _, raw := range cidrs {
@@ -258,11 +277,11 @@ func parseCIDRs(cidrs []string) []*net.IPNet {
 		}
 		_, network, err := net.ParseCIDR(raw)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("%w: %q: %v", ErrTrustedProxyMisconfigured, raw, err)
 		}
 		out = append(out, network)
 	}
-	return out
+	return out, nil
 }
 
 func cidrsContain(networks []*net.IPNet, ip net.IP) bool {

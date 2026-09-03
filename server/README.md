@@ -46,13 +46,17 @@ Read this before exposing either listener beyond localhost.
 **Agent listener is fail-closed.** The agent listener (`--agent-addr`,
 default `:9090`) accepts agent registrations that then drive Data Studio
 CRUD, RBAC snapshots and fleet events. With **no** `--agent-token` and
-**no** TLS (`--agent-cert`/`--agent-key`), `AgentMiddleware` is a
-pass-through, so an unauthenticated listener on a non-loopback interface
-would accept any rogue agent on the network. The server therefore
+**no** client-certificate requirement (`--agent-client-ca`),
+`AgentMiddleware` is a pass-through, so an unauthenticated listener on a
+non-loopback interface would accept any rogue agent on the network. A
+server certificate alone (`--agent-cert`/`--agent-key`) encrypts the wire
+but authenticates nobody, so it does not count. The server therefore
 **refuses to start** in that configuration. To run it you must do one of:
 
 * set `--agent-token` (shared bearer) — the recommended minimum;
-* supply `--agent-cert`/`--agent-key` (mTLS at the listener); or
+* require client certificates: `--agent-client-ca` together with
+  `--agent-cert`/`--agent-key` (mutual TLS — the handshake itself rejects
+  agents without a certificate signed by that CA); or
 * bind `--agent-addr` to loopback (`127.0.0.1:9090`); or
 * pass `--insecure-agent-listener` (env
   `NUCLEUS_ADMIN_INSECURE_AGENT_LISTENER=1`) to override, **only** when a
@@ -146,7 +150,8 @@ and `Referrer-Policy: no-referrer`.
 
 The top-level `Server` (`server.go`) composes everything:
 
-* Two `http.Server` listeners (h2c by default, TLS when configured)
+* Two `http.Server` listeners (h2c by default; a TLS listener with ALPN
+  HTTP/2 when a certificate is configured, mutual TLS with `--agent-client-ca`)
   with separate auth chains — one for agents, one for UIs.
 * `/healthz` public on both listeners (load balancer-friendly).
 * Graceful shutdown on ctx cancel: best-effort `http.Server.Shutdown`

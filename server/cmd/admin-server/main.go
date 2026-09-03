@@ -11,8 +11,10 @@
 //
 // Two listeners run by default:
 //
-//   - --agent-addr (default :9090) — h2c by default; mTLS when --agent-cert
-//     and --agent-key are supplied. With no --agent-token and no TLS the
+//   - --agent-addr (default :9090) — h2c by default; TLS when --agent-cert
+//     and --agent-key are supplied; mutual TLS (client certificates
+//     required and verified) when --agent-client-ca is supplied as well.
+//     With no --agent-token and no client-certificate requirement the
 //     server refuses to start unless the address is loopback or
 //     --insecure-agent-listener is passed (see server.Run).
 //   - --ui-addr (default :8080) — h2c + embedded UI; trusted-proxy headers
@@ -28,6 +30,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"flag"
 	"fmt"
@@ -37,7 +40,6 @@ import (
 	"runtime/debug"
 	"strings"
 	"syscall"
-	"time"
 
 	server "github.com/jcsvwinston/orbit/server"
 )
@@ -68,6 +70,7 @@ func run(args []string) error {
 	insecureAgentListener := fs.Bool("insecure-agent-listener", envBool("NUCLEUS_ADMIN_INSECURE_AGENT_LISTENER"), "allow the agent listener to bind a non-loopback interface without a token or TLS (secure the address at the network layer)")
 	agentCert := fs.String("agent-cert", os.Getenv("NUCLEUS_ADMIN_AGENT_CERT"), "PEM cert for agent listener (enables TLS)")
 	agentKey := fs.String("agent-key", os.Getenv("NUCLEUS_ADMIN_AGENT_KEY"), "PEM key for agent listener")
+	agentClientCA := fs.String("agent-client-ca", os.Getenv("NUCLEUS_ADMIN_AGENT_CLIENT_CA"), "PEM CA bundle; when set, agents must present a client certificate signed by it (mutual TLS; requires --agent-cert/--agent-key)")
 	uiCert := fs.String("ui-cert", os.Getenv("NUCLEUS_ADMIN_UI_CERT"), "PEM cert for UI listener (enables TLS)")
 	uiKey := fs.String("ui-key", os.Getenv("NUCLEUS_ADMIN_UI_KEY"), "PEM key for UI listener")
 	logLevel := fs.String("log-level", envOr("NUCLEUS_ADMIN_LOG_LEVEL", "info"), "log level: debug | info | warn | error")
@@ -115,10 +118,15 @@ func run(args []string) error {
 		Logger:                  logger,
 	}
 
-	if *agentCert != "" || *agentKey != "" {
+	if *agentCert != "" || *agentKey != "" || *agentClientCA != "" {
 		tc, err := loadTLS(*agentCert, *agentKey)
 		if err != nil {
 			return fmt.Errorf("agent TLS: %w", err)
+		}
+		if strings.TrimSpace(*agentClientCA) != "" {
+			if err := requireClientCerts(tc, *agentClientCA); err != nil {
+				return fmt.Errorf("agent TLS: %w", err)
+			}
 		}
 		cfg.AgentTLS = tc
 	}
@@ -144,6 +152,7 @@ func run(args []string) error {
 		"ui_bearer_set", cfg.UIBearerToken != "",
 		"ui_proxy_secret_set", cfg.UIProxySecret != "",
 		"agent_tls", cfg.AgentTLS != nil,
+		"agent_mtls", cfg.AgentTLS != nil && cfg.AgentTLS.ClientAuth == tls.RequireAndVerifyClientCert,
 		"ui_tls", cfg.UITLS != nil)
 
 	if err := srv.Run(ctx); err != nil {
@@ -187,6 +196,24 @@ func loadTLS(certFile, keyFile string) (*tls.Config, error) {
 	}, nil
 }
 
+// requireClientCerts turns a server-side TLS config into a mutual-TLS one:
+// every agent must present a certificate that chains to one of the CAs in
+// caFile, or the handshake fails before any RPC is read. The verified
+// certificate's Common Name becomes the agent's identity ("agent:<CN>").
+func requireClientCerts(tc *tls.Config, caFile string) error {
+	pemBytes, err := os.ReadFile(caFile)
+	if err != nil {
+		return fmt.Errorf("read --agent-client-ca: %w", err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(pemBytes) {
+		return fmt.Errorf("--agent-client-ca %q: no PEM certificates found", caFile)
+	}
+	tc.ClientCAs = pool
+	tc.ClientAuth = tls.RequireAndVerifyClientCert
+	return nil
+}
+
 func envOr(key, fallback string) string {
 	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
 		return v
@@ -218,6 +245,3 @@ func splitCSV(in string) []string {
 	}
 	return out
 }
-
-// Defensive: keep time imported in case future flags add timeouts.
-var _ = time.Second
