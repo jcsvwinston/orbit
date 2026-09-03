@@ -1,18 +1,25 @@
-export interface User {
-  id: number
-  username: string
-  email: string
-  is_superuser: boolean
-}
-
+// One row of GET /api/sessions — only what the backend actually serializes
+// (sessionRow in internal/admin/sessions.go). The panel has no user
+// directory endpoint, so there is no user_id / user_agent to show.
 export interface Session {
   id: string
-  user_id: number
-  username: string
-  ip: string
-  user_agent: string
-  created_at: string
-  last_activity: string
+  tokenShort: string
+  user: string
+  remoteIp: string
+  host: string
+  pod: string
+  instance: string
+  firstSeenAt: string
+  lastSeenAt: string
+  expiresAt: string
+}
+
+export interface SessionsResponse {
+  enabled: boolean
+  reason?: string
+  sessions: Session[]
+  currentActive: number
+  truncatedByLimit: boolean
 }
 
 // ── Data Studio types (match backend handleListModels / handleGetSchema) ──
@@ -76,7 +83,7 @@ export interface ForeignKeyInfo {
 }
 
 export interface PaginatedResult {
-  items: { [key: string]: any }[]
+  items: { [key: string]: unknown }[]
   total: number
   page: number
   page_size: number
@@ -125,40 +132,55 @@ export interface ModelsResponse {
   runtime: RuntimeInfo
 }
 
-// ── Legacy aliases for existing pages ──
-
-export interface Model {
-  name: string
-  table: string
-  fields: Field[]
-  count?: number
-}
-
-export interface Field {
-  name: string
-  type: string
-  primary: boolean
-  nullable: boolean
-}
-
-export type Record = { [key: string]: any }
+// A record as the data-studio API returns it: keyed by column, values are
+// whatever the driver decoded (primitives, nested objects for JSON columns).
+export type Record = { [key: string]: unknown }
 
 // ── Other page types ──
 
 export interface AuditLog {
   id: number
   timestamp: string
-  user: string
+  userId: string
+  username: string
   action: string
-  resource: string
-  details: string
+  modelName: string
+  recordId: string
+  ip: string
 }
 
+export interface AuditLogPage {
+  enabled: boolean
+  reason?: string
+  entries: AuditLog[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
+}
+
+export interface AuditLogQuery {
+  user_id?: string
+  model?: string
+  action?: string
+  page?: number
+  page_size?: number
+}
+
+// A casbin policy row as GET /api/rbac/policies serves it. `eft` is the
+// effect column (allow|deny); the backend only sets it when the model has
+// one, so a missing value means allow.
 export interface RBACPolicy {
-  ptype: string
-  v0: string
-  v1: string
-  v2: string
+  sub: string
+  obj: string
+  act: string
+  eft: 'allow' | 'deny'
+}
+
+export interface RBACPoliciesResponse {
+  enabled: boolean
+  reason?: string
+  policies: RBACPolicy[]
 }
 
 export interface HealthCheck {
@@ -166,23 +188,6 @@ export interface HealthCheck {
   status: 'healthy' | 'unhealthy' | 'unknown'
   latency?: number
   error?: string
-}
-
-export interface SystemMetrics {
-  goroutines: number
-  memory: {
-    alloc: number
-    total_alloc: number
-    sys: number
-    num_gc: number
-  }
-  cpu_usage: number
-  db_pools: {
-    name: string
-    open_connections: number
-    in_use: number
-    idle: number
-  }[]
 }
 
 export interface RuntimeQueueSnapshot {

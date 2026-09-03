@@ -34,7 +34,7 @@ const navItems = [
 
 export default function DashboardLayout() {
   const location = useLocation()
-  const { user, logout } = useAuth()
+  const { logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -48,14 +48,19 @@ export default function DashboardLayout() {
       {/* Mobile menu button */}
       <div className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-background border-b border-border px-4 py-2 flex items-center justify-between">
         <button
+          type="button"
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          aria-label={mobileMenuOpen ? 'Close navigation' : 'Open navigation'}
+          aria-expanded={mobileMenuOpen}
           className="p-2 rounded-md hover:bg-accent"
         >
           {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
         </button>
         <span className="font-bold text-lg">{getAdminTitle()}</span>
         <button
+          type="button"
           onClick={toggleTheme}
+          aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
           className="p-2 rounded-md hover:bg-accent"
         >
           {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
@@ -82,7 +87,10 @@ export default function DashboardLayout() {
               <h1 className="text-xl font-bold truncate">{getAdminTitle()}</h1>
             )}
             <button
+              type="button"
               onClick={() => setSidebarOpen(!sidebarOpen)}
+              aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+              aria-expanded={sidebarOpen}
               className="hidden lg:block p-1 rounded-md hover:bg-accent"
             >
               {sidebarOpen ? (
@@ -94,7 +102,7 @@ export default function DashboardLayout() {
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 overflow-y-auto p-2">
+          <nav className="flex-1 overflow-y-auto p-2" aria-label="Main navigation">
             <ul className="space-y-1">
               {navItems.map((item) => {
                 const isActive = location.pathname === item.path
@@ -102,6 +110,9 @@ export default function DashboardLayout() {
                   <li key={item.path}>
                     <Link
                       to={item.path}
+                      aria-current={isActive ? 'page' : undefined}
+                      aria-label={sidebarOpen ? undefined : item.label}
+                      title={sidebarOpen ? undefined : item.label}
                       className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${isActive
                           ? 'bg-primary text-primary-foreground'
                           : 'hover:bg-accent'
@@ -121,13 +132,17 @@ export default function DashboardLayout() {
           <div className="p-4 border-t border-border">
             {sidebarOpen ? (
               <div className="space-y-3">
+                {/* The panel has no identity endpoint, so the SPA only knows
+                    the session is accepted — it must not invent a name. */}
                 <div className="text-sm">
-                  <p className="font-medium truncate">{user?.username}</p>
-                  <p className="text-muted-foreground text-xs truncate">{user?.email}</p>
+                  <p className="font-medium truncate">Signed in</p>
+                  <p className="text-muted-foreground text-xs truncate">Admin session active</p>
                 </div>
                 <div className="flex gap-2">
                   <button
+                    type="button"
                     onClick={toggleTheme}
+                    aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
                     className="flex-1 p-2 rounded-md border border-border hover:bg-accent"
                   >
                     {theme === 'dark' ? (
@@ -137,7 +152,9 @@ export default function DashboardLayout() {
                     )}
                   </button>
                   <button
+                    type="button"
                     onClick={handleLogout}
+                    aria-label="Sign out"
                     className="flex-1 p-2 rounded-md border border-border hover:bg-destructive/10 hover:text-destructive"
                   >
                     <LogOut className="h-4 w-4" />
@@ -147,7 +164,9 @@ export default function DashboardLayout() {
             ) : (
               <div className="space-y-2">
                 <button
+                  type="button"
                   onClick={toggleTheme}
+                  aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
                   className="w-full p-2 rounded-md border border-border hover:bg-accent"
                 >
                   {theme === 'dark' ? (
@@ -157,7 +176,9 @@ export default function DashboardLayout() {
                   )}
                 </button>
                 <button
+                  type="button"
                   onClick={handleLogout}
+                  aria-label="Sign out"
                   className="w-full p-2 rounded-md border border-border hover:bg-destructive/10 hover:text-destructive"
                 >
                   <LogOut className="h-4 w-4" />

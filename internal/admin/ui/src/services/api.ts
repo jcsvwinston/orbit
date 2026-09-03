@@ -1,5 +1,68 @@
-import type { User, Session, Model, Record as AppRecord, AuditLog, RBACPolicy, HealthCheck, SystemMetrics, LiveRequest, LiveQuery, LiveFeedEntry, FeatureFlag, ModelsResponse, ModelSchema, PaginatedResult, SystemSnapshot } from '@/types'
+import type {
+  Session, SessionsResponse, Record as AppRecord, AuditLogPage, AuditLogQuery, RBACPolicy, RBACPoliciesResponse,
+  HealthCheck, LiveRequest, LiveQuery, LiveFeedEntry, ModelsResponse, ModelSchema, PaginatedResult, SystemSnapshot,
+} from '@/types'
 import { buildAdminPath } from '@/config'
+
+// ApiError carries the HTTP status and the decoded error body so pages can
+// tell a 403 (no permission) from a 500 (something broke) and show the
+// backend's own message instead of a generic one.
+export class ApiError extends Error {
+  readonly status: number
+  readonly body: unknown
+
+  constructor(status: number, message: string, body: unknown) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.body = body
+  }
+
+  get isForbidden(): boolean {
+    return this.status === 403
+  }
+}
+
+export function isApiError(err: unknown): err is ApiError {
+  return err instanceof ApiError
+}
+
+export function isAbortError(err: unknown): boolean {
+  return err instanceof DOMException && err.name === 'AbortError'
+}
+
+// errorMessage extracts a human message from anything a call site catches.
+export function errorMessage(err: unknown, fallback = 'Unexpected error'): string {
+  if (err instanceof Error && err.message) return err.message
+  if (typeof err === 'string' && err) return err
+  return fallback
+}
+
+// The backend answers errors as {"error": {"code","message"}} (domain errors)
+// or {"error": "message"} (plain ones); read both, then fall back to text.
+function messageFromBody(body: unknown, raw: string, response: Response): string {
+  if (body && typeof body === 'object' && 'error' in body) {
+    const e = (body as { error: unknown }).error
+    if (typeof e === 'string' && e) return e
+    if (e && typeof e === 'object' && 'message' in e) {
+      const m = (e as { message: unknown }).message
+      if (typeof m === 'string' && m) return m
+    }
+  }
+  if (raw.trim()) return raw.trim()
+  return `${response.status} ${response.statusText}`.trim()
+}
+
+async function throwApiError(response: Response): Promise<never> {
+  const raw = await response.text()
+  let body: unknown
+  try {
+    body = raw ? JSON.parse(raw) : null
+  } catch {
+    body = null
+  }
+  throw new ApiError(response.status, messageFromBody(body, raw, response), body)
+}
 
 function isRedirectToLogin(response: Response): boolean {
   const loginPath = buildAdminPath('/login')
@@ -20,6 +83,11 @@ function isRedirectToLogin(response: Response): boolean {
   }
 }
 
+function redirectToLogin(): never {
+  window.location.href = buildAdminPath('/login')
+  throw new ApiError(401, 'Unauthorized', null)
+}
+
 async function fetchAPI<T = unknown>(path: string, options?: RequestInit): Promise<T> {
   const url = buildAdminPath(path)
 
@@ -33,46 +101,19 @@ async function fetchAPI<T = unknown>(path: string, options?: RequestInit): Promi
   })
 
   if (isRedirectToLogin(response)) {
-    window.location.href = buildAdminPath('/login')
-    throw new Error('Unauthorized')
+    redirectToLogin()
   }
 
   if (!response.ok) {
-    const message = await response.text()
-    throw new Error(message || `API Error: ${response.status} ${response.statusText}`)
+    await throwApiError(response)
   }
 
   const contentType = response.headers.get('content-type') ?? ''
   if (!contentType.includes('application/json')) {
-    throw new Error(`Unexpected content type: ${contentType || 'unknown'}`)
+    throw new ApiError(response.status, `Unexpected content type: ${contentType || 'unknown'}`, null)
   }
 
   return response.json() as Promise<T>
-}
-
-export async function login(username: string, password: string): Promise<User> {
-  const formData = new URLSearchParams()
-  formData.append('username', username)
-  formData.append('password', password)
-
-  const response = await fetch(buildAdminPath('/login'), {
-    method: 'POST',
-    body: formData,
-    credentials: 'same-origin',
-  })
-
-  // 303 means success - browser will follow redirect
-  if (response.ok || response.status === 303 || response.type === 'opaqueredirect') {
-    const user: User = {
-      id: 0,
-      username,
-      email: '',
-      is_superuser: true,
-    }
-    return user
-  }
-
-  throw new Error(`Login failed: ${response.status} ${response.statusText}`)
 }
 
 export async function logout(): Promise<void> {
@@ -80,36 +121,18 @@ export async function logout(): Promise<void> {
   window.location.href = buildAdminPath('/login')
 }
 
-export async function getCurrentUser(): Promise<User | null> {
+// checkSession reports whether the session cookie is still accepted. The
+// panel has no identity endpoint (no /api/me): the SPA knows it is signed
+// in, not who it is, and must not invent a username.
+export async function checkSession(): Promise<boolean> {
   try {
-    // Use /api/models as auth check - returns 200 when authenticated.
     const response = await fetch(buildAdminPath('/api/models'), {
       credentials: 'same-origin',
     })
-    if (isRedirectToLogin(response) || !response.ok) return null
-
-    return {
-      id: 0,
-      username: 'admin',
-      email: '',
-      is_superuser: true,
-    }
+    return !isRedirectToLogin(response) && response.ok
   } catch {
-    return null
+    return false
   }
-}
-
-export async function getModels(): Promise<Model[]> {
-  const response = await fetchAPI<{
-    models?: Array<{ name: string; table: string; count?: number }>
-  }>('/api/models')
-
-  return (response.models ?? []).map((model) => ({
-    name: model.name,
-    table: model.table,
-    fields: [],
-    count: model.count,
-  }))
 }
 
 // ── Data Studio API ──
@@ -120,7 +143,7 @@ export async function getModelsWithRuntime(includeCounts = true): Promise<Models
 }
 
 export async function getModelSchema(name: string): Promise<ModelSchema> {
-  return fetchAPI<ModelSchema>(`/api/models/${name}/schema`)
+  return fetchAPI<ModelSchema>(`/api/models/${encodeURIComponent(name)}/schema`)
 }
 
 export interface FieldMetaUpdate {
@@ -137,15 +160,25 @@ export async function updateFieldsMeta(
   modelName: string,
   fields: { [fieldName: string]: FieldMetaUpdate },
 ): Promise<void> {
-  await fetchAPI(`/api/models/${modelName}/schema/fields`, {
+  await fetchAPI(`/api/models/${encodeURIComponent(modelName)}/schema/fields`, {
     method: 'PUT',
     body: JSON.stringify({ fields }),
   })
 }
 
+export interface RecordsQuery {
+  page?: number
+  page_size?: number
+  search?: string
+  order_by?: string
+  db_alias?: string
+  filters?: { [column: string]: string }
+}
+
 export async function getRecordsPaginated(
   name: string,
-  params: { page?: number; page_size?: number; search?: string; order_by?: string; db_alias?: string; filters?: Record<string, string> },
+  params: RecordsQuery,
+  signal?: AbortSignal,
 ): Promise<PaginatedResult> {
   const searchParams = new URLSearchParams()
   if (params.page) searchParams.set('page', String(params.page))
@@ -158,130 +191,190 @@ export async function getRecordsPaginated(
       searchParams.set(k, v)
     }
   }
-  return fetchAPI<PaginatedResult>(`/api/models/${name}?${searchParams}`)
-}
-
-export async function getRecord(name: string, id: string): Promise<AppRecord> {
-  return fetchAPI(`/api/models/${name}/${id}`)
-}
-
-export async function getRecords(name: string, params?: Record<string, string>): Promise<AppRecord[]> {
-  const searchParams = new URLSearchParams(params)
-  return fetchAPI(`/api/models/${name}?${searchParams}`)
+  return fetchAPI<PaginatedResult>(`/api/models/${encodeURIComponent(name)}?${searchParams}`, { signal })
 }
 
 export async function createRecord(name: string, data: AppRecord): Promise<AppRecord> {
-  return fetchAPI(`/api/models/${name}`, {
+  return fetchAPI(`/api/models/${encodeURIComponent(name)}`, {
     method: 'POST',
     body: JSON.stringify(data),
   })
 }
 
 export async function updateRecord(name: string, id: string, data: AppRecord): Promise<AppRecord> {
-  return fetchAPI(`/api/models/${name}/${id}`, {
+  return fetchAPI(`/api/models/${encodeURIComponent(name)}/${encodeURIComponent(id)}`, {
     method: 'PUT',
     body: JSON.stringify(data),
   })
 }
 
 export async function deleteRecord(name: string, id: string): Promise<void> {
-  await fetchAPI(`/api/models/${name}/${id}`, { method: 'DELETE' })
+  await fetchAPI(`/api/models/${encodeURIComponent(name)}/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
-export async function bulkDelete(name: string, ids: number[]): Promise<{ deleted: number; failed: number }> {
-  return fetchAPI(`/api/models/${name}/bulk`, {
+export interface BulkDeleteResult {
+  deleted: number
+  failed: number
+  errors?: Array<{ id: number; error: string }>
+}
+
+// The bulk endpoint decodes ids as []uint (internal/admin/handlers.go); the
+// caller is responsible for only passing non-negative integers here and
+// deleting anything else one by one (see AGGridTable.handleBulkDelete).
+export async function bulkDelete(name: string, ids: number[]): Promise<BulkDeleteResult> {
+  return fetchAPI(`/api/models/${encodeURIComponent(name)}/bulk`, {
     method: 'POST',
     body: JSON.stringify({ action: 'delete', ids }),
   })
 }
 
-export async function getSessions(): Promise<Session[]> {
+// ── Sessions ──
+
+interface RawSessionRow {
+  id: string
+  token_short?: string
+  user?: string
+  first_seen_at?: string
+  last_seen_at?: string
+  expires_at?: string
+  pod?: string
+  host?: string
+  instance?: string
+  remote_ip?: string
+}
+
+export async function getSessions(): Promise<SessionsResponse> {
   // The backend serves an opaque per-session id (never the bearer token —
   // that credential would let any admin replay another admin's session);
   // the id is what DELETE /api/sessions/{id} resolves server-side.
   const response = await fetchAPI<{
-    sessions?: Array<{
-      id: string
-      token_short?: string
-      user?: string
-      remote_ip?: string
-      first_seen_at?: string
-      last_seen_at?: string
-    }>
+    enabled?: boolean
+    reason?: string
+    sessions?: RawSessionRow[]
+    current_active?: number
+    truncated_by_limit?: boolean
   }>('/api/sessions')
 
-  return (response.sessions ?? []).map((session) => ({
-    id: session.id,
-    user_id: 0,
-    username: session.user ?? '',
-    ip: session.remote_ip ?? '',
-    user_agent: '',
-    created_at: session.first_seen_at ?? '',
-    last_activity: session.last_seen_at ?? '',
+  const sessions: Session[] = (response.sessions ?? []).map((row) => ({
+    id: row.id,
+    tokenShort: row.token_short ?? '',
+    user: row.user ?? '',
+    remoteIp: row.remote_ip ?? '',
+    host: row.host ?? '',
+    pod: row.pod ?? '',
+    instance: row.instance ?? '',
+    firstSeenAt: row.first_seen_at ?? '',
+    lastSeenAt: row.last_seen_at ?? '',
+    expiresAt: row.expires_at ?? '',
   }))
+
+  return {
+    enabled: response.enabled ?? false,
+    reason: response.reason,
+    sessions,
+    currentActive: response.current_active ?? sessions.length,
+    truncatedByLimit: response.truncated_by_limit ?? false,
+  }
 }
 
 export async function deleteSession(sessionId: string): Promise<void> {
   await fetchAPI(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' })
 }
 
-export async function getAuditLogs(params?: Record<string, string>): Promise<AuditLog[]> {
-  const searchParams = new URLSearchParams(params)
+// ── Audit ──
+
+interface RawAuditEntry {
+  id: number
+  user_id?: string
+  username?: string
+  action: string
+  model_name?: string
+  record_id?: string
+  ip?: string
+  created_at: string
+}
+
+// The backend filters by user_id / model / action and pages with
+// page / page_size (internal/admin/audit.go handleListAuditLog); there is
+// no free-text search.
+export async function getAuditLogs(query: AuditLogQuery = {}): Promise<AuditLogPage> {
+  const searchParams = new URLSearchParams()
+  if (query.user_id) searchParams.set('user_id', query.user_id)
+  if (query.model) searchParams.set('model', query.model)
+  if (query.action) searchParams.set('action', query.action)
+  if (query.page) searchParams.set('page', String(query.page))
+  if (query.page_size) searchParams.set('page_size', String(query.page_size))
+
   const response = await fetchAPI<{
-    entries?: Array<{
-      id: number
-      username?: string
-      action: string
-      model_name?: string
-      record_id?: string
-      created_at: string
-    }>
+    enabled?: boolean
+    reason?: string
+    entries?: RawAuditEntry[]
+    total?: number
+    page?: number
+    page_size?: number
+    total_pages?: number
   }>(`/api/audit?${searchParams}`)
 
-  return (response.entries ?? []).map((entry) => ({
-    id: entry.id,
-    timestamp: entry.created_at,
-    user: entry.username ?? '',
-    action: entry.action,
-    resource: [entry.model_name, entry.record_id].filter(Boolean).join('#'),
-    details: entry.model_name ?? '',
-  }))
+  return {
+    enabled: response.enabled ?? false,
+    reason: response.reason,
+    entries: (response.entries ?? []).map((entry) => ({
+      id: entry.id,
+      timestamp: entry.created_at,
+      userId: entry.user_id ?? '',
+      username: entry.username ?? '',
+      action: entry.action,
+      modelName: entry.model_name ?? '',
+      recordId: entry.record_id ?? '',
+      ip: entry.ip ?? '',
+    })),
+    total: response.total ?? 0,
+    page: response.page ?? query.page ?? 1,
+    pageSize: response.page_size ?? query.page_size ?? 50,
+    totalPages: response.total_pages ?? 1,
+  }
 }
 
-export async function getRBACPolicies(): Promise<RBACPolicy[]> {
+// ── RBAC ──
+
+export async function getRBACPolicies(): Promise<RBACPoliciesResponse> {
   const response = await fetchAPI<{
-    policies?: Array<{ sub: string; obj: string; act: string }>
+    enabled?: boolean
+    reason?: string
+    policies?: Array<{ sub: string; obj: string; act: string; eft?: string }>
   }>('/api/rbac/policies')
 
-  return (response.policies ?? []).map((policy) => ({
-    ptype: 'p',
-    v0: policy.sub,
-    v1: policy.obj,
-    v2: policy.act,
+  const policies: RBACPolicy[] = (response.policies ?? []).map((policy) => ({
+    sub: policy.sub,
+    obj: policy.obj,
+    act: policy.act,
+    eft: policy.eft === 'deny' ? 'deny' : 'allow',
   }))
+
+  return {
+    enabled: response.enabled ?? true,
+    reason: response.reason,
+    policies,
+  }
 }
 
-export async function createRBACPolicy(policy: Partial<RBACPolicy>): Promise<void> {
+export type RBACPolicyInput = Pick<RBACPolicy, 'sub' | 'obj' | 'act'>
+
+export async function createRBACPolicy(policy: RBACPolicyInput): Promise<void> {
   await fetchAPI('/api/rbac/policies', {
     method: 'POST',
-    body: JSON.stringify({
-      sub: policy.v0,
-      obj: policy.v1,
-      act: policy.v2,
-    }),
+    body: JSON.stringify({ sub: policy.sub, obj: policy.obj, act: policy.act }),
   })
 }
 
-export async function deleteRBACPolicy(policy: Partial<RBACPolicy>): Promise<void> {
+export async function deleteRBACPolicy(policy: RBACPolicyInput): Promise<void> {
   await fetchAPI('/api/rbac/policies', {
     method: 'DELETE',
-    body: JSON.stringify({
-      sub: policy.v0,
-      obj: policy.v1,
-      act: policy.v2,
-    }),
+    body: JSON.stringify({ sub: policy.sub, obj: policy.obj, act: policy.act }),
   })
 }
+
+// ── Health / system ──
 
 export async function getHealthChecks(): Promise<HealthCheck[]> {
   const response = await fetchAPI<{
@@ -296,30 +389,11 @@ export async function getHealthChecks(): Promise<HealthCheck[]> {
   }))
 }
 
-export async function getSystemMetrics(): Promise<SystemMetrics> {
-  const response = await getSystemSnapshot()
-
-  return {
-    goroutines: response.goroutines?.count ?? 0,
-    memory: {
-      alloc: response.memory?.alloc_bytes ?? 0,
-      total_alloc: response.memory?.heap_alloc_bytes ?? 0,
-      sys: response.memory?.heap_sys_bytes ?? 0,
-      num_gc: response.memory?.num_gc ?? 0,
-    },
-    cpu_usage: response.process_cpu_load ?? response.cpu_load ?? 0,
-    db_pools: (response.databases ?? []).map((database) => ({
-      name: database.alias,
-      open_connections: database.open_connections,
-      in_use: database.in_use,
-      idle: database.idle,
-    })),
-  }
-}
-
 export async function getSystemSnapshot(): Promise<SystemSnapshot> {
   return fetchAPI<SystemSnapshot>('/api/system/snapshot')
 }
+
+// ── Live feed ──
 
 interface RawLiveRequest {
   request_id?: string
@@ -396,19 +470,7 @@ export function getLiveWebSocket(): WebSocket | null {
   }
 }
 
-export async function getFeatureFlags(): Promise<FeatureFlag[]> {
-  const response = await fetchAPI<{
-    flags?: FeatureFlag[]
-  }>('/api/features')
-  return response.flags ?? []
-}
-
-export async function toggleFeatureFlag(name: string, enabled: boolean): Promise<void> {
-  await fetchAPI(`/api/features/${name}`, {
-    method: 'PUT',
-    body: JSON.stringify({ enabled }),
-  })
-}
+// ── Export / import ──
 
 export async function exportData(format: 'csv' | 'json' | 'sql', modelName?: string): Promise<string> {
   // Backend routes are /api/exports (create) and /api/exports/download
@@ -431,18 +493,76 @@ export async function exportData(format: 'csv' | 'json' | 'sql', modelName?: str
   return ''
 }
 
-export async function importData(file: File): Promise<void> {
+export interface ImportUpload {
+  key: string
+  size: number
+  format: string
+  filename: string
+}
+
+export interface ImportRowError {
+  row: number
+  field?: string
+  message: string
+}
+
+export interface ImportValidation {
+  total_records: number
+  valid_records: number
+  errors: ImportRowError[]
+  can_proceed: boolean
+}
+
+export interface ImportReport {
+  total: number
+  imported: number
+  skipped: number
+  updated: number
+  failed: number
+  errors: ImportRowError[]
+  dry_run: boolean
+}
+
+// The import is three round trips (internal/admin/management.go): the
+// multipart upload parks the file in storage and returns its key; validate
+// dry-runs the parse against the model; execute writes. Nothing is
+// imported until execute returns.
+export async function uploadImportFile(file: File): Promise<ImportUpload> {
   const formData = new FormData()
   formData.append('file', file)
 
-  // Backend route is POST /api/imports (multipart).
   const response = await fetch(buildAdminPath('/api/imports'), {
     method: 'POST',
     body: formData,
     credentials: 'same-origin',
   })
-  if (!response.ok) {
-    const message = await response.text()
-    throw new Error(message || `Import failed: ${response.status} ${response.statusText}`)
+  if (isRedirectToLogin(response)) {
+    redirectToLogin()
   }
+  if (!response.ok) {
+    await throwApiError(response)
+  }
+  return response.json() as Promise<ImportUpload>
+}
+
+// ImportTarget is the body both validate and execute expect: the model and
+// the file format the upload step detected (csv|json). The backend does not
+// infer the format from the stored key, so omitting it fails the parse.
+export interface ImportTarget {
+  model: string
+  format: string
+}
+
+export async function validateImport(key: string, target: ImportTarget): Promise<ImportValidation> {
+  return fetchAPI<ImportValidation>(`/api/import/validate?key=${encodeURIComponent(key)}`, {
+    method: 'POST',
+    body: JSON.stringify(target),
+  })
+}
+
+export async function executeImport(key: string, target: ImportTarget): Promise<ImportReport> {
+  return fetchAPI<ImportReport>(`/api/import/execute?key=${encodeURIComponent(key)}`, {
+    method: 'POST',
+    body: JSON.stringify(target),
+  })
 }

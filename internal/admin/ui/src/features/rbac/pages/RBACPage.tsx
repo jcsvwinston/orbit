@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import { ErrorState } from '@/components/ui/error-state'
 import {
   Table,
   TableBody,
@@ -26,40 +27,66 @@ import type { RBACPolicy } from '@/types'
 import { Shield, Plus, Trash, Loader2 } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
 
+export function policyKey(policy: RBACPolicy): string {
+  return `${policy.eft}:${policy.sub}:${policy.obj}:${policy.act}`
+}
+
+// EffectBadge is the one visual that separates a deny rule from an allow
+// rule for the same (sub, obj, act). Before it existed the SPA dropped the
+// `eft` column and painted every policy as an allow.
+export function EffectBadge({ eft }: { eft: RBACPolicy['eft'] }) {
+  if (eft === 'deny') {
+    return (
+      <Badge variant="outline" className="border-red-700/40 text-red-700 dark:border-red-400/40 dark:text-red-400" data-testid="policy-effect">
+        deny
+      </Badge>
+    )
+  }
+  return (
+    <Badge variant="outline" className="border-green-700/40 text-green-700 dark:border-green-400/40 dark:text-green-400" data-testid="policy-effect">
+      allow
+    </Badge>
+  )
+}
+
 export default function RBACPage() {
   const [policies, setPolicies] = useState<RBACPolicy[]>([])
+  const [enabled, setEnabled] = useState(true)
+  const [disabledReason, setDisabledReason] = useState<string | undefined>(undefined)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<unknown>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [newPolicy, setNewPolicy] = useState({ ptype: 'p', v0: '', v1: '', v2: '' })
+  const [newPolicy, setNewPolicy] = useState({ sub: '', obj: '', act: '' })
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState<RBACPolicy | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const { toast } = useToast()
 
-  const fetchPolicies = async () => {
+  const fetchPolicies = useCallback(async () => {
     setLoading(true)
+    setLoadError(null)
     try {
       const data = await api.getRBACPolicies()
-      setPolicies(data)
+      setPolicies(data.policies)
+      setEnabled(data.enabled)
+      setDisabledReason(data.reason)
     } catch (error) {
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to fetch RBAC policies',
-      })
+      setLoadError(error)
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     fetchPolicies()
-  }, [])
+  }, [fetchPolicies])
 
   const handleAddPolicy = async () => {
-    if (!newPolicy.v0 || !newPolicy.v1) {
+    if (!newPolicy.sub || !newPolicy.obj || !newPolicy.act) {
       toast({
         variant: 'destructive',
         title: 'Validation error',
-        description: 'Role and resource are required',
+        description: 'Role, resource and action are required',
       })
       return
     }
@@ -69,36 +96,41 @@ export default function RBACPage() {
       await api.createRBACPolicy(newPolicy)
       toast({
         title: 'Policy created',
-        description: 'The RBAC policy has been added successfully',
+        description: 'The RBAC policy has been added',
       })
-      setNewPolicy({ ptype: 'p', v0: '', v1: '', v2: '' })
+      setNewPolicy({ sub: '', obj: '', act: '' })
       setIsDialogOpen(false)
       fetchPolicies()
     } catch (error) {
       toast({
         variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to create RBAC policy',
+        title: 'Failed to create policy',
+        description: api.errorMessage(error),
       })
     } finally {
       setIsSubmitting(false)
     }
   }
 
-  const handleDeletePolicy = async (policy: RBACPolicy) => {
+  const confirmDeletePolicy = async () => {
+    if (!pendingDelete) return
+    setDeleting(true)
     try {
-      await api.deleteRBACPolicy(policy)
+      await api.deleteRBACPolicy(pendingDelete)
       toast({
         title: 'Policy deleted',
         description: 'The RBAC policy has been removed',
       })
+      setPendingDelete(null)
       fetchPolicies()
     } catch (error) {
       toast({
         variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to delete RBAC policy',
+        title: 'Failed to delete policy',
+        description: api.errorMessage(error),
       })
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -110,11 +142,9 @@ export default function RBACPage() {
           <p className="text-muted-foreground">RBAC policy management</p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Policy
-            </Button>
+          <DialogTrigger render={<Button />}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add Policy
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
@@ -129,8 +159,8 @@ export default function RBACPage() {
                 <Input
                   id="role"
                   placeholder="e.g., admin, editor, viewer"
-                  value={newPolicy.v0}
-                  onChange={(e) => setNewPolicy({ ...newPolicy, v0: e.target.value })}
+                  value={newPolicy.sub}
+                  onChange={(e) => setNewPolicy({ ...newPolicy, sub: e.target.value })}
                 />
               </div>
               <div className="space-y-2">
@@ -138,8 +168,8 @@ export default function RBACPage() {
                 <Input
                   id="resource"
                   placeholder="e.g., admin:users, admin:posts"
-                  value={newPolicy.v1}
-                  onChange={(e) => setNewPolicy({ ...newPolicy, v1: e.target.value })}
+                  value={newPolicy.obj}
+                  onChange={(e) => setNewPolicy({ ...newPolicy, obj: e.target.value })}
                 />
               </div>
               <div className="space-y-2">
@@ -147,8 +177,8 @@ export default function RBACPage() {
                 <Input
                   id="action"
                   placeholder="e.g., read, write, delete"
-                  value={newPolicy.v2}
-                  onChange={(e) => setNewPolicy({ ...newPolicy, v2: e.target.value })}
+                  value={newPolicy.act}
+                  onChange={(e) => setNewPolicy({ ...newPolicy, act: e.target.value })}
                 />
               </div>
             </div>
@@ -182,7 +212,15 @@ export default function RBACPage() {
         <CardContent>
           {loading ? (
             <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin" />
+              <Loader2 className="h-8 w-8 animate-spin" aria-label="Loading" />
+            </div>
+          ) : loadError ? (
+            <ErrorState error={loadError} title="Failed to load RBAC policies" onRetry={fetchPolicies} />
+          ) : !enabled ? (
+            <div className="text-center py-12">
+              <Shield className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+              <p className="text-muted-foreground">RBAC is not enabled</p>
+              {disabledReason && <p className="text-sm text-muted-foreground mt-2">{disabledReason}</p>}
             </div>
           ) : policies.length === 0 ? (
             <div className="text-center py-12">
@@ -197,29 +235,30 @@ export default function RBACPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Type</TableHead>
                     <TableHead>Role</TableHead>
                     <TableHead>Resource</TableHead>
                     <TableHead>Action</TableHead>
+                    <TableHead>Effect</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {policies.map((policy, index) => (
-                    <TableRow key={index}>
+                  {policies.map((policy) => (
+                    <TableRow key={policyKey(policy)}>
+                      <TableCell className="font-medium">{policy.sub}</TableCell>
+                      <TableCell className="font-mono text-sm">{policy.obj}</TableCell>
                       <TableCell>
-                        <Badge variant="outline">{policy.ptype}</Badge>
+                        <Badge>{policy.act}</Badge>
                       </TableCell>
-                      <TableCell className="font-medium">{policy.v0}</TableCell>
-                      <TableCell className="font-mono text-sm">{policy.v1}</TableCell>
                       <TableCell>
-                        <Badge>{policy.v2}</Badge>
+                        <EffectBadge eft={policy.eft} />
                       </TableCell>
                       <TableCell className="text-right">
                         <Button
                           variant="destructive"
                           size="sm"
-                          onClick={() => handleDeletePolicy(policy)}
+                          aria-label={`Delete policy ${policy.sub} ${policy.obj} ${policy.act}`}
+                          onClick={() => setPendingDelete(policy)}
                         >
                           <Trash className="h-4 w-4" />
                         </Button>
@@ -232,6 +271,29 @@ export default function RBACPage() {
           )}
         </CardContent>
       </Card>
+
+      {pendingDelete && (
+        <Dialog open={true} onOpenChange={(val: boolean) => !val && !deleting && setPendingDelete(null)}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Delete policy</DialogTitle>
+              <DialogDescription>
+                Remove the {pendingDelete.eft} rule for <span className="font-mono">{pendingDelete.sub}</span> on{' '}
+                <span className="font-mono">{pendingDelete.obj}</span> ({pendingDelete.act})? This takes effect immediately.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setPendingDelete(null)} disabled={deleting}>
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={confirmDeletePolicy} disabled={deleting}>
+                {deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Delete
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   )
 }

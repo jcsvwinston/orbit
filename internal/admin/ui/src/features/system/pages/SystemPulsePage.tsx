@@ -12,6 +12,7 @@ import {
 
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { ErrorState } from '@/components/ui/error-state'
 import * as api from '@/services/api'
 import type { SystemSnapshot } from '@/types'
 
@@ -41,6 +42,8 @@ export default function SystemPulsePage() {
   const [snapshot, setSnapshot] = useState<SystemSnapshot | null>(null)
   const [history, setHistory] = useState<PulsePoint[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<unknown>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let mounted = true
@@ -49,6 +52,7 @@ export default function SystemPulsePage() {
       try {
         const data = await api.getSystemSnapshot()
         if (!mounted) return
+        setError(null)
 
         setSnapshot(data)
         if (data) {
@@ -63,9 +67,12 @@ export default function SystemPulsePage() {
             },
           ])
         }
-      } catch (error: any) {
-        console.error('Failed to fetch system snapshot:', error)
-        if (error.message === 'Unauthorized') {
+      } catch (err) {
+        if (!mounted) return
+        setError(err)
+        // A 401 already redirected to login; a 403 will not change on
+        // retry — stop polling in both cases.
+        if (api.isApiError(err) && (err.status === 401 || err.status === 403)) {
           mounted = false
           window.clearInterval(interval)
         }
@@ -82,7 +89,7 @@ export default function SystemPulsePage() {
       mounted = false
       window.clearInterval(interval)
     }
-  }, [])
+  }, [reloadKey])
 
   if (loading) {
     return (
@@ -94,9 +101,11 @@ export default function SystemPulsePage() {
 
   if (!snapshot) {
     return (
-      <div className="py-12 text-center">
-        <p className="text-muted-foreground">Failed to load the system pulse.</p>
-      </div>
+      <ErrorState
+        error={error ?? new Error('The system snapshot endpoint returned no data.')}
+        title="Failed to load the system pulse"
+        onRetry={() => { setLoading(true); setReloadKey((k) => k + 1) }}
+      />
     )
   }
 

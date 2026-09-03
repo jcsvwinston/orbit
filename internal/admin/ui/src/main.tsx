@@ -11,9 +11,9 @@ document.title = getAdminTitle();
 
 // Initialize theme before React renders (avoids CSP inline script issue)
 (function () {
-  var theme = localStorage.getItem('gf-theme')
+  let theme = localStorage.getItem('gf-theme')
   if (!theme) {
-    var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
     theme = prefersDark ? 'dark' : 'light'
   }
   localStorage.setItem('gf-theme', theme)
