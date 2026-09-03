@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.16](https://github.com/jcsvwinston/orbit/compare/v1.8.15...v1.8.16) (2026-09-03)
+
+
+### Fixed
+
+* **docs:** las notas de la v1.8.16, que fuerza el corte del root con server ([#372](https://github.com/jcsvwinston/orbit/issues/372)) ([3f141f7](https://github.com/jcsvwinston/orbit/commit/3f141f794b1ae1720593ccff1657c54895724abc))
+
 ## [1.8.15](https://github.com/jcsvwinston/orbit/compare/v1.8.14...v1.8.15) (2026-09-01)
 
 
