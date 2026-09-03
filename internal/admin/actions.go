@@ -28,6 +28,13 @@ func (p *Panel) handleExportCSV(c *router.Context) error {
 	if err != nil {
 		return gferrors.BadRequest(err.Error())
 	}
+	// Same alias fallback as the list endpoint: a model declared on another
+	// database exports from that database.
+	if r.URL.Query().Get("db") == "" && r.URL.Query().Get("database") == "" && r.URL.Query().Get("db_alias") == "" {
+		if mi.DatabaseAlias != "" {
+			databaseAlias = mi.DatabaseAlias
+		}
+	}
 
 	st, err := p.src.Store(mi.Name, databaseAlias)
 	if err != nil {
@@ -37,11 +44,15 @@ func (p *Panel) handleExportCSV(c *router.Context) error {
 	if err != nil {
 		return gferrors.BadRequest("invalid ids query param")
 	}
-	page, err := st.List(r.Context(), datasource.Query{
-		Page: 1, PageSize: 10000,
-	})
-	if err != nil {
-		return err
+
+	// Same tenant scope as the list endpoint, so an export never shows more
+	// than the grid it was requested from.
+	var filters map[string]string
+	if tenantCtx := tenantContextFromRequest(r); tenantCtx != nil && tenantCtx.Enabled && tenantCtx.AutoFilter {
+		tenantField := p.resolveTenantField(mi.Name)
+		if tenantField != "" && tenantCtx.TenantID != "" {
+			filters = map[string]string{tenantField: tenantCtx.TenantID}
+		}
 	}
 
 	// Determine visible columns and the primary-key field for id filtering.
@@ -64,32 +75,60 @@ func (p *Panel) handleExportCSV(c *router.Context) error {
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.csv"`, mi.Table))
 
 	writer := csv.NewWriter(w)
-	defer writer.Flush()
+	if err := writer.Write(headers); err != nil {
+		return fmt.Errorf("export csv: write header: %w", err)
+	}
 
-	writer.Write(headers)
-
-	for _, rec := range page.Items {
-		if len(idSet) > 0 {
-			id, ok := recordID(rec, pkField, hasPK)
-			if !ok {
-				continue
+	// Page through the whole table instead of a single 10 000-row page
+	// that truncated larger models silently. Once the headers are on the
+	// wire an error can only abort the download, so a failed page or a
+	// broken client connection is returned (the response is left
+	// incomplete) rather than swallowed.
+	for pageNo := 1; ; pageNo++ {
+		page, err := st.List(r.Context(), datasource.Query{
+			Page: pageNo, PageSize: exportCSVPageSize, Filters: filters,
+		})
+		if err != nil {
+			return fmt.Errorf("export csv: page %d: %w", pageNo, err)
+		}
+		for _, rec := range page.Items {
+			if len(idSet) > 0 {
+				id, ok := recordID(rec, pkField, hasPK)
+				if !ok {
+					continue
+				}
+				if _, exists := idSet[id]; !exists {
+					continue
+				}
 			}
-			if _, exists := idSet[id]; !exists {
-				continue
+			row := make([]string, 0, len(columns))
+			for _, f := range columns {
+				if v, ok := recordValue(rec, f); ok {
+					row = append(row, fmt.Sprintf("%v", v))
+				} else {
+					row = append(row, "")
+				}
+			}
+			if err := writer.Write(row); err != nil {
+				return fmt.Errorf("export csv: write row: %w", err)
 			}
 		}
-		row := make([]string, 0, len(columns))
-		for _, f := range columns {
-			if v, ok := recordValue(rec, f); ok {
-				row = append(row, fmt.Sprintf("%v", v))
-			} else {
-				row = append(row, "")
-			}
+		if len(page.Items) == 0 || len(page.Items) < exportCSVPageSize || !page.HasMore && page.TotalPages > 0 && pageNo >= page.TotalPages {
+			break
 		}
-		writer.Write(row)
+		if !page.HasMore && page.TotalPages == 0 && !page.IsEstimated {
+			break
+		}
+	}
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return fmt.Errorf("export csv: flush: %w", err)
 	}
 	return nil
 }
+
+// exportCSVPageSize is the page size the CSV export walks the table with.
+const exportCSVPageSize = 1000
 
 func parseIDSet(raw string) (map[uint64]struct{}, error) {
 	raw = strings.TrimSpace(raw)

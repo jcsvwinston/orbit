@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"runtime"
 	"runtime/pprof"
 	"sort"
@@ -436,19 +437,51 @@ func buildSystemEnvironmentRows(entries []string) []systemEnvVar {
 	return rows
 }
 
-func shouldMaskSystemEnvValue(name string) bool {
-	upper := strings.ToUpper(strings.TrimSpace(name))
-	return strings.Contains(upper, "KEY") ||
-		strings.Contains(upper, "SECRET") ||
-		strings.Contains(upper, "PASSWORD") ||
-		strings.Contains(upper, "TOKEN")
+// sensitiveEnvNameMarkers are the substrings that mark an environment
+// variable as secret-bearing by NAME. Connection strings (DATABASE_URL,
+// REDIS_URL, SENTRY_DSN, NUCLEUS_DATABASES_DEFAULT_URL) carry credentials
+// too, which the old KEY|SECRET|PASSWORD|TOKEN list missed — the snapshot
+// showed "postgres://app:S3cret@host/db" to anyone with system_pulse.
+var sensitiveEnvNameMarkers = []string{
+	"URL", "URI", "DSN", "CONN",
+	"PASS", "PWD",
+	"AUTH", "CRED", "PRIVATE",
+	"KEY", "SECRET", "TOKEN",
 }
 
-func maskSystemEnvValue(value string, masked bool) string {
-	if !masked {
-		return value
+func shouldMaskSystemEnvValue(name string) bool {
+	upper := strings.ToUpper(strings.TrimSpace(name))
+	for _, marker := range sensitiveEnvNameMarkers {
+		if strings.Contains(upper, marker) {
+			return true
+		}
 	}
-	return "***"
+	return false
+}
+
+// maskSystemEnvValue hides the value of a sensitive variable entirely. For
+// values that are not flagged by name it still redacts the userinfo of any
+// embedded URL ("user:pass@host" → "user:***@host"), so a credential that
+// hides behind an innocuous name (APP_BACKEND=postgres://u:p@h/db) never
+// leaves the process either.
+func maskSystemEnvValue(value string, masked bool) string {
+	if masked {
+		return "***"
+	}
+	return redactURLCredentials(value)
+}
+
+// urlCredentialRe matches the "scheme://user:password@" prefix of a URL
+// anywhere in a string. The password may be empty; the user may not.
+var urlCredentialRe = regexp.MustCompile(`([A-Za-z][A-Za-z0-9+.-]*://)([^/\s:@]+)(:[^/\s@]*)?@`)
+
+// redactURLCredentials replaces the password of every "user:pass@" URL
+// userinfo in s with "***" and leaves the rest of the string intact.
+func redactURLCredentials(s string) string {
+	if !strings.Contains(s, "@") || !strings.Contains(s, "://") {
+		return s
+	}
+	return urlCredentialRe.ReplaceAllString(s, "${1}${2}:***@")
 }
 
 func getCPULoad() float64 {

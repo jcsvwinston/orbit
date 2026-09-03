@@ -497,7 +497,25 @@ func parseRFC3339(raw string) time.Time {
 	return ts
 }
 
+// liveTrafficMiddleware observes requests whose r.URL.Path is the path
+// the client requested. It is what Panel.LiveTrafficMiddleware hands to a
+// host application for its own router.
 func (p *Panel) liveTrafficMiddleware(next http.Handler) http.Handler {
+	return p.liveTraffic(next, "")
+}
+
+// panelTrafficMiddleware observes the panel's OWN routes. The panel router
+// is mounted under Config.Prefix with the prefix stripped (Router.Mount),
+// so here r.URL.Path reads "/api/audit" while the operator's exclude —
+// and the default one — reads "/admin": the default exclude never
+// matched and the feed filled with the panel's own polling. This variant
+// re-prefixes the path before matching excludes and before recording, so
+// the feed shows and filters the path the browser actually requested.
+func (p *Panel) panelTrafficMiddleware(next http.Handler) http.Handler {
+	return p.liveTraffic(next, NormalizePrefix(p.config.Prefix))
+}
+
+func (p *Panel) liveTraffic(next http.Handler, mountPrefix string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if p == nil || p.live == nil || r == nil {
 			next.ServeHTTP(w, r)
@@ -507,7 +525,9 @@ func (p *Panel) liveTrafficMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if shouldExcludeLivePath(r.URL.Path, p.liveExcludePatterns()) {
+		requested := requestedPath(r.URL.Path, mountPrefix)
+		patterns := p.liveExcludePatterns()
+		if shouldExcludeLivePath(requested, patterns) || (requested != r.URL.Path && shouldExcludeLivePath(r.URL.Path, patterns)) {
 			next.ServeHTTP(w, r.WithContext(contextWithLiveObserved(r)))
 			return
 		}
@@ -519,8 +539,23 @@ func (p *Panel) liveTrafficMiddleware(next http.Handler) http.Handler {
 		start := time.Now()
 		ww := router.NewWrapResponseWriter(w, r.ProtoMajor)
 		next.ServeHTTP(ww, r.WithContext(contextWithLiveObserved(r)))
-		p.recordLiveRequest(r, ww.Status(), time.Since(start))
+		observed := r
+		if requested != r.URL.Path {
+			observed = r.Clone(r.Context())
+			observed.URL.Path = requested
+		}
+		p.recordLiveRequest(observed, ww.Status(), time.Since(start))
 	})
+}
+
+// requestedPath restores the mount prefix on a path the router stripped.
+// A path that already carries the prefix (or an empty prefix) is returned
+// unchanged.
+func requestedPath(stripped, mountPrefix string) string {
+	if mountPrefix == "" || stripped == mountPrefix || strings.HasPrefix(stripped, mountPrefix+"/") {
+		return stripped
+	}
+	return mountPrefix + "/" + strings.TrimPrefix(stripped, "/")
 }
 
 func contextWithLiveObserved(r *http.Request) context.Context {

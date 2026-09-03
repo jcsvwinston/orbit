@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
 	"github.com/jcsvwinston/nucleus/pkg/model"
 
 	"github.com/jcsvwinston/orbit/datasource"
@@ -33,15 +34,40 @@ func entityToRecord(entity any) (datasource.Record, error) {
 }
 
 // payloadToEntity builds a new *entity from a Record, coercing values into the
-// struct's field types. Primary-key and read-only fields are ignored. This is
-// the reflection the panel used to carry; it now lives only here (ADR-001 D2).
+// struct's field types. Primary-key and read-only fields are ignored, as are
+// metadata keys (a leading underscore, e.g. the "_model" tag of a multi-model
+// export). This is the reflection the panel used to carry; it now lives only
+// here (ADR-001 D2).
+//
+// Two classes of input are refused with a per-field 422 instead of being
+// silently absorbed, because an admin that writes whatever it is sent
+// corrupts data: a key that names no field of the model, and a value whose
+// JSON type does not fit the field (a number for a string field used to be
+// stored as "123.0").
 func payloadToEntity(meta *model.ModelMeta, rec datasource.Record) (any, error) {
 	entityPtr := reflect.New(meta.Type)
-	entity := entityPtr.Elem()
+	if _, err := applyPayload(meta, entityPtr.Elem(), rec); err != nil {
+		return nil, err
+	}
+	return entityPtr.Interface(), nil
+}
 
+// applyPayload assigns rec onto entity (a settable struct value) and returns
+// the set of fields it touched, keyed by field meta. Validation problems come
+// back as one gferrors.ValidationFailed carrying every offending key.
+func applyPayload(meta *model.ModelMeta, entity reflect.Value, rec datasource.Record) (map[string]model.FieldMeta, error) {
+	touched := make(map[string]model.FieldMeta, len(rec))
+	problems := map[string]string{}
 	for key, raw := range rec {
+		if strings.HasPrefix(key, "_") {
+			continue
+		}
 		fm, ok := fieldForInput(meta, key)
-		if !ok || fm.IsPK || fm.IsReadOnly {
+		if !ok {
+			problems[key] = "unknown field"
+			continue
+		}
+		if fm.IsPK || fm.IsReadOnly {
 			continue
 		}
 		field := entity.FieldByName(fm.Name)
@@ -49,16 +75,36 @@ func payloadToEntity(meta *model.ModelMeta, rec datasource.Record) (any, error) 
 			continue
 		}
 		if err := assignInputValue(field, raw); err != nil {
-			return nil, fmt.Errorf("invalid value for %s", key)
+			problems[key] = err.Error()
+			continue
 		}
+		touched[fm.Name] = fm
 	}
-	return entityPtr.Interface(), nil
+	if len(problems) > 0 {
+		return nil, gferrors.ValidationFailed(problems)
+	}
+	return touched, nil
 }
 
+// fieldForInput resolves a payload key to a field: by storage column, by Go
+// field name, or by the field's json tag (what entityToRecord emits, so a
+// record read from the panel round-trips unchanged).
 func fieldForInput(meta *model.ModelMeta, key string) (model.FieldMeta, bool) {
 	for _, f := range meta.Fields {
 		if strings.EqualFold(key, f.Column) || strings.EqualFold(key, f.Name) {
 			return f, true
+		}
+	}
+	if meta.Type != nil {
+		for _, f := range meta.Fields {
+			sf, ok := meta.Type.FieldByName(f.Name)
+			if !ok {
+				continue
+			}
+			tag, _, _ := strings.Cut(sf.Tag.Get("json"), ",")
+			if tag != "" && tag != "-" && strings.EqualFold(key, tag) {
+				return f, true
+			}
 		}
 	}
 	return model.FieldMeta{}, false
@@ -92,7 +138,14 @@ func assignInputValue(field reflect.Value, raw any) error {
 
 	switch field.Kind() {
 	case reflect.String:
-		field.SetString(fmt.Sprintf("%v", raw))
+		// Only a JSON string fits a string field. Coercing numbers,
+		// booleans or objects via %v loses the type silently (123 became
+		// "123.0" through float64), so refuse them.
+		str, ok := raw.(string)
+		if !ok {
+			return fmt.Errorf("must be a string")
+		}
+		field.SetString(str)
 		return nil
 	case reflect.Bool:
 		if v, ok := raw.(bool); ok {
@@ -134,7 +187,7 @@ func assignInputValue(field reflect.Value, raw any) error {
 		field.Set(val.Convert(fieldType))
 		return nil
 	}
-	return fmt.Errorf("unsupported conversion")
+	return fmt.Errorf("cannot assign a %s to a %s field", val.Type(), fieldType)
 }
 
 func isTimeType(t reflect.Type) bool {
@@ -157,7 +210,7 @@ func parseTimeValue(raw any) (time.Time, error) {
 			}
 		}
 	}
-	return time.Time{}, fmt.Errorf("invalid time value")
+	return time.Time{}, fmt.Errorf("must be a timestamp (RFC 3339, YYYY-MM-DDTHH:MM, YYYY-MM-DD HH:MM:SS or YYYY-MM-DD)")
 }
 
 func toInt64(raw any) (int64, error) {
@@ -171,9 +224,13 @@ func toInt64(raw any) (int64, error) {
 	case int64:
 		return v, nil
 	case string:
-		return strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+		n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("must be an integer")
+		}
+		return n, nil
 	default:
-		return strconv.ParseInt(fmt.Sprintf("%v", raw), 10, 64)
+		return 0, fmt.Errorf("must be an integer")
 	}
 }
 
@@ -195,9 +252,13 @@ func toUint64(raw any) (uint64, error) {
 		}
 		return uint64(v), nil
 	case string:
-		return strconv.ParseUint(strings.TrimSpace(v), 10, 64)
+		n, err := strconv.ParseUint(strings.TrimSpace(v), 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("must be a non-negative integer")
+		}
+		return n, nil
 	default:
-		return strconv.ParseUint(fmt.Sprintf("%v", raw), 10, 64)
+		return 0, fmt.Errorf("must be a non-negative integer")
 	}
 }
 
@@ -212,8 +273,12 @@ func toFloat64(raw any) (float64, error) {
 	case int64:
 		return float64(v), nil
 	case string:
-		return strconv.ParseFloat(strings.TrimSpace(v), 64)
+		f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+		if err != nil {
+			return 0, fmt.Errorf("must be a number")
+		}
+		return f, nil
 	default:
-		return strconv.ParseFloat(fmt.Sprintf("%v", raw), 64)
+		return 0, fmt.Errorf("must be a number")
 	}
 }

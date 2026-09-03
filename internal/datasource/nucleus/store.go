@@ -8,7 +8,9 @@ import (
 	"strconv"
 	"strings"
 
+	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
 	"github.com/jcsvwinston/nucleus/pkg/model"
+	"github.com/jcsvwinston/nucleus/pkg/validate"
 
 	"github.com/jcsvwinston/orbit/datasource"
 )
@@ -87,10 +89,17 @@ func (s *store) Get(ctx context.Context, id string) (datasource.Record, error) {
 	return entityToRecord(entity)
 }
 
-// Create inserts a record and returns the created row.
+// Create inserts a record and returns the created row. The payload is coerced
+// onto a fresh entity, checked against the model's `validate` tags with the
+// framework validator, and only then written: unknown keys, values of the
+// wrong JSON type and failed validation rules all come back as a 422 with a
+// message per field, never as a stored row.
 func (s *store) Create(ctx context.Context, rec datasource.Record) (datasource.Record, error) {
 	entity, err := payloadToEntity(s.meta, rec)
 	if err != nil {
+		return nil, err
+	}
+	if err := validate.Validate(entity); err != nil {
 		return nil, err
 	}
 	if err := s.crud.Create(ctx, entity); err != nil {
@@ -99,14 +108,44 @@ func (s *store) Create(ctx context.Context, rec datasource.Record) (datasource.R
 	return entityToRecord(entity)
 }
 
-// Update applies a partial change set. The record is forwarded as a column→value
-// map, matching the framework CRUD's update contract.
+// Update applies a partial change set. The current row is loaded, the payload
+// is coerced onto it field by field, and the merged entity is validated
+// against the model's `validate` tags — so a partial update cannot leave a
+// required field empty or violate a rule the create path enforces. The
+// columns that were actually touched are then forwarded, with their
+// typed values, to the framework CRUD's column→value update contract.
 func (s *store) Update(ctx context.Context, id string, rec datasource.Record) error {
 	pk, err := s.parseID(id)
 	if err != nil {
 		return err
 	}
-	return s.crud.Update(ctx, pk, map[string]any(rec))
+	existing, err := s.crud.FindByID(ctx, pk)
+	if err != nil {
+		return err
+	}
+	merged := reflect.New(s.meta.Type)
+	if cur := reflect.Indirect(reflect.ValueOf(existing)); cur.IsValid() && cur.Type() == s.meta.Type {
+		merged.Elem().Set(cur)
+	}
+	touched, err := applyPayload(s.meta, merged.Elem(), rec)
+	if err != nil {
+		return err
+	}
+	if len(touched) == 0 {
+		return gferrors.BadRequest("no updatable fields provided")
+	}
+	if err := validate.Validate(merged.Interface()); err != nil {
+		return err
+	}
+	updates := make(map[string]any, len(touched))
+	for name, fm := range touched {
+		col := fm.Column
+		if strings.TrimSpace(col) == "" {
+			col = name
+		}
+		updates[col] = merged.Elem().FieldByName(name).Interface()
+	}
+	return s.crud.Update(ctx, pk, updates)
 }
 
 // Delete removes one record by id.
@@ -119,11 +158,13 @@ func (s *store) Delete(ctx context.Context, id string) error {
 }
 
 // parseID narrows a boundary string id to the uint Nucleus PKs use (D1). A
-// backend with uuid/string/composite keys would narrow differently.
+// backend with uuid/string/composite keys would narrow differently. A value
+// that does not narrow is the caller's mistake, so it surfaces as a 400 (a
+// plain error used to reach the operator as a 500).
 func (s *store) parseID(id string) (uint, error) {
 	n, err := strconv.ParseUint(strings.TrimSpace(id), 10, 64)
 	if err != nil {
-		return 0, fmt.Errorf("datasource/nucleus: invalid id %q", id)
+		return 0, gferrors.BadRequest(fmt.Sprintf("invalid id %q: %s ids are positive integers", id, s.meta.Name))
 	}
 	return uint(n), nil
 }
