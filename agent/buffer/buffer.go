@@ -1,20 +1,22 @@
 // Package buffer holds the per-event-kind drop-oldest ring buffer the
-// agent uses to bridge brief disconnects from the admin server.
+// agent uses to absorb backpressure on an OPEN stream.
 //
-// The buffer captures events that arrived during a microcorte (a network
-// blip, a server reconnect, etc.) so that when the stream comes back up
-// the agent can flush a few seconds of recent activity instead of leaving
-// a hole in the panel. Buffers are bounded; on overflow the oldest entry
-// is evicted (drop-oldest), and the agent's events_dropped_total{
-// reason="buffer_full"} counter is bumped by the agent layer.
+// When the stream's send path cannot keep up (a slow server, a burst of
+// events), the stream layer parks events here and drains them as soon as
+// the send path frees up, so a burst is smoothed instead of dropped.
+// Buffers are bounded; on overflow the oldest entry is evicted
+// (drop-oldest), and the agent's events_dropped_total{reason="buffer_full"}
+// counter is bumped by the agent layer.
 //
-// This is NOT a replay log. It does not persist across restarts and does
-// not survive process death.
+// It does NOT bridge disconnects: the agent subscribes to the
+// observability bus only while a stream is open, so events that occur
+// between a disconnect and the next accepted stream are not captured
+// anywhere. This is also not a replay log — it does not persist across
+// restarts and does not survive process death.
 package buffer
 
 import (
 	"sync"
-	"time"
 
 	"github.com/jcsvwinston/nucleus/pkg/observability"
 
@@ -201,7 +203,3 @@ func (p *PerKind) LenSnapshot() map[observability.EventKind]int {
 		observability.KindCustom:        p.Custom.Len(),
 	}
 }
-
-// _unused keeps "time" referenced once in case future evolution wants to
-// add per-entry timestamps; the proto Event already carries them.
-var _ = time.Time{}
