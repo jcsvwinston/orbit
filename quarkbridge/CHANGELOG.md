@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.8.17](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v0.4.10...quarkbridge/v1.8.17) (2026-09-03)
+## [0.4.11](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v0.4.10...quarkbridge/v0.4.11) (2026-09-03)
 
 
 ### Fixed
