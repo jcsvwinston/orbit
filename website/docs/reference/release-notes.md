@@ -17,6 +17,13 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.8.17 — 2026-09-02
+
+The Quark bridges move to Quark v1.10.0, closing the set. Nothing else
+changes.
+
+Fleet tags cut alongside: `quarkbridge/v0.4.11`, `quarkdatasource/v0.2.20`.
+
 ## v1.8.16 — 2026-09-02
 
 A pin fix. `server` was requiring `agent v0.6.9` while `agent/v0.6.10` was
