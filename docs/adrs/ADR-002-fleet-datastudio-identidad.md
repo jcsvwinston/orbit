@@ -1,20 +1,23 @@
 ---
 id: ADR-002
 title: Rumbo del Data Studio del plano fleet (identidad y autorización)
-status: draft
+status: accepted
 date: 2026-08-31
-deciders: pendiente (jcsvwinston)
-related: [ADR-001, quantum/QADR-0006]
+deciders: jcsvwinston
+related: [ADR-001, ADR-003, quantum/QADR-0006]
 supersedes: null
-tags: [orbit, fleet, data-studio, seguridad, borrador]
+tags: [orbit, fleet, data-studio, seguridad]
 ---
 
-# ADR-002 — Rumbo del Data Studio del plano fleet (BORRADOR, sin decidir)
+# ADR-002 — Rumbo del Data Studio del plano fleet
 
-> **Estado: borrador.** Este ADR documenta el problema y las dos direcciones
-> posibles. NO decide. La decisión es del dueño del producto (es la D2 de la
-> auditoría integral 2026-08-30). No implementar ninguna de las dos opciones
-> sin convertir este borrador en un ADR aceptado.
+> **Estado: aceptado (2026-08-31), en dirección Opción A.** La decisión es la
+> D2 de la auditoría integral 2026-08-30, registrada en `quantum/docs/RUMBO.md`:
+> el plano fleet consume el contrato `datasource`. La Opción B (declarar el
+> fleet «telemetría + lectura») queda descartada. Este acta conserva el
+> análisis de ambas opciones tal como se escribió; la sección «Decisión» es
+> la que manda. La implementación es un arco propio y NO está hecha a fecha
+> de aceptación (ver «Plan»).
 
 ## Contexto
 
@@ -92,4 +95,40 @@ cada app, donde la identidad, el RBAC y el tenant ya existen.
 
 ## Decisión
 
-Pendiente. Ver §8 (D2) del informe de auditoría 2026-08-30.
+**Opción A: el fleet consume el contrato `datasource` con identidad
+propagada.** Orbit deja de ser bicéfalo: el Data Studio del plano fleet pasa
+a operar a través del mismo `datasource.DataSource` (ADR-001) que el panel
+in-process, de modo que el RBAC por-modelo, el filtrado de tenant y los
+orígenes alternativos (`quarkdatasource`) valgan en los dos planos.
+
+Consecuencias que se aceptan con la decisión:
+
+- El proto del stream crece (adición compatible, reglas de `proto/EVOLUTION.md`)
+  para que cada `DataStudioRequest` lleve la identidad resuelta del operador
+  (sujeto, rol, tenant). Los agentes que no la entiendan siguen funcionando
+  con la puerta actual (allowlist + solo-lectura), que se mantiene como
+  mínimo hasta que la propagación esté completa.
+- El agente ejecuta la operación por el camino autorizado del panel
+  (contrato `datasource` + `Authorizer` + contexto de tenant), no por un
+  `model.CRUD` crudo. `agent/datastudio` deja de importar `nucleus/pkg/model`
+  directamente.
+- Una propagación a medias no vale: hasta que el agente pueda verificar la
+  identidad que recibe, las mutaciones del fleet siguen deny-by-default. El
+  riesgo señalado en la Opción A («apariencia de RBAC sin su garantía») se
+  mitiga no relajando ninguna puerta antes de tiempo.
+- Las lecturas de Data Studio del fleet quedan filtradas por tenant al
+  llegar la identidad; mientras tanto siguen documentadas como sin filtrar y
+  detrás del allowlist.
+
+## Plan
+
+1. Extender el proto (identidad en `DataStudioRequest`) — módulo `proto/`.
+2. Que el agente construya un `datasource.DataSource` sobre su runtime y
+   enrute las operaciones por él, con la identidad recibida — módulo `agent/`.
+3. Que el servidor rellene la identidad desde la cadena de auth de la UI y
+   la envíe — módulo `server/`.
+4. Retirar la doble implementación (`agent/datastudio` sobre `model.CRUD`) y
+   registrar `quarkdatasource` también en el fleet.
+
+Cada paso lleva sus tests y su doc en el mismo PR (regla de la suite). El
+estado de ejecución del arco se sigue en `quantum/docs/RUMBO.md`, no aquí.

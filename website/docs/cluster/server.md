@@ -109,7 +109,8 @@ token works instead: start with `--ui-bearer` and send
 ## What runs inside
 
 **Two listeners**, one for agents and one for UIs, each with its own auth
-chain: h2c by default, TLS when configured. `/healthz` is public on both,
+chain: h2c by default, TLS when configured (mutual TLS on the agent
+listener with `--agent-client-ca`). `/healthz` is public on both,
 carved out of auth so load balancers can probe it.
 
 **Routing primitives** move frames between them:

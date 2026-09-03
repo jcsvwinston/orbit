@@ -59,7 +59,7 @@ comparison is constant-time.
 The server is **fail-closed** here: it refuses to start the agent listener on a
 non-loopback interface with no token and no TLS. The
 `--insecure-agent-listener` override exists for networks where a firewall,
-private subnet, or service-mesh mTLS already restricts reachability, and the
+private subnet, or service-mesh mutual TLS already restricts reachability, and the
 server logs a warning at boot when you use it.
 
 Treat access to the agent listener as fleet-write access. An unauthenticated
@@ -149,12 +149,26 @@ Every response on the UI listener carries:
 
 ## TLS
 
-Both listeners speak HTTP/2: cleartext (h2c) by default, TLS 1.2+ when a
-PEM pair is supplied (`--agent-cert`/`--agent-key`,
-`--ui-cert`/`--ui-key`). Typical production setups either terminate TLS at
-the reverse proxy (UI listener) and give the agent listener its own
-certificate, or keep both listeners on a private, mesh-encrypted network.
-Agents accept `https://` endpoints and use the system trust store.
+Both listeners speak HTTP/2: cleartext (h2c) by default, TLS 1.2+ with
+HTTP/2 negotiated through ALPN when a PEM pair is supplied
+(`--agent-cert`/`--agent-key`, `--ui-cert`/`--ui-key`). A TLS listener
+serves nothing in the clear: a plain `http://` request fails the handshake.
+Typical production setups either terminate TLS at the reverse proxy (UI
+listener) and give the agent listener its own certificate, or keep both
+listeners on a private, mesh-encrypted network.
+
+A server certificate encrypts the wire; it does not authenticate the agent.
+For that the agent listener supports **mutual TLS**: pass `--agent-client-ca`
+(a PEM CA bundle) and every agent must present a certificate signed by it —
+the handshake rejects the rest before any RPC is read, and the certificate's
+Common Name becomes the agent's identity (`agent:<CN>`). Mutual TLS
+satisfies the fail-closed startup rule on its own; a certificate without
+`--agent-client-ca` does not, so pair it with `--agent-token`.
+
+Agents accept `https://` endpoints and use the system trust store by
+default. For a private CA, or to present a client certificate, set the
+`TLS` field of the agent's configuration (`agent.ExtensionConfig.TLS`, a
+`*tls.Config` built from your PEM files) — see the [agent page](../cluster/agent.md).
 
 ## The metrics listener
 
@@ -165,9 +179,9 @@ you would any metrics port.
 
 ## Hardening checklist
 
-- [ ] `--agent-token` set (or agent-listener TLS), and **not** passed on
-      the command line in production — use `NUCLEUS_ADMIN_AGENT_TOKEN`
-      from a root-only environment file.
+- [ ] `--agent-token` set (or mutual TLS via `--agent-client-ca`), and
+      **not** passed on the command line in production — use
+      `NUCLEUS_ADMIN_AGENT_TOKEN` from a root-only environment file.
 - [ ] `--insecure-agent-listener` **not** set.
 - [ ] UI listener behind an SSO reverse proxy; `--ui-trusted-cidrs`
       narrowed to the proxy's real source range.
