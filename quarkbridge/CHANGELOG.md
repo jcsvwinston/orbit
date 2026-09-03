@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.17](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v0.4.10...quarkbridge/v1.8.17) (2026-09-03)
+
+
+### Fixed
+
+* **deps:** alinea los puentes a quark v1.10.0 y corta el root con ellos ([#374](https://github.com/jcsvwinston/orbit/issues/374)) ([3c4e78d](https://github.com/jcsvwinston/orbit/commit/3c4e78d2be76925f17e579e5b799d920a0da009a))
+
 ## [0.4.10](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v0.4.9...quarkbridge/v0.4.10) (2026-09-01)
 
 
