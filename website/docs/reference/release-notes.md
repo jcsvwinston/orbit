@@ -22,7 +22,15 @@ complete tag history lives on the
 The Quark bridges move to Quark v1.10.0, closing the set. Nothing else
 changes.
 
-Fleet tags cut alongside: `quarkbridge/v0.4.11`, `quarkdatasource/v0.2.20`.
+Fleet tags cut alongside: `quarkbridge/v1.8.17`, `quarkdatasource/v1.8.17`.
+
+Both bridges jump from the `0.x` line to `1.8.17`. A `Release-As` in the
+release train applied to every package in the repository, and by the time it
+was noticed the tags were published and served by the Go module proxy, which
+is immutable — and `@latest` always resolves to the highest version, so going
+back to `0.x` would have left a public `go get` returning something this set
+does not certify. The number stands; from here both modules follow the `1.x`
+line. Nothing about their code or their API changed in this release.
 
 ## v1.8.16 — 2026-09-02
 

@@ -1,6 +1,15 @@
 # Changelog
 
-## [0.4.11](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v0.4.10...quarkbridge/v0.4.11) (2026-09-03)
+## [1.8.17](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v0.4.10...quarkbridge/v1.8.17) (2026-09-03)
+
+> **About this version number.** This module came from the `0.x` line and
+> jumps to `1.8.17` because a `Release-As` in the release train applied to
+> every package in the repository. By the time it was noticed the tag was
+> published and served by the Go module proxy, which is immutable, and
+> `@latest` always resolves to the highest version — so going back to `0.x`
+> would have left a public `go get` returning a version this set does not
+> certify. The number stands; from here this module follows the `1.x` line.
+> Nothing about its code or its API changed in this release.
 
 
 ### Fixed
