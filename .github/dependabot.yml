@@ -64,6 +64,12 @@ updates:
   # `typescript >=4.8.4 <6.1.0`, so a grouped bump to TypeScript 7 made
   # `npm ci` fail with ERESOLVE and the whole group unmergeable (#391, #392).
   # It moves by hand when typescript-eslint widens its range.
+  # Majors that are MIGRATIONS, not bumps, stay out of the groups and move
+  # by hand in their own arc (suite plan, arcs A6/A9): Tailwind 4 moves the
+  # PostCSS plugin to @tailwindcss/postcss, AG Grid 33+ replaces the CSS
+  # themes with the Theming API, Recharts 3 and tailwind-merge 3 change
+  # their APIs, lucide 1.x renames icons. Grouped, they made the build fail
+  # and blocked every patch behind them (#406).
   - package-ecosystem: npm
     directory: /internal/admin/ui
     schedule: { interval: weekly, day: monday }
@@ -72,6 +78,22 @@ updates:
     ignore:
       - dependency-name: typescript
         update-types: ["version-update:semver-major"]
+      - dependency-name: tailwindcss
+        update-types: ["version-update:semver-major"]
+      - dependency-name: ag-grid-community
+        update-types: ["version-update:semver-major"]
+      - dependency-name: ag-grid-react
+        update-types: ["version-update:semver-major"]
+      - dependency-name: recharts
+        update-types: ["version-update:semver-major"]
+      - dependency-name: tailwind-merge
+        update-types: ["version-update:semver-major"]
+      - dependency-name: lucide-react
+        update-types: ["version-update:semver-major"]
+  # Same rule for the fleet SPA: connect-es 2 and protobuf-es 2 need the
+  # generated code regenerated with protoc-gen-es v2 (proto/ owns that),
+  # ESLint 10 and plugin-react 6 change their configuration, and
+  # @types/node follows the Node version of the build, not the calendar.
   - package-ecosystem: npm
     directory: /ui
     schedule: { interval: weekly, day: monday }
@@ -79,6 +101,18 @@ updates:
       npm-deps: { patterns: ["*"] }
     ignore:
       - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@bufbuild/protobuf"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@connectrpc/connect"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@connectrpc/connect-web"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: eslint
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@vitejs/plugin-react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
