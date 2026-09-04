@@ -19,9 +19,12 @@ export default defineConfig({
     sourcemap: false,
     rollupOptions: {
       output: {
-        manualChunks: {
-          vendor: ['react', 'react-dom', 'react-router-dom'],
-          charts: ['recharts'],
+        // @vitejs/plugin-react 6 brings the Vite 7 types, where only the
+        // function form of manualChunks type-checks. Same chunks as before.
+        manualChunks(id) {
+          if (id.includes('node_modules/recharts')) return 'charts'
+          if (/node_modules\/(react|react-dom|react-router-dom)\//.test(id)) return 'vendor'
+          return undefined
         },
       },
     },
