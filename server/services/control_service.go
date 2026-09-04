@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"runtime/debug"
-	"sync"
 	"time"
 
 	"connectrpc.com/connect"
@@ -258,5 +257,3 @@ func (s *ControlService) pushAggregateToAgents() {
 
 // Compile-time assertion.
 var _ adminv1connect.ControlServiceHandler = (*ControlService)(nil)
-
-var _ = sync.Mutex{}

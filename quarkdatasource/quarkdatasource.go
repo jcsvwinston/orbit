@@ -39,8 +39,11 @@
 //     extra JSON — pass through unchanged.
 //   - Delete follows Quark's semantics: soft delete when the model has a
 //     deleted_at column, hard delete otherwise.
-//   - Store's dbAlias is ignored: a Quark client is bound to one database. Use
-//     one adapter per client if you browse several.
+//   - A Quark client is bound to one database, so an adapter serves exactly
+//     one database alias (WithDatabaseAlias, default "default"): every
+//     ModelInfo carries it, and Store refuses any other alias instead of
+//     silently answering from the wrong database. Use one adapter per
+//     client if you browse several.
 package quarkdatasource
 
 import (
@@ -66,11 +69,23 @@ func WithTenantColumn(column string) Option {
 	return func(a *Adapter) { a.tenantColumn = strings.TrimSpace(column) }
 }
 
+// DefaultDatabaseAlias is the alias an adapter answers to when
+// WithDatabaseAlias is not given; it matches the panel's default alias.
+const DefaultDatabaseAlias = "default"
+
+// WithDatabaseAlias names the database alias this adapter serves. The panel
+// resolves an alias per request (?db=, or the model's declared alias) and
+// passes it to Store; the adapter honours it by refusing every other alias.
+func WithDatabaseAlias(alias string) Option {
+	return func(a *Adapter) { a.alias = strings.TrimSpace(alias) }
+}
+
 // Adapter implements datasource.DataSource over a Quark client. Populate it
 // with Register[T] for each model; registration order is preserved in All.
 type Adapter struct {
 	provider     quark.ClientProvider
 	tenantColumn string
+	alias        string
 
 	mu     sync.RWMutex
 	names  []string
@@ -85,12 +100,18 @@ type registeredModel struct {
 // New returns an empty adapter bound to provider (a *quark.Client or a
 // *quark.TenantRouter). Register models with Register[T].
 func New(provider quark.ClientProvider, opts ...Option) *Adapter {
-	a := &Adapter{provider: provider, models: make(map[string]*registeredModel)}
+	a := &Adapter{provider: provider, models: make(map[string]*registeredModel), alias: DefaultDatabaseAlias}
 	for _, o := range opts {
 		o(a)
 	}
+	if a.alias == "" {
+		a.alias = DefaultDatabaseAlias
+	}
 	return a
 }
+
+// DatabaseAlias returns the alias this adapter serves.
+func (a *Adapter) DatabaseAlias() string { return a.alias }
 
 var _ datasource.DataSource = (*Adapter)(nil)
 
@@ -116,9 +137,14 @@ func (a *Adapter) Get(name string) (datasource.ModelInfo, bool) {
 	return m.info, true
 }
 
-// Store returns the RecordStore for a model. dbAlias is accepted for contract
-// compatibility and ignored: the Quark client is bound to one database.
-func (a *Adapter) Store(modelName, _ string) (datasource.RecordStore, error) {
+// Store returns the RecordStore for a model. An empty dbAlias means the
+// adapter's own alias; any other alias is an error, because the Quark client
+// behind this adapter is bound to one database and answering from it under
+// a different name would show the operator the wrong data.
+func (a *Adapter) Store(modelName, dbAlias string) (datasource.RecordStore, error) {
+	if alias := strings.TrimSpace(dbAlias); alias != "" && alias != a.alias {
+		return nil, fmt.Errorf("quarkdatasource: database alias %q is not served by this adapter (serves %q)", alias, a.alias)
+	}
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	m, ok := a.models[modelName]
@@ -143,6 +169,8 @@ func Register[T any](a *Adapter) error {
 
 	info := a.buildModelInfo(t, meta)
 	st := newStore[T](a, t, meta, info)
+
+	info.DatabaseAlias = a.alias
 
 	a.mu.Lock()
 	defer a.mu.Unlock()

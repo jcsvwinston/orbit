@@ -1,6 +1,9 @@
 package agent
 
-import "time"
+import (
+	"crypto/tls"
+	"time"
+)
 
 // ExtensionConfig is the framework-facing configuration for the admin
 // observability agent, consumed by NewExtension and mapped into the agent's
@@ -19,8 +22,18 @@ type ExtensionConfig struct {
 	Endpoints []string `koanf:"endpoints"`
 
 	// Token is the shared bearer token sent on every Connect-RPC call.
-	// Pair this with mTLS for production; in dev a plain token suffices.
+	// In production pair it with an https:// endpoint (or let the server
+	// authenticate the agent by client certificate via TLS); in dev a
+	// plain token over http:// suffices.
 	Token string `koanf:"token"`
+
+	// TLS is applied to every https:// endpoint. Nil uses the system
+	// trust store. Set RootCAs for a server signed by a private CA and
+	// Certificates to present a client certificate when the admin
+	// server's agent listener requires one (--agent-client-ca). It is
+	// not bound from a config file (koanf:"-"): build it in code from
+	// the PEM files your deployment ships.
+	TLS *tls.Config `koanf:"-"`
 
 	// HeartbeatInterval defines the cadence of Heartbeat frames the agent
 	// sends to the server. Default 10s.
@@ -36,9 +49,11 @@ type ExtensionConfig struct {
 	MetricsAddr string `koanf:"metrics_addr"`
 
 	// HTTPBufferSize, SQLBufferSize, SessionBufferSize, CustomBufferSize
-	// configure the per-event-kind drop-oldest ring buffer the agent
-	// uses to bridge brief disconnects from the admin server. Defaults:
-	// 256, 256, 64, 64.
+	// configure the per-event-kind drop-oldest ring buffer that absorbs
+	// bursts while the stream is open (events queue when the stream's
+	// send path is busy and drain when it catches up). Events that occur
+	// while the agent has no stream at all are dropped, not buffered.
+	// Defaults: 256, 256, 64, 64.
 	HTTPBufferSize    int `koanf:"http_buffer_size"`
 	SQLBufferSize     int `koanf:"sql_buffer_size"`
 	SessionBufferSize int `koanf:"session_buffer_size"`

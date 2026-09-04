@@ -1,0 +1,75 @@
+# Dependabot keeps the six Go modules, the two SPAs and the workflow actions
+# current. Go updates are grouped per module so one PR carries a coherent
+# bump; Nucleus and Quark are excluded on purpose — those pins are certified
+# by the suite's release train (quantum/versions.yaml), not by a bot.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule: { interval: weekly, day: monday }
+    groups:
+      go-deps: { patterns: ["*"] }
+    ignore:
+      - dependency-name: github.com/jcsvwinston/nucleus
+      - dependency-name: github.com/jcsvwinston/nucleus/*
+      - dependency-name: github.com/jcsvwinston/quark
+      - dependency-name: github.com/jcsvwinston/quark/*
+      - dependency-name: github.com/jcsvwinston/orbit/*
+  - package-ecosystem: gomod
+    directory: /proto
+    schedule: { interval: weekly, day: monday }
+    groups:
+      go-deps: { patterns: ["*"] }
+  - package-ecosystem: gomod
+    directory: /agent
+    schedule: { interval: weekly, day: monday }
+    groups:
+      go-deps: { patterns: ["*"] }
+    ignore:
+      - dependency-name: github.com/jcsvwinston/nucleus
+      - dependency-name: github.com/jcsvwinston/nucleus/*
+      - dependency-name: github.com/jcsvwinston/orbit/*
+  - package-ecosystem: gomod
+    directory: /server
+    schedule: { interval: weekly, day: monday }
+    groups:
+      go-deps: { patterns: ["*"] }
+    ignore:
+      - dependency-name: github.com/jcsvwinston/nucleus
+      - dependency-name: github.com/jcsvwinston/nucleus/*
+      - dependency-name: github.com/jcsvwinston/orbit/*
+  - package-ecosystem: gomod
+    directory: /quarkbridge
+    schedule: { interval: weekly, day: monday }
+    groups:
+      go-deps: { patterns: ["*"] }
+    ignore:
+      - dependency-name: github.com/jcsvwinston/nucleus
+      - dependency-name: github.com/jcsvwinston/nucleus/*
+      - dependency-name: github.com/jcsvwinston/quark
+      - dependency-name: github.com/jcsvwinston/quark/*
+      - dependency-name: github.com/jcsvwinston/orbit/*
+  - package-ecosystem: gomod
+    directory: /quarkdatasource
+    schedule: { interval: weekly, day: monday }
+    groups:
+      go-deps: { patterns: ["*"] }
+    ignore:
+      - dependency-name: github.com/jcsvwinston/quark
+      - dependency-name: github.com/jcsvwinston/quark/*
+      - dependency-name: github.com/jcsvwinston/orbit/*
+  # The in-process panel's SPA ships a committed dist: a bump here must be
+  # followed by `npm ci && npm run build` and a commit of dist/ (CI checks).
+  - package-ecosystem: npm
+    directory: /internal/admin/ui
+    schedule: { interval: weekly, day: monday }
+    groups:
+      npm-deps: { patterns: ["*"] }
+  - package-ecosystem: npm
+    directory: /ui
+    schedule: { interval: weekly, day: monday }
+    groups:
+      npm-deps: { patterns: ["*"] }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly, day: monday }

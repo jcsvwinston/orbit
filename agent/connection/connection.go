@@ -40,8 +40,10 @@ type Config struct {
 	// (decision 13: shared bearer token).
 	Token string
 
-	// TLSConfig is applied to every https:// endpoint. Pass nil to use the
-	// system defaults.
+	// TLSConfig is applied to every https:// endpoint (both the /healthz
+	// probe and the Connect stream). Pass nil to use the system trust
+	// store; set RootCAs for a private CA, or Certificates to present a
+	// client certificate to a mutual-TLS agent listener.
 	TLSConfig *tls.Config
 
 	// HealthCheckTimeout caps each endpoint probe (an HTTP GET to /healthz
@@ -88,14 +90,21 @@ func (c Config) withDefaults() Config {
 type Dialer struct {
 	cfg Config
 
-	// connectClient is the HTTP/2-capable client Connect-RPC needs for the
-	// bidi stream. Holds an http2.Transport configured for h2c.
-	connectClient *http.Client
+	// h2cClient is the HTTP/2 client used for http:// endpoints: an
+	// http2.Transport that dials plain TCP (cleartext HTTP/2, h2c).
+	h2cClient *http.Client
+
+	// tlsClient is the HTTP/2 client used for https:// endpoints: an
+	// http2.Transport that performs a real TLS handshake with
+	// Config.TLSConfig (system trust store when nil) and negotiates h2
+	// through ALPN.
+	tlsClient *http.Client
 
 	// healthClient is a vanilla HTTP client for the /healthz probe. Using
 	// the default transport keeps the probe interoperable with HTTP/1.1
 	// servers (e.g. httptest.NewServer in tests) AND with the real
-	// HTTP/2 admin server.
+	// HTTP/2 admin server. It shares TLSConfig with tlsClient so a
+	// private CA works for the probe too.
 	healthClient *http.Client
 
 	mu             sync.Mutex
@@ -106,11 +115,17 @@ type Dialer struct {
 // NewDialer constructs a Dialer.
 func NewDialer(cfg Config) *Dialer {
 	cfg = cfg.withDefaults()
+	healthTransport := http.DefaultTransport.(*http.Transport).Clone()
+	if cfg.TLSConfig != nil {
+		healthTransport.TLSClientConfig = cfg.TLSConfig.Clone()
+	}
 	return &Dialer{
-		cfg:           cfg,
-		connectClient: newConnectHTTPClient(cfg.TLSConfig),
+		cfg:       cfg,
+		h2cClient: newH2CClient(),
+		tlsClient: newTLSClient(cfg.TLSConfig),
 		healthClient: &http.Client{
-			Timeout: cfg.HealthCheckTimeout,
+			Transport: healthTransport,
+			Timeout:   cfg.HealthCheckTimeout,
 		},
 	}
 }
@@ -147,7 +162,7 @@ func (d *Dialer) Dial(ctx context.Context) (*Result, error) {
 		if ep == "" {
 			continue
 		}
-		if err := healthCheck(ctx, d.healthClient, ep, d.cfg.Token, d.cfg.HealthCheckTimeout); err != nil {
+		if err := healthCheck(ctx, d.healthClient, ep, d.cfg.HealthCheckTimeout); err != nil {
 			lastErr = fmt.Errorf("endpoint %s: %w", ep, err)
 			d.cfg.Logger.Debug("admin agent endpoint probe failed",
 				"endpoint", ep, "error", err)
@@ -228,12 +243,35 @@ func (d *Dialer) warnRateLimited(err error) {
 	d.cfg.Logger.Warn("admin agent cannot reach admin server", "error", err.Error())
 }
 
+// maxMessageBytes caps one inbound Connect message from the server. The
+// server sends small control frames (Subscribe, SnapshotRequest, Data
+// Studio requests); anything larger is a fault, not traffic.
+const maxMessageBytes = 4 << 20
+
 func (d *Dialer) newClient(endpoint string) adminv1connect.AgentServiceClient {
-	opts := []connect.ClientOption{}
+	opts := []connect.ClientOption{connect.WithReadMaxBytes(maxMessageBytes)}
 	if t := strings.TrimSpace(d.cfg.Token); t != "" {
 		opts = append(opts, connect.WithInterceptors(bearerInterceptor{token: t}))
 	}
-	return adminv1connect.NewAgentServiceClient(d.connectClient, endpoint, opts...)
+	return adminv1connect.NewAgentServiceClient(d.httpClientFor(endpoint), endpoint, opts...)
+}
+
+// httpClientFor picks the transport by URL scheme: https:// endpoints get
+// the TLS client, everything else (http://, h2c://) the cleartext one.
+// The scheme is the only signal available — x/net/http2's Transport
+// calls DialTLSContext for every scheme when AllowHTTP is set, so a
+// single transport cannot tell the two apart at dial time. That was the
+// bug: one h2c transport served every endpoint, and an https:// endpoint
+// got a plain TCP connection that the TLS listener rejected.
+func (d *Dialer) httpClientFor(endpoint string) *http.Client {
+	if isHTTPS(endpoint) {
+		return d.tlsClient
+	}
+	return d.h2cClient
+}
+
+func isHTTPS(endpoint string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(endpoint)), "https://")
 }
 
 // bearerInterceptor attaches "Authorization: Bearer <token>" to outbound
@@ -268,46 +306,41 @@ func (i bearerInterceptor) WrapStreamingHandler(next connect.StreamingHandlerFun
 	return next
 }
 
-// newConnectHTTPClient builds an HTTP/2-only client.
-//
-// Background:
-//   - Connect-RPC bidi streams require HTTP/2.
-//   - We want to support both h2c (plaintext, dev) and HTTPS (prod, Phase 6).
-//   - golang.org/x/net/http2.Transport with AllowHTTP=true upgrades plain
-//     http:// URLs to h2c. The exact dial path depends on the URL scheme:
-//     for "http://" the transport uses its DialTLSContext too (it does not
-//     have a separate Dial path when AllowHTTP is true), passing the
-//     TLSClientConfig as cfg. That means our DialTLSContext receives a
-//     non-nil cfg even on h2c URLs when TLSClientConfig is set; we have
-//     to detect "this is h2c" by some other signal.
-//
-// We use the simplest signal that works: when TLSClientConfig is nil on
-// the transport, DialTLSContext returns plain TCP. When it is non-nil, we
-// honour the TLS handshake. The agent passes a non-nil TLSClientConfig
-// only when admin.tls.* is configured in nucleus.yml (Phase 6); for
-// today's h2c-only paths it stays nil.
-func newConnectHTTPClient(tlsConfig *tls.Config) *http.Client {
-	useTLS := tlsConfig != nil
+// newH2CClient builds an HTTP/2 client for cleartext (h2c) endpoints.
+// x/net/http2.Transport with AllowHTTP upgrades plain http:// URLs to
+// HTTP/2 without TLS; DialTLSContext is the only dial hook it offers, so
+// it is overridden to return a plain TCP connection.
+func newH2CClient() *http.Client {
 	t := &http2.Transport{
 		AllowHTTP: true,
 		DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
-			if !useTLS {
-				var nd net.Dialer
-				return nd.DialContext(ctx, network, addr)
-			}
-			d := &tls.Dialer{Config: tlsConfig}
-			return d.DialContext(ctx, network, addr)
+			var nd net.Dialer
+			return nd.DialContext(ctx, network, addr)
 		},
 	}
-	if useTLS {
-		t.TLSClientConfig = tlsConfig
+	return &http.Client{Transport: t}
+}
+
+// newTLSClient builds an HTTP/2 client for https:// endpoints. The
+// transport's default dial performs the TLS handshake with cfg (a clone,
+// so the caller's config is never mutated) and negotiates "h2" via ALPN;
+// a nil cfg means the system trust store.
+func newTLSClient(cfg *tls.Config) *http.Client {
+	t := &http2.Transport{}
+	if cfg != nil {
+		t.TLSClientConfig = cfg.Clone()
 	}
 	return &http.Client{Transport: t}
 }
 
 // healthCheck pings GET /healthz on the endpoint origin to verify the
 // admin server is reachable before opening a stream.
-func healthCheck(ctx context.Context, cli *http.Client, endpoint, token string, timeout time.Duration) error {
+//
+// The probe carries NO credential: the admin server exempts /healthz
+// from auth precisely so probes need no token, and sending the bearer
+// anyway put the shared secret on the wire (in the clear on http://
+// endpoints) to every configured endpoint, reachable or not.
+func healthCheck(ctx context.Context, cli *http.Client, endpoint string, timeout time.Duration) error {
 	probeCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -315,9 +348,6 @@ func healthCheck(ctx context.Context, cli *http.Client, endpoint, token string, 
 	req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, healthURL, nil)
 	if err != nil {
 		return fmt.Errorf("build health request: %w", err)
-	}
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	resp, err := cli.Do(req)
 	if err != nil {

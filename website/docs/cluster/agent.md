@@ -54,6 +54,33 @@ framework runs exactly as it would without it. Set it and the agent starts in
 parallel with the framework's `Run`, and observability events flow from the
 framework's `pkg/observability` bus into the stream.
 
+### TLS
+
+The scheme of each endpoint picks the transport: `http://` is cleartext
+HTTP/2 (h2c, for development), `https://` performs a real TLS handshake and
+negotiates HTTP/2 through ALPN. By default `https://` trusts the system
+store; for a private CA, or when the admin server requires client
+certificates (`--agent-client-ca`), pass a `*tls.Config` in `TLS`:
+
+```go
+pool := x509.NewCertPool()
+pool.AppendCertsFromPEM(caPEM)
+cert, _ := tls.LoadX509KeyPair("agent.crt", "agent.key")
+
+agent.NewExtension(agent.ExtensionConfig{
+    Endpoints: []string{"https://admin.internal:9090"},
+    TLS: &tls.Config{
+        RootCAs:      pool,                     // private CA
+        Certificates: []tls.Certificate{cert}, // client certificate (mutual TLS)
+        MinVersion:   tls.VersionTLS12,
+    },
+}, cfg.StateDir, appVersion)
+```
+
+`TLS` is not read from a config file; build it in code from the PEM files
+your deployment ships. The `/healthz` probe the agent sends before opening
+a stream uses the same configuration and carries no token.
+
 ## Node identity
 
 The agent resolves a stable **NodeID**: a UUIDv4 persisted at
@@ -80,7 +107,8 @@ The agent is layered:
 
 - **Node identity** — resolution and persistence, as described above.
 - **Event pipeline** — conversion and sampling, then a drop-oldest ring buffer
-  that bridges brief disconnects.
+  that absorbs backpressure while the stream is open (it does not buffer
+  across disconnects).
 - **Transport** — an endpoint-failover dialer with exponential backoff, and the
   bidirectional stream lifecycle: registration, recv/send/heartbeat, and replay
   on reconnect.

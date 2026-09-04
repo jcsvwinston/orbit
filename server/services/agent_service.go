@@ -13,7 +13,6 @@ import (
 	"io"
 	"log/slog"
 	"strings"
-	"sync"
 	"time"
 
 	"connectrpc.com/connect"
@@ -78,11 +77,14 @@ func (s *AgentService) Stream(ctx context.Context, stream *connect.BidiStream[ad
 		NodeID:           strings.TrimSpace(reg.GetNodeId()),
 		Version:          reg.GetVersion(),
 		Labels:           cloneLabels(reg.GetLabels()),
-		StartedAt:        reg.GetStartedAt().AsTime(),
+		StartedAt:        startedAt(reg),
 		RegisteredModels: append([]string(nil), reg.GetRegisteredModels()...),
 	}
 
-	entry, deregister := s.state.Nodes.Add(streamCtx, info, s.state.SendChanBuffer)
+	// The cancel travels with the registry entry: a reconnect under the
+	// same NodeID cancels this stream instead of leaving it alive next
+	// to the new one.
+	entry, deregister := s.state.Nodes.Add(streamCtx, cancel, info, s.state.SendChanBuffer)
 	defer deregister()
 
 	s.state.Logger.Info("admin agent connected",
@@ -185,8 +187,17 @@ func cloneLabels(in map[string]string) map[string]string {
 	return out
 }
 
+// startedAt reads the registration's start time. A registration without
+// one (older agents, hand-written clients) yields the zero time rather
+// than the Unix epoch that a nil Timestamp's AsTime returns — the UI
+// would otherwise show every such node as started in 1970.
+func startedAt(reg *adminv1.NodeRegistration) time.Time {
+	ts := reg.GetStartedAt()
+	if ts == nil {
+		return time.Time{}
+	}
+	return ts.AsTime()
+}
+
 // Compile-time assertion that AgentService satisfies the proto interface.
 var _ adminv1connect.AgentServiceHandler = (*AgentService)(nil)
-
-// _ keeps sync imported even when unused by future edits.
-var _ = sync.Mutex{}

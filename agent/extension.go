@@ -69,6 +69,7 @@ func (e *extension) Attach(a *app.App) error {
 	ag, err := New(Config{
 		Endpoints:            e.adminCfg.Endpoints,
 		Token:                e.adminCfg.Token,
+		TLS:                  e.adminCfg.TLS,
 		StateDir:             e.stateDir,
 		NodeIDOverride:       e.adminCfg.NodeIDOverride,
 		Version:              e.version,

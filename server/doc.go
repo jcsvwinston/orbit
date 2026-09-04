@@ -21,7 +21,8 @@
 //   - The server is NOT persistence: events live in bounded ring buffers and
 //     are dropped on overflow. Long-term retention is OpenTelemetry's job.
 //
-//   - mTLS or shared-token auth gates the agent listener; trusted-proxy
+//   - A shared token and/or mutual TLS (client certificates verified
+//     against --agent-client-ca) gate the agent listener; trusted-proxy
 //     headers (X-Auth-User, X-Auth-Email) plus an optional bearer fallback
 //     gate the UI listener. The server is never exposed through the
 //     application's public load balancer.

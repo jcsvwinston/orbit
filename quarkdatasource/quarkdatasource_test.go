@@ -105,7 +105,7 @@ func TestCatalogue_ModelInfo(t *testing.T) {
 
 func TestCRUD_Roundtrip(t *testing.T) {
 	a, ctx := setup(t)
-	st, err := a.Store("QDWidget", "ignored-alias")
+	st, err := a.Store("QDWidget", DefaultDatabaseAlias)
 	if err != nil {
 		t.Fatalf("Store: %v", err)
 	}
@@ -369,4 +369,40 @@ func TestRecordKeys_ExposedByColumn(t *testing.T) {
 		t.Fatalf("List: %d items, want 1", len(page.Items))
 	}
 	assertKeysByColumn(page.Items[0], "List")
+}
+
+// The adapter serves one database: the alias the panel resolves per request
+// is honoured, not ignored — a foreign alias is refused rather than answered
+// from the wrong database.
+func TestStore_HonoursDatabaseAlias(t *testing.T) {
+	a, _ := setup(t)
+	if a.DatabaseAlias() != DefaultDatabaseAlias {
+		t.Fatalf("default alias = %q", a.DatabaseAlias())
+	}
+	info, _ := a.Get("QDWidget")
+	if info.DatabaseAlias != DefaultDatabaseAlias {
+		t.Fatalf("ModelInfo.DatabaseAlias = %q, want %q", info.DatabaseAlias, DefaultDatabaseAlias)
+	}
+	if _, err := a.Store("QDWidget", ""); err != nil {
+		t.Fatalf("empty alias means the adapter's own: %v", err)
+	}
+	if _, err := a.Store("QDWidget", "analytics"); err == nil {
+		t.Fatal("a foreign alias must be refused")
+	}
+
+	client, err := quark.New("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	named := New(client, WithDatabaseAlias("analytics"))
+	if err := Register[QDWidget](named); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := named.Store("QDWidget", "analytics"); err != nil {
+		t.Fatalf("own alias: %v", err)
+	}
+	if _, err := named.Store("QDWidget", DefaultDatabaseAlias); err == nil {
+		t.Fatal("\"default\" is not this adapter's alias and must be refused")
+	}
 }

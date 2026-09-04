@@ -53,14 +53,14 @@ está guardado por `scripts/ci/check_adr_index.sh`: cada acta nueva necesita su
 fila. Además del ADR-001 hay actas retroactivas de las decisiones ya
 ejecutadas — plano fleet opt-in (ADR-003), frontera autenticación-delegada ≠
 autorización-del-panel (ADR-004) y confinamiento del navegador de storage
-(ADR-005) — y el número ADR-002 está reservado al borrador del rumbo del Data
-Studio del fleet.
+(ADR-005) — y el rumbo del Data Studio del fleet (ADR-002).
 
-- **[ADR-002](docs/adrs/ADR-002-fleet-datastudio-identidad.md)** — BORRADOR sin
-  decidir (D2 de la auditoría 2026-08-30): rumbo del Data Studio del plano fleet
-  — propagar identidad por el stream (consumir el contrato datasource) vs
-  declarar el fleet telemetría+lectura. No implementar ninguna dirección sin
-  aceptar el ADR.
+- **[ADR-002](docs/adrs/ADR-002-fleet-datastudio-identidad.md)** — ACEPTADO
+  (D2, 2026-08-31) y pendiente de implementar: el Data Studio del plano fleet
+  consume el contrato `datasource` con identidad propagada por el stream; la
+  alternativa «fleet = telemetría + lectura» está descartada. Mientras el
+  arco no se ejecute, las puertas actuales del fleet (allowlist de modelos
+  mutables, solo-lectura) no se relajan.
 - **[ADR-001](docs/adrs/ADR-001-datastudio-agnostic-datasource.md)** — Data Studio
   agnóstico del origen de datos: contrato neutral `datasource`
   (`ModelSource`/`RecordStore`/`DataSource`) para que el panel deje de hablar tipos

@@ -49,9 +49,20 @@ HDR
 # caza siempre, y cerrarla es regenerar y commitear. Es un aviso legítimo, no
 # ruido.
 
+# Un tag de componente cortado en el MISMO commit que el tag raíz manda sobre
+# lo que diga el manifiesto en ese commit: cuando un Release-As se aplicó a
+# todos los paquetes (quarkbridge/v1.8.17 y quarkdatasource/v1.8.17 salieron
+# de un manifiesto que decía 0.4.11 y 0.2.20), el manifiesto miente y el tag
+# —lo que el proxy de Go sirve de verdad— es la única fuente honesta.
 for tag in $(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V -r); do
   manifest=$(git show "$tag:.release-please-manifest.json" 2>/dev/null) || continue
-  get() { printf '%s' "$manifest" | sed -nE "s/.*\"$1\": *\"([^\"]+)\".*/v\1/p" | head -1; }
+  sibling_tags=$(git tag --points-at "$tag" 2>/dev/null || true)
+  get() {
+    local cut
+    cut=$(printf '%s\n' "$sibling_tags" | sed -nE "s#^$1/(v[0-9]+\.[0-9]+\.[0-9]+)\$#\1#p" | sort -V | tail -1)
+    if [[ -n "$cut" ]]; then printf '%s' "$cut"; return; fi
+    printf '%s' "$manifest" | sed -nE "s/.*\"$1\": *\"([^\"]+)\".*/v\1/p" | head -1
+  }
   echo "| \`$tag\` | \`$(get proto)\` | \`$(get agent)\` | \`$(get server)\` | \`$(get quarkbridge)\` | \`$(get quarkdatasource)\` |"
 done
 cat <<'FTR'

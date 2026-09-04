@@ -123,6 +123,7 @@ type Panel struct {
 	live           *liveRuntime
 	liveExcludeMu  sync.RWMutex
 	liveExcludes   []string
+	startedAt      time.Time
 	flags          *featureFlagStore
 	bootEnv        []systemEnvVar
 	defaultDBAlias string
@@ -185,6 +186,7 @@ func NewPanel(src datasource.DataSource, logger *slog.Logger, cfg PanelConfig) *
 		logger:         logger,
 		live:           newLiveRuntime(),
 		liveExcludes:   normalizeLiveExcludePatterns(cfg.Prefix, cfg.LiveExcludePatterns),
+		startedAt:      time.Now().UTC(),
 		flags:          newFeatureFlagStore(cfg.FeatureFlags),
 		bootEnv:        buildSystemEnvironmentRows(env),
 		defaultDBAlias: defaultDatabaseAlias(cfg),
@@ -402,7 +404,7 @@ func (p *Panel) mountRoutes(r *router.Mux) {
 				api.Use(p.csrfContentTypeMiddleware)
 				api.Use(p.auditMiddleware)
 				api.Use(p.sessionActivityMiddleware)
-				api.Use(p.liveTrafficMiddleware)
+				api.Use(p.panelTrafficMiddleware)
 				p.mountAPIRoutes(api)
 			})
 
@@ -412,7 +414,7 @@ func (p *Panel) mountRoutes(r *router.Mux) {
 				spa.Use(p.tenantContextMiddleware)
 				spa.Use(p.auditMiddleware)
 				spa.Use(p.sessionActivityMiddleware)
-				spa.Use(p.liveTrafficMiddleware)
+				spa.Use(p.panelTrafficMiddleware)
 				spa.Get("/{path...}", p.handleSPA(uiContent))
 			})
 		})
@@ -428,7 +430,7 @@ func (p *Panel) mountRoutes(r *router.Mux) {
 	r.Use(p.csrfContentTypeMiddleware)
 	r.Use(p.auditMiddleware)
 	r.Use(p.sessionActivityMiddleware)
-	r.Use(p.liveTrafficMiddleware)
+	r.Use(p.panelTrafficMiddleware)
 	p.mountAPIRoutes(r)
 	r.Get("/{path...}", p.handleSPA(uiContent))
 }
@@ -439,12 +441,11 @@ func (p *Panel) mountRoutes(r *router.Mux) {
 // at the router edge; the per-handler authorizeAction() calls add RBAC
 // authorization on top.
 func (p *Panel) mountAPIRoutes(m *router.Mux) {
-	// DEPRECATED (Phase 7): the /api/models/* surface is preserved for
-	// backwards compatibility while Data Studio migrates to the new
-	// admin observability server (admin/server). New deployments should
-	// point operators at the standalone admin server's UI, which calls
-	// the typed Connect-RPC DataStudioService instead. These routes
-	// will be removed in Phase 8 once every consumer has migrated.
+	// Data Studio: the in-process panel's record API. This is the
+	// product's stable surface (the embedded SPA and the datasource
+	// contract of ADR-001 both build on it); the fleet plane's
+	// DataStudioService is a separate, optional path (ADR-002/ADR-003),
+	// not a replacement.
 	m.Get("/api/models", p.handleListModels)
 	m.Get("/api/models/{name}/schema", p.handleGetSchema)
 	m.Put("/api/models/{name}/schema/fields", p.handleUpdateFieldMeta)

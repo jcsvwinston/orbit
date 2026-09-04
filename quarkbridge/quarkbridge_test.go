@@ -220,3 +220,50 @@ func TestRenderArgs_CapsCount(t *testing.T) {
 		t.Errorf("summary = %q, want ...(+3 more)", got[maxArgs])
 	}
 }
+
+// The fleet's sql_models filter compares ModelName; with an always-empty
+// value every bridged statement was filtered out. The bridge now derives it
+// from the statement's primary table, mapped through WithModelNames.
+func TestTableOf(t *testing.T) {
+	cases := map[string]string{
+		`SELECT id FROM users WHERE id = ?`:                     "users",
+		`select * from "public"."orders" o join items i on 1=1`: "orders",
+		`INSERT INTO ` + "`users`" + ` (name) VALUES (?)`:       "users",
+		`INSERT INTO users(name) VALUES (?)`:                    "users",
+		`UPDATE public.users SET name = ? WHERE id = ?`:         "users",
+		`DELETE FROM users WHERE id = ?`:                        "users",
+		`REPLACE INTO sessions (id) VALUES (?)`:                 "sessions",
+		`SELECT count(*) FROM (SELECT 1) AS t`:                  "",
+		`WITH x AS (SELECT 1) SELECT * FROM x`:                  "",
+		`CREATE TABLE users (id INTEGER)`:                       "",
+		``:                                                      "",
+		`SELECT 1`:                                              "",
+	}
+	for sqlStr, want := range cases {
+		if got := tableOf(sqlStr); got != want {
+			t.Errorf("tableOf(%q) = %q, want %q", sqlStr, got, want)
+		}
+	}
+}
+
+func TestPublish_SetsModelName(t *testing.T) {
+	sink := &fakeSink{}
+	m := New(sink, WithModelNames(map[string]string{"users": "User"}))
+	exec := m.WrapExec(func(context.Context, quark.Executor, string, []any) (sql.Result, error) { return nil, nil })
+	_, _ = exec(context.Background(), nil, "SELECT id FROM users", nil)
+	_, _ = exec(context.Background(), nil, "DELETE FROM orders WHERE id = ?", []any{1})
+	_, _ = exec(context.Background(), nil, "CREATE INDEX i ON users(id)", nil)
+	events := sink.events
+	if len(events) != 3 {
+		t.Fatalf("events = %d", len(events))
+	}
+	if events[0].ModelName != "User" {
+		t.Errorf("mapped table: ModelName = %q, want User", events[0].ModelName)
+	}
+	if events[1].ModelName != "orders" {
+		t.Errorf("unmapped table: ModelName = %q, want orders", events[1].ModelName)
+	}
+	if events[2].ModelName != "" {
+		t.Errorf("DDL: ModelName = %q, want empty", events[2].ModelName)
+	}
+}

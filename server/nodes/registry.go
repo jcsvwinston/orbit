@@ -47,8 +47,27 @@ type Entry struct {
 	// of frames check this before blocking on Send.
 	CtxDone <-chan struct{}
 
+	// cancel tears down the stream that owns this entry. Add stores the
+	// handler's cancel so that a reconnect under the same NodeID can
+	// close the superseded stream (see Add); nil when the caller passed
+	// none.
+	cancel context.CancelFunc
+
 	// closeOnce protects the cleanup path.
 	closeOnce sync.Once
+}
+
+// Close cancels the stream that owns the entry. Idempotent; a nil entry
+// or an entry registered without a cancel is a no-op.
+func (e *Entry) Close() {
+	if e == nil {
+		return
+	}
+	e.closeOnce.Do(func() {
+		if e.cancel != nil {
+			e.cancel()
+		}
+	})
 }
 
 // NodeInfo is the snapshot the UI sees via ControlService.ListNodes.
@@ -97,8 +116,15 @@ func New() *Registry {
 // Add registers a new agent. Returns the entry plus a deregister function
 // the caller (the AgentService handler) MUST call when its stream ends.
 //
+// cancel, when non-nil, is the cancel function of the stream context the
+// caller passed as ctx. When an agent reconnects under a NodeID that is
+// still registered (its previous stream has not noticed the disconnect
+// yet), Add evicts the old entry AND cancels its stream, so the server
+// never keeps two live streams — and two copies of every event — for one
+// node. Pass nil to opt out of that cancellation.
+//
 // The cleanup function is idempotent.
-func (r *Registry) Add(ctx context.Context, info NodeInfo, sendBuffer int) (*Entry, func()) {
+func (r *Registry) Add(ctx context.Context, cancel context.CancelFunc, info NodeInfo, sendBuffer int) (*Entry, func()) {
 	if sendBuffer <= 0 {
 		sendBuffer = 64
 	}
@@ -118,17 +144,19 @@ func (r *Registry) Add(ctx context.Context, info NodeInfo, sendBuffer int) (*Ent
 		Info:    info,
 		Send:    make(chan *adminv1.Frame, sendBuffer),
 		CtxDone: ctx.Done(),
+		cancel:  cancel,
 	}
 
 	r.mu.Lock()
 	// If a previous entry exists (agent reconnected before its old entry
-	// was cleaned up), evict it. The old handler will detect ctx done on
-	// its next loop iteration.
-	if old, ok := r.entries[info.NodeID]; ok {
-		old.closeOnce.Do(func() {})
-	}
+	// was cleaned up), evict it and cancel its stream so the old handler
+	// exits instead of keeping a duplicate live stream for this node.
+	old, hadOld := r.entries[info.NodeID]
 	r.entries[info.NodeID] = e
 	r.mu.Unlock()
+	if hadOld {
+		old.Close()
+	}
 
 	r.publish(NodeChange{NodeID: info.NodeID, Connected: true, Info: info})
 
@@ -147,7 +175,7 @@ func (r *Registry) remove(nodeID string, owner *Entry) {
 		return
 	}
 
-	owner.closeOnce.Do(func() {})
+	owner.Close()
 	info := owner.Info
 	info.Connected = false
 	info.LastSeenAt = time.Now().UTC()

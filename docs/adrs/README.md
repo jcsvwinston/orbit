@@ -10,15 +10,18 @@
 | ID | Título | Estado | Relacionado |
 |---|---|---|---|
 | [ADR-001](ADR-001-datastudio-agnostic-datasource.md) | Data Studio agnóstico del origen de datos (contrato `datasource`) | Accepted | nucleus ADR-019 · quantum QADR-0006 |
-| [ADR-002](ADR-002-fleet-datastudio-identidad.md) | Rumbo del Data Studio del plano fleet (identidad y autorización) | Draft — sin decidir (D2 de la auditoría) | ADR-001 · quantum QADR-0006 |
+| [ADR-002](ADR-002-fleet-datastudio-identidad.md) | Rumbo del Data Studio del plano fleet: el fleet consume el contrato `datasource` | Accepted (2026-08-31, D2) · pendiente de implementar | ADR-001 · ADR-003 · quantum QADR-0006 |
 | [ADR-003](ADR-003-plano-fleet-agente-servidor.md) | Plano fleet como subsistema opt-in (agent/server/proto, stream bidi) | Accepted · retroactivo | ADR-001 · quantum QADR-0006 |
 | [ADR-004](ADR-004-frontera-authn-delegada-authz-panel.md) | Autenticación delegada, autorización del panel propia | Accepted · retroactivo | nucleus ADR-019 |
 | [ADR-005](ADR-005-confinamiento-storage-browse.md) | El navegador de storage del panel se confina a un root fijo | Accepted · retroactivo | ADR-004 |
 
-**ADR-002 es un borrador sin decidir**: documenta las dos direcciones posibles
-del Data Studio del plano fleet (identidad por el stream vs telemetría+lectura)
-y NO decide — la decisión es la D2 de la auditoría integral 2026-08-30. No
-implementar ninguna de las dos opciones sin convertirlo en un ADR aceptado.
+**ADR-002 está aceptado pero no implementado**: la D2 de la auditoría
+integral 2026-08-30 decidió (2026-08-31) que el Data Studio del plano fleet
+consuma el contrato `datasource` con identidad propagada por el stream. El
+acta conserva el análisis de la alternativa descartada; su sección «Plan»
+enumera el arco pendiente. Hasta que se ejecute, las puertas actuales del
+fleet (allowlist de modelos mutables, operadores de solo lectura) siguen
+vigentes.
 
 > El estado de esta tabla es un **resumen**; la verdad vive en el frontmatter
 > de cada ADR. «Retroactivo» marca actas escritas después de ejecutar la

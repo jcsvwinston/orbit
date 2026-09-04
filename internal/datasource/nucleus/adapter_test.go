@@ -40,6 +40,17 @@ type DSNote struct {
 
 func (DSNote) TableName() string { return "ds_notes" }
 
+// DSPost carries validate tags, so Create/Update must run the framework
+// validator before writing (the panel used to store whatever it was sent).
+type DSPost struct {
+	model.BaseModel
+	Title string `json:"title" validate:"required,max=20"`
+	Body  string `json:"body"`
+	Views int    `json:"views" validate:"gte=0"`
+}
+
+func (DSPost) TableName() string { return "ds_posts" }
+
 func setupAdapter(t *testing.T) *Adapter {
 	t.Helper()
 	logger := observe.NewLogger("error", "text")
@@ -75,7 +86,22 @@ func setupAdapter(t *testing.T) *Adapter {
 		t.Fatalf("create ds_notes table: %v", err)
 	}
 
+	if _, err := sqlDB.Exec(`CREATE TABLE ds_posts (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		created_at DATETIME,
+		updated_at DATETIME,
+		deleted_at DATETIME,
+		title TEXT NOT NULL DEFAULT '',
+		body TEXT NOT NULL DEFAULT '',
+		views INTEGER NOT NULL DEFAULT 0
+	)`); err != nil {
+		t.Fatalf("create ds_posts table: %v", err)
+	}
+
 	reg := model.NewRegistry()
+	if err := reg.Register(&DSPost{}); err != nil {
+		t.Fatalf("register DSPost: %v", err)
+	}
 	if err := reg.Register(&DSWidget{}); err != nil {
 		t.Fatalf("register DSWidget: %v", err)
 	}
@@ -114,8 +140,8 @@ func TestModelInfo_Mapping(t *testing.T) {
 	if _, ok := mi.Field("Qty"); !ok {
 		t.Error("Field(\"Qty\") not found by Go name")
 	}
-	if len(a.All()) != 3 {
-		t.Errorf("All() = %d models, want 3", len(a.All()))
+	if len(a.All()) != 4 {
+		t.Errorf("All() = %d models, want 4", len(a.All()))
 	}
 }
 
@@ -206,8 +232,8 @@ func TestDisplayLabel(t *testing.T) {
 	cases := []struct {
 		name, label, want string
 	}{
-		{"ID", "I D", "ID"},                       // the auto-derived mangling is repaired
-		{"APIKey", "A P I Key", "API Key"},        // consecutive acronym + word
+		{"ID", "I D", "ID"},                // the auto-derived mangling is repaired
+		{"APIKey", "A P I Key", "API Key"}, // consecutive acronym + word
 		{"HTTPServer", "H T T P Server", "HTTP Server"},
 		{"UserID", "User I D", "User ID"},         // trailing acronym
 		{"CreatedAt", "Created At", "Created At"}, // plain CamelCase unchanged

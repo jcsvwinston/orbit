@@ -1,8 +1,10 @@
 # Nucleus Admin Protocol — Evolution Rules
 
-This document is normative. Any change to `admin/proto/**/*.proto` must comply
-with the rules below. CI enforces a subset of them via `buf breaking`; the rest
-are reviewer responsibilities.
+This document is normative. Any change to `proto/**/*.proto` must comply
+with the rules below. None of them is enforced by CI today: `make
+proto-breaking` (buf) exists and reviewers are expected to run it, but the
+CI workflow does not install buf. Until it does, every rule here is a
+reviewer responsibility.
 
 The admin protocol is a wire contract between three parties that release on
 **different cadences**:
@@ -29,10 +31,11 @@ here exist to make that work.
   written by any version of the agent must be parseable by any version of
   the admin server, and vice versa.
 
-## 2. Hard rules (CI-enforced)
+## 2. Hard rules (`make proto-breaking`, run by the reviewer)
 
-`buf breaking --against` runs against `main` on every PR and rejects the
-following changes (FILE category):
+`buf breaking --against` compares the proto with `main` and rejects the
+following changes (FILE category). Run it locally before opening a PR; CI
+does not run buf.
 
 * renaming a field, message, enum, service, or RPC;
 * changing a field's type, label (`repeated`, `optional`), or wire-format
@@ -48,7 +51,7 @@ If you need to do any of these things, you almost certainly want to introduce
 
 ## 3. Soft rules (reviewer-enforced)
 
-These are not caught by `buf breaking` but will reject a PR in review.
+These are not caught by `buf breaking` either, and will reject a PR in review.
 
 ### 3.1 Never remove — only deprecate
 
@@ -99,16 +102,20 @@ it reserved in a follow-up release.
 
 `SnapshotResponse.payload_json` and `Snapshot.payload_json` carry JSON, not
 proto. This is intentional: snapshot shapes evolve faster than RPC contracts
-and the cost of reparsing is paid once per UI request. Schemas for each
-`SnapshotType` live in `admin/server/snapshot/SCHEMAS.md`. Adding fields to
-those JSON schemas is allowed at any time; renaming or removing them follows
-the same deprecate-then-reserve discipline.
+and the cost of reparsing is paid once per UI request. There is no separate
+schema document for those payloads: the shape of each `SnapshotType` is
+defined by the Go types the agent serialises (`agent/datastudio`,
+`agent/rbac`, `agent/hostmetrics`) and consumed by the UI's TypeScript
+under `ui/src`. Adding fields to those JSON shapes is allowed at any time;
+renaming or removing them follows the same deprecate-then-reserve discipline.
 
 ## 4. Generated code must be reproducible
 
 * `make proto` regenerates the Go and TypeScript stubs.
 * The generated files are committed to the repository.
-* CI fails if `make proto` produces a non-empty diff.
+* Regeneration is a manual discipline: CI does not verify that `make proto`
+  produces an empty diff (it does not install buf). Run it after every
+  `.proto` change and commit the result.
 * Reasoning: a clean checkout must compile (`go build ./...`, `npm run build`)
   without `buf` installed locally, and breaking changes must be reviewable
   in the PR diff.

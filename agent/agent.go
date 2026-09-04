@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"crypto/tls"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -40,8 +41,16 @@ type Config struct {
 	DB *sql.DB
 
 	// Token is the shared bearer token sent on every Connect-RPC call.
-	// May be empty if mTLS is in use (Phase 6).
+	// May be empty when the admin server authenticates agents by client
+	// certificate instead (see TLS).
 	Token string
+
+	// TLS is applied to every https:// endpoint. Nil means the system
+	// trust store. Set RootCAs for an admin server signed by a private
+	// CA, and Certificates when the server's agent listener requires a
+	// client certificate (--agent-client-ca). Ignored for http:// (h2c)
+	// endpoints.
+	TLS *tls.Config
 
 	// StateDir is the path under which node_id is persisted (the new
 	// top-level state_dir key in nucleus.yml). Empty means "use ephemeral
@@ -70,8 +79,8 @@ type Config struct {
 	DrainTimeout time.Duration
 
 	// HTTPBufferSize / SQLBufferSize / SessionBufferSize / CustomBufferSize
-	// configure the per-kind drop-oldest ring buffers used during
-	// microcortes (default 256 each).
+	// configure the per-kind drop-oldest ring buffers that absorb
+	// backpressure while a stream is open (defaults 256/256/64/64).
 	HTTPBufferSize    int
 	SQLBufferSize     int
 	SessionBufferSize int
@@ -238,6 +247,7 @@ func New(cfg Config) (*Agent, error) {
 	dialer := connection.NewDialer(connection.Config{
 		Endpoints: cfg.Endpoints,
 		Token:     cfg.Token,
+		TLSConfig: cfg.TLS,
 		Logger:    cfg.Logger,
 	})
 

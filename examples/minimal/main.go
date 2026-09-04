@@ -24,6 +24,12 @@ import (
 	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/nucleus"
 	"github.com/jcsvwinston/orbit"
+
+	// Nucleus links no database driver: each ships as its own module. The
+	// application links the one its `databases:` config names — here
+	// SQLite, for `sqlite://orbit_minimal.db` in nucleus.yaml. Without this
+	// import the app builds and then refuses to open the database at boot.
+	_ "github.com/jcsvwinston/nucleus/drivers/sqlite"
 )
 
 // Note is the example's only domain model. Listing it in Module.Models

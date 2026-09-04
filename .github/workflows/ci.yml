@@ -57,6 +57,80 @@ jobs:
           GOWORK: "off"
         run: go test ./... -count=1
 
+  # `go mod tidy` must be a no-op in every module. The root go.mod once listed
+  # the SQLite driver as `// indirect` while a test file imported it
+  # directly, and go.sum lacked sixteen lines — any `go build` in the
+  # workspace re-dirtied the tree, and nothing in CI said so.
+  tidy:
+    name: go mod tidy is a no-op — ${{ matrix.module }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [., proto, agent, server, quarkbridge, quarkdatasource]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: go mod tidy leaves no diff
+        working-directory: ${{ matrix.module }}
+        env:
+          # Tidy each module as a consumer sees it, not through the workspace.
+          GOWORK: "off"
+        run: |
+          go mod tidy
+          if ! git diff --exit-code -- go.mod go.sum; then
+            echo "::error::go.mod/go.sum in ${{ matrix.module }} are not tidy. Run 'go mod tidy' there and commit." >&2
+            exit 1
+          fi
+
+  # examples/minimal is advertised as runnable. It compiled for releases
+  # while refusing to boot ("the sqlite driver ships as its own module and is
+  # not imported yet"), because CI only built it. Boot it and ask for the
+  # login page: that is what a newcomer does first.
+  example-minimal:
+    name: examples/minimal boots and serves /admin/login
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: build
+        working-directory: examples/minimal
+        run: go build -o /tmp/orbit-minimal .
+      - name: boot and curl /admin/login
+        working-directory: examples/minimal
+        env:
+          ADMIN_BOOTSTRAP_PASSWORD: ci-only-password-1234
+          # nucleus.yaml says 8080; the env override keeps the job independent
+          # of whatever else a runner has on that port.
+          NUCLEUS_PORT: "18080"
+        run: |
+          /tmp/orbit-minimal > /tmp/orbit-minimal.log 2>&1 &
+          pid=$!
+          trap 'kill $pid 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            if curl -fsS -o /tmp/login.html http://127.0.0.1:18080/admin/login; then
+              echo "login page served after ${i}s"
+              # The panel serves its SPA shell, stamped with the mount prefix.
+              grep -q 'nucleus-admin-prefix' /tmp/login.html || { echo "::error::/admin/login did not serve the panel shell" >&2; cat /tmp/login.html; exit 1; }
+              exit 0
+            fi
+            if ! kill -0 $pid 2>/dev/null; then
+              echo "::error::example exited before serving" >&2
+              cat /tmp/orbit-minimal.log
+              exit 1
+            fi
+            sleep 1
+          done
+          echo "::error::example did not serve /admin/login within 30s" >&2
+          cat /tmp/orbit-minimal.log
+          exit 1
+
   # A sibling-module require that lags the sibling's latest tag ships stale
   # code to consumers while the workspace hides it. See the script header for
   # the two releases that proved it.

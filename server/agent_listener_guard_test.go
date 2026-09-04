@@ -29,7 +29,10 @@ func TestAgentListenerExposed(t *testing.T) {
 }
 
 func TestAgentListenerGuard(t *testing.T) {
-	tlsCfg := &tls.Config{} // presence, not contents, is what the guard checks
+	// A certificate alone encrypts; it does not authenticate. Only a config
+	// that requires and verifies client certificates counts.
+	serverOnlyTLS := &tls.Config{}
+	mutualTLS := &tls.Config{ClientAuth: tls.RequireAndVerifyClientCert}
 
 	t.Run("exposed_and_unauthenticated_is_refused", func(t *testing.T) {
 		cfg := Config{AgentAddr: "0.0.0.0:9090"}
@@ -52,10 +55,38 @@ func TestAgentListenerGuard(t *testing.T) {
 		}
 	})
 
-	t.Run("tls_allows_exposed", func(t *testing.T) {
-		cfg := Config{AgentAddr: "0.0.0.0:9090", AgentTLS: tlsCfg}
+	t.Run("server_only_tls_without_token_is_refused", func(t *testing.T) {
+		cfg := Config{AgentAddr: "0.0.0.0:9090", AgentTLS: serverOnlyTLS}
+		warn, err := cfg.agentListenerGuard()
+		if err == nil {
+			t.Fatal("a server certificate without ClientAuth authenticates nobody; the guard must refuse")
+		}
+		if warn {
+			t.Error("warn should be false when the listener is refused")
+		}
+		if !strings.Contains(err.Error(), "--agent-client-ca") {
+			t.Errorf("error should point at the client-CA flag, got %q", err.Error())
+		}
+	})
+
+	t.Run("server_only_tls_with_token_allows_exposed", func(t *testing.T) {
+		cfg := Config{AgentAddr: "0.0.0.0:9090", AgentTLS: serverOnlyTLS, AgentToken: "s3cret"}
 		if warn, err := cfg.agentListenerGuard(); err != nil || warn {
-			t.Fatalf("TLS should permit exposed listener quietly: warn=%v err=%v", warn, err)
+			t.Fatalf("TLS + token should permit exposed listener quietly: warn=%v err=%v", warn, err)
+		}
+	})
+
+	t.Run("mutual_tls_allows_exposed", func(t *testing.T) {
+		cfg := Config{AgentAddr: "0.0.0.0:9090", AgentTLS: mutualTLS}
+		if warn, err := cfg.agentListenerGuard(); err != nil || warn {
+			t.Fatalf("mutual TLS should permit exposed listener quietly: warn=%v err=%v", warn, err)
+		}
+	})
+
+	t.Run("require_any_client_cert_is_not_authentication", func(t *testing.T) {
+		cfg := Config{AgentAddr: "0.0.0.0:9090", AgentTLS: &tls.Config{ClientAuth: tls.RequireAnyClientCert}}
+		if _, err := cfg.agentListenerGuard(); err == nil {
+			t.Fatal("RequireAnyClientCert accepts unverified certificates; the guard must refuse")
 		}
 	})
 

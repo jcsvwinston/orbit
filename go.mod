@@ -5,6 +5,7 @@ go 1.26.6
 require (
 	github.com/alicebob/miniredis/v2 v2.37.0
 	github.com/jcsvwinston/nucleus v1.23.0
+	github.com/jcsvwinston/nucleus/drivers/sqlite v0.1.0
 	github.com/redis/go-redis/v9 v9.14.1
 	github.com/shirou/gopsutil/v3 v3.24.5
 	golang.org/x/net v0.57.0
@@ -41,7 +42,6 @@ require (
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.9.2 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
-	github.com/jcsvwinston/nucleus/drivers/sqlite v0.1.0 // indirect
 	github.com/knadh/koanf/maps v0.1.2 // indirect
 	github.com/knadh/koanf/parsers/json v1.0.0 // indirect
 	github.com/knadh/koanf/parsers/toml/v2 v2.2.1 // indirect

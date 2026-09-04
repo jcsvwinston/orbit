@@ -83,11 +83,14 @@ actually reach for.
 | `--agent-token` | `NUCLEUS_ADMIN_AGENT_TOKEN` | *(empty)* | Shared bearer token every agent must present. |
 | `--agent-cert` | `NUCLEUS_ADMIN_AGENT_CERT` | *(empty)* | PEM certificate for the agent listener (enables TLS). |
 | `--agent-key` | `NUCLEUS_ADMIN_AGENT_KEY` | *(empty)* | PEM key for the agent listener. |
+| `--agent-client-ca` | `NUCLEUS_ADMIN_AGENT_CLIENT_CA` | *(empty)* | PEM CA bundle; when set, agents must present a client certificate signed by it (mutual TLS). Requires `--agent-cert`/`--agent-key`. |
 | `--insecure-agent-listener` | `NUCLEUS_ADMIN_INSECURE_AGENT_LISTENER` | `false` | Allow an unauthenticated agent listener on a non-loopback interface. |
 
 The server **refuses to start** when the agent listener would bind a
-non-loopback interface with no `--agent-token` and no TLS. You have three ways
-out: authenticate the listener, bind it to loopback, or pass
+non-loopback interface with no `--agent-token` and no client-certificate
+requirement (a server certificate alone encrypts but does not
+authenticate). You have three ways out: authenticate the listener (token
+or `--agent-client-ca`), bind it to loopback, or pass
 `--insecure-agent-listener` — and that last one only when the network layer
 already restricts who can reach it. See [Security](./security.md).
 
@@ -113,10 +116,11 @@ already restricts who can reach it. See [Security](./security.md).
 | `--log-format` | `NUCLEUS_ADMIN_LOG_FORMAT` | `json` | `json` \| `text` (structured logging via `slog`, to stderr). |
 | `--version` | — | — | Print the build version and exit. |
 
-Both listeners serve HTTP/2 — cleartext (h2c) by default, TLS when a
-cert/key pair is supplied. `/healthz` answers unauthenticated on every
-listener, so load balancers can probe without owning a token. The server
-shuts down gracefully on `SIGINT`/`SIGTERM`.
+Both listeners serve HTTP/2 — cleartext (h2c) by default, TLS (with ALPN
+HTTP/2, nothing served in the clear) when a cert/key pair is supplied.
+`/healthz` answers unauthenticated on every listener, so load balancers can
+probe without owning a token. The server shuts down gracefully on
+`SIGINT`/`SIGTERM`.
 
 ## A systemd unit
 

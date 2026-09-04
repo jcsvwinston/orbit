@@ -8,8 +8,8 @@ import (
 )
 
 // Config tunes the admin server. Two listeners are exposed: one for
-// agents (mTLS or shared token) and one for UI/operators (trusted-proxy
-// headers or bearer fallback). Empty addresses disable a listener.
+// agents (shared token, optionally over TLS or mutual TLS) and one for
+// UI/operators (trusted-proxy headers or bearer fallback).
 type Config struct {
 	// AgentAddr is the [host]:port the AgentService listens on. Agents
 	// dial here. Default ":9090".
@@ -21,9 +21,15 @@ type Config struct {
 	// traefik forward-auth) per decision 14. Default ":8080".
 	UIAddr string
 
-	// AgentTLS configures mTLS for the agent listener. When nil the
-	// listener serves h2c (plaintext HTTP/2). Production deployments
-	// MUST configure this.
+	// AgentTLS configures TLS for the agent listener: Run wraps the
+	// listener with tls.NewListener and negotiates HTTP/2 via ALPN. When
+	// nil the listener serves h2c (plaintext HTTP/2).
+	//
+	// A certificate alone encrypts the wire; it authenticates nobody. Only
+	// a config that requires and verifies client certificates (ClientCAs
+	// set and ClientAuth == tls.RequireAndVerifyClientCert — what the
+	// binary's --agent-client-ca produces) counts as agent authentication
+	// for the fail-closed guard in Run; otherwise set AgentToken too.
 	AgentTLS *tls.Config
 
 	// UITLS configures TLS for the UI listener. When nil the listener
@@ -31,13 +37,14 @@ type Config struct {
 	UITLS *tls.Config
 
 	// AgentToken is the shared bearer token agents present. Empty
-	// disables token auth (rely on mTLS or the listener being on a
-	// private network).
+	// disables token auth (rely on mutual TLS via AgentTLS, or on the
+	// listener being on a private network).
 	AgentToken string
 
 	// InsecureAgentListener overrides the fail-closed guard that refuses
 	// to start the agent listener on a non-loopback interface when it has
-	// no authentication (AgentToken == "" && AgentTLS == nil). Leave false
+	// no authentication (AgentToken == "" and AgentTLS does not require a
+	// verified client certificate). Leave false
 	// in production; set it only when a network-layer control (private
 	// subnet, service mesh mTLS, firewall) already restricts who can reach
 	// AgentAddr. See Run for the exact condition.

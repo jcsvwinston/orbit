@@ -411,6 +411,17 @@ func (p *Panel) handleGetSchema(c *router.Context) error {
 func (p *Panel) handleUpdateFieldMeta(c *router.Context) error {
 	r := c.Request
 	name := c.Param("name")
+	// Runtime field-meta edits are a Nucleus registry feature. A panel
+	// mounted on a custom DataSource (Config.DataSource) has no
+	// SchemaRegistry; answer 501 instead of dereferencing nil (which
+	// panicked into a 500 before authorization even ran).
+	if p.registry == nil {
+		return &gferrors.DomainError{
+			Code:       "NOT_IMPLEMENTED",
+			Message:    "field metadata updates are not available for this data source",
+			StatusCode: http.StatusNotImplemented,
+		}
+	}
 	meta, ok := p.registry.Get(name)
 	if !ok {
 		return gferrors.NotFound("model", name)

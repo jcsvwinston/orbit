@@ -45,7 +45,8 @@ Anything reachable through Orbit's surfaces:
   Studio, the audit log, import/export, the storage browser's path
   confinement.
 - The **fleet plane** (`agent/` + `server/`): the agent listener's
-  fail-closed startup contract, agent/server authentication (token, mTLS),
+  fail-closed startup contract, agent/server authentication (shared token,
+  TLS and mutual TLS at the agent listener),
   the UI listener's trust boundaries, and the server-side gates on fleet
   Data Studio mutations.
 - **Bypass of a documented default**: the panel registers under the

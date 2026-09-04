@@ -140,7 +140,7 @@ func (s *DataStudioService) CreateRecord(ctx context.Context, req *connect.Reque
 		return nil, err
 	}
 	if rec := resp.GetRecord(); rec != nil {
-		s.audit(ctx, "datastudio.create", auditTarget(body.GetModelName(), recordID(rec), body.GetDatabaseAlias()), node)
+		s.audit(ctx, "datastudio.create", auditTarget(body.GetModelName(), recordID(rec, ""), body.GetDatabaseAlias()), node)
 		return connect.NewResponse(rec), nil
 	}
 	return nil, connect.NewError(connect.CodeUnknown, errors.New("admin server: empty create response"))
@@ -325,15 +325,29 @@ func (s *DataStudioService) audit(ctx context.Context, action, target, nodeID st
 
 // recordID extracts the record's id from its JSON value map ("" when
 // the agent's response carries none — the target stays model-level).
-func recordID(rec *adminv1.Record) string {
+//
+// The agent keys values by Go FIELD name (datastudio.recordFromEntity),
+// so a model.BaseModel primary key arrives as "ID", not "id"; an exact
+// "id" lookup left every create audit entry without an id. The lookup is
+// case-insensitive and, when the caller knows the model's primary key
+// (ListModels' primary_key), that name is tried first.
+func recordID(rec *adminv1.Record, primaryKey string) string {
 	if rec == nil {
 		return ""
 	}
-	raw, ok := rec.GetValuesJson()["id"]
-	if !ok {
-		return ""
+	values := rec.GetValuesJson()
+	candidates := []string{"id"}
+	if pk := strings.TrimSpace(primaryKey); pk != "" {
+		candidates = append([]string{pk}, candidates...)
 	}
-	return strings.Trim(raw, `"`)
+	for _, want := range candidates {
+		for key, raw := range values {
+			if strings.EqualFold(key, want) {
+				return strings.Trim(raw, `"`)
+			}
+		}
+	}
+	return ""
 }
 
 func auditTarget(model, id, alias string) string {
