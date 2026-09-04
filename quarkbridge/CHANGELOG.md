@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.8.18](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v1.8.17...quarkbridge/v1.8.18) (2026-09-04)
+
+
+### Fixed
+
+* **deps:** alinea root, agent, server, quarkbridge, quarkdatasource al set (nucleus v1.23.1, quark v1.10.1) ([#393](https://github.com/jcsvwinston/orbit/issues/393)) ([95a3347](https://github.com/jcsvwinston/orbit/commit/95a3347e055acb4cff8079d134c85bf1ed11ff8d))
+* **release:** los puentes adoptan la línea 1.x ([#377](https://github.com/jcsvwinston/orbit/issues/377)) ([c586e8d](https://github.com/jcsvwinston/orbit/commit/c586e8d959369300bc68f0b4219d3952b38551ba))
+* **server:** apply TLS to fleet listeners, stop leaking env in system snapshot, and validate Data Studio writes ([#380](https://github.com/jcsvwinston/orbit/issues/380)) ([f778e6a](https://github.com/jcsvwinston/orbit/commit/f778e6a2de2c724d7dc53c7643d0bcb3da422007))
+
 ## [1.8.17](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v0.4.10...quarkbridge/v1.8.17) (2026-09-03)
 
 > **About this version number.** This module came from the `0.x` line and

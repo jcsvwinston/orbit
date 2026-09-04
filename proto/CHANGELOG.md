@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.3](https://github.com/jcsvwinston/orbit/compare/proto/v0.4.2...proto/v0.4.3) (2026-09-04)
+
+
+### Fixed
+
+* **server:** apply TLS to fleet listeners, stop leaking env in system snapshot, and validate Data Studio writes ([#380](https://github.com/jcsvwinston/orbit/issues/380)) ([f778e6a](https://github.com/jcsvwinston/orbit/commit/f778e6a2de2c724d7dc53c7643d0bcb3da422007))
+
 ## [0.4.2](https://github.com/jcsvwinston/orbit/compare/proto/v0.4.1...proto/v0.4.2) (2026-08-16)
 
 
