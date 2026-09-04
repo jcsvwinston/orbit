@@ -53,8 +53,10 @@ toasts close; audit filters and pagination work; server-side sorting; a
 **Housekeeping.** `examples/minimal` imports the SQLite driver module and CI
 boots it; `go mod tidy` is a no-op in every module and CI checks it;
 reconnecting agents cancel the previous stream; Connect messages are capped
-at 4 MiB; `/api/health` reports the real version and uptime; ADR-002 is
-accepted (the fleet will consume the datasource contract).
+at 4 MiB; `/api/health` reports the real version and uptime; and the
+direction is settled: the fleet plane will consume the same datasource
+contract as the in-process panel, so per-model permissions and tenant
+filtering apply in both.
 
 ## v1.8.17 — 2026-09-02
 
