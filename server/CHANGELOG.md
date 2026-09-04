@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.12](https://github.com/jcsvwinston/orbit/compare/server/v0.10.11...server/v0.10.12) (2026-09-04)
+
+
+### Fixed
+
+* **deps:** alinea root, agent, server, quarkbridge, quarkdatasource al set (nucleus v1.23.1, quark v1.10.1) ([#393](https://github.com/jcsvwinston/orbit/issues/393)) ([95a3347](https://github.com/jcsvwinston/orbit/commit/95a3347e055acb4cff8079d134c85bf1ed11ff8d))
+* **server:** apply TLS to fleet listeners, stop leaking env in system snapshot, and validate Data Studio writes ([#380](https://github.com/jcsvwinston/orbit/issues/380)) ([f778e6a](https://github.com/jcsvwinston/orbit/commit/f778e6a2de2c724d7dc53c7643d0bcb3da422007))
+
 ## [0.10.11](https://github.com/jcsvwinston/orbit/compare/server/v0.10.10...server/v0.10.11) (2026-09-03)
 
 
