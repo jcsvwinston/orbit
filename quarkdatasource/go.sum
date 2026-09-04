@@ -91,8 +91,8 @@ github.com/jackc/puddle/v2 v2.2.2 h1:PR8nw+E/1w0GLuRFSmiioY6UooMp6KJv0/61nB7icHo
 github.com/jackc/puddle/v2 v2.2.2/go.mod h1:vriiEXHvEE654aYKXXjOvZM39qJ0q+azkZFrfEOc3H4=
 github.com/jcsvwinston/orbit v1.8.13 h1:x464a15QzTgx2F2+N0QMUA+kIk2oc+uG3AfWTxa+odk=
 github.com/jcsvwinston/orbit v1.8.13/go.mod h1:safg6Gv9YQfqqzOANl1tpb6aYMqAySTiXzuteIPUv74=
-github.com/jcsvwinston/quark v1.10.0 h1:SMHRrFKb6NBGk4GtyBotnJEqrYixmPPEE/iqiBD+NPw=
-github.com/jcsvwinston/quark v1.10.0/go.mod h1:QbOga8mD70oTQlmmUAaj7OfiId3gh5Es1CIfTSjjy7M=
+github.com/jcsvwinston/quark v1.10.1 h1:K3emN7/8JI6yjt3u1ZVE8CS1FonqLMjUr6y76eu6XE8=
+github.com/jcsvwinston/quark v1.10.1/go.mod h1:QbOga8mD70oTQlmmUAaj7OfiId3gh5Es1CIfTSjjy7M=
 github.com/jcsvwinston/quark/drivers/sqlite v0.1.0 h1:R5/trytrz5xBcOkhHTzVtV96fNQ/wgr7XoyJSg18U0c=
 github.com/jcsvwinston/quark/drivers/sqlite v0.1.0/go.mod h1:F1pDKOvPjZG2fU/ZJ3xaVTxvV0zI5tSKoHfbSEecpoc=
 github.com/klauspost/compress v1.18.5 h1:/h1gH5Ce+VWNLSWqPzOVn6XBO+vJbCNGvjoaGBFW2IE=
