@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.20](https://github.com/jcsvwinston/orbit/compare/v1.8.19...v1.8.20) (2026-09-04)
+
+
+### Fixed
+
+* **deps:** pin server to agent/v0.6.12 ([#396](https://github.com/jcsvwinston/orbit/issues/396)) ([cf52d1b](https://github.com/jcsvwinston/orbit/commit/cf52d1bb7a80453c1f88f41fb395defea456f2c8))
+
 ## [1.8.19](https://github.com/jcsvwinston/orbit/compare/v1.8.18...v1.8.19) (2026-09-04)
 
 
