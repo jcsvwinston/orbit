@@ -17,6 +17,45 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.8.18 — 2026-09-04
+
+The maturity audit of 2026-09-03, applied. Every module moves to Nucleus
+v1.23.1 and Quark v1.10.1, so the tags cut here certify against the same set
+as the umbrella.
+
+Fleet tags cut alongside: `proto/v0.4.3`, `agent/v0.6.11`, `server/v0.10.12`,
+`quarkbridge/v1.8.18`, `quarkdatasource/v1.8.18`.
+
+**Fleet: TLS is real now.** `--agent-cert/--agent-key` and `--ui-cert/--ui-key`
+used to be accepted and then ignored — the listeners always served plain
+h2c, and configuring a certificate even counted as authentication. The
+listeners now wrap TLS with ALPN, `--agent-client-ca` enables client
+certificate verification (identity `agent:<CN>`), and the agent speaks
+`https://` endpoints. The docs no longer promise mTLS where none existed.
+
+**Panel: no secrets in the system snapshot.** Environment values whose name
+suggests a URL, DSN, password or credential are masked, and `user:pass@` is
+redacted inside any URL-shaped value.
+
+**Data Studio validates.** Writes run the model's `validate` tags and answer
+`422` per field; a value of the wrong type is rejected instead of being
+coerced; unknown keys are refused; a non-numeric id answers `400`, not `500`.
+Export paginates until the end and respects tenant and database alias;
+export downloads are confined to the export area; imports are size-limited
+and file names sanitised.
+
+**Admin UI.** Import now runs validate and execute instead of showing success
+after the upload; "Load more" appends; batch sizes stop at the API's limit;
+JSON fields are shown and edited as JSON; `deny` policies are labelled;
+toasts close; audit filters and pagination work; server-side sorting; a
+403 shows a permission page. ESLint and Vitest run in CI.
+
+**Housekeeping.** `examples/minimal` imports the SQLite driver module and CI
+boots it; `go mod tidy` is a no-op in every module and CI checks it;
+reconnecting agents cancel the previous stream; Connect messages are capped
+at 4 MiB; `/api/health` reports the real version and uptime; ADR-002 is
+accepted (the fleet will consume the datasource contract).
+
 ## v1.8.17 — 2026-09-02
 
 The Quark bridges move to Quark v1.10.0, closing the set. Nothing else
