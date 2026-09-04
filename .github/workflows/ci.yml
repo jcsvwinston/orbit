@@ -31,7 +31,7 @@ jobs:
       matrix:
         module: [., proto, agent, server, quarkbridge, quarkdatasource]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -69,7 +69,7 @@ jobs:
       matrix:
         module: [., proto, agent, server, quarkbridge, quarkdatasource]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -94,7 +94,7 @@ jobs:
     name: examples/minimal boots and serves /admin/login
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -138,7 +138,7 @@ jobs:
     name: Internal pins == latest sibling tags
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # the check compares against the full tag list
       - uses: actions/setup-go@v5
@@ -151,7 +151,7 @@ jobs:
     name: Go tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -213,7 +213,7 @@ jobs:
           --health-cmd "mysqladmin ping -h localhost -uroot -proot"
           --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -235,7 +235,7 @@ jobs:
     name: govulncheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -252,7 +252,7 @@ jobs:
     name: Docs product voice
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: bash scripts/ci/check_docs_product_voice.sh
       # The ADR index rots silently: orbit's said "Proposed" for a record
       # whose own frontmatter had been accepted for two months, and nucleus
@@ -298,7 +298,7 @@ jobs:
       run:
         working-directory: ui
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -326,7 +326,7 @@ jobs:
       run:
         working-directory: internal/admin/ui
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 22
