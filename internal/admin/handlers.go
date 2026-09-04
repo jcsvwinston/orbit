@@ -156,9 +156,12 @@ func (p *Panel) handleListModels(c *router.Context) error {
 		if includeCounts {
 			if queryable {
 				for _, m := range models {
-					st, err := p.src.Store(m.Name, alias)
+					st, served, err := p.storeOnAlias(m, alias)
 					if err != nil {
 						return fmt.Errorf("admin.ListModels store alias=%s model=%s: %w", alias, m.Name, err)
+					}
+					if !served {
+						continue
 					}
 					cr, err := st.Count(r.Context())
 					if err != nil {
@@ -207,11 +210,11 @@ func (p *Panel) handleListModels(c *router.Context) error {
 					// Fast mode still probes table PRESENCE (a zero-row
 					// scan), so database attribution stays truthful without
 					// paying for counts.
-					st, err := p.src.Store(m.Name, alias)
+					st, served, err := p.storeOnAlias(m, alias)
 					if err != nil {
 						return fmt.Errorf("admin.ListModels store alias=%s model=%s: %w", alias, m.Name, err)
 					}
-					if !st.TableExists(r.Context()) {
+					if !served || !st.TableExists(r.Context()) {
 						continue
 					}
 					modelNames = append(modelNames, m.Name)
@@ -935,4 +938,28 @@ func buildBulkExportURL(currentPath string, ids []uint, databaseAlias string) st
 		q.Set("db", alias)
 	}
 	return base + "/export?" + q.Encode()
+}
+
+// storeOnAlias resolves the record store of model m on a database alias
+// during the presence sweep of ListModels, which probes EVERY alias the app
+// serves so the "Databases" column stays truthful. A data source that does
+// not serve an alias (quarkdatasource is bound to exactly one, and since
+// v1.8.18 says so instead of silently answering with the wrong database)
+// is not an error there: the model is simply not present on that alias —
+// the same outcome as a table that does not exist. An error on the model's
+// OWN alias (its declared one, or the default) still propagates: that one
+// the panel cannot explain away.
+func (p *Panel) storeOnAlias(m datasource.ModelInfo, alias string) (datasource.RecordStore, bool, error) {
+	st, err := p.src.Store(m.Name, alias)
+	if err == nil {
+		return st, true, nil
+	}
+	own := m.DatabaseAlias
+	if own == "" {
+		own = p.defaultDBAlias
+	}
+	if alias == own {
+		return nil, false, err
+	}
+	return nil, false, nil
 }

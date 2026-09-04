@@ -17,6 +17,17 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.8.21 — 2026-09-04
+
+Data Studio's model listing no longer fails when the app serves more than
+one database alias and a data source is bound to just one of them. The
+listing probes every alias to say where each model lives; since v1.8.18 the
+Quark adapter refuses aliases it does not serve instead of answering from
+the wrong database, and the panel turned that refusal into a 500. It is now
+what it means — the model is absent on that alias — while an error on the
+model's own alias still surfaces. Caught by the reference consumer
+(quantum-app) the day v1.8.18 shipped.
+
 ## v1.8.20 — 2026-09-04
 
 The second and last convergence cut after v1.8.18: `server` now requires
