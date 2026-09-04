@@ -60,16 +60,26 @@ updates:
       - dependency-name: github.com/jcsvwinston/orbit/*
   # The in-process panel's SPA ships a committed dist: a bump here must be
   # followed by `npm ci && npm run build` and a commit of dist/ (CI checks).
+  # TypeScript majors stay out of both SPA groups: typescript-eslint 8 pins
+  # `typescript >=4.8.4 <6.1.0`, so a grouped bump to TypeScript 7 made
+  # `npm ci` fail with ERESOLVE and the whole group unmergeable (#391, #392).
+  # It moves by hand when typescript-eslint widens its range.
   - package-ecosystem: npm
     directory: /internal/admin/ui
     schedule: { interval: weekly, day: monday }
     groups:
       npm-deps: { patterns: ["*"] }
+    ignore:
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: npm
     directory: /ui
     schedule: { interval: weekly, day: monday }
     groups:
       npm-deps: { patterns: ["*"] }
+    ignore:
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly, day: monday }
