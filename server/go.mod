@@ -4,7 +4,7 @@ go 1.26.6
 
 require (
 	connectrpc.com/connect v1.19.2
-	github.com/jcsvwinston/orbit/proto v0.4.2
+	github.com/jcsvwinston/orbit/proto v0.4.3
 )
 
 require (
@@ -12,7 +12,7 @@ require (
 	github.com/jcsvwinston/nucleus/drivers/mysql v0.1.0
 	github.com/jcsvwinston/nucleus/drivers/postgres v0.1.0
 	github.com/jcsvwinston/nucleus/drivers/sqlite v0.1.0
-	github.com/jcsvwinston/orbit/agent v0.6.10
+	github.com/jcsvwinston/orbit/agent v0.6.11
 	github.com/prometheus/client_golang v1.23.2
 	golang.org/x/net v0.57.0
 	google.golang.org/protobuf v1.36.12
