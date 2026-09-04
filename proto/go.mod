@@ -7,6 +7,6 @@ go 1.26.6
 // Regenerate with `make proto` after any change to nucleus/admin/**/*.proto.
 
 require (
-	connectrpc.com/connect v1.19.2
+	connectrpc.com/connect v1.20.0
 	google.golang.org/protobuf v1.36.12
 )
