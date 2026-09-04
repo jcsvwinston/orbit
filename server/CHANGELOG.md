@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.13](https://github.com/jcsvwinston/orbit/compare/server/v0.10.12...server/v0.10.13) (2026-09-04)
+
+
+### Fixed
+
+* **deps:** pin agent and server to the proto and agent tags cut in v1.8.18 ([#394](https://github.com/jcsvwinston/orbit/issues/394)) ([b2f9a72](https://github.com/jcsvwinston/orbit/commit/b2f9a723b15be835e0d491f639087046958f1a82))
+
 ## [0.10.12](https://github.com/jcsvwinston/orbit/compare/server/v0.10.11...server/v0.10.12) (2026-09-04)
 
 
