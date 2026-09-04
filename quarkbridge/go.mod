@@ -69,5 +69,5 @@ require (
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/grpc v1.82.1 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
-	modernc.org/sqlite v1.57.0 // indirect
+	modernc.org/sqlite v1.58.0 // indirect
 )
