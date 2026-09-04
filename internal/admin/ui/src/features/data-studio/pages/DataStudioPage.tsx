@@ -1,6 +1,7 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { ErrorState } from '@/components/ui/error-state'
 import { useToast } from '@/components/ui/use-toast'
 import * as api from '@/services/api'
 import type { ModelSummary, ModelSchema, RuntimeInfo } from '@/types'
@@ -15,10 +16,13 @@ export default function DataStudioPage() {
   const [models, setModels] = useState<ModelSummary[]>([])
   const [runtime, setRuntime] = useState<RuntimeInfo | null>(null)
   const [loadingModels, setLoadingModels] = useState(true)
+  const [modelsError, setModelsError] = useState<unknown>(null)
+  const [modelsReloadKey, setModelsReloadKey] = useState(0)
 
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
   const [schema, setSchema] = useState<ModelSchema | null>(null)
   const [loadingSchema, setLoadingSchema] = useState(false)
+  const [schemaError, setSchemaError] = useState<unknown>(null)
   const [dbAlias, setDbAlias] = useState<string | undefined>(undefined)
   const [fieldConfigOpen, setFieldConfigOpen] = useState(false)
 
@@ -27,39 +31,41 @@ export default function DataStudioPage() {
     let cancelled = false
     const load = async () => {
       setLoadingModels(true)
+      setModelsError(null)
       try {
         const res = await api.getModelsWithRuntime(true)
         if (cancelled) return
         setModels(res.models ?? [])
         setRuntime(res.runtime ?? null)
-      } catch (err: any) {
-        toast({ variant: 'destructive', title: 'Failed to load models', description: err.message })
+      } catch (err) {
+        if (!cancelled) setModelsError(err)
       } finally {
         if (!cancelled) setLoadingModels(false)
       }
     }
     load()
     return () => { cancelled = true }
-  }, [])
+  }, [modelsReloadKey])
 
   // Load schema when model is selected
-  const loadSchema = async (name: string) => {
+  const loadSchema = useCallback(async (name: string) => {
     setLoadingSchema(true)
+    setSchemaError(null)
     try {
       const s = await api.getModelSchema(name)
       setSchema(s)
-    } catch (err: any) {
-      toast({ variant: 'destructive', title: 'Failed to load schema', description: err.message })
+    } catch (err) {
+      setSchemaError(err)
       setSchema(null)
     } finally {
       setLoadingSchema(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     if (!selectedModel) { setSchema(null); return }
     loadSchema(selectedModel)
-  }, [selectedModel])
+  }, [selectedModel, loadSchema])
 
   // Databases the selected model lives on
   const modelDbs = useMemo(() => {
@@ -100,7 +106,13 @@ export default function DataStudioPage() {
         </div>
       </div>
 
-      {/* Main layout */}
+      {modelsError ? (
+        <ErrorState
+          error={modelsError}
+          title="Failed to load models"
+          onRetry={() => setModelsReloadKey((k) => k + 1)}
+        />
+      ) : (
       <div className="flex flex-1 min-h-0 gap-4">
         {/* Sidebar */}
         <div className="w-64 flex-shrink-0 border rounded-lg bg-card overflow-hidden">
@@ -169,9 +181,9 @@ export default function DataStudioPage() {
                               onClick={() => setDbAlias(db.alias)}
                             >
                               {db.alias}
-                              <span className="opacity-70 text-[10px]">{db.engine}</span>
+                              <span className="opacity-80 text-xs">{db.engine}</span>
                               {db.countKnown && (
-                                <Badge variant={isActive ? 'secondary' : 'outline'} className="text-[9px] px-1 py-0">
+                                <Badge variant={isActive ? 'secondary' : 'outline'} className="text-xs px-1 py-0">
                                   {db.count.toLocaleString()}
                                 </Badge>
                               )}
@@ -198,6 +210,7 @@ export default function DataStudioPage() {
                     className="h-7 text-xs gap-1.5"
                     onClick={() => setFieldConfigOpen(true)}
                     title="Configure fields (list, search, filter...)"
+                    aria-label="Configure fields"
                   >
                     <Settings2 className="h-3.5 w-3.5" />
                     Fields
@@ -220,12 +233,15 @@ export default function DataStudioPage() {
               />
             </>
           ) : (
-            <div className="flex items-center justify-center h-full text-muted-foreground">
-              <p className="text-sm">Failed to load schema for {selectedModel}</p>
-            </div>
+            <ErrorState
+              error={schemaError ?? new Error(`No schema for ${selectedModel}`)}
+              title={`Failed to load schema for ${selectedModel}`}
+              onRetry={() => loadSchema(selectedModel)}
+            />
           )}
         </div>
       </div>
+      )}
     </div>
   )
 }

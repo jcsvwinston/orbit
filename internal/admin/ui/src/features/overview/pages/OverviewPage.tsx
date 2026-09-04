@@ -3,6 +3,7 @@ import { Activity, Boxes, Database, Network, PackageCheck, Table } from 'lucide-
 
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { ErrorState } from '@/components/ui/error-state'
 import * as api from '@/services/api'
 import type { ModelsResponse, SystemSnapshot } from '@/types'
 
@@ -22,11 +23,14 @@ export default function OverviewPage() {
   const [modelsResponse, setModelsResponse] = useState<ModelsResponse | null>(null)
   const [system, setSystem] = useState<SystemSnapshot | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<unknown>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let mounted = true
 
     const load = async () => {
+      setError(null)
       try {
         const [modelsData, systemData] = await Promise.all([
           api.getModelsWithRuntime(true),
@@ -35,8 +39,8 @@ export default function OverviewPage() {
         if (!mounted) return
         setModelsResponse(modelsData)
         setSystem(systemData)
-      } catch (error) {
-        console.error('Failed to load overview:', error)
+      } catch (err) {
+        if (mounted) setError(err)
       } finally {
         if (mounted) {
           setLoading(false)
@@ -48,7 +52,7 @@ export default function OverviewPage() {
     return () => {
       mounted = false
     }
-  }, [])
+  }, [reloadKey])
 
   const runtime = modelsResponse?.runtime
   const models = modelsResponse?.models ?? []
@@ -91,11 +95,13 @@ export default function OverviewPage() {
     )
   }
 
-  if (!modelsResponse || !system) {
+  if (error || !modelsResponse || !system) {
     return (
-      <div className="py-12 text-center">
-        <p className="text-muted-foreground">Failed to load the framework overview.</p>
-      </div>
+      <ErrorState
+        error={error ?? new Error('The overview endpoints returned no data.')}
+        title="Failed to load the overview"
+        onRetry={() => { setLoading(true); setReloadKey((k) => k + 1) }}
+      />
     )
   }
 

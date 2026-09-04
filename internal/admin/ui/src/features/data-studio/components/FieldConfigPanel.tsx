@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import type { ModelSchema, SchemaField } from '@/types'
 import * as api from '@/services/api'
+import { errorMessage } from '@/services/api'
 import { Loader2, Save, RotateCcw } from 'lucide-react'
 
 interface Props {
@@ -25,7 +26,7 @@ interface FieldState {
 
 const HTML_TYPE_OPTIONS = [
   'text', 'number', 'email', 'password', 'url', 'tel',
-  'textarea', 'checkbox', 'datetime-local', 'color',
+  'textarea', 'checkbox', 'datetime-local', 'color', 'json',
 ]
 
 function fieldToState(f: SchemaField): FieldState {
@@ -123,8 +124,8 @@ export default function FieldConfigPanel({ open, onClose, schema, onSaved }: Pro
       await api.updateFieldsMeta(schema.name, updates)
       onSaved()
       onClose()
-    } catch (err: any) {
-      setError(err.message || 'Failed to update field configuration')
+    } catch (err) {
+      setError(errorMessage(err, 'Failed to update field configuration'))
     } finally {
       setSaving(false)
     }
@@ -166,7 +167,7 @@ export default function FieldConfigPanel({ open, onClose, schema, onSaved }: Pro
                   <td className="py-1.5 px-2 font-mono text-xs text-muted-foreground">{f.column}</td>
                   <td className="py-1.5 px-2 text-xs text-muted-foreground">{f.label}</td>
                   <td className="py-1.5 px-2 text-xs text-muted-foreground">{f.html_type}</td>
-                  <td colSpan={5} className="py-1.5 px-2 text-center text-[10px] text-muted-foreground italic">
+                  <td colSpan={5} className="py-1.5 px-2 text-center text-xs text-muted-foreground italic">
                     Primary Key
                   </td>
                 </tr>

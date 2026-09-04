@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import * as api from '@/services/api'
@@ -6,6 +6,10 @@ import type { LiveFeedEntry } from '@/types'
 import { Network, Play, Pause, Trash, Database } from 'lucide-react'
 
 const MAX_FEED_ENTRIES = 200
+const RECONNECT_BASE_MS = 1000
+const RECONNECT_MAX_MS = 30000
+
+type LiveStatus = 'idle' | 'connecting' | 'live' | 'reconnecting'
 
 function formatDuration(ms: number): string {
   if (ms < 1) return `${(ms * 1000).toFixed(0)}µs`
@@ -14,18 +18,18 @@ function formatDuration(ms: number): string {
 }
 
 function getStatusColor(status: number): string {
-  if (status < 300) return 'bg-green-500/10 text-green-500 border-green-500/20'
-  if (status < 400) return 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20'
-  return 'bg-red-500/10 text-red-500 border-red-500/20'
+  if (status < 300) return 'bg-green-500/10 text-green-700 border-green-700/20 dark:text-green-400 dark:border-green-400/20'
+  if (status < 400) return 'bg-yellow-500/10 text-yellow-700 border-yellow-700/20 dark:text-yellow-400 dark:border-yellow-400/20'
+  return 'bg-red-500/10 text-red-700 border-red-700/20 dark:text-red-400 dark:border-red-400/20'
 }
 
 function getMethodColor(method: string): string {
   switch (method.toUpperCase()) {
-    case 'GET': return 'bg-blue-500/10 text-blue-500 border-blue-500/20'
-    case 'POST': return 'bg-green-500/10 text-green-500 border-green-500/20'
-    case 'PUT': return 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20'
-    case 'DELETE': return 'bg-red-500/10 text-red-500 border-red-500/20'
-    default: return 'bg-gray-500/10 text-gray-500 border-gray-500/20'
+    case 'GET': return 'bg-blue-500/10 text-blue-700 border-blue-700/20 dark:text-blue-400 dark:border-blue-400/20'
+    case 'POST': return 'bg-green-500/10 text-green-700 border-green-700/20 dark:text-green-400 dark:border-green-400/20'
+    case 'PUT': return 'bg-yellow-500/10 text-yellow-700 border-yellow-700/20 dark:text-yellow-400 dark:border-yellow-400/20'
+    case 'DELETE': return 'bg-red-500/10 text-red-700 border-red-700/20 dark:text-red-400 dark:border-red-400/20'
+    default: return 'bg-gray-500/10 text-gray-700 border-gray-700/20 dark:text-gray-400 dark:border-gray-400/20'
   }
 }
 
@@ -34,10 +38,25 @@ function shortRequestId(requestId?: string): string | null {
   return requestId.length > 8 ? requestId.slice(-8) : requestId
 }
 
+function statusLabel(status: LiveStatus, attempt: number): string {
+  switch (status) {
+    case 'live': return 'Live'
+    case 'connecting': return 'Connecting…'
+    case 'reconnecting': return `Reconnecting (attempt ${attempt})…`
+    default: return ''
+  }
+}
+
 export default function NetworkInspectorPage() {
   const [entries, setEntries] = useState<LiveFeedEntry[]>([])
-  const [isMonitoring, setIsMonitoring] = useState(false)
+  const [status, setStatus] = useState<LiveStatus>('idle')
+  const [attempt, setAttempt] = useState(0)
   const wsRef = useRef<WebSocket | null>(null)
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // The operator's intent (Start/Stop) — read inside socket callbacks so a
+  // close that the operator asked for does not trigger a reconnect.
+  const activeRef = useRef(false)
+  const attemptRef = useRef(0)
 
   const fetchSnapshot = async () => {
     try {
@@ -48,11 +67,29 @@ export default function NetworkInspectorPage() {
     }
   }
 
-  const connectWebSocket = () => {
+  const clearReconnectTimer = () => {
+    if (reconnectTimer.current) {
+      clearTimeout(reconnectTimer.current)
+      reconnectTimer.current = null
+    }
+  }
+
+  const connectWebSocket = useCallback(() => {
     const ws = api.getLiveWebSocket()
-    if (!ws) return
+    if (!ws) {
+      setStatus('idle')
+      activeRef.current = false
+      return
+    }
 
     wsRef.current = ws
+    setStatus(attemptRef.current > 0 ? 'reconnecting' : 'connecting')
+
+    ws.onopen = () => {
+      attemptRef.current = 0
+      setAttempt(0)
+      setStatus('live')
+    }
 
     // The live stream publishes typed envelopes (see liveEventEnvelope on the
     // backend): `http.request` carries the request under `request`, `db.query`
@@ -79,16 +116,43 @@ export default function NetworkInspectorPage() {
     ws.onerror = (error) => {
       console.error('WebSocket error:', error)
     }
-  }
+
+    // A close the operator did not ask for (server restart, proxy idle
+    // timeout, network blip) schedules a reconnect with exponential
+    // backoff; Stop flips activeRef first so its close ends here.
+    ws.onclose = () => {
+      if (wsRef.current === ws) wsRef.current = null
+      if (!activeRef.current) {
+        setStatus('idle')
+        return
+      }
+      attemptRef.current += 1
+      setAttempt(attemptRef.current)
+      setStatus('reconnecting')
+      const delay = Math.min(RECONNECT_BASE_MS * 2 ** (attemptRef.current - 1), RECONNECT_MAX_MS)
+      clearReconnectTimer()
+      reconnectTimer.current = setTimeout(() => {
+        reconnectTimer.current = null
+        if (activeRef.current) connectWebSocket()
+      }, delay)
+    }
+  }, [])
 
   const startMonitoring = () => {
-    setIsMonitoring(true)
+    activeRef.current = true
+    attemptRef.current = 0
+    setAttempt(0)
     connectWebSocket()
   }
 
   const stopMonitoring = () => {
-    setIsMonitoring(false)
+    activeRef.current = false
+    clearReconnectTimer()
+    attemptRef.current = 0
+    setAttempt(0)
+    setStatus('idle')
     wsRef.current?.close()
+    wsRef.current = null
   }
 
   const clearEntries = () => {
@@ -98,10 +162,14 @@ export default function NetworkInspectorPage() {
   useEffect(() => {
     fetchSnapshot()
     return () => {
+      activeRef.current = false
+      clearReconnectTimer()
       wsRef.current?.close()
+      wsRef.current = null
     }
   }, [])
 
+  const isMonitoring = status !== 'idle'
   const requestCount = entries.filter(e => e.kind === 'http').length
   const queryCount = entries.length - requestCount
 
@@ -115,6 +183,7 @@ export default function NetworkInspectorPage() {
         <div className="flex gap-2">
           {isMonitoring ? (
             <button
+              type="button"
               onClick={stopMonitoring}
               className="flex items-center gap-2 px-3 py-2 rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
             >
@@ -123,6 +192,7 @@ export default function NetworkInspectorPage() {
             </button>
           ) : (
             <button
+              type="button"
               onClick={startMonitoring}
               className="flex items-center gap-2 px-3 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
             >
@@ -131,6 +201,7 @@ export default function NetworkInspectorPage() {
             </button>
           )}
           <button
+            type="button"
             onClick={clearEntries}
             className="flex items-center gap-2 px-3 py-2 rounded-md border border-border hover:bg-accent transition-colors"
           >
@@ -145,10 +216,20 @@ export default function NetworkInspectorPage() {
           <CardTitle className="flex items-center gap-2">
             <Network className="h-5 w-5" />
             Live Feed
+            {isMonitoring && (
+              <Badge
+                variant="outline"
+                aria-live="polite"
+                className={status === 'live'
+                  ? 'text-green-700 border-green-700/20 dark:text-green-400 dark:border-green-400/20'
+                  : 'text-yellow-700 border-yellow-700/20 dark:text-yellow-400 dark:border-yellow-400/20'}
+              >
+                {statusLabel(status, attempt)}
+              </Badge>
+            )}
           </CardTitle>
           <CardDescription>
             {requestCount} requests · {queryCount} SQL statements
-            {isMonitoring && ' (Live)'}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -199,7 +280,7 @@ export default function NetworkInspectorPage() {
                   >
                     <Badge
                       variant="outline"
-                      className="bg-purple-500/10 text-purple-500 border-purple-500/20 flex items-center gap-1"
+                      className="bg-purple-500/10 text-purple-700 border-purple-700/20 dark:text-purple-400 dark:border-purple-400/20 flex items-center gap-1"
                     >
                       <Database className="h-3 w-3" />
                       SQL
@@ -216,7 +297,7 @@ export default function NetworkInspectorPage() {
                     {entry.error && (
                       <Badge
                         variant="outline"
-                        className="bg-red-500/10 text-red-500 border-red-500/20"
+                        className="bg-red-500/10 text-red-700 border-red-700/20 dark:text-red-400 dark:border-red-400/20"
                       >
                         error
                       </Badge>

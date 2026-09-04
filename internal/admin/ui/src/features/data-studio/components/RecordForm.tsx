@@ -4,6 +4,8 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import type { SchemaField, ModelSchema, Record as AppRecord } from '@/types'
+import { errorMessage } from '@/services/api'
+import { fieldToInput, inputToPayload, isJsonField, readField } from '../lib/fieldValues'
 import { Loader2 } from 'lucide-react'
 
 interface Props {
@@ -34,44 +36,33 @@ function displayFields(schema: ModelSchema): SchemaField[] {
   })
 }
 
-function readField(record: AppRecord, field: SchemaField): any {
-  if (field.column in record) return record[field.column]
-  if (field.name in record) return record[field.name]
-  const lc = field.column.toLowerCase()
-  for (const key of Object.keys(record)) {
-    if (key.toLowerCase() === lc) return record[key]
-  }
-  return undefined
-}
-
-function getFieldValue(record: AppRecord | null, field: SchemaField): string {
-  if (!record) return ''
-  const val = readField(record, field) ?? ''
-  if (val === null || val === undefined) return ''
-  if (field.html_type === 'checkbox') return val ? 'true' : 'false'
-  if (field.html_type === 'datetime-local' && typeof val === 'string' && val.length > 16) {
-    return val.slice(0, 16)
-  }
-  return String(val)
-}
+const inputClass = 'flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
 function FieldInput({
   field,
+  id,
   value,
+  json,
+  invalid,
   onChange,
 }: {
   field: SchemaField
+  id: string
   value: string
+  json: boolean
+  invalid: boolean
   onChange: (val: string) => void
 }) {
   const htmlType = field.html_type || 'text'
+  const errorId = invalid ? `${id}-error` : undefined
 
   if (field.choices && field.choices.length > 0) {
     return (
       <select
+        id={id}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className={`${inputClass} h-10`}
       >
         <option value="">— Select —</option>
         {field.choices.map((c) => (
@@ -83,13 +74,29 @@ function FieldInput({
     )
   }
 
+  if (json) {
+    return (
+      <textarea
+        id={id}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        rows={6}
+        spellCheck={false}
+        aria-invalid={invalid || undefined}
+        aria-describedby={errorId}
+        className={`${inputClass} font-mono text-xs resize-y min-h-[120px] ${invalid ? 'border-destructive' : ''}`}
+      />
+    )
+  }
+
   if (htmlType === 'textarea') {
     return (
       <textarea
+        id={id}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         rows={4}
-        className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-y min-h-[80px]"
+        className={`${inputClass} resize-y min-h-[80px]`}
       />
     )
   }
@@ -99,6 +106,7 @@ function FieldInput({
     return (
       <div className="flex items-center gap-2 h-10">
         <input
+          id={id}
           type="checkbox"
           checked={checked}
           onChange={(e) => onChange(e.target.checked ? 'true' : 'false')}
@@ -111,11 +119,15 @@ function FieldInput({
 
   return (
     <Input
+      id={id}
       type={htmlType === 'number' ? 'number' : htmlType === 'email' ? 'email' : htmlType === 'password' ? 'password' : htmlType === 'datetime-local' ? 'datetime-local' : 'text'}
+      step={htmlType === 'number' && !field.type.includes('int') ? 'any' : undefined}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       required={field.is_required}
       placeholder={field.label}
+      aria-invalid={invalid || undefined}
+      aria-describedby={errorId}
     />
   )
 }
@@ -124,49 +136,65 @@ export default function RecordForm({ open, onClose, schema, record, onSave }: Pr
   const isEdit = record !== null
   const fields = editableFields(schema, isEdit)
   const readonlyFields = displayFields(schema)
-  const [formData, setFormData] = useState<Record<string, string>>({})
+  const [formData, setFormData] = useState<{ [column: string]: string }>({})
+  const [jsonColumns, setJsonColumns] = useState<Set<string>>(new Set())
+  const [fieldErrors, setFieldErrors] = useState<{ [column: string]: string }>({})
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open) return
-    const data: Record<string, string> = {}
-    for (const f of fields) {
-      data[f.column] = getFieldValue(record, f)
+    const data: { [column: string]: string } = {}
+    const json = new Set<string>()
+    for (const f of editableFields(schema, record !== null)) {
+      data[f.column] = fieldToInput(record, f)
+      if (isJsonField(f, record ? readField(record, f) : undefined)) json.add(f.column)
     }
     setFormData(data)
+    setJsonColumns(json)
+    setFieldErrors({})
     setError(null)
   }, [open, record, schema])
 
   const updateField = (column: string, value: string) => {
     setFormData((prev) => ({ ...prev, [column]: value }))
+    if (fieldErrors[column]) {
+      setFieldErrors((prev) => {
+        const next = { ...prev }
+        delete next[column]
+        return next
+      })
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setSaving(true)
     setError(null)
 
-    try {
-      const payload: AppRecord = {}
-      for (const f of fields) {
-        const raw = formData[f.column]
-        if (raw === undefined || raw === '') {
-          if (f.html_type === 'checkbox') payload[f.column] = false
-          continue
-        }
-        if (f.html_type === 'number') {
-          payload[f.column] = f.type.includes('int') ? parseInt(raw, 10) : parseFloat(raw)
-        } else if (f.html_type === 'checkbox') {
-          payload[f.column] = raw === 'true' || raw === '1'
-        } else {
-          payload[f.column] = raw
-        }
+    const payload: AppRecord = {}
+    const errors: { [column: string]: string } = {}
+    for (const f of fields) {
+      const field = jsonColumns.has(f.column) ? { ...f, html_type: 'json' } : f
+      const result = inputToPayload(field, formData[f.column])
+      if (result.error) {
+        errors[f.column] = result.error
+        continue
       }
+      if (result.skip) continue
+      payload[f.column] = result.value
+    }
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors)
+      setError('Fix the highlighted fields before saving.')
+      return
+    }
+
+    setSaving(true)
+    try {
       await onSave(payload)
       onClose()
-    } catch (err: any) {
-      setError(err.message || 'Failed to save record')
+    } catch (err) {
+      setError(errorMessage(err, 'Failed to save record'))
     } finally {
       setSaving(false)
     }
@@ -183,37 +211,49 @@ export default function RecordForm({ open, onClose, schema, record, onSave }: Pr
             {isEdit ? 'Update the record details below.' : 'Fill in the details to create a new record.'}
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 py-2">
+        <form onSubmit={handleSubmit} className="space-y-4 py-2" noValidate>
           {isEdit && readonlyFields.length > 0 && (
             <div className="space-y-2 pb-3 border-b">
               {readonlyFields.map((f) => (
-                <div key={f.name} className="flex items-center gap-2 text-sm">
+                <div key={f.name} className="flex items-start gap-2 text-sm">
                   <span className="text-muted-foreground w-24 flex-shrink-0">{f.label}:</span>
-                  <span className="font-mono text-xs">{getFieldValue(record, f) || '—'}</span>
+                  <span className="font-mono text-xs whitespace-pre-wrap break-all">{fieldToInput(record, f) || '—'}</span>
                 </div>
               ))}
             </div>
           )}
 
-          {fields.map((f) => (
-            <div key={f.column} className="space-y-1.5">
-              <Label htmlFor={`field-${f.column}`} className="flex items-center gap-1.5">
-                {f.label}
-                {f.is_required && <span className="text-destructive text-xs">*</span>}
-                {f.is_fk && f.fk_model && (
-                  <span className="text-[10px] text-muted-foreground">FK → {f.fk_model}</span>
+          {fields.map((f) => {
+            const id = `field-${f.column}`
+            const json = jsonColumns.has(f.column)
+            const fieldError = fieldErrors[f.column]
+            return (
+              <div key={f.column} className="space-y-1.5">
+                <Label htmlFor={id} className="flex items-center gap-1.5">
+                  {f.label}
+                  {f.is_required && <span className="text-destructive text-xs" aria-hidden="true">*</span>}
+                  {json && <span className="text-xs text-muted-foreground">JSON</span>}
+                  {f.is_fk && f.fk_model && (
+                    <span className="text-xs text-muted-foreground">FK → {f.fk_model}</span>
+                  )}
+                </Label>
+                <FieldInput
+                  field={f}
+                  id={id}
+                  value={formData[f.column] ?? ''}
+                  json={json}
+                  invalid={Boolean(fieldError)}
+                  onChange={(val) => updateField(f.column, val)}
+                />
+                {fieldError && (
+                  <p id={`${id}-error`} className="text-xs text-destructive">{fieldError}</p>
                 )}
-              </Label>
-              <FieldInput
-                field={f}
-                value={formData[f.column] ?? ''}
-                onChange={(val) => updateField(f.column, val)}
-              />
-            </div>
-          ))}
+              </div>
+            )
+          })}
 
           {error && (
-            <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-sm text-destructive">
+            <div role="alert" className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-sm text-destructive">
               {error}
             </div>
           )}

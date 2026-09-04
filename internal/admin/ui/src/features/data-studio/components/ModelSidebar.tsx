@@ -129,14 +129,14 @@ export default function ModelSidebar({ models, runtime, selectedModel, selectedD
           {m.count_known && (
             <Badge 
               variant={isActive ? 'secondary' : 'outline'} 
-              className={`text-[10px] px-1 h-4 flex-shrink-0 font-normal ${isActive ? 'bg-primary-foreground/20 border-none text-primary-foreground' : 'text-muted-foreground'}`}
+              className={`text-[11px] px-1 h-4 flex-shrink-0 font-normal ${isActive ? 'bg-primary-foreground/20 border-none text-primary-foreground' : 'text-muted-foreground'}`}
             >
               {m.count === -1 ? '?' : m.count.toLocaleString()}
               {m.is_estimated && <span className="ml-0.5 opacity-60">~</span>}
             </Badge>
           )}
         </div>
-        <div className={`block text-[10px] ml-5.5 mt-0.5 ${isActive ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
+        <div className={`block text-[11px] ml-5.5 mt-0.5 ${isActive ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
           {m.table}
         </div>
       </button>
@@ -160,8 +160,8 @@ export default function ModelSidebar({ models, runtime, selectedModel, selectedD
           {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
           <Box className="h-3 w-3" />
           <span className="truncate">{label}</span>
-          {subtitle && <span className="text-[10px] opacity-60 truncate">{subtitle}</span>}
-          <Badge variant="outline" className="text-[10px] ml-auto flex-shrink-0">
+          {subtitle && <span className="text-[11px] opacity-60 truncate">{subtitle}</span>}
+          <Badge variant="outline" className="text-[11px] ml-auto flex-shrink-0">
             {items.length}
           </Badge>
         </button>
@@ -190,14 +190,15 @@ export default function ModelSidebar({ models, runtime, selectedModel, selectedD
         {(multiEngine || multiDb) && (
           <div className="space-y-3 pt-1">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+              <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
                 <Filter className="h-3 w-3" />
                 View & Filter
               </span>
               <div className="flex bg-muted/50 p-0.5 rounded-lg border">
                 <button
                   onClick={() => switchViewMode('all')}
-                  className={`px-2 py-0.5 rounded-md text-[10px] font-medium transition-all ${
+                  aria-pressed={viewMode === 'all'}
+                  className={`px-2 py-0.5 rounded-md text-[11px] font-medium transition-all ${
                     viewMode === 'all' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
@@ -206,7 +207,8 @@ export default function ModelSidebar({ models, runtime, selectedModel, selectedD
                 {multiEngine && (
                   <button
                     onClick={() => switchViewMode('engine')}
-                    className={`px-2 py-0.5 rounded-md text-[10px] font-medium transition-all ${
+                    aria-pressed={viewMode === 'engine'}
+                    className={`px-2 py-0.5 rounded-md text-[11px] font-medium transition-all ${
                       viewMode === 'engine' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
                     }`}
                   >
@@ -216,7 +218,8 @@ export default function ModelSidebar({ models, runtime, selectedModel, selectedD
                 {multiDb && (
                   <button
                     onClick={() => switchViewMode('database')}
-                    className={`px-2 py-0.5 rounded-md text-[10px] font-medium transition-all ${
+                    aria-pressed={viewMode === 'database'}
+                    className={`px-2 py-0.5 rounded-md text-[11px] font-medium transition-all ${
                       viewMode === 'database' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
                     }`}
                   >
@@ -229,14 +232,14 @@ export default function ModelSidebar({ models, runtime, selectedModel, selectedD
             <div className="grid grid-cols-1 gap-2">
               {multiEngine && runtime?.engines && (
                 <div className="space-y-1">
-                  <label className="text-[9px] font-semibold text-muted-foreground flex items-center gap-1">
+                  <span id="engine-filter-label" className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
                     <Database className="h-2.5 w-2.5" />
                     ENGINE FILTER
-                  </label>
-                  <div className="flex flex-wrap gap-1">
+                  </span>
+                  <div className="flex flex-wrap gap-1" role="group" aria-labelledby="engine-filter-label">
                     <button
                       onClick={() => setEngineFilter(null)}
-                      className={`px-2 py-0.5 rounded-full text-[10px] border transition-all ${
+                      className={`px-2 py-0.5 rounded-full text-[11px] border transition-all ${
                         !engineFilter ? 'bg-primary border-primary text-primary-foreground font-semibold' : 'bg-background hover:border-muted-foreground text-muted-foreground'
                       }`}
                     >
@@ -246,7 +249,7 @@ export default function ModelSidebar({ models, runtime, selectedModel, selectedD
                       <button
                         key={eng}
                         onClick={() => setEngineFilter(engineFilter === eng ? null : eng)}
-                        className={`px-2 py-0.5 rounded-full text-[10px] border transition-all ${
+                        className={`px-2 py-0.5 rounded-full text-[11px] border transition-all ${
                           engineFilter === eng ? 'bg-primary border-primary text-primary-foreground font-semibold' : 'bg-background hover:border-muted-foreground text-muted-foreground'
                         }`}
                       >
@@ -259,14 +262,15 @@ export default function ModelSidebar({ models, runtime, selectedModel, selectedD
 
               {multiDb && runtime?.databases && (
                 <div className="space-y-1">
-                  <label className="text-[9px] font-semibold text-muted-foreground flex items-center gap-1">
+                  <label htmlFor="db-filter" className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
                     <Box className="h-2.5 w-2.5" />
                     DATABASE FILTER
                   </label>
                   <select
+                    id="db-filter"
                     value={dbFilter ?? ''}
                     onChange={(e) => setDbFilter(e.target.value || null)}
-                    className="w-full h-8 bg-muted/30 border rounded-md px-2 text-[10px] font-medium focus:outline-none focus:ring-1 focus:ring-primary appearance-none cursor-pointer hover:bg-muted/50 transition-colors"
+                    className="w-full h-8 bg-muted/30 border rounded-md px-2 text-[11px] font-medium focus:outline-none focus:ring-1 focus:ring-primary appearance-none cursor-pointer hover:bg-muted/50 transition-colors"
                   >
                     <option value="">All Databases</option>
                     {runtime.databases
