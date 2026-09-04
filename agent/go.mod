@@ -6,7 +6,7 @@ require (
 	connectrpc.com/connect v1.19.2
 	github.com/google/uuid v1.6.0
 	github.com/jcsvwinston/nucleus v1.23.1
-	github.com/jcsvwinston/orbit/proto v0.4.2
+	github.com/jcsvwinston/orbit/proto v0.4.3
 	github.com/prometheus/client_golang v1.23.2
 	golang.org/x/net v0.57.0
 	google.golang.org/protobuf v1.36.12

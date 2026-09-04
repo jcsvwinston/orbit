@@ -17,6 +17,17 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.8.19 — 2026-09-04
+
+A pin fix, the structural kind: `agent` and `server` are cut from the same
+commit as `proto`, so at the moment they are tagged they still require the
+previous `proto`; likewise `server` for `agent`. This release moves
+`agent` to `proto/v0.4.3` and `server` to `proto/v0.4.3` and `agent/v0.6.11`,
+so `go install .../admin-server` builds with the fleet code released in
+v1.8.18 (TLS on the listeners, https-capable agent). Nothing else changes.
+
+Fleet tags cut alongside: `agent/v0.6.12`, `server/v0.10.13`.
+
 ## v1.8.18 — 2026-09-04
 
 The maturity audit of 2026-09-03, applied. Every module moves to Nucleus
