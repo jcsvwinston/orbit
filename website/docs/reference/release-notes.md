@@ -6,7 +6,7 @@ description: What changed in each Orbit release, in plain terms.
 
 # Release notes
 
-The current release is **v1.8.18**. <!-- x-release-please-version -->
+The current release is **v1.8.19**. <!-- x-release-please-version -->
 
 Every heading below is a version of the **root module**
 (`github.com/jcsvwinston/orbit`) — the one an application mounts for the
