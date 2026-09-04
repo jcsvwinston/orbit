@@ -17,6 +17,15 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.8.20 — 2026-09-04
+
+The second and last convergence cut after v1.8.18: `server` now requires
+`agent/v0.6.12`, the tag cut alongside v1.8.19. With this the internal pins
+of every module point at the latest published sibling and the set can be
+certified. Nothing else changes.
+
+Fleet tags cut alongside: `server/v0.10.14`.
+
 ## v1.8.19 — 2026-09-04
 
 A pin fix, the structural kind: `agent` and `server` are cut from the same
