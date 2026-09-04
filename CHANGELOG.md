@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.21](https://github.com/jcsvwinston/orbit/compare/v1.8.20...v1.8.21) (2026-09-04)
+
+
+### Fixed
+
+* **admin:** a data source that does not serve an alias means absence, not a 500, in the model listing ([#398](https://github.com/jcsvwinston/orbit/issues/398)) ([cc38016](https://github.com/jcsvwinston/orbit/commit/cc3801644ad9963f2b491c527cdd039d88df2ee1))
+
 ## [1.8.20](https://github.com/jcsvwinston/orbit/compare/v1.8.19...v1.8.20) (2026-09-04)
 
 
