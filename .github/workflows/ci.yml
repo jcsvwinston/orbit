@@ -166,6 +166,11 @@ jobs:
         working-directory: agent
       - run: go test ./... -count=1
         working-directory: server
+      # The integration tests that drive a real agent against the server
+      # live in their own test-only module (ADR-006) so server/ does not
+      # require agent/ by tag. Workspace-only: it is never published.
+      - run: go test ./... -count=1
+        working-directory: internal/fleettest
       - run: go test ./... -count=1
         working-directory: quarkbridge
       - run: go test ./... -count=1
@@ -219,7 +224,7 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: Data Studio CRUD against ${{ matrix.engine }}
-        working-directory: server
+        working-directory: internal/fleettest
         env:
           ORBIT_TEST_DATASTUDIO_URL: ${{ matrix.url }}
         run: go test -run 'DataStudio|Manage' -count=1 -v .

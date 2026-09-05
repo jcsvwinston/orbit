@@ -1,4 +1,4 @@
-package server_test
+package fleettest
 
 // End-to-end Data Studio integration: real admin/agent.Agent (with a
 // SQLite-backed model registry) connecting to a real admin/server,

@@ -1,4 +1,4 @@
-package server_test
+package fleettest
 
 // Regression tests for the shared bearer token on the AGENT side of the
 // wire (OR-2).

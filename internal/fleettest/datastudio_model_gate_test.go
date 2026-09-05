@@ -1,4 +1,4 @@
-package server_test
+package fleettest
 
 // AO-3 (fleet-plane audit): the fleet Data Studio executes mutations on
 // the agent's database WITHOUT the application's per-model RBAC or

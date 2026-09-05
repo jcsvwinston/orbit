@@ -16,9 +16,14 @@ go 1.26.6
 // quarkdatasource/ is the opt-in Quark implementation of the datasource
 // contract (ADR-001): it depends on Quark and on the orbit root module (the
 // contract package), keeping Quark out of the core's dependency graph.
+//
+// internal/fleettest/ is a test-only module (ADR-006): the integration tests
+// that drive a real agent against the server live there so server/ does not
+// require agent/ by tag. Never published; only resolvable through this file.
 use (
 	./
 	./agent
+	./internal/fleettest
 	./proto
 	./quarkbridge
 	./quarkdatasource
