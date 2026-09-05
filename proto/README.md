@@ -38,6 +38,10 @@ all there.
 
 ## Why version pins
 
+On the Go side the generated code builds against `connectrpc.com/connect`
+1.20 (kept current by Dependabot; a bump here is released as a `proto/`
+tag so the module's `go.mod` matches what consumers download).
+
 `buf.gen.yaml` pins `bufbuild/es:v1.10.0` and `connectrpc/es:v1.6.1`
 because the connectrpc/es buf-registry plugin has no `v2` published
 yet. The npm packages in `../ui/package.json` track the same line

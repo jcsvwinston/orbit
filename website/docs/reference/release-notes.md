@@ -17,6 +17,17 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.8.22 — 2026-09-05
+
+Releases the dependency bumps that Dependabot merged into `proto`, `agent`
+and `server` on 2026-09-04 (connect-go 1.20, modernc SQLite 1.58 and
+friends) — the suite's manifest guard refuses to certify a root whose
+module directories carry code their tags do not — and moves every module to
+Nucleus v1.23.2. No behaviour changes.
+
+Fleet tags cut alongside: `proto/v0.4.4`, `agent/v0.6.13`,
+`server/v0.10.15`, `quarkbridge/v1.8.19`.
+
 ## v1.8.21 — 2026-09-04
 
 Data Studio's model listing no longer fails when the app serves more than
