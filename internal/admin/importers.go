@@ -249,10 +249,20 @@ func (p *Panel) ExecuteImport(ctx context.Context, cfg ImportConfig, records []m
 	}
 
 	for rowIdx, record := range records {
-		// Auto-inject tenant ID
+		// An import that targets a tenant writes every row into it: a row
+		// naming another tenant fails instead of landing there, a row naming
+		// none gets the tenant stamped.
 		if mi.TenantField != "" && cfg.TenantID != "" {
-			if _, exists := record[mi.TenantField]; !exists {
+			if v, exists := record[mi.TenantField]; !exists {
 				record[mi.TenantField] = cfg.TenantID
+			} else if got, _ := canonicalID(v); got != cfg.TenantID {
+				report.Failed++
+				report.Errors = append(report.Errors, ImportError{
+					Row:     rowIdx,
+					Field:   mi.TenantField,
+					Message: fmt.Sprintf("tenant %q does not match the import's tenant %q", got, cfg.TenantID),
+				})
+				continue
 			}
 		}
 

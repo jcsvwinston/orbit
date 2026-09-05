@@ -41,8 +41,8 @@ relay.
 |---|---|---|---|
 | `migrations_path` | string | `migrations` | Directory the migrations view reads. |
 | `audit_max_size` | int | `10000` | In-memory audit-log ring size. The ring is per process and not persisted — a restart clears it (see [Audit log](./features.md#audit-log)). |
-| `multitenant_enabled` | bool | `false` | Filter records by the request's resolved tenant. |
-| `multitenant_default` | string | — | Default tenant when none is resolved. |
+| `multitenant_enabled` | bool | `false` | Confine Data Studio to the tenant the host application resolves for the request — every operation, not only the list (see [Features](./features.md#data-studio)). `?tenant=<id>` / `?tenant=all` are accepted only from a superuser or a subject granted the `tenant_switch` RBAC action, and audited as `tenant.override`. |
+| `multitenant_default` | string | — | Tenant applied when the host resolves none. |
 | `multitenant_ids` | []string | — | Known tenant IDs for the selector UI. |
 
 ## The live feed

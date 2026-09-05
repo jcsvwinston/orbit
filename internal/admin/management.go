@@ -243,6 +243,10 @@ func (p *Panel) handleExportCreate(c *router.Context) error {
 	if cfg.Format == "" {
 		cfg.Format = ExportFormatCSV
 	}
+	// A scoped request exports its own tenant, whatever the body names.
+	if scoped := p.enforcedTenantID(r); scoped != "" {
+		cfg.TenantID = scoped
+	}
 
 	result, err := p.exportModels(r.Context(), cfg)
 	if err != nil {
@@ -395,6 +399,9 @@ func (p *Panel) handleImportValidate(c *router.Context) error {
 	if p.store == nil {
 		return gferrors.BadRequest("storage not configured")
 	}
+	if scoped := p.enforcedTenantID(r); scoped != "" {
+		cfg.TenantID = scoped
+	}
 
 	// Run the shared import flow in dry-run mode: it reads the upload, parses,
 	// and validates without writing (ExecuteImport short-circuits on DryRun).
@@ -441,11 +448,11 @@ func (p *Panel) handleImportExecute(c *router.Context) error {
 		return gferrors.BadRequest("invalid JSON")
 	}
 
-	// Get tenant from context if not specified
-	if cfg.TenantID == "" {
-		if tenantCtx := tenantContextFromRequest(r); tenantCtx != nil {
-			cfg.TenantID = tenantCtx.TenantID
-		}
+	// A scoped request imports into its own tenant, whatever the body names;
+	// the body's tenant_id only counts for an unscoped request (a superuser
+	// on ?tenant=all, or no tenant resolved).
+	if scoped := p.enforcedTenantID(r); scoped != "" {
+		cfg.TenantID = scoped
 	}
 
 	report, err := p.ImportFromFile(r.Context(), key, cfg)

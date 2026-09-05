@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"reflect"
 	"sort"
-	"strconv"
 	"time"
 
 	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
@@ -228,23 +228,42 @@ func (p *Panel) Loaddata(ctx context.Context, cfg LoaddataConfig) (*ImportReport
 				data[k] = v
 			}
 
-			// Add PK to data if present
+			// The pk travels as the boundary string (ADR-001 D1): "7", 7 and
+			// a UUID are all keys, and the backend narrows them. A pk with no
+			// usable text is a failed row — it used to be dropped silently,
+			// which created the record afresh under a new key.
+			pkValue := ""
 			if rec.PK != nil {
-				pkColumn := mi.PrimaryKey
-				if pkVal, err := normalizePKValue(rec.PK); err == nil {
-					data[pkColumn] = pkVal
+				normalized, err := normalizePKValue(rec.PK)
+				if err != nil {
+					report.Failed++
+					report.Errors = append(report.Errors, ImportError{
+						Message: fmt.Sprintf("model %s: invalid pk %v: %v", modelName, rec.PK, err),
+					})
+					continue
 				}
+				data[mi.PrimaryKey] = rec.PK
+				pkValue = normalized
+			} else {
+				pkValue = extractDataPK(data, mi)
 			}
 
-			// Auto-inject tenant ID
+			// A fixture loaded into a tenant belongs to it: a record naming
+			// another tenant fails, one naming none gets the tenant stamped.
 			if mi.TenantField != "" && cfg.TenantID != "" {
-				if _, exists := data[mi.TenantField]; !exists {
+				if v, exists := data[mi.TenantField]; !exists {
 					data[mi.TenantField] = cfg.TenantID
+				} else if got, _ := canonicalID(v); got != cfg.TenantID {
+					report.Failed++
+					report.Errors = append(report.Errors, ImportError{
+						Field:   mi.TenantField,
+						Message: fmt.Sprintf("model %s pk=%s: tenant %q does not match the fixture's tenant %q", modelName, pkValue, got, cfg.TenantID),
+					})
+					continue
 				}
 			}
 
 			// Determine if record already exists
-			pkValue := extractDataPK(data, mi)
 			if pkValue == "" {
 				// No PK, just create
 				if _, err := st.Create(ctx, datasource.Record(data)); err != nil {
@@ -261,6 +280,16 @@ func (p *Panel) Loaddata(ctx context.Context, cfg LoaddataConfig) (*ImportReport
 			// Check if record exists
 			existing, err := st.Get(ctx, pkValue)
 			if err != nil {
+				// A key the backend refuses outright ("abc" on an integer
+				// key) must not fall through to a create that would drop
+				// the pk and store the row under a fresh key.
+				if isClientError(err) {
+					report.Failed++
+					report.Errors = append(report.Errors, ImportError{
+						Message: fmt.Sprintf("model %s pk=%s: %v", modelName, pkValue, err),
+					})
+					continue
+				}
 				// Record doesn't exist, create it
 				if _, err := st.Create(ctx, datasource.Record(data)); err != nil {
 					report.Failed++
@@ -319,6 +348,10 @@ func (p *Panel) handleDumpdata(c *router.Context) error {
 	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
 		return gferrors.BadRequest("invalid JSON: " + err.Error())
 	}
+	// A scoped request dumps its own tenant, whatever the body names.
+	if scoped := p.enforcedTenantID(r); scoped != "" {
+		cfg.TenantID = scoped
+	}
 
 	result, err := p.Dumpdata(r.Context(), cfg)
 	if err != nil {
@@ -375,6 +408,9 @@ func (p *Panel) handleLoaddata(c *router.Context) error {
 
 	if cfg.StorageKey == "" {
 		return gferrors.BadRequest("key is required")
+	}
+	if scoped := p.enforcedTenantID(r); scoped != "" {
+		cfg.TenantID = scoped
 	}
 
 	report, err := p.Loaddata(r.Context(), cfg)
@@ -479,36 +515,31 @@ func formatFixtureValue(v interface{}) interface{} {
 	}
 }
 
-// normalizePKValue converts a fixture PK value to uint for database operations.
-func normalizePKValue(raw interface{}) (uint, error) {
+// normalizePKValue renders a fixture pk as the boundary string every
+// RecordStore takes (ADR-001 D1) — a number, a numeric string and a UUID are
+// all keys; the backend narrows them. nil and blank values are errors.
+func normalizePKValue(raw interface{}) (string, error) {
 	if raw == nil {
-		return 0, fmt.Errorf("nil pk")
+		return "", fmt.Errorf("nil pk")
 	}
+	switch raw.(type) {
+	case map[string]interface{}, []interface{}, bool:
+		return "", fmt.Errorf("unsupported pk type: %T", raw)
+	}
+	id, ok := canonicalID(raw)
+	if !ok {
+		return "", fmt.Errorf("empty pk")
+	}
+	return id, nil
+}
 
-	switch v := raw.(type) {
-	case float64:
-		return uint(v), nil
-	case int:
-		return uint(v), nil
-	case int64:
-		return uint(v), nil
-	case uint:
-		return v, nil
-	case uint64:
-		return uint(v), nil
-	case string:
-		parsed, err := strconv.ParseUint(v, 10, 64)
-		if err != nil {
-			return 0, fmt.Errorf("invalid string pk: %v", err)
-		}
-		return uint(parsed), nil
-	case json.Number:
-		parsed, err := v.Int64()
-		if err != nil {
-			return 0, fmt.Errorf("invalid json.Number pk: %v", err)
-		}
-		return uint(parsed), nil
-	default:
-		return 0, fmt.Errorf("unsupported pk type: %T", raw)
+// isClientError reports whether err is the backend refusing the request
+// itself (a 4xx domain error other than not found), as opposed to a row that
+// does not exist or a backend failure.
+func isClientError(err error) bool {
+	var domErr *gferrors.DomainError
+	if !errors.As(err, &domErr) {
+		return false
 	}
+	return domErr.StatusCode >= 400 && domErr.StatusCode < 500 && domErr.StatusCode != http.StatusNotFound
 }

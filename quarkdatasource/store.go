@@ -2,12 +2,14 @@ package quarkdatasource
 
 import (
 	"context"
+	"encoding"
 	"encoding/json"
 	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
 
+	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
 	"github.com/jcsvwinston/quark"
 
 	"github.com/jcsvwinston/orbit/datasource"
@@ -86,7 +88,12 @@ func (s *store[T]) applyQuery(ctx context.Context, qb *quark.Query[T], q datasou
 		}
 		qb = qb.Where(col, "=", v)
 	}
-	if search := strings.TrimSpace(q.Search); search != "" && len(s.searchCols) > 0 {
+	if search := strings.TrimSpace(q.Search); search != "" {
+		// Nothing to look in: say so rather than answer every row, which
+		// reads as "no match" while showing everything.
+		if len(s.searchCols) == 0 {
+			return nil, gferrors.BadRequest(fmt.Sprintf("search is not available for %s: it has no string columns to search", s.info.Name))
+		}
 		// The search text is data, not a pattern: a `%` or `_` typed by the
 		// operator used to widen the match instead of matching itself (F13).
 		// Escaping is per engine, with the engine's default escape.
@@ -261,7 +268,14 @@ func (s *store[T]) readOnlyErr() error {
 	return fmt.Errorf("quarkdatasource: %s has no primary key (model is read-only)", s.info.Name)
 }
 
-// parseID narrows the boundary string id (D1) to the PK field's Go kind.
+var textUnmarshalerType = reflect.TypeOf((*encoding.TextUnmarshaler)(nil)).Elem()
+
+// parseID narrows the boundary string id (D1) to the PK field's Go type:
+// integers and strings by kind, and any other key type with a textual form
+// — google/uuid's UUID ([16]byte), ULIDs — through encoding.TextUnmarshaler,
+// which is also what database/sql needs for the value to round-trip. An id
+// that does not narrow is the caller's mistake and surfaces as a 400 (a
+// plain error used to reach the operator as a 500).
 func (s *store[T]) parseID(id string) (any, error) {
 	if s.info.ReadOnly {
 		return nil, s.readOnlyErr()
@@ -271,23 +285,33 @@ func (s *store[T]) parseID(id string) (any, error) {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		n, err := strconv.ParseInt(id, 10, 64)
 		if err != nil {
-			return nil, fmt.Errorf("quarkdatasource: invalid id %q for %s", id, s.info.Name)
+			return nil, s.invalidIDErr(id, "ids are integers")
 		}
 		return n, nil
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		n, err := strconv.ParseUint(id, 10, 64)
 		if err != nil {
-			return nil, fmt.Errorf("quarkdatasource: invalid id %q for %s", id, s.info.Name)
+			return nil, s.invalidIDErr(id, "ids are non-negative integers")
 		}
 		return n, nil
 	case reflect.String:
 		if id == "" {
-			return nil, fmt.Errorf("quarkdatasource: empty id for %s", s.info.Name)
+			return nil, s.invalidIDErr(id, "ids must not be empty")
 		}
 		return id, nil
-	default:
-		return nil, fmt.Errorf("quarkdatasource: unsupported primary key kind %s for %s", s.meta.PK.Kind, s.info.Name)
 	}
+	if typ := s.typ.Field(s.meta.PK.Index).Type; reflect.PointerTo(typ).Implements(textUnmarshalerType) {
+		v := reflect.New(typ)
+		if err := v.Interface().(encoding.TextUnmarshaler).UnmarshalText([]byte(id)); err != nil {
+			return nil, s.invalidIDErr(id, err.Error())
+		}
+		return v.Elem().Interface(), nil
+	}
+	return nil, fmt.Errorf("quarkdatasource: unsupported primary key kind %s for %s", s.meta.PK.Kind, s.info.Name)
+}
+
+func (s *store[T]) invalidIDErr(id, why string) error {
+	return gferrors.BadRequest(fmt.Sprintf("invalid id %q for %s: %s", id, s.info.Name, why))
 }
 
 // coerceFilterValue converts a panel filter value (always a string) to the
@@ -494,8 +518,9 @@ func toInt64(v any) (int64, bool) {
 	}
 }
 
-// assignPK writes a parsed id (int64/uint64/string from parseID) into the PK
-// struct field.
+// assignPK writes a parsed id (int64/uint64/string from parseID, or a value
+// of the PK's own type narrowed through TextUnmarshaler) into the PK struct
+// field.
 func assignPK(field reflect.Value, pk any) error {
 	switch v := pk.(type) {
 	case int64:
@@ -514,7 +539,11 @@ func assignPK(field reflect.Value, pk any) error {
 		}
 		field.SetString(v)
 	default:
-		return fmt.Errorf("quarkdatasource: unsupported pk value %T", pk)
+		rv := reflect.ValueOf(pk)
+		if !rv.IsValid() || !rv.Type().AssignableTo(field.Type()) {
+			return fmt.Errorf("quarkdatasource: unsupported pk value %T", pk)
+		}
+		field.Set(rv)
 	}
 	return nil
 }

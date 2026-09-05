@@ -3,8 +3,12 @@ package quarkdatasource
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"net/http"
 	"testing"
 
+	"github.com/google/uuid"
+	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
 	"github.com/jcsvwinston/quark"
 	// El módulo, no el driver a secas: registra el driver Y los predicados de
 	// clasificación de errores (quark ADR-0023). Con el driver suelto,
@@ -404,5 +408,114 @@ func TestStore_HonoursDatabaseAlias(t *testing.T) {
 	}
 	if _, err := named.Store("QDWidget", DefaultDatabaseAlias); err == nil {
 		t.Fatal("\"default\" is not this adapter's alias and must be refused")
+	}
+}
+
+// QDDocument is keyed by a google/uuid UUID ([16]byte, reflect.Array): a key
+// Data Studio's string ids (ADR-001 D1) must reach through
+// encoding.TextUnmarshaler, and one the store used to refuse outright as
+// "unsupported primary key kind array".
+type QDDocument struct {
+	ID    uuid.UUID `db:"id" pk:"true"`
+	Title string    `db:"title"`
+}
+
+func TestUUIDPK_CRUD(t *testing.T) {
+	client, err := quark.New("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("quark.New: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	ctx := context.Background()
+	if err := client.RegisterModel(&QDDocument{}); err != nil {
+		t.Fatalf("RegisterModel: %v", err)
+	}
+	if err := client.MigrateRegistered(ctx); err != nil {
+		t.Fatalf("MigrateRegistered: %v", err)
+	}
+	a := New(client)
+	if err := Register[QDDocument](a); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	mi, _ := a.Get("QDDocument")
+	if mi.ReadOnly {
+		t.Fatal("a uuid-keyed model is editable")
+	}
+	st, err := a.Store("QDDocument", "")
+	if err != nil {
+		t.Fatalf("Store: %v", err)
+	}
+
+	id := uuid.MustParse("0b1c2d3e-0000-4000-8000-000000000001")
+	if err := quark.For[QDDocument](ctx, client).Create(&QDDocument{ID: id, Title: "draft"}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	got, err := st.Get(ctx, id.String())
+	if err != nil {
+		t.Fatalf("Get by uuid string: %v", err)
+	}
+	if got["id"] != id.String() || got["title"] != "draft" {
+		t.Errorf("Get = %v", got)
+	}
+	// The boundary trims the id like every other one.
+	if _, err := st.Get(ctx, "  "+id.String()+" "); err != nil {
+		t.Errorf("Get with padded uuid: %v", err)
+	}
+
+	if err := st.Update(ctx, id.String(), datasource.Record{"title": "final"}); err != nil {
+		t.Fatalf("Update by uuid string: %v", err)
+	}
+	if got, _ = st.Get(ctx, id.String()); got["title"] != "final" {
+		t.Errorf("after Update: %v", got)
+	}
+
+	if err := st.Delete(ctx, id.String()); err != nil {
+		t.Fatalf("Delete by uuid string: %v", err)
+	}
+	page, err := st.List(ctx, datasource.Query{})
+	if err != nil {
+		t.Fatalf("List after delete: %v", err)
+	}
+	if len(page.Items) != 0 {
+		t.Errorf("items after delete = %d, want 0", len(page.Items))
+	}
+
+	// A malformed uuid is the caller's mistake: a 400, not a 500.
+	_, err = st.Get(ctx, "not-a-uuid")
+	assertBadRequest(t, err, "Get with a malformed uuid")
+}
+
+func assertBadRequest(t *testing.T, err error, what string) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("%s: expected an error", what)
+	}
+	var domErr *gferrors.DomainError
+	if !errors.As(err, &domErr) || domErr.StatusCode != http.StatusBadRequest {
+		t.Fatalf("%s: err = %v (%T), want a 400 domain error", what, err, err)
+	}
+}
+
+func TestInvalidID_Is400(t *testing.T) {
+	a, ctx := setup(t)
+	st, _ := a.Store("QDWidget", "")
+	_, err := st.Get(ctx, "not-a-number")
+	assertBadRequest(t, err, "Get with a non-numeric id on an int64 key")
+	err = st.Update(ctx, "", datasource.Record{"name": "x"})
+	assertBadRequest(t, err, "Update with an empty id")
+	err = st.Delete(ctx, "1.5")
+	assertBadRequest(t, err, "Delete with a fractional id")
+}
+
+func TestList_SearchWithoutStringColumnsIs400(t *testing.T) {
+	a, ctx := setup(t)
+	// QDMembership has only integer columns: nothing to search in.
+	st, _ := a.Store("QDMembership", "")
+	_, err := st.List(ctx, datasource.Query{Search: "x"})
+	assertBadRequest(t, err, "List with ?search= on a model without string columns")
+	// Without search the list still works.
+	if _, err := st.List(ctx, datasource.Query{}); err != nil {
+		t.Fatalf("List without search: %v", err)
 	}
 }

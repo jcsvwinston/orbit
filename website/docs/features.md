@@ -16,6 +16,36 @@ Browse, create, edit, and delete records for every model in the application's
 registry. It is **tenant-aware** (when multitenancy is enabled) and supports
 import/export.
 
+**Tenant scope.** With `multitenant_enabled` on, every Data Studio operation is
+confined to the tenant the host application resolves for the request (in
+Nucleus, from the subdomain or the configured header), or to
+`multitenant_default` when it resolves none. Confined means: the list and the
+CSV export only show that tenant's rows; a record of another tenant is *not
+found* by id (get, update, delete, bulk delete); a create or an update cannot
+name another tenant; exports, imports and fixtures work inside that tenant
+whatever `tenant_id` their request body carries. Models without a tenant
+column are not scoped. Looking at another tenant, or at all of them, is an
+explicit switch: `?tenant=<id>` or `?tenant=all` on the request, accepted
+only from a superuser or a subject granted the `tenant_switch` action on
+`admin:*`, and recorded in the [audit log](#audit-log) as `tenant.override`.
+Anyone else gets a 403.
+
+**Record ids.** Ids are strings everywhere the API exchanges them — record
+paths, the bulk endpoint's `ids` and `errors[].id`, the export's `?ids=`,
+fixture `pk` values — so a UUID key works like an integer one. Numbers are
+still accepted on input. An id the backend cannot narrow to the model's key
+type is a 400 on a single-record call and a per-id entry in `errors[]` on a
+bulk one.
+
+**Search.** `?search=` looks in the fields a model declares searchable: in
+Nucleus, fields tagged `admin:"search"`, listed in `ModelConfig.SearchFields`,
+or switched on in the panel's Field settings; Quark models search every
+string column. A model with no searchable field answers a search with `400`
+naming the model, rather than every row, and the grid disables its search
+box. The two backends match differently (Nucleus lower-cases both sides;
+Quark escapes `%` and `_` in the text per engine), so do not expect identical
+results across them.
+
 ![Data Studio with the Articles model selected: a sidebar listing the registered models with their record counts, and a grid showing seven article records with their real column values](./img/orbit-data-studio-light.png)
 
 What it lists comes entirely from the host application: a model appears
@@ -108,7 +138,9 @@ If you need a durable audit trail, write it at the data layer: applications
 on the Quark ORM can enable its transactional `quark_audit` log
 (`EnableAuditLog`), which survives restarts and is written in the same
 transaction as the change. The panel's ring complements it — it also covers
-panel-only actions (logins, session terminations) that never touch a model.
+panel-only actions (logins, session terminations, tenant switches recorded as
+`tenant.override` with the requested tenant as `record_id`) that never touch
+a model.
 
 ### What is recorded
 

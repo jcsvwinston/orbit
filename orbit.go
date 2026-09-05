@@ -22,15 +22,17 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/http"
+	"strings"
 
 	"github.com/jcsvwinston/orbit/datasource"
 	"github.com/jcsvwinston/orbit/internal/admin"
 	dsnucleus "github.com/jcsvwinston/orbit/internal/datasource/nucleus"
 
+	"github.com/jcsvwinston/nucleus/pkg/app"
 	"github.com/jcsvwinston/nucleus/pkg/authz"
 	"github.com/jcsvwinston/nucleus/pkg/db"
 	"github.com/jcsvwinston/nucleus/pkg/nucleus"
-	"strings"
 )
 
 // DefaultPrefix is the URL path orbit mounts under when Config.Prefix is empty.
@@ -87,9 +89,12 @@ type Config struct {
 	// handle; only the auth/bootstrap *sql.DB is redirected.
 	AuthDatabase string `yaml:"auth_database" koanf:"auth_database"`
 
-	// Multi-tenant: set these to match the host application so the admin filters
-	// records by the request's resolved tenant. Leave disabled for single-tenant
-	// apps.
+	// Multi-tenant: set these to match the host application so Data Studio is
+	// confined to the tenant the app resolves for each request (list, get,
+	// create, update, delete, bulk, exports, imports, fixtures). Only a
+	// superuser or a subject granted the tenant_switch RBAC action can look at
+	// another tenant (?tenant=<id>) or at all of them (?tenant=all), and every
+	// switch is audited. Leave disabled for single-tenant apps.
 	MultiTenantEnabled bool     `yaml:"multitenant_enabled" koanf:"multitenant_enabled"`
 	MultiTenantDefault string   `yaml:"multitenant_default" koanf:"multitenant_default"`
 	MultiTenantIDs     []string `yaml:"multitenant_ids" koanf:"multitenant_ids"`
@@ -333,6 +338,7 @@ func (m *module) start(ctx context.Context) error {
 		MultiTenantDefault:    m.cfg.MultiTenantDefault,
 		MultiTenantAutoFilter: m.cfg.MultiTenantEnabled,
 		MultiTenantIDs:        m.cfg.MultiTenantIDs,
+		TenantResolver:        resolvedTenant,
 
 		AuditEnabled:   true,
 		AuditMaxSize:   m.cfg.AuditMaxSize,
@@ -448,4 +454,17 @@ func (m *module) checkPrefixAgreement(bound Config) error {
 		return nil
 	}
 	return fmt.Errorf("orbit: modules.orbit.prefix is %q but the module is mounted at %q — the mount point is fixed when the module is built, so this key cannot move it; set the prefix in orbit.Config(...) instead, or remove it from nucleus.yml", declared, m.cfg.Prefix)
+}
+
+// resolvedTenant is the panel's TenantResolver: the tenant nucleus resolved
+// for the request (its request-scope middleware runs on every route before
+// the panel's own, so the scope is already in the context). The panel used
+// to read a context key of its own that nothing ever wrote, so the
+// "request's resolved tenant" the docs promised never reached it.
+func resolvedTenant(r *http.Request) (string, bool) {
+	if r == nil {
+		return "", false
+	}
+	tenant := strings.TrimSpace(app.TenantFromContext(r.Context()))
+	return tenant, tenant != ""
 }

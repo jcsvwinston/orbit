@@ -18,6 +18,8 @@ import ImportDialog from './ImportDialog'
 import { formatCellValue } from '../lib/fieldValues'
 import { useRecordsLoader } from '../lib/useRecordsLoader'
 import { BATCH_SIZE_OPTIONS, DEFAULT_PAGE_SIZE, FILTER_DEBOUNCE_MS } from '../lib/constants'
+import { primaryKeyColumn, recordId, toApiId, type RecordId } from '../lib/recordIds'
+import { isSearchable } from '../lib/searchable'
 import {
   Search, Plus, Pencil, Trash2, Loader2,
   Download, Upload, X, Filter, ChevronDown,
@@ -27,34 +29,6 @@ interface Props {
   modelName: string
   schema: ModelSchema
   dbAlias?: string
-}
-
-// Primary keys are whatever the driver decoded: uint ids, UUID strings,
-// composite-ish strings. The SPA never assumes a number.
-export type RecordId = string | number
-
-// primaryKeyColumn resolves the column that carries the record id: the
-// schema's declared primary key (a Go field name), else the field flagged
-// is_pk, else "id".
-export function primaryKeyColumn(schema: ModelSchema): string {
-  const declared = schema.primary_key
-    ? schema.fields.find((f) => f.name === schema.primary_key || f.column === schema.primary_key)
-    : undefined
-  return declared?.column ?? schema.fields.find((f) => f.is_pk)?.column ?? 'id'
-}
-
-function recordId(row: AppRecord, pkColumn: string): RecordId | null {
-  const v = row[pkColumn] ?? row.id
-  if (typeof v === 'number' || typeof v === 'string') return v
-  return null
-}
-
-// The bulk endpoint decodes ids as []uint, so only non-negative integers
-// (0 included) can travel through it; anything else is deleted one by one.
-export function asUintId(id: RecordId): number | null {
-  if (typeof id === 'number') return Number.isInteger(id) && id >= 0 ? id : null
-  if (/^\d+$/.test(id)) return Number(id)
-  return null
 }
 
 export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
@@ -89,6 +63,7 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
   const listFields = useMemo(() => schema.fields.filter((f) => f.is_list && !f.is_excluded), [schema])
   const filterFields = useMemo(() => schema.fields.filter((f) => f.is_filter && !f.is_excluded), [schema])
   const pkColumn = useMemo(() => primaryKeyColumn(schema), [schema])
+  const searchable = useMemo(() => isSearchable(schema), [schema])
 
   const loader = useRecordsLoader({ modelName, dbAlias, pageSize, search, filters: activeFilters, orderBy })
   const { rows, total, isEstimated, hasMore, loading, loadingMore, error, reload, loadMore } = loader
@@ -209,6 +184,7 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
+    if (!searchable) return
     setSearch(searchInput)
   }
 
@@ -226,7 +202,7 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
     if (editingRecord) {
       const id = recordId(editingRecord, pkColumn)
       if (id === null) throw new Error('Record has no primary key value')
-      await api.updateRecord(modelName, String(id), data)
+      await api.updateRecord(modelName, toApiId(id), data)
       toast({ title: 'Record updated' })
     } else {
       await api.createRecord(modelName, data)
@@ -239,7 +215,7 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
     if (deleteId === null) return
     setDeleting(true)
     try {
-      await api.deleteRecord(modelName, String(deleteId))
+      await api.deleteRecord(modelName, toApiId(deleteId))
       toast({ title: 'Record deleted' })
       setDeleteId(null)
       reload()
@@ -256,24 +232,9 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
     if (ids.length === 0) return
     setBulkDeleting(true)
     try {
-      const numeric = ids.map(asUintId)
-      let deleted = 0
-      let failed = 0
-      if (numeric.every((n) => n !== null)) {
-        const res = await api.bulkDelete(modelName, numeric as number[])
-        deleted = res.deleted
-        failed = res.failed
-      } else {
-        // Non-numeric keys cannot go through the []uint bulk endpoint.
-        for (const id of ids) {
-          try {
-            await api.deleteRecord(modelName, String(id))
-            deleted++
-          } catch {
-            failed++
-          }
-        }
-      }
+      // Every key — integer, UUID, string — goes through the bulk endpoint
+      // as a string; the backend reports per-id failures in the result.
+      const { deleted, failed } = await api.bulkDelete(modelName, ids.map(toApiId))
       toast({
         variant: failed > 0 ? 'destructive' : 'default',
         title: `Deleted ${deleted} record${deleted === 1 ? '' : 's'}${failed > 0 ? `, ${failed} failed` : ''}`,
@@ -323,7 +284,9 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" aria-hidden="true" />
           <Input
             aria-label="Search records"
-            placeholder="Search records..."
+            placeholder={searchable ? 'Search records...' : 'Search is not enabled for this model'}
+            title={searchable ? undefined : 'No field of this model is searchable. Enable is_search in Field settings.'}
+            disabled={!searchable}
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             className="pl-8 pr-8 h-9"

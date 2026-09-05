@@ -1,8 +1,12 @@
 package admin
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"math"
 	"net/url"
+	"strconv"
 	"strings"
 
 	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
@@ -152,4 +156,105 @@ func resolveOrderColumn(mi datasource.ModelInfo, key string) (string, bool) {
 		return col, true
 	}
 	return "", false
+}
+
+// canonicalID renders a record's key (or any scalar the panel compares by
+// identity, such as a tenant value) the way ids cross the API boundary: as
+// the string of ADR-001 D1. Records come out of a JSON round-trip, so an
+// integer key arrives as float64 — 3, 3.0 and "3" all become "3"; strings
+// are trimmed; anything with a textual form (uuid.UUID, json.Number) uses
+// it. It returns false for nil and for values with no usable text.
+//
+// Integer keys beyond 2^53 lose precision in the float64 round-trip before
+// they get here; that is a property of the JSON records, not of this
+// function.
+func canonicalID(v any) (string, bool) {
+	switch n := v.(type) {
+	case nil:
+		return "", false
+	case string:
+		s := strings.TrimSpace(n)
+		return s, s != ""
+	case []byte:
+		s := strings.TrimSpace(string(n))
+		return s, s != ""
+	case json.Number:
+		return n.String(), n.String() != ""
+	case float64:
+		return canonicalFloatID(n)
+	case float32:
+		return canonicalFloatID(float64(n))
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return fmt.Sprintf("%d", n), true
+	case fmt.Stringer:
+		s := strings.TrimSpace(n.String())
+		return s, s != ""
+	default:
+		s := strings.TrimSpace(fmt.Sprintf("%v", n))
+		return s, s != ""
+	}
+}
+
+func canonicalFloatID(f float64) (string, bool) {
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return "", false
+	}
+	if f == math.Trunc(f) && math.Abs(f) < (1<<63) {
+		return strconv.FormatInt(int64(f), 10), true
+	}
+	return strconv.FormatFloat(f, 'f', -1, 64), true
+}
+
+// bulkMaxIDs bounds one bulk request. The SPA selects rows from a grid page
+// of at most 200; a client sending more than this is not a grid.
+const bulkMaxIDs = 1000
+
+// decodeRecordIDs turns the ids of a bulk request into boundary strings
+// (ADR-001 D1). Each id may be a JSON string or a JSON number — the SPA
+// sends strings, older clients sent numbers — and nothing else: null,
+// objects, arrays and booleans are refused with a message naming the
+// position, instead of the "invalid JSON" a []uint decode used to answer
+// for every string id (a UUID, or even "7").
+func decodeRecordIDs(raw []json.RawMessage) ([]string, error) {
+	if len(raw) > bulkMaxIDs {
+		return nil, gferrors.BadRequest(fmt.Sprintf("too many ids: %d (max %d)", len(raw), bulkMaxIDs))
+	}
+	ids := make([]string, 0, len(raw))
+	for i, token := range raw {
+		t := bytes.TrimSpace(token)
+		switch {
+		case len(t) > 0 && t[0] == '"':
+			var s string
+			if err := json.Unmarshal(t, &s); err != nil {
+				return nil, gferrors.BadRequest(fmt.Sprintf("ids[%d]: %v", i, err))
+			}
+			s = strings.TrimSpace(s)
+			if s == "" {
+				return nil, gferrors.BadRequest(fmt.Sprintf("ids[%d] must not be empty", i))
+			}
+			ids = append(ids, s)
+		case len(t) > 0 && (t[0] == '-' || (t[0] >= '0' && t[0] <= '9')):
+			var n json.Number
+			if err := json.Unmarshal(t, &n); err != nil {
+				return nil, gferrors.BadRequest(fmt.Sprintf("ids[%d]: %v", i, err))
+			}
+			ids = append(ids, n.String())
+		default:
+			return nil, gferrors.BadRequest(fmt.Sprintf("ids[%d] must be a string or a number", i))
+		}
+	}
+	return ids, nil
+}
+
+// modelSearchable reports whether ?search= has any column to look in: a
+// field the backend marks searchable (Nucleus: admin:"search",
+// ModelConfig.SearchFields or the Field settings editor; Quark: every string
+// column) that is not excluded from the panel.
+func modelSearchable(mi datasource.ModelInfo) bool {
+	for _, f := range mi.Fields {
+		if f.IsSearch && !f.IsExcluded {
+			return true
+		}
+	}
+	return false
 }

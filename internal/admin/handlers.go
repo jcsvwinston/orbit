@@ -511,6 +511,14 @@ func (p *Panel) handleListRecords(c *router.Context) error {
 	if err != nil {
 		return err
 	}
+	// A model with nothing to search in cannot honour ?search=: the backends
+	// drop the text and answer every row, which reads as "no match found"
+	// while showing everything. Say so instead. ModelInfo is rebuilt from
+	// the live registry, so enabling is_search in Field settings lifts this
+	// without a restart.
+	if search != "" && !modelSearchable(mi) {
+		return gferrors.BadRequest(fmt.Sprintf("search is not available for %s: it has no searchable fields (tag them admin:\"search\", set ModelConfig.SearchFields, or enable is_search in Field settings)", mi.Name))
+	}
 
 	orderBy, err := dsSanitizeOrderBy(mi, r.URL.Query().Get("order_by"))
 	if err != nil {
@@ -522,15 +530,12 @@ func (p *Panel) handleListRecords(c *router.Context) error {
 		return err
 	}
 
-	// Apply tenant filtering when multi-tenant is enabled
-	if tenantCtx := tenantContextFromRequest(r); tenantCtx != nil && tenantCtx.Enabled && tenantCtx.AutoFilter {
-		tenantField := p.resolveTenantField(mi.Name)
-		if tenantField != "" && tenantCtx.TenantID != "" {
-			if filters == nil {
-				filters = make(map[string]string)
-			}
-			filters[tenantField] = tenantCtx.TenantID
+	// Confine the list to the request's tenant when multi-tenant is enabled.
+	if scope := p.requestTenantScope(r, mi); scope.Enforced() {
+		if filters == nil {
+			filters = make(map[string]string)
 		}
+		filters[scope.Column()] = scope.Tenant
 	}
 
 	if !pageSet {
@@ -580,7 +585,7 @@ func (p *Panel) handleGetRecord(c *router.Context) error {
 	if err != nil {
 		return err
 	}
-	record, err := st.Get(r.Context(), idStr)
+	record, err := scopedRecord(r.Context(), st, mi, idStr, p.requestTenantScope(r, mi))
 	if err != nil {
 		return err
 	}
@@ -624,29 +629,13 @@ func (p *Panel) handleCreateRecord(c *router.Context) error {
 		return gferrors.BadRequest("invalid JSON: " + err.Error())
 	}
 
-	// Auto-inject tenant ID on create when multi-tenant is enabled
-	if tenantCtx := tenantContextFromRequest(r); tenantCtx != nil && tenantCtx.Enabled && tenantCtx.TenantID != "" {
-		tenantField := p.resolveTenantField(mi.Name)
-		if tenantField != "" {
-			// Only inject if not already provided in payload
-			if _, exists := data[tenantField]; !exists {
-				// Also check Go field name variant
-				goFieldName := ""
-				for _, f := range mi.Fields {
-					if f.Column == tenantField {
-						goFieldName = f.Name
-						break
-					}
-				}
-				if goFieldName != "" {
-					if _, exists2 := data[goFieldName]; !exists2 {
-						data[tenantField] = tenantCtx.TenantID
-					}
-				} else {
-					data[tenantField] = tenantCtx.TenantID
-				}
-			}
+	// A scoped request creates in its own tenant: a payload naming another
+	// one is refused, a payload naming none gets the tenant stamped.
+	if scope := p.requestTenantScope(r, mi); scope.Enforced() {
+		if got, ok := scope.payloadTenant(data); ok && got != scope.Tenant {
+			return tenantChangeError(scope, got)
 		}
+		scope.inject(data)
 	}
 
 	created, err := st.Create(r.Context(), datasource.Record(data))
@@ -701,6 +690,16 @@ func (p *Panel) handleUpdateRecord(c *router.Context) error {
 	if err != nil {
 		return err
 	}
+	// A scoped request only reaches rows of its tenant (another tenant's
+	// row is not found) and cannot move a row to another tenant.
+	if scope := p.requestTenantScope(r, mi); scope.Enforced() {
+		if _, err := scopedRecord(r.Context(), st, mi, idStr, scope); err != nil {
+			return err
+		}
+		if got, ok := scope.payloadTenant(updates); ok && got != scope.Tenant {
+			return tenantChangeError(scope, got)
+		}
+	}
 	// The row before and after the change go into the audit entry. A
 	// failed read leaves that side nil but never turns a valid write into
 	// an error: the update is the operation, the snapshot is its record.
@@ -752,6 +751,11 @@ func (p *Panel) handleDeleteRecord(c *router.Context) error {
 	if err != nil {
 		return err
 	}
+	if scope := p.requestTenantScope(r, mi); scope.Enforced() {
+		if _, err := scopedRecord(r.Context(), st, mi, idStr, scope); err != nil {
+			return err
+		}
+	}
 	before := auditRecordSnapshot(r, st, idStr)
 	if err := st.Delete(r.Context(), idStr); err != nil {
 		return err
@@ -775,12 +779,19 @@ func (p *Panel) handleBulkAction(c *router.Context) error {
 		return gferrors.NotFound("model", name)
 	}
 
+	// Ids are strings at the boundary (ADR-001 D1): a UUID key is as valid
+	// as an integer one, so the request carries them as raw JSON tokens
+	// and decodeRecordIDs accepts strings and numbers alike.
 	var req struct {
-		Action string `json:"action"`
-		IDs    []uint `json:"ids"`
+		Action string            `json:"action"`
+		IDs    []json.RawMessage `json:"ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		return gferrors.BadRequest("invalid JSON")
+	}
+	ids, err := decodeRecordIDs(req.IDs)
+	if err != nil {
+		return err
 	}
 
 	databaseAlias, err := p.requestDatabaseAlias(r)
@@ -803,7 +814,7 @@ func (p *Panel) handleBulkAction(c *router.Context) error {
 		if mi.ReadOnly {
 			return gferrors.Forbidden("model is read-only")
 		}
-		if len(req.IDs) == 0 {
+		if len(ids) == 0 {
 			return gferrors.BadRequest("ids are required for delete action")
 		}
 		st, err := p.src.Store(mi.Name, databaseAlias)
@@ -812,27 +823,36 @@ func (p *Panel) handleBulkAction(c *router.Context) error {
 		}
 
 		type bulkDeleteError struct {
-			ID    uint   `json:"id"`
+			ID    string `json:"id"`
 			Error string `json:"error"`
 		}
 
+		// An id the backend cannot narrow ("abc" on an integer key) or a row
+		// of another tenant is a per-id failure in errors[], not a failed
+		// request: that is the bulk contract the SPA reports from.
+		scope := p.requestTenantScope(r, mi)
 		deleted := 0
 		failures := make([]bulkDeleteError, 0)
-		deletedIDs := make([]string, 0, len(req.IDs))
-		for _, id := range req.IDs {
-			idStr := strconv.FormatUint(uint64(id), 10)
+		deletedIDs := make([]string, 0, len(ids))
+		for _, id := range ids {
+			if scope.Enforced() {
+				if _, err := scopedRecord(r.Context(), st, mi, id, scope); err != nil {
+					failures = append(failures, bulkDeleteError{ID: id, Error: err.Error()})
+					continue
+				}
+			}
 			// Each row that goes is audited as its own delete, with the
 			// values it had, so "who removed record N" has the same answer
 			// whether N went alone or in a batch.
-			before := auditRecordSnapshot(r, st, idStr)
-			deleteErr := st.Delete(r.Context(), idStr)
+			before := auditRecordSnapshot(r, st, id)
+			deleteErr := st.Delete(r.Context(), id)
 			if deleteErr == nil {
 				deleted++
-				deletedIDs = append(deletedIDs, idStr)
+				deletedIDs = append(deletedIDs, id)
 				p.recordAuditEntry(r, AuditEntry{
 					Action:    "delete",
 					ModelName: mi.Name,
-					RecordID:  idStr,
+					RecordID:  id,
 					OldValue:  auditValues(mi, before),
 				})
 				continue
@@ -846,7 +866,7 @@ func (p *Panel) handleBulkAction(c *router.Context) error {
 			Action:    "bulk_delete",
 			ModelName: mi.Name,
 			NewValue: map[string]any{
-				"requested": len(req.IDs),
+				"requested": len(ids),
 				"deleted":   deleted,
 				"failed":    len(failures),
 				"ids":       deletedIDs,
@@ -854,7 +874,7 @@ func (p *Panel) handleBulkAction(c *router.Context) error {
 		})
 		return c.JSON(http.StatusOK, map[string]interface{}{
 			"action":    "delete",
-			"requested": len(req.IDs),
+			"requested": len(ids),
 			"deleted":   deleted,
 			"failed":    len(failures),
 			"errors":    failures,
@@ -864,21 +884,28 @@ func (p *Panel) handleBulkAction(c *router.Context) error {
 		if err := p.authorizeAction(c, mi.Name, "bulk_export"); err != nil {
 			return err
 		}
-		if len(req.IDs) == 0 {
+		if len(ids) == 0 {
 			return gferrors.BadRequest("ids are required for export action")
+		}
+		// The export URL carries the selection as a comma-separated ?ids=
+		// list, so a key containing a comma cannot be expressed in it.
+		for i, id := range ids {
+			if strings.Contains(id, ",") {
+				return gferrors.BadRequest(fmt.Sprintf("ids[%d] contains a comma and cannot be selected for export", i))
+			}
 		}
 		p.recordAuditEntry(r, AuditEntry{
 			Action:    "bulk_export",
 			ModelName: mi.Name,
 			NewValue: map[string]any{
-				"count":    len(req.IDs),
-				"ids":      req.IDs,
+				"count":    len(ids),
+				"ids":      ids,
 				"database": databaseAlias,
 			},
 		})
 		return c.JSON(http.StatusOK, map[string]interface{}{
-			"export_url": buildBulkExportURL(r.URL.Path, req.IDs, databaseAlias),
-			"ids":        req.IDs,
+			"export_url": buildBulkExportURL(r.URL.Path, ids, databaseAlias),
+			"ids":        ids,
 		})
 
 	default:
@@ -1039,19 +1066,14 @@ func runtimeColumn(col string) string {
 	return col
 }
 
-func buildBulkExportURL(currentPath string, ids []uint, databaseAlias string) string {
+func buildBulkExportURL(currentPath string, ids []string, databaseAlias string) string {
 	base := strings.TrimSuffix(currentPath, "/bulk")
 	if base == currentPath {
 		base = strings.TrimSuffix(currentPath, "/")
 	}
 
-	parts := make([]string, 0, len(ids))
-	for _, id := range ids {
-		parts = append(parts, strconv.FormatUint(uint64(id), 10))
-	}
-
 	q := url.Values{}
-	q.Set("ids", strings.Join(parts, ","))
+	q.Set("ids", strings.Join(ids, ","))
 	if alias := strings.TrimSpace(databaseAlias); alias != "" {
 		q.Set("db", alias)
 	}
