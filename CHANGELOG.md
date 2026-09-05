@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.9.1](https://github.com/jcsvwinston/orbit/compare/v1.9.0...v1.9.1) (2026-09-05)
+
+
+### Fixed
+
+* **admin:** audit every mutating route with before/after values and bound the per-request admin lookup ([#429](https://github.com/jcsvwinston/orbit/issues/429)) ([2487105](https://github.com/jcsvwinston/orbit/commit/2487105f2207e0e293cde094099237ad7f2c883d))
+* **fleet:** cap live streams per operator, coalesce the aggregate push, share the node matcher, bound agent commands, count real reconnects, normalise CPU, pin CSP to the host ([#427](https://github.com/jcsvwinston/orbit/issues/427)) ([6016a75](https://github.com/jcsvwinston/orbit/commit/6016a75b4ac171cd8ae2b6ee229a1a6c3bb9a5d3))
+
 ## [1.9.0](https://github.com/jcsvwinston/orbit/compare/v1.8.25...v1.9.0) (2026-09-05)
 
 
