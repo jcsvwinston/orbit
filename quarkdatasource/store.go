@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -383,26 +384,46 @@ func (s *store[T]) entityToRecord(entity any) (datasource.Record, error) {
 
 // recordToEntity builds a *T from a Record via the inverse JSON round-trip,
 // after dropping PK and read-only (version) fields — the database owns those.
-// Schema keys (column or Go name) are re-keyed to the struct's JSON key first:
-// json.Unmarshal alone never matches a multi-word column ("customer_id") to
-// its Go field (CustomerID), which silently dropped those values (PR-DS-01,
-// write path). Unknown keys pass through for json.Unmarshal to resolve.
+// Schema keys (column, Go name or the struct's JSON key) are re-keyed to the
+// JSON key first: json.Unmarshal alone never matches a multi-word column
+// ("customer_id") to its Go field (CustomerID), which silently dropped those
+// values (PR-DS-01, write path). Unknown keys pass through for
+// json.Unmarshal to resolve.
+//
+// A field named more than once — under its column and its JSON key, or
+// under two letter cases json.Unmarshal folds together — is refused (400)
+// instead of resolved by map order: a caller that stamps one key (the
+// panel's tenant) must not be outvoted by another it does not know. Keys
+// are visited sorted so the key reported is deterministic.
 func (s *store[T]) recordToEntity(rec datasource.Record) (*T, error) {
 	clean := make(map[string]any, len(rec))
-	for k, v := range rec {
-		if fi, ok := s.info.Field(k); ok {
+	origin := make(map[string]string, len(rec)) // folded object key -> record key
+	keys := make([]string, 0, len(rec))
+	for k := range rec {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		key := k
+		if fi, ok := s.fieldForInput(k); ok {
 			if fi.IsPK || fi.IsReadOnly {
 				continue
 			}
-			if key, ok := s.jsonKeyByCol[fi.Column]; ok {
-				clean[key] = v
+			jsonKey, ok := s.jsonKeyByCol[fi.Column]
+			if !ok {
+				// A schema field excluded from JSON (json:"-") is not
+				// settable through the record: dropping it mirrors what
+				// json.Unmarshal would do anyway.
+				continue
 			}
-			// A schema field excluded from JSON (json:"-") is not settable
-			// through the record: dropping it mirrors what json.Unmarshal
-			// would do anyway.
-			continue
+			key = jsonKey
 		}
-		clean[k] = v
+		folded := strings.ToLower(key)
+		if first, dup := origin[folded]; dup {
+			return nil, gferrors.BadRequest(fmt.Sprintf("invalid record for %s: %q names the same field as %q", s.info.Name, k, first))
+		}
+		origin[folded] = k
+		clean[key] = rec[k]
 	}
 	data, err := json.Marshal(clean)
 	if err != nil {
@@ -415,20 +436,50 @@ func (s *store[T]) recordToEntity(rec datasource.Record) (*T, error) {
 	return entity, nil
 }
 
+// fieldForInput resolves a record key to its schema field: by column or Go
+// name (ModelInfo.Field), or by the JSON key the struct field marshals under
+// — which json.Unmarshal matched anyway, in any letter case, when the key
+// passed through unresolved.
+func (s *store[T]) fieldForInput(key string) (datasource.FieldInfo, bool) {
+	if fi, ok := s.info.Field(key); ok {
+		return fi, true
+	}
+	for _, fk := range s.fieldKeys {
+		if strings.EqualFold(key, fk.jsonKey) {
+			return s.info.Field(fk.column)
+		}
+	}
+	return datasource.FieldInfo{}, false
+}
+
 // recordToColumnMap resolves record keys (column or Go field name) to column
-// names and coerces JSON values to the column's Go type, for UpdateMap.
+// names and coerces JSON values to the column's Go type, for UpdateMap. A
+// JSON-key alias is not resolved here, on purpose: the panel's tenant guard
+// knows a Quark field by column and Go name only, so an update that honoured
+// a key the guard cannot see could move a row. A column named twice is
+// refused rather than resolved by map order.
 func (s *store[T]) recordToColumnMap(rec datasource.Record) (map[string]any, error) {
 	out := make(map[string]any, len(rec))
-	for k, v := range rec {
+	origin := make(map[string]string, len(rec)) // column -> first record key naming it
+	keys := make([]string, 0, len(rec))
+	for k := range rec {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
 		fi, ok := s.info.Field(k)
 		if !ok || fi.IsPK || fi.IsReadOnly {
 			continue
 		}
+		if first, dup := origin[fi.Column]; dup {
+			return nil, gferrors.BadRequest(fmt.Sprintf("invalid record for %s: %q names the same field as %q", s.info.Name, k, first))
+		}
+		origin[fi.Column] = k
 		fm, ok := s.meta.FieldByCol[strings.ToLower(fi.Column)]
 		if !ok {
 			continue
 		}
-		cv, err := coerceJSONValue(v, fm.Kind)
+		cv, err := coerceJSONValue(rec[k], fm.Kind)
 		if err != nil {
 			return nil, fmt.Errorf("quarkdatasource: invalid value for %s: %w", k, err)
 		}

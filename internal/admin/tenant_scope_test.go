@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -25,6 +26,7 @@ import (
 	"time"
 
 	"github.com/jcsvwinston/nucleus/pkg/auth"
+	"github.com/jcsvwinston/nucleus/pkg/authz"
 	"github.com/jcsvwinston/nucleus/pkg/db"
 	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/observe"
@@ -52,6 +54,18 @@ type ScopedCode struct {
 
 func (ScopedCode) TableName() string { return "scoped_codes" }
 
+// CamelNote is a tenant-scoped model whose tenant field marshals under a
+// json tag that is neither the column nor the Go name. The Nucleus adapter
+// keys its records by that tag and accepts it on input, so the guard has to
+// know it too.
+type CamelNote struct {
+	model.BaseModel
+	TenantID string `db:"column:tenant_id;required" json:"org" admin:"list,filter"`
+	Title    string `db:"column:title;required" json:"title" admin:"list,search"`
+}
+
+func (CamelNote) TableName() string { return "camel_notes" }
+
 // Gadget declares no searchable field (OR-43).
 type Gadget struct {
 	model.BaseModel
@@ -73,6 +87,12 @@ CREATE TABLE IF NOT EXISTS scoped_codes (
 	created_at DATETIME, updated_at DATETIME, deleted_at DATETIME,
 	tenant_id TEXT NOT NULL,
 	code TEXT NOT NULL UNIQUE
+);
+CREATE TABLE IF NOT EXISTS camel_notes (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	created_at DATETIME, updated_at DATETIME, deleted_at DATETIME,
+	tenant_id TEXT NOT NULL,
+	title TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS gadgets (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -107,7 +127,7 @@ func setupPanelWithModels(t *testing.T, adminAuth AdminAuth) (*Panel, *sql.DB, f
 	}
 
 	registry := model.NewRegistry()
-	for _, m := range []any{&AdminUser{}, &ScopedNote{}, &ScopedCode{}, &Gadget{}} {
+	for _, m := range []any{&AdminUser{}, &ScopedNote{}, &ScopedCode{}, &CamelNote{}, &Gadget{}} {
 		if err := registry.Register(m); err != nil {
 			t.Fatalf("registry.Register failed: %v", err)
 		}
@@ -139,7 +159,8 @@ func setupPanelWithModels(t *testing.T, adminAuth AdminAuth) (*Panel, *sql.DB, f
 
 // scopedPanel is a multi-tenant panel whose host resolves every request to
 // "acme", seeded with one acme note (id 1) and one globex note (id 2), and
-// one code per tenant (A-1 id 1, G-1 id 2).
+// one code per tenant (A-1 id 1, G-1 id 2) and one camel note per tenant
+// (acme id 1, globex id 2).
 func scopedPanel(t *testing.T, adminAuth AdminAuth) (*Panel, *sql.DB, *httptest.Server) {
 	t.Helper()
 	panel, sqlDB, cleanup := setupPanelWithModels(t, adminAuth)
@@ -159,6 +180,11 @@ func scopedPanel(t *testing.T, adminAuth AdminAuth) (*Panel, *sql.DB, *httptest.
 			t.Fatal(err)
 		}
 	}
+	for _, row := range [][2]string{{"acme", "Acme camel"}, {"globex", "Globex camel"}} {
+		if _, err := sqlDB.Exec(`INSERT INTO camel_notes (tenant_id, title, created_at, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, row[0], row[1]); err != nil {
+			t.Fatal(err)
+		}
+	}
 	srv := httptest.NewServer(panel.Handler())
 	t.Cleanup(srv.Close)
 	return panel, sqlDB, srv
@@ -166,8 +192,14 @@ func scopedPanel(t *testing.T, adminAuth AdminAuth) (*Panel, *sql.DB, *httptest.
 
 func noteCount(t *testing.T, sqlDB *sql.DB, tenant string) int {
 	t.Helper()
+	return tenantRows(t, sqlDB, "scoped_notes", tenant)
+}
+
+// tenantRows counts the live rows of table that belong to tenant.
+func tenantRows(t *testing.T, sqlDB *sql.DB, table, tenant string) int {
+	t.Helper()
 	var n int
-	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM scoped_notes WHERE tenant_id = ? AND deleted_at IS NULL`, tenant).Scan(&n); err != nil {
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM `+table+` WHERE tenant_id = ? AND deleted_at IS NULL`, tenant).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	return n
@@ -824,5 +856,177 @@ func TestTenantScope_OpenPostureSwitchDoesNotPanic(t *testing.T) {
 	panel.config.TenantResolver = func(*http.Request) (string, bool) { return "", false }
 	if resp, status := doJSON(t, http.MethodGet, srv.URL+"/api/models/ScopedNote", nil); status != http.StatusOK {
 		t.Fatalf("open posture without a tenant: status %d body=%s", status, mustJSON(resp))
+	}
+}
+
+// camelRow reads one camel note's tenant and title.
+func camelRow(t *testing.T, sqlDB *sql.DB, id int) (tenant, title string) {
+	t.Helper()
+	if err := sqlDB.QueryRow(`SELECT tenant_id, title FROM camel_notes WHERE id = ? AND deleted_at IS NULL`, id).Scan(&tenant, &title); err != nil {
+		t.Fatal(err)
+	}
+	return tenant, title
+}
+
+func TestTenantScope_JSONTaggedTenantFieldIsGuardedAndReadable(t *testing.T) {
+	panel, sqlDB, srv := scopedPanel(t, operatorAuth())
+	base := srv.URL + "/api/models/CamelNote"
+
+	// The Nucleus adapter keys records by the field's json tag and accepts
+	// that tag on input. The guard resolved only the column and the Go
+	// name, so {"org": "globex"} created the row in globex (201, map order
+	// deciding between the smuggled key and the stamp), and the tenant read
+	// found no value in the operator's own records: every own row was 404.
+	for _, key := range []string{"org", "ORG", "Org"} {
+		resp, status := doJSON(t, http.MethodPost, base, map[string]any{key: "globex", "title": "smuggled"})
+		if status != http.StatusBadRequest {
+			t.Errorf("POST %s=globex: status %d body=%s, want 400", key, status, mustJSON(resp))
+		}
+		resp, status = doJSON(t, http.MethodPut, base+"/1", map[string]any{key: "globex"})
+		if status != http.StatusBadRequest {
+			t.Errorf("PUT %s=globex: status %d body=%s, want 400", key, status, mustJSON(resp))
+		}
+	}
+	// Naming the field under the json key and the column at once is
+	// ambiguous even when both agree.
+	resp, status := doJSON(t, http.MethodPost, base, map[string]any{"org": "acme", "tenant_id": "acme", "title": "twice"})
+	if status != http.StatusBadRequest {
+		t.Errorf("POST org+tenant_id: status %d body=%s, want 400", status, mustJSON(resp))
+	}
+	resp, status = doJSON(t, http.MethodPut, base+"/1", map[string]any{"org": "acme", "TenantID": "acme"})
+	if status != http.StatusBadRequest {
+		t.Errorf("PUT org+TenantID: status %d body=%s, want 400", status, mustJSON(resp))
+	}
+
+	// Loaddata and import: same key, same guard.
+	store := panel.store.(*keyedStore)
+	store.objects["_tmp/fixture_json_tag.json"] = fixtureJSON(t,
+		map[string]any{"model": "CamelNote", "fields": map[string]any{"org": "globex", "title": "smuggled"}},
+	)
+	resp, status = doJSON(t, http.MethodPost, srv.URL+"/api/fixtures/loaddata", map[string]any{"key": "_tmp/fixture_json_tag.json"})
+	if status != http.StatusOK || int(resp["failed"].(float64)) != 1 || int(resp["imported"].(float64)) != 0 {
+		t.Fatalf("loaddata org=globex: status %d report=%s, want the row failed", status, mustJSON(resp))
+	}
+	report, err := panel.ExecuteImport(context.Background(), ImportConfig{Model: "CamelNote", TenantID: "acme", OnConflict: "skip"},
+		[]map[string]interface{}{{"org": "globex", "title": "smuggled"}})
+	if err != nil || report.Failed != 1 || report.Imported != 0 {
+		t.Fatalf("ExecuteImport org=globex: err=%v report=%+v, want the row failed", err, report)
+	}
+
+	if g, a := tenantRows(t, sqlDB, "camel_notes", "globex"), tenantRows(t, sqlDB, "camel_notes", "acme"); g != 1 || a != 1 {
+		t.Fatalf("rows: globex=%d acme=%d, want 1/1 untouched", g, a)
+	}
+	if tenant, _ := camelRow(t, sqlDB, 1); tenant != "acme" {
+		t.Fatalf("row 1 tenant = %q, want acme", tenant)
+	}
+
+	// The operator's own row is reachable under the json key the records
+	// carry; the other tenant's row stays not found.
+	resp, status = doJSON(t, http.MethodGet, base+"/1", nil)
+	if status != http.StatusOK || resp["org"] != "acme" {
+		t.Fatalf("GET own row: status %d body=%s, want 200 with org=acme", status, mustJSON(resp))
+	}
+	resp, status = doJSON(t, http.MethodGet, base+"/2", nil)
+	if status != http.StatusNotFound {
+		t.Fatalf("GET other tenant's row: status %d body=%s, want 404", status, mustJSON(resp))
+	}
+	resp, status = doJSON(t, http.MethodPut, base+"/1", map[string]any{"title": "renamed"})
+	if status != http.StatusOK {
+		t.Fatalf("PUT own row: status %d body=%s", status, mustJSON(resp))
+	}
+	if tenant, title := camelRow(t, sqlDB, 1); tenant != "acme" || title != "renamed" {
+		t.Fatalf("row 1 = (%q, %q), want (acme, renamed)", tenant, title)
+	}
+	// Naming the own tenant under the json key is not a change.
+	resp, status = doJSON(t, http.MethodPut, base+"/1", map[string]any{"org": "acme", "title": "kept"})
+	if status != http.StatusOK {
+		t.Fatalf("PUT org=acme: status %d body=%s", status, mustJSON(resp))
+	}
+	resp, status = doJSON(t, http.MethodPost, base, map[string]any{"org": "acme", "title": "mine"})
+	if status != http.StatusCreated || resp["org"] != "acme" {
+		t.Fatalf("POST org=acme: status %d body=%s, want 201 in acme", status, mustJSON(resp))
+	}
+	resp, status = doJSON(t, http.MethodPost, base, map[string]any{"title": "stamped"})
+	if status != http.StatusCreated || resp["org"] != "acme" {
+		t.Fatalf("POST without tenant: status %d body=%s, want 201 stamped acme", status, mustJSON(resp))
+	}
+	resp, status = doJSON(t, http.MethodDelete, base+"/1", nil)
+	if status != http.StatusOK {
+		t.Fatalf("DELETE own row: status %d body=%s", status, mustJSON(resp))
+	}
+	resp, status = doJSON(t, http.MethodDelete, base+"/2", nil)
+	if status != http.StatusNotFound {
+		t.Fatalf("DELETE other tenant's row: status %d body=%s, want 404", status, mustJSON(resp))
+	}
+	if g, a := tenantRows(t, sqlDB, "camel_notes", "globex"), tenantRows(t, sqlDB, "camel_notes", "acme"); g != 1 || a != 2 {
+		t.Fatalf("rows after: globex=%d acme=%d, want 1/2", g, a)
+	}
+}
+
+func TestTenantScope_RBACTenantSwitchGrant(t *testing.T) {
+	panel, _, srv := scopedPanel(t, operatorAuth())
+	enforcer := func(policies ...[3]string) *authz.Enforcer {
+		t.Helper()
+		enf, err := authz.New(slog.Default())
+		if err != nil {
+			t.Fatalf("authz.New: %v", err)
+		}
+		for _, pol := range policies {
+			if err := enf.AddPolicy(pol[0], pol[1], pol[2]); err != nil {
+				t.Fatalf("AddPolicy %v: %v", pol, err)
+			}
+		}
+		return enf
+	}
+	listAndAudit := [][3]string{{"admin", "admin:ScopedNote", "list"}, {"admin", "admin:*", "audit_view"}}
+
+	// The operator's role may list the model but holds no tenant_switch:
+	// the switch is refused and nothing is audited.
+	panel.rbac = enforcer(listAndAudit...)
+	resp, status := doJSON(t, http.MethodGet, srv.URL+"/api/models/ScopedNote?tenant=globex", nil)
+	if status != http.StatusForbidden {
+		t.Fatalf("without tenant_switch: status %d body=%s, want 403", status, mustJSON(resp))
+	}
+	if auditActions(t, srv, "tenant.override") != 0 {
+		t.Fatal("a refused switch must not be audited")
+	}
+
+	// An explicit tenant_switch grant on admin:* opens the gate for the
+	// role, and every switch is audited under the operator's name.
+	panel.rbac = enforcer(append(listAndAudit, [3]string{"admin", "admin:*", tenantSwitchAction})...)
+	resp, status = doJSON(t, http.MethodGet, srv.URL+"/api/models/ScopedNote?tenant=globex", nil)
+	if status != http.StatusOK {
+		t.Fatalf("with tenant_switch: status %d body=%s", status, mustJSON(resp))
+	}
+	if items, _ := resp["items"].([]interface{}); len(items) != 1 || items[0].(map[string]interface{})["tenant_id"] != "globex" {
+		t.Fatalf("with tenant_switch items = %v, want the globex row", resp["items"])
+	}
+	resp, status = doJSON(t, http.MethodGet, srv.URL+"/api/models/ScopedNote?tenant=all", nil)
+	if status != http.StatusOK {
+		t.Fatalf("with tenant_switch ?tenant=all: status %d body=%s", status, mustJSON(resp))
+	}
+	if items, _ := resp["items"].([]interface{}); len(items) != 2 {
+		t.Fatalf("with tenant_switch ?tenant=all items = %v, want both rows", resp["items"])
+	}
+	resp, status = doJSON(t, http.MethodGet, srv.URL+"/api/audit?action=tenant.override", nil)
+	if status != http.StatusOK {
+		t.Fatal(status)
+	}
+	entries, _ := resp["entries"].([]interface{})
+	if len(entries) != 2 {
+		t.Fatalf("audit entries = %v, want one tenant.override per switch", resp["entries"])
+	}
+	for _, e := range entries {
+		if entry := e.(map[string]interface{}); entry["username"] != "operator" {
+			t.Errorf("override entry must name the operator, got %v", entry)
+		}
+	}
+
+	// A wildcard-action grant on admin:* includes tenant_switch — the
+	// casbin matcher accepts p.act == "*" — which the docs state.
+	panel.rbac = enforcer([3]string{"admin", "admin:*", "*"})
+	resp, status = doJSON(t, http.MethodGet, srv.URL+"/api/models/ScopedNote?tenant=globex", nil)
+	if status != http.StatusOK {
+		t.Fatalf("wildcard grant: status %d body=%s, want 200", status, mustJSON(resp))
 	}
 }

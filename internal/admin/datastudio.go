@@ -23,15 +23,42 @@ import (
 // key the backend used (storage column or Go name — the same lookup the SPA's
 // readField performs).
 func recordValue(rec datasource.Record, f datasource.FieldInfo) (any, bool) {
-	for _, key := range []string{f.Column, runtimeColumn(f.Column), f.Name} {
-		if key == "" {
-			continue
-		}
+	return recordValueByKeys(rec, fieldKeys(f))
+}
+
+// recordValueByKeys reads the first of keys present in rec.
+func recordValueByKeys(rec datasource.Record, keys []string) (any, bool) {
+	for _, key := range keys {
 		if v, ok := rec[key]; ok {
 			return v, true
 		}
 	}
 	return nil, false
+}
+
+// fieldKeys lists the keys a backend emits or accepts for field f — its
+// storage column, runtime column and Go name — plus extra ones the caller
+// knows (the json key of a Nucleus model). Empty and repeated entries are
+// dropped; order is lookup precedence.
+func fieldKeys(f datasource.FieldInfo, extra ...string) []string {
+	candidates := append([]string{f.Column, runtimeColumn(f.Column), f.Name}, extra...)
+	keys := make([]string, 0, len(candidates))
+	for _, c := range candidates {
+		if c == "" {
+			continue
+		}
+		seen := false
+		for _, k := range keys {
+			if k == c {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			keys = append(keys, c)
+		}
+	}
+	return keys
 }
 
 // dsResolveField finds the field whose runtime column, storage column, or Go

@@ -248,7 +248,7 @@ func (p *Panel) ExecuteImport(ctx context.Context, cfg ImportConfig, records []m
 		return report, nil
 	}
 
-	scope := importTenantScope(mi, cfg.TenantID)
+	scope := p.importTenantScope(mi, cfg.TenantID)
 	for rowIdx, record := range records {
 		// An import that targets a tenant writes every row into it: a row
 		// naming another tenant (under any spelling of the column) fails

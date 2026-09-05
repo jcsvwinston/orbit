@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -518,4 +519,116 @@ func TestList_SearchWithoutStringColumnsIs400(t *testing.T) {
 	if _, err := st.List(ctx, datasource.Query{}); err != nil {
 		t.Fatalf("List without search: %v", err)
 	}
+}
+
+// QDTenantNote is a tenant-scoped model whose tenant field marshals under a
+// json tag that is neither the column nor the Go name.
+type QDTenantNote struct {
+	ID       int64  `db:"id" pk:"true"`
+	TenantID string `db:"tenant_id" quark:"not_null" json:"org"`
+	Title    string `db:"title"`
+}
+
+func setupTenantNotes(t *testing.T) (datasource.RecordStore, context.Context) {
+	t.Helper()
+	client, err := quark.New("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("quark.New: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	ctx := context.Background()
+	if err := client.RegisterModel(&QDTenantNote{}); err != nil {
+		t.Fatalf("RegisterModel: %v", err)
+	}
+	if err := client.MigrateRegistered(ctx); err != nil {
+		t.Fatalf("MigrateRegistered: %v", err)
+	}
+	a := New(client)
+	if err := Register[QDTenantNote](a); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	st, err := a.Store("QDTenantNote", "")
+	if err != nil {
+		t.Fatalf("Store: %v", err)
+	}
+	return st, ctx
+}
+
+func isBadRequest(t *testing.T, err error, stage string) {
+	t.Helper()
+	var de *gferrors.DomainError
+	if !errors.As(err, &de) || de.StatusCode != http.StatusBadRequest {
+		t.Fatalf("%s: want a 400 domain error, got %T: %v", stage, err, err)
+	}
+}
+
+// TestRecord_FieldNamedTwiceIsRefused pins the write-side defense the
+// panel's tenant guard relies on: a record naming one field under two keys
+// — its column and its json tag, or two letter cases — is refused instead
+// of resolved by map order. The panel stamps the tenant under its column and
+// knows a Quark field by column and Go name only, so a json-tag alias it
+// cannot see must never outvote the stamp.
+func TestRecord_FieldNamedTwiceIsRefused(t *testing.T) {
+	st, ctx := setupTenantNotes(t)
+
+	for _, rec := range []datasource.Record{
+		{"tenant_id": "acme", "org": "globex", "title": "smuggled"},
+		{"tenant_id": "acme", "ORG": "globex", "title": "smuggled"},
+		{"tenant_id": "acme", "TenantID": "globex", "title": "smuggled"},
+		{"title": "a", "TITLE": "b", "tenant_id": "acme"},
+	} {
+		_, err := st.Create(ctx, rec)
+		isBadRequest(t, err, "create "+mustKeys(rec))
+	}
+	page, err := st.List(ctx, datasource.Query{})
+	if err != nil || page.Total != 0 {
+		t.Fatalf("nothing may be written when a field is named twice: total=%d err=%v", page.Total, err)
+	}
+
+	// The json key alone is a valid spelling on create, and the record
+	// comes back keyed by column.
+	created, err := st.Create(ctx, datasource.Record{"org": "acme", "title": "mine"})
+	if err != nil {
+		t.Fatalf("create by json key: %v", err)
+	}
+	if created["tenant_id"] != "acme" {
+		t.Fatalf("created = %v, want tenant_id=acme", created)
+	}
+	id := fmtID(created["id"])
+
+	// An update resolves keys by column and Go name only: the json-tag alias
+	// is not applied, so the row cannot move under a key the panel's guard
+	// does not know; two spellings of a column are refused.
+	if err := st.Update(ctx, id, datasource.Record{"org": "globex"}); err != nil {
+		t.Fatalf("update by json key: %v", err)
+	}
+	got, err := st.Get(ctx, id)
+	if err != nil || got["tenant_id"] != "acme" {
+		t.Fatalf("after update by json key: %v (err %v), want tenant_id=acme unchanged", got, err)
+	}
+	err = st.Update(ctx, id, datasource.Record{"tenant_id": "acme", "TENANT_ID": "globex"})
+	isBadRequest(t, err, "update two spellings")
+	got, _ = st.Get(ctx, id)
+	if got["tenant_id"] != "acme" {
+		t.Fatalf("after refused update: %v, want tenant_id=acme unchanged", got)
+	}
+}
+
+func mustKeys(rec datasource.Record) string {
+	b, _ := json.Marshal(rec)
+	return string(b)
+}
+
+func fmtID(v any) string {
+	switch n := v.(type) {
+	case float64:
+		return json.Number(fmtFloat(n)).String()
+	default:
+		b, _ := json.Marshal(v)
+		return string(b)
+	}
+}
+
+func fmtFloat(f float64) string {
+	return json.Number(fmt.Sprintf("%d", int64(f))).String()
 }

@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"net/http"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -81,13 +82,25 @@ func (p *Panel) canSwitchTenant(r *http.Request) bool {
 }
 
 // tenantScope is the tenant confinement of one request for one model: the
-// model's tenant column and the tenant the request is scoped to. A zero
-// scope (Enforced() false) means the request sees every row — multi-tenant
-// off, no tenant resolved, a superuser on ?tenant=all, or a model without
-// a tenant column.
+// model's tenant column, the tenant the request is scoped to, and the keys
+// the backend emits or accepts for that column. A zero scope (Enforced()
+// false) means the request sees every row — multi-tenant off, no tenant
+// resolved, a superuser on ?tenant=all, or a model without a tenant column.
 type tenantScope struct {
 	Field  datasource.FieldInfo
 	Tenant string
+	// Keys are every key the backend resolves to Field: its storage column,
+	// runtime column and Go name, and — for a Nucleus model — the json key
+	// its records carry, which its adapter accepts on input too. The guard
+	// and the tenant read look the field up through this list, so a key
+	// the backend honours is never one the guard does not know.
+	Keys []string
+}
+
+// newTenantScope builds the confinement of tenant over field, adding
+// jsonKey (may be empty) to the keys the field is looked up by.
+func newTenantScope(field datasource.FieldInfo, tenant, jsonKey string) tenantScope {
+	return tenantScope{Field: field, Tenant: tenant, Keys: fieldKeys(field, jsonKey)}
 }
 
 // Enforced reports whether the scope confines the request.
@@ -104,7 +117,7 @@ func (s tenantScope) Column() string {
 // compared in their canonical string form (a numeric tenant column arrives
 // as float64 from the JSON record), so it holds for Nucleus and Quark alike.
 func (s tenantScope) contains(rec datasource.Record) bool {
-	v, ok := recordValue(rec, s.Field)
+	v, ok := recordValueByKeys(rec, s.Keys)
 	if !ok {
 		return false
 	}
@@ -113,15 +126,23 @@ func (s tenantScope) contains(rec datasource.Record) bool {
 }
 
 // fieldPayloadKeys returns, sorted, the keys of data the backend resolves
-// to field f. The Nucleus adapter matches a payload key against the storage
-// column and the Go field name case-insensitively, so a guard that looks
-// the key up exactly is not a guard: TENANT_ID slipped past it and reached
-// the backend, which wrote the row in the other tenant.
+// to field f by its column or Go name. The Nucleus adapter matches a
+// payload key against the storage column and the Go field name
+// case-insensitively, so a guard that looks the key up exactly is not a
+// guard: TENANT_ID slipped past it and reached the backend, which wrote the
+// row in the other tenant. The tenant guard adds the field's json key
+// through tenantScope.Keys; see matchingKeys.
 func fieldPayloadKeys(f datasource.FieldInfo, data map[string]any) []string {
+	return matchingKeys(fieldKeys(f), data)
+}
+
+// matchingKeys returns, sorted, the keys of data that equal one of
+// candidates in any letter case.
+func matchingKeys(candidates []string, data map[string]any) []string {
 	var keys []string
 	for key := range data {
-		for _, candidate := range []string{f.Column, runtimeColumn(f.Column), f.Name} {
-			if candidate != "" && strings.EqualFold(key, candidate) {
+		for _, candidate := range candidates {
+			if strings.EqualFold(key, candidate) {
 				keys = append(keys, key)
 				break
 			}
@@ -131,12 +152,13 @@ func fieldPayloadKeys(f datasource.FieldInfo, data map[string]any) []string {
 	return keys
 }
 
-// payloadTenant returns the tenant a write payload names under the tenant
-// column or its Go field name, in any letter case, and whether it names one
-// at all. A payload naming it under two spellings is refused: the backend
-// would keep whichever map order hands it last.
+// payloadTenant returns the tenant a write payload names under any key the
+// backend resolves to the tenant field (see tenantScope.Keys), in any
+// letter case, and whether it names one at all. A payload naming it under
+// two keys is refused: the backend would keep whichever map order hands it
+// last.
 func (s tenantScope) payloadTenant(data map[string]any) (tenant string, named bool, err error) {
-	keys := fieldPayloadKeys(s.Field, data)
+	keys := matchingKeys(s.Keys, data)
 	switch len(keys) {
 	case 0:
 		return "", false, nil
@@ -173,14 +195,51 @@ func (s tenantScope) guardPayload(data map[string]any, stamp bool) error {
 // export applies when it targets a tenant: the model's own tenant column
 // and that tenant. Zero when the model has no tenant column or no tenant is
 // targeted.
-func importTenantScope(mi datasource.ModelInfo, tenant string) tenantScope {
+func (p *Panel) importTenantScope(mi datasource.ModelInfo, tenant string) tenantScope {
 	if mi.TenantField == "" || tenant == "" {
 		return tenantScope{}
 	}
 	if _, field, ok := dsResolveField(mi, mi.TenantField); ok {
-		return tenantScope{Field: field, Tenant: tenant}
+		return newTenantScope(field, tenant, p.fieldJSONKey(mi.Name, field))
 	}
-	return tenantScope{Field: datasource.FieldInfo{Column: mi.TenantField, Name: mi.TenantField}, Tenant: tenant}
+	return newTenantScope(datasource.FieldInfo{Column: mi.TenantField, Name: mi.TenantField}, tenant, "")
+}
+
+// fieldJSONKey returns the key a Nucleus model's records carry field f
+// under — the json tag of its struct field, which the Nucleus adapter also
+// accepts on input — or "" when the panel has no schema registry (a custom
+// DataSource, Quark), the model is not in it, or the field is excluded from
+// JSON (json:"-"). A field without a tag marshals under its Go name, which
+// the lookup already covers.
+//
+// The Quark adapter emits records keyed by storage column and resolves
+// update keys by column or Go name only; a json tag that differs from both
+// is unknown to this panel there, and a create naming it next to the
+// stamped tenant is refused by the adapter itself (two keys, one field).
+func (p *Panel) fieldJSONKey(modelName string, f datasource.FieldInfo) string {
+	if p.registry == nil || f.Name == "" {
+		return ""
+	}
+	meta, ok := p.registry.Get(modelName)
+	if !ok || meta == nil || meta.Type == nil {
+		return ""
+	}
+	typ := meta.Type
+	if typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
+	}
+	if typ.Kind() != reflect.Struct {
+		return ""
+	}
+	sf, ok := typ.FieldByName(f.Name)
+	if !ok {
+		return ""
+	}
+	name, _, _ := strings.Cut(sf.Tag.Get("json"), ",")
+	if name == "-" {
+		return ""
+	}
+	return name
 }
 
 // requestTenantScope resolves the tenant confinement of r for model mi. It is
@@ -201,7 +260,7 @@ func (p *Panel) requestTenantScope(r *http.Request, mi datasource.ModelInfo) ten
 	if !ok {
 		return tenantScope{}
 	}
-	return tenantScope{Field: field, Tenant: tc.TenantID}
+	return newTenantScope(field, tc.TenantID, p.fieldJSONKey(mi.Name, field))
 }
 
 // enforcedTenantID is the tenant every model-agnostic operation (exports,

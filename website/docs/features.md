@@ -22,21 +22,30 @@ Nucleus, from the subdomain or the configured header), or to
 `multitenant_default` when it resolves none. Confined means: the list and the
 CSV export only show that tenant's rows; a record of another tenant is *not
 found* by id (get, update, delete, bulk delete); a create or an update cannot
-name another tenant, under any spelling of the tenant column, and a payload
-naming it twice is a 400; exports, imports and fixtures work inside that
-tenant whatever `tenant_id` their request body carries — a row that names
-another tenant fails, a row whose id belongs to another tenant's record fails
-as *not found*, and an export job (`/api/exports`, its status and its
-download) is listed and served only to requests scoped to the tenant it was
-produced for. Models without a tenant column are not scoped. A request the
-host resolves no tenant for, with no default configured, is refused with a
-403 rather than opened to every tenant — unless it comes from a superuser or
-a subject granted `tenant_switch`, who then sees every tenant, as with
-`?tenant=all`. Looking at another tenant, or at all of them, is an explicit
+name another tenant under any key the backend resolves to the tenant field —
+its storage column, its Go field name or, for a Nucleus model, the JSON key
+its records carry, in any letter case — and a payload naming the field under
+two of those keys is a 400. Both backends refuse a payload that names one
+field twice (Nucleus 422, Quark 400) whichever keys it uses, so a key the
+panel does not resolve cannot outvote the tenant it stamps; Quark's store
+applies the keys of an update by column and Go name only, so a JSON-tag
+alias in an update is dropped, never applied. Exports, imports and fixtures
+work inside that tenant whatever `tenant_id` their request body carries — a
+row that names another tenant fails, a row whose id belongs to another
+tenant's record fails as *not found*, and an export job (`/api/exports`, its
+status and its download) is listed and served only to requests scoped to the
+tenant it was produced for. Models without a tenant column are not scoped. A
+request the host resolves no tenant for, with no default configured, is
+refused with a 403 rather than opened to every tenant — unless it comes from
+a superuser or a subject granted `tenant_switch`, who is then unscoped (every
+tenant) without an audit entry: only an explicit `?tenant=` switch is
+recorded. Looking at another tenant, or at all of them, is that explicit
 switch: `?tenant=<id>` or `?tenant=all` on the request, accepted only from a
-superuser or a subject granted the `tenant_switch` action on `admin:*`, and
-recorded in the [audit log](#audit-log) as `tenant.override`. Anyone else
-gets a 403. The confinement is only as strong as the host's resolution: a
+superuser or a subject granted the `tenant_switch` action on `admin:*` (a
+policy granting every action, `*`, on `admin:*` includes it), and recorded in
+the [audit log](#audit-log) as `tenant.override`. Anyone else gets a 403.
+The audit log itself is not filtered by tenant (see below). The confinement
+is only as strong as the host's resolution: a
 tenant read from a request header the client can set (Nucleus' `header`
 resolver with no proxy overwriting that header) is the client's choice, so
 resolve it from the host name, or from a header a trusted proxy sets, for the
@@ -169,6 +178,7 @@ performed it. The `action` names the operation:
 | Operations | `migration.apply`, `cache.flush`, `live.exclude.add`, `live.exclude.remove`, `audit.clear` (the one entry that survives the clear) |
 | Data management | `export.create`, `fixtures.dumpdata`, `import.upload`, `import.validate`, `import.execute`, `fixtures.loaddata` — exports are recorded whether they completed or failed |
 | Sessions | `login`, `login.failed`, `login.locked`, `logout`, `session.terminate` |
+| Tenant scope | `tenant.override` (an accepted `?tenant=` switch, with the requested tenant as `record_id`; a refused switch leaves no entry) |
 
 `old_value` and `new_value` are redacted before they are stored, because the
 log is readable by any operator with `audit_view`: fields the model excludes
@@ -177,6 +187,12 @@ salt…) appear as `[redacted]`, string values longer than 4 KB are truncated,
 a Redis URL loses its password, a session token is shortened, imports and
 exports record counts rather than rows, and login entries carry the attempted
 username, never the password.
+
+Entries are not filtered by tenant. With `multitenant_enabled`, an operator
+granted `audit_view` reads every entry the ring holds — the redacted old and
+new values of rows written by other tenants' operators, and every
+`tenant.override` — not only the entries of the tenant the request resolved
+to.
 
 Entries are bounded as well as redacted. The user id, username, model,
 record id and client IP are cut at 256 bytes and the User-Agent at 512, with

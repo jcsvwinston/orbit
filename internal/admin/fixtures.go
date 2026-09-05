@@ -219,7 +219,7 @@ func (p *Panel) Loaddata(ctx context.Context, cfg LoaddataConfig) (*ImportReport
 		if err != nil {
 			return report, fmt.Errorf("loaddata model %s: %w", modelName, err)
 		}
-		scope := importTenantScope(mi, cfg.TenantID)
+		scope := p.importTenantScope(mi, cfg.TenantID)
 
 		// Process records for this model
 		for _, rec := range records {
