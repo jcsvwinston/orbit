@@ -258,6 +258,24 @@ func (p *Panel) handleExportCreate(c *router.Context) error {
 		p.exportMu.Unlock()
 	}
 
+	// An export is data leaving the system: the attempt is audited whether
+	// it completed or failed (the entry says which).
+	p.recordAuditEntry(r, AuditEntry{
+		Action:    "export.create",
+		ModelName: "export",
+		RecordID:  result.StorageKey,
+		NewValue: map[string]any{
+			"models":    cfg.Models,
+			"format":    result.Format,
+			"database":  cfg.Database,
+			"tenant_id": cfg.TenantID,
+			"status":    result.Status,
+			"records":   result.Records,
+			"size":      result.Size,
+			"error":     result.Error,
+		},
+	})
+
 	status := http.StatusOK
 	if result.Status == "failed" {
 		status = http.StatusInternalServerError
@@ -386,6 +404,19 @@ func (p *Panel) handleImportValidate(c *router.Context) error {
 		return err
 	}
 
+	p.recordAuditEntry(r, AuditEntry{
+		Action:    "import.validate",
+		ModelName: "import",
+		RecordID:  key,
+		NewValue: map[string]any{
+			"model":         cfg.Model,
+			"format":        cfg.Format,
+			"total_records": report.Total,
+			"valid_records": report.Total - len(report.Errors),
+			"errors":        len(report.Errors),
+		},
+	})
+
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"total_records": report.Total,
 		"valid_records": report.Total - len(report.Errors),
@@ -422,7 +453,37 @@ func (p *Panel) handleImportExecute(c *router.Context) error {
 		return err
 	}
 
+	// The entry carries the counts, never the imported rows.
+	entry := auditImportReportEntry("import.execute", key, report)
+	entry.NewValue["model"] = cfg.Model
+	entry.NewValue["format"] = cfg.Format
+	entry.NewValue["on_conflict"] = cfg.OnConflict
+	entry.NewValue["database"] = cfg.Database
+	entry.NewValue["tenant_id"] = cfg.TenantID
+	p.recordAuditEntry(r, entry)
+
 	return c.JSON(http.StatusOK, report)
+}
+
+// auditImportReportEntry summarises an import report for the audit log:
+// the storage key it read and the row counts, never the rows themselves.
+func auditImportReportEntry(action, key string, report *ImportReport) AuditEntry {
+	entry := AuditEntry{
+		Action:    action,
+		ModelName: "import",
+		RecordID:  key,
+		NewValue:  map[string]any{},
+	}
+	if report != nil {
+		entry.NewValue["total"] = report.Total
+		entry.NewValue["imported"] = report.Imported
+		entry.NewValue["updated"] = report.Updated
+		entry.NewValue["skipped"] = report.Skipped
+		entry.NewValue["failed"] = report.Failed
+		entry.NewValue["errors"] = len(report.Errors)
+		entry.NewValue["dry_run"] = report.DryRun
+	}
+	return entry
 }
 
 func (p *Panel) handleImportUpload(c *router.Context) error {
@@ -478,6 +539,18 @@ func (p *Panel) handleImportUpload(c *router.Context) error {
 	if err != nil {
 		return fmt.Errorf("store upload: %w", err)
 	}
+
+	p.recordAuditEntry(r, AuditEntry{
+		Action:    "import.upload",
+		ModelName: "import",
+		RecordID:  info.Key,
+		NewValue: map[string]any{
+			"key":      info.Key,
+			"size":     info.Size,
+			"format":   format,
+			"filename": filename,
+		},
+	})
 
 	return c.JSON(http.StatusCreated, map[string]interface{}{
 		"key":      info.Key,

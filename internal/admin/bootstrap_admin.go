@@ -260,13 +260,24 @@ func insertBootstrapAdminUser(ctx context.Context, sqlDB *sql.DB, system string,
 }
 
 // bootstrapInsertPlaceholders returns the positional bind placeholders for
-// the admin-users INSERT in the dialect of system, matching the styles
-// pkg/db uses (schema_drift.go): "?" for sqlite/mysql, "$N" for
-// postgresql, "@pN" for mssql, ":N" for oracle. It returns nil for an
+// the admin-users INSERT in the dialect of system. It returns nil for an
 // empty or unrecognised system, signalling the caller to use the portable
 // inline-literal fallback (no portable placeholder style exists).
 func bootstrapInsertPlaceholders(system string) []string {
 	const n = 7 // len(adminUsersInsertColumns) values
+	return bindPlaceholders(system, n)
+}
+
+// bindPlaceholders returns n positional bind placeholders in the dialect of
+// system, matching the styles pkg/db uses (schema_drift.go): "?" for
+// sqlite/mysql, "$N" for postgresql, "@pN" for mssql, ":N" for oracle. It
+// returns nil for an empty or unrecognised system. Shared by the bootstrap
+// INSERT and the admin-user lookups of DatabaseAdminAuth, so both bind the
+// same way on every engine.
+func bindPlaceholders(system string, n int) []string {
+	if n <= 0 {
+		return nil
+	}
 	switch system {
 	case "sqlite", "mysql":
 		ph := make([]string, n)

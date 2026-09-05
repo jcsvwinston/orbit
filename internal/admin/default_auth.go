@@ -49,12 +49,29 @@ type DatabaseAdminAuth struct {
 	// DefaultTitle. Before this the login page hardcoded "Nucleus Admin" and
 	// the configured Title never rendered anywhere (OH-2).
 	title string
+	// system is the SQL dialect of the admin database (db.DB.System()):
+	// sqlite, postgresql, mysql, mssql or oracle. When known, user lookups
+	// bind a WHERE clause with the dialect's placeholders and read one row;
+	// when empty or unrecognised they fall back to reading the whole table
+	// (no portable placeholder style exists). See WithSystem.
+	system string
 }
 
 // WithTitle sets the heading the login page renders — the panel's configured
 // Title. Returns the receiver for chaining, like WithAuthChain.
 func (a *DatabaseAdminAuth) WithTitle(title string) *DatabaseAdminAuth {
 	a.title = strings.TrimSpace(title)
+	return a
+}
+
+// WithSystem names the SQL dialect of the admin database so that the user
+// lookups Authenticate and the login run on every request are bounded
+// queries (WHERE id = ? / WHERE LOWER(username) = LOWER(?) OR ...) instead
+// of a full read of the admin table followed by a linear scan. orbit.go
+// passes db.DB.System() of the auth database. A caller that leaves it unset
+// keeps the full-read path, which needs no placeholder style.
+func (a *DatabaseAdminAuth) WithSystem(system string) *DatabaseAdminAuth {
+	a.system = strings.ToLower(strings.TrimSpace(system))
 	return a
 }
 
@@ -328,7 +345,45 @@ func (a *DatabaseAdminAuth) sanitizeNext(raw string) string {
 	return value
 }
 
+// adminUserSelectColumns is the column list every admin-user read scans, in
+// the order adminLoginUserRecord is filled.
+const adminUserSelectColumns = "id, username, email, password_hash, is_superuser"
+
+// adminUserByIDSQL builds the bounded lookup by primary key. ok is false
+// when system has no known placeholder style.
+func adminUserByIDSQL(table, system string) (string, bool) {
+	ph := bindPlaceholders(system, 1)
+	if ph == nil {
+		return "", false
+	}
+	return fmt.Sprintf("SELECT %s FROM %s WHERE id = %s", adminUserSelectColumns, table, ph[0]), true
+}
+
+// adminUserByLoginSQL builds the bounded lookup by username or email,
+// case-insensitive on both sides like the scan it replaces. The login is
+// bound twice (one placeholder per column) so every dialect, positional or
+// numbered, sees exactly the parameters it expects.
+func adminUserByLoginSQL(table, system string) (string, bool) {
+	ph := bindPlaceholders(system, 2)
+	if ph == nil {
+		return "", false
+	}
+	return fmt.Sprintf("SELECT %s FROM %s WHERE LOWER(username) = LOWER(%s) OR LOWER(email) = LOWER(%s)",
+		adminUserSelectColumns, table, ph[0], ph[1]), true
+}
+
+// findUserByID runs on every authenticated request (Authenticate). With a
+// known dialect it reads one row by primary key; otherwise it falls back to
+// the full read. Either way: (record, true) when found, (zero, false, nil)
+// when absent or when the table does not exist yet, and an error only for a
+// failing query — the caller's revocation semantics (a missing user
+// destroys the session) are unchanged.
 func (a *DatabaseAdminAuth) findUserByID(ctx context.Context, id string) (adminLoginUserRecord, bool, error) {
+	target := strings.TrimSpace(id)
+	if query, ok := adminUserByIDSQL(a.tableName(), a.systemName()); ok {
+		return a.queryOneUser(ctx, query, target)
+	}
+
 	users, tableReady, err := a.listUsers(ctx)
 	if err != nil {
 		return adminLoginUserRecord{}, false, err
@@ -336,8 +391,6 @@ func (a *DatabaseAdminAuth) findUserByID(ctx context.Context, id string) (adminL
 	if !tableReady {
 		return adminLoginUserRecord{}, false, nil
 	}
-
-	target := strings.TrimSpace(id)
 	for _, user := range users {
 		if strings.TrimSpace(user.ID) == target {
 			return user, true, nil
@@ -346,7 +399,14 @@ func (a *DatabaseAdminAuth) findUserByID(ctx context.Context, id string) (adminL
 	return adminLoginUserRecord{}, false, nil
 }
 
+// findUserByLogin resolves the login form's username-or-email. Same
+// bounded/fallback split as findUserByID.
 func (a *DatabaseAdminAuth) findUserByLogin(ctx context.Context, login string) (adminLoginUserRecord, bool, error) {
+	target := strings.TrimSpace(login)
+	if query, ok := adminUserByLoginSQL(a.tableName(), a.systemName()); ok {
+		return a.queryOneUser(ctx, query, target, target)
+	}
+
 	users, tableReady, err := a.listUsers(ctx)
 	if err != nil {
 		return adminLoginUserRecord{}, false, err
@@ -354,8 +414,6 @@ func (a *DatabaseAdminAuth) findUserByLogin(ctx context.Context, login string) (
 	if !tableReady {
 		return adminLoginUserRecord{}, false, nil
 	}
-
-	target := strings.TrimSpace(login)
 	for _, user := range users {
 		if strings.EqualFold(strings.TrimSpace(user.Username), target) || strings.EqualFold(strings.TrimSpace(user.Email), target) {
 			return user, true, nil
@@ -364,12 +422,52 @@ func (a *DatabaseAdminAuth) findUserByLogin(ctx context.Context, login string) (
 	return adminLoginUserRecord{}, false, nil
 }
 
+func (a *DatabaseAdminAuth) tableName() string {
+	if a != nil && strings.TrimSpace(a.table) != "" {
+		return a.table
+	}
+	return defaultAdminUsersTable
+}
+
+func (a *DatabaseAdminAuth) systemName() string {
+	if a == nil {
+		return ""
+	}
+	return a.system
+}
+
+// queryOneUser runs a bounded lookup and scans its single row. No row and a
+// missing table both answer "not found" without an error, mirroring the
+// full-read path's tableReady contract.
+func (a *DatabaseAdminAuth) queryOneUser(ctx context.Context, query string, args ...any) (adminLoginUserRecord, bool, error) {
+	if a == nil || a.db == nil {
+		return adminLoginUserRecord{}, false, errors.New("admin database is not configured")
+	}
+
+	var u adminLoginUserRecord
+	var superRaw interface{}
+	err := a.db.QueryRowContext(ctx, query, args...).Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &superRaw)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) || isAdminUserTableMissing(err) {
+			return adminLoginUserRecord{}, false, nil
+		}
+		return adminLoginUserRecord{}, false, fmt.Errorf("query admin user: %w", err)
+	}
+	u.ID = strings.TrimSpace(u.ID)
+	u.Username = strings.TrimSpace(u.Username)
+	u.Email = strings.TrimSpace(u.Email)
+	u.IsSuperuser = parseAdminSuperuserValue(superRaw)
+	return u, true, nil
+}
+
+// listUsers is the full-read path, kept for callers that build the provider
+// without a dialect (no placeholder style to bind with).
 func (a *DatabaseAdminAuth) listUsers(ctx context.Context) ([]adminLoginUserRecord, bool, error) {
 	if a == nil || a.db == nil {
 		return nil, false, errors.New("admin database is not configured")
 	}
 
-	query := fmt.Sprintf("SELECT id, username, email, password_hash, is_superuser FROM %s", a.table)
+	query := fmt.Sprintf("SELECT %s FROM %s", adminUserSelectColumns, a.tableName())
 	rows, err := a.db.QueryContext(ctx, query)
 	if err != nil {
 		if isAdminUserTableMissing(err) {

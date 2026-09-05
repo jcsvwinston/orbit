@@ -6,6 +6,7 @@ package admin
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -154,6 +155,10 @@ type Panel struct {
 
 	// Audit log store
 	audit *auditStore
+	// loginAuditBudget bounds the login entries one client IP can add to
+	// the ring per lockout window (auditLogin); the login route is the only
+	// unauthenticated writer of the store.
+	loginAuditBudget *loginLimiter
 
 	// Storage for exports/imports
 	store storage.Store
@@ -199,8 +204,9 @@ func NewPanel(src datasource.DataSource, logger *slog.Logger, cfg PanelConfig) *
 			}
 			return nil
 		}(),
-		store:         cfg.Store,
-		exportResults: make(map[string]ExportResult),
+		loginAuditBudget: newLoginLimiter(),
+		store:            cfg.Store,
+		exportResults:    make(map[string]ExportResult),
 	}
 
 	return p
@@ -384,7 +390,10 @@ func (p *Panel) mountRoutes(r *router.Mux) {
 	if p.config.Auth != nil {
 		loginHandler := p.config.Auth.LoginHandler()
 		r.Get("/login", router.FromHandler(loginHandler))
-		r.Post("/login", router.FromHandler(loginHandler))
+		// The login POST sits outside the authenticated group (there is no
+		// session yet): limitLoginBody caps what an anonymous client can
+		// send and auditLogin records the attempt around the provider.
+		r.Post("/login", router.FromHandler(limitLoginBody(p.auditLogin(loginHandler))))
 
 		r.Group(func(sub *router.Mux) {
 			sub.Use(p.authMiddleware)
@@ -392,17 +401,19 @@ func (p *Panel) mountRoutes(r *router.Mux) {
 			// /api/* — authenticated at the edge, authorized per handler.
 			// The middleware stack mirrors the open posture's (minus the
 			// SPA fallback): this group has grown one middleware at a time
-			// as the with-auth tests caught divergences — first
-			// auditMiddleware (Data Studio writes were never audited under
-			// auth), then tenantContextMiddleware and
-			// sessionActivityMiddleware + liveTrafficMiddleware (AO-4:
-			// under auth — the production posture — API requests resolved
-			// no tenant context, never refreshed the admin session's
-			// activity, and never fed the live traffic feed).
+			// as the with-auth tests caught divergences —
+			// tenantContextMiddleware and sessionActivityMiddleware +
+			// liveTrafficMiddleware (AO-4: under auth — the production
+			// posture — API requests resolved no tenant context, never
+			// refreshed the admin session's activity, and never fed the
+			// live traffic feed). Auditing is not a middleware: a generic
+			// method+path heuristic mislabelled every non-model write
+			// (a flag PUT became an "update" of a model named after the
+			// flag) and skipped the rest; every mutating handler records
+			// its own entry (audit_coverage_test.go walks the routes).
 			sub.Group(func(api *router.Mux) {
 				api.Use(p.tenantContextMiddleware)
 				api.Use(p.csrfContentTypeMiddleware)
-				api.Use(p.auditMiddleware)
 				api.Use(p.sessionActivityMiddleware)
 				api.Use(p.panelTrafficMiddleware)
 				p.mountAPIRoutes(api)
@@ -412,7 +423,6 @@ func (p *Panel) mountRoutes(r *router.Mux) {
 			// under — and inheriting — authMiddleware.
 			sub.Group(func(spa *router.Mux) {
 				spa.Use(p.tenantContextMiddleware)
-				spa.Use(p.auditMiddleware)
 				spa.Use(p.sessionActivityMiddleware)
 				spa.Use(p.panelTrafficMiddleware)
 				spa.Get("/{path...}", p.handleSPA(uiContent))
@@ -428,7 +438,6 @@ func (p *Panel) mountRoutes(r *router.Mux) {
 	p.warnAdminAuthDisabled()
 	r.Use(p.tenantContextMiddleware)
 	r.Use(p.csrfContentTypeMiddleware)
-	r.Use(p.auditMiddleware)
 	r.Use(p.sessionActivityMiddleware)
 	r.Use(p.panelTrafficMiddleware)
 	p.mountAPIRoutes(r)
@@ -927,6 +936,12 @@ func (p *Panel) authenticatedUser(r *http.Request) (*auth.User, error) {
 		if user, ok := r.Context().Value(adminAuthContextKey{}).(*auth.User); ok && user != nil {
 			return user, nil
 		}
+	}
+	if p.config.Auth == nil {
+		// Open posture (no provider): there is no operator to name. The
+		// audit entries a handler records in this posture stay anonymous
+		// instead of dereferencing a nil provider.
+		return nil, errors.New("admin auth provider is not configured")
 	}
 	return p.config.Auth.Authenticate(r)
 }

@@ -82,6 +82,19 @@ func (p *Panel) handleApplyMigrations(c *router.Context) error {
 	}
 
 	appliedIDs := appliedMigrationIDs(before, after)
+	// Recorded even when nothing was pending: the operator asked the
+	// schema to move, and that request is the auditable act.
+	p.recordAuditEntry(r, AuditEntry{
+		Action:    "migration.apply",
+		ModelName: "migration",
+		NewValue: map[string]any{
+			"requested_steps": requestedSteps,
+			"executed_steps":  steps,
+			"applied":         len(appliedIDs),
+			"applied_ids":     appliedIDs,
+			"pending":         countPendingMigrations(after),
+		},
+	})
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"applied":         len(appliedIDs),
 		"applied_ids":     appliedIDs,
