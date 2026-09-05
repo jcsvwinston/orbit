@@ -306,13 +306,25 @@ func (p *Panel) Loaddata(ctx context.Context, cfg LoaddataConfig) (*ImportReport
 			// neither update another tenant's row (it used to overwrite and
 			// re-tenant it) nor, under on_conflict=skip, confirm it exists.
 			// Reported as not found, the same answer a get gives, so the id
-			// space of other tenants is not disclosed.
-			if scope.Enforced() && !scope.contains(existing) {
-				report.Failed++
-				report.Errors = append(report.Errors, ImportError{
-					Message: fmt.Sprintf("model %s pk=%s: not found in tenant %q", modelName, pkValue, cfg.TenantID),
-				})
-				continue
+			// space of other tenants is not disclosed. A record that carries
+			// no tenant key (the field is hidden from JSON) is confirmed
+			// through the store rather than taken for another tenant's.
+			if scope.Enforced() {
+				owned, err := scope.owns(ctx, st, mi, pkValue, existing)
+				if err != nil {
+					report.Failed++
+					report.Errors = append(report.Errors, ImportError{
+						Message: fmt.Sprintf("model %s pk=%s: %v", modelName, pkValue, err),
+					})
+					continue
+				}
+				if !owned {
+					report.Failed++
+					report.Errors = append(report.Errors, ImportError{
+						Message: fmt.Sprintf("model %s pk=%s: not found in tenant %q", modelName, pkValue, cfg.TenantID),
+					})
+					continue
+				}
 			}
 
 			// Record exists, handle conflict

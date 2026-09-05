@@ -31,6 +31,7 @@ import (
 	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/observe"
 
+	"github.com/jcsvwinston/orbit/datasource"
 	dsnucleus "github.com/jcsvwinston/orbit/internal/datasource/nucleus"
 )
 
@@ -66,6 +67,18 @@ type CamelNote struct {
 
 func (CamelNote) TableName() string { return "camel_notes" }
 
+// HiddenNote is a tenant-scoped model whose tenant field is excluded from
+// JSON. Nucleus keeps it as the tenant column, but the records its adapter
+// emits carry no tenant key under any spelling, so the scope cannot read
+// the tenant off a record and confirms the row through the store instead.
+type HiddenNote struct {
+	model.BaseModel
+	TenantID string `db:"column:tenant_id;required" json:"-" admin:"filter"`
+	Title    string `db:"column:title;required" json:"title" admin:"list,search"`
+}
+
+func (HiddenNote) TableName() string { return "hidden_notes" }
+
 // Gadget declares no searchable field (OR-43).
 type Gadget struct {
 	model.BaseModel
@@ -89,6 +102,12 @@ CREATE TABLE IF NOT EXISTS scoped_codes (
 	code TEXT NOT NULL UNIQUE
 );
 CREATE TABLE IF NOT EXISTS camel_notes (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	created_at DATETIME, updated_at DATETIME, deleted_at DATETIME,
+	tenant_id TEXT NOT NULL,
+	title TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS hidden_notes (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	created_at DATETIME, updated_at DATETIME, deleted_at DATETIME,
 	tenant_id TEXT NOT NULL,
@@ -127,7 +146,7 @@ func setupPanelWithModels(t *testing.T, adminAuth AdminAuth) (*Panel, *sql.DB, f
 	}
 
 	registry := model.NewRegistry()
-	for _, m := range []any{&AdminUser{}, &ScopedNote{}, &ScopedCode{}, &CamelNote{}, &Gadget{}} {
+	for _, m := range []any{&AdminUser{}, &ScopedNote{}, &ScopedCode{}, &CamelNote{}, &HiddenNote{}, &Gadget{}} {
 		if err := registry.Register(m); err != nil {
 			t.Fatalf("registry.Register failed: %v", err)
 		}
@@ -159,8 +178,9 @@ func setupPanelWithModels(t *testing.T, adminAuth AdminAuth) (*Panel, *sql.DB, f
 
 // scopedPanel is a multi-tenant panel whose host resolves every request to
 // "acme", seeded with one acme note (id 1) and one globex note (id 2), and
-// one code per tenant (A-1 id 1, G-1 id 2) and one camel note per tenant
-// (acme id 1, globex id 2).
+// one code per tenant (A-1 id 1, G-1 id 2), one camel note per tenant
+// (acme id 1, globex id 2) and one hidden note per tenant (acme id 1,
+// globex id 2).
 func scopedPanel(t *testing.T, adminAuth AdminAuth) (*Panel, *sql.DB, *httptest.Server) {
 	t.Helper()
 	panel, sqlDB, cleanup := setupPanelWithModels(t, adminAuth)
@@ -182,6 +202,11 @@ func scopedPanel(t *testing.T, adminAuth AdminAuth) (*Panel, *sql.DB, *httptest.
 	}
 	for _, row := range [][2]string{{"acme", "Acme camel"}, {"globex", "Globex camel"}} {
 		if _, err := sqlDB.Exec(`INSERT INTO camel_notes (tenant_id, title, created_at, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, row[0], row[1]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, row := range [][2]string{{"acme", "Acme hidden"}, {"globex", "Globex hidden"}} {
+		if _, err := sqlDB.Exec(`INSERT INTO hidden_notes (tenant_id, title, created_at, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, row[0], row[1]); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -504,8 +529,14 @@ func TestTenantScope_HelpersOnUnscopedRequest(t *testing.T) {
 	if !scope.Enforced() || scope.Column() != "tenant_id" || scope.Tenant != "acme" {
 		t.Fatalf("scope = %+v", scope)
 	}
-	if !scope.contains(map[string]any{"tenant_id": "acme"}) || scope.contains(map[string]any{"tenant_id": "globex"}) || scope.contains(map[string]any{}) {
-		t.Fatal("contains must compare the tenant column")
+	if tenant, present := scope.recordTenant(map[string]any{"tenant_id": "acme"}); !present || tenant != "acme" {
+		t.Fatalf("recordTenant by column = (%q, %v), want (acme, true)", tenant, present)
+	}
+	if tenant, present := scope.recordTenant(map[string]any{"TenantID": "globex"}); !present || tenant != "globex" {
+		t.Fatalf("recordTenant by Go name = (%q, %v), want (globex, true)", tenant, present)
+	}
+	if _, present := scope.recordTenant(map[string]any{"title": "no tenant key"}); present {
+		t.Fatal("a record without the tenant field does not name a tenant")
 	}
 	if got, ok, err := scope.payloadTenant(map[string]any{"TenantID": 7}); !ok || got != "7" || err != nil {
 		t.Fatalf("payloadTenant by Go name = (%q, %v, %v)", got, ok, err)
@@ -1028,5 +1059,220 @@ func TestTenantScope_RBACTenantSwitchGrant(t *testing.T) {
 	resp, status = doJSON(t, http.MethodGet, srv.URL+"/api/models/ScopedNote?tenant=globex", nil)
 	if status != http.StatusOK {
 		t.Fatalf("wildcard grant: status %d body=%s, want 200", status, mustJSON(resp))
+	}
+}
+
+// hiddenRow reads one hidden note's tenant and title.
+func hiddenRow(t *testing.T, sqlDB *sql.DB, id int) (tenant, title string) {
+	t.Helper()
+	if err := sqlDB.QueryRow(`SELECT tenant_id, title FROM hidden_notes WHERE id = ? AND deleted_at IS NULL`, id).Scan(&tenant, &title); err != nil {
+		t.Fatal(err)
+	}
+	return tenant, title
+}
+
+func TestTenantScope_HiddenJSONTenantFieldOwnRowsReachable(t *testing.T) {
+	panel, sqlDB, srv := scopedPanel(t, operatorAuth())
+	base := srv.URL + "/api/models/HiddenNote"
+
+	// The records carry no tenant key at all. The tenant read took that
+	// for a row of another tenant, so every own row answered 404 on get,
+	// update, delete and bulk delete, and "not found in tenant" on loaddata
+	// and import, while the list kept showing it.
+	resp, status := doJSON(t, http.MethodGet, base, nil)
+	if status != http.StatusOK {
+		t.Fatalf("list: status %d body=%s", status, mustJSON(resp))
+	}
+	items, _ := resp["items"].([]interface{})
+	if len(items) != 1 {
+		t.Fatalf("list = %s, want the acme row only", mustJSON(resp))
+	}
+	own, _ := items[0].(map[string]interface{})
+	for _, key := range []string{"tenant_id", "TenantID"} {
+		if _, has := own[key]; has {
+			t.Fatalf("a HiddenNote record must not carry %s for this test to mean anything: %s", key, mustJSON(own))
+		}
+	}
+	if id, _ := canonicalID(own["id"]); id != "1" {
+		t.Fatalf("list row id = %v, want 1", own["id"])
+	}
+
+	resp, status = doJSON(t, http.MethodGet, base+"/1", nil)
+	if status != http.StatusOK || resp["title"] != "Acme hidden" {
+		t.Fatalf("GET own row: status %d body=%s, want 200", status, mustJSON(resp))
+	}
+	resp, status = doJSON(t, http.MethodGet, base+"/2", nil)
+	if status != http.StatusNotFound {
+		t.Fatalf("GET other tenant's row: status %d body=%s, want 404", status, mustJSON(resp))
+	}
+	resp, status = doJSON(t, http.MethodPut, base+"/1", map[string]any{"title": "renamed"})
+	if status != http.StatusOK {
+		t.Fatalf("PUT own row: status %d body=%s, want 200", status, mustJSON(resp))
+	}
+	if tenant, title := hiddenRow(t, sqlDB, 1); tenant != "acme" || title != "renamed" {
+		t.Fatalf("row 1 = (%q, %q), want (acme, renamed)", tenant, title)
+	}
+	resp, status = doJSON(t, http.MethodPut, base+"/2", map[string]any{"title": "hijacked"})
+	if status != http.StatusNotFound {
+		t.Fatalf("PUT other tenant's row: status %d body=%s, want 404", status, mustJSON(resp))
+	}
+	// The write guard still knows the hidden field by column and Go name.
+	for _, key := range []string{"tenant_id", "TenantID"} {
+		resp, status = doJSON(t, http.MethodPut, base+"/1", map[string]any{key: "globex"})
+		if status != http.StatusBadRequest {
+			t.Errorf("PUT %s=globex: status %d body=%s, want 400", key, status, mustJSON(resp))
+		}
+		resp, status = doJSON(t, http.MethodPost, base, map[string]any{key: "globex", "title": "smuggled"})
+		if status != http.StatusBadRequest {
+			t.Errorf("POST %s=globex: status %d body=%s, want 400", key, status, mustJSON(resp))
+		}
+	}
+	// A create without a tenant is stamped, and the stamped row is the
+	// operator's: reachable, and deletable, by id.
+	resp, status = doJSON(t, http.MethodPost, base, map[string]any{"title": "stamped"})
+	if status != http.StatusCreated {
+		t.Fatalf("POST without tenant: status %d body=%s, want 201", status, mustJSON(resp))
+	}
+	createdID, _ := canonicalID(resp["id"])
+	if createdID == "" || tenantRows(t, sqlDB, "hidden_notes", "acme") != 2 {
+		t.Fatalf("POST without tenant: id=%v acme rows=%d, want a second acme row", resp["id"], tenantRows(t, sqlDB, "hidden_notes", "acme"))
+	}
+	resp, status = doJSON(t, http.MethodGet, base+"/"+createdID, nil)
+	if status != http.StatusOK || resp["title"] != "stamped" {
+		t.Fatalf("GET stamped row: status %d body=%s, want 200", status, mustJSON(resp))
+	}
+	resp, status = doJSON(t, http.MethodDelete, base+"/"+createdID, nil)
+	if status != http.StatusOK {
+		t.Fatalf("DELETE stamped row: status %d body=%s, want 200", status, mustJSON(resp))
+	}
+	resp, status = doJSON(t, http.MethodDelete, base+"/2", nil)
+	if status != http.StatusNotFound {
+		t.Fatalf("DELETE other tenant's row: status %d body=%s, want 404", status, mustJSON(resp))
+	}
+
+	// Loaddata: the own pk updates or is skipped, the other tenant's pk
+	// fails as not found.
+	store := panel.store.(*keyedStore)
+	store.objects["_tmp/hidden.json"] = fixtureJSON(t,
+		map[string]any{"model": "HiddenNote", "pk": 1, "fields": map[string]any{"title": "via fixture"}},
+		map[string]any{"model": "HiddenNote", "pk": 2, "fields": map[string]any{"title": "hijacked"}},
+	)
+	for _, mode := range []string{"update", "skip"} {
+		resp, status = doJSON(t, http.MethodPost, srv.URL+"/api/fixtures/loaddata", map[string]any{"key": "_tmp/hidden.json", "on_conflict": mode})
+		if status != http.StatusOK {
+			t.Fatalf("loaddata %s: status %d body=%s", mode, status, mustJSON(resp))
+		}
+		wantUpdated, wantSkipped := 1, 0
+		if mode == "skip" {
+			wantUpdated, wantSkipped = 0, 1
+		}
+		if int(resp["failed"].(float64)) != 1 || int(resp["updated"].(float64)) != wantUpdated || int(resp["skipped"].(float64)) != wantSkipped {
+			t.Fatalf("loaddata %s report = %s, want own pk %s and the other pk failed", mode, mustJSON(resp), mode+"d")
+		}
+		errs := resp["errors"].([]interface{})
+		if msg := fmt.Sprint(errs[0].(map[string]interface{})["message"]); !strings.Contains(msg, "pk=2") || !strings.Contains(msg, "not found") {
+			t.Fatalf("loaddata %s error = %q, want pk 2 reported as not found", mode, msg)
+		}
+	}
+	if tenant, title := hiddenRow(t, sqlDB, 1); tenant != "acme" || title != "via fixture" {
+		t.Fatalf("row 1 = (%q, %q), want (acme, via fixture)", tenant, title)
+	}
+
+	// Import: same rule under on_conflict=update.
+	store.objects["_tmp/hidden_import.json"] = `[{"id":1,"title":"via import"},{"id":2,"title":"hijacked"}]`
+	resp, status = doJSON(t, http.MethodPost, srv.URL+"/api/import/execute?key=_tmp/hidden_import.json", map[string]any{
+		"model": "HiddenNote", "format": "json", "on_conflict": "update",
+	})
+	if status != http.StatusOK {
+		t.Fatalf("import: status %d body=%s", status, mustJSON(resp))
+	}
+	if int(resp["updated"].(float64)) != 1 || int(resp["failed"].(float64)) != 1 || int(resp["imported"].(float64)) != 0 {
+		t.Fatalf("import report = %s, want own row updated and the other failed", mustJSON(resp))
+	}
+	if tenant, title := hiddenRow(t, sqlDB, 1); tenant != "acme" || title != "via import" {
+		t.Fatalf("row 1 = (%q, %q), want (acme, via import)", tenant, title)
+	}
+	if tenant, title := hiddenRow(t, sqlDB, 2); tenant != "globex" || title != "Globex hidden" {
+		t.Fatalf("row 2 = (%q, %q), want untouched", tenant, title)
+	}
+
+	// Bulk delete: the own row goes, the other tenant's is a per-id failure.
+	resp, status = doJSON(t, http.MethodPost, base+"/bulk", map[string]any{"action": "delete", "ids": []string{"1", "2"}})
+	if status != http.StatusOK {
+		t.Fatalf("bulk: status %d body=%s", status, mustJSON(resp))
+	}
+	if int(resp["deleted"].(float64)) != 1 || int(resp["failed"].(float64)) != 1 {
+		t.Fatalf("bulk report = %s, want 1 deleted / 1 failed", mustJSON(resp))
+	}
+	errs := resp["errors"].([]interface{})
+	if row := errs[0].(map[string]interface{}); row["id"] != "2" || !strings.Contains(fmt.Sprint(row["error"]), "not found") {
+		t.Fatalf("bulk error row = %v, want id 2 not found", row)
+	}
+	if g, a := tenantRows(t, sqlDB, "hidden_notes", "globex"), tenantRows(t, sqlDB, "hidden_notes", "acme"); g != 1 || a != 0 {
+		t.Fatalf("rows after: globex=%d acme=%d, want 1/0", g, a)
+	}
+}
+
+// firstRowStore lists the scope's tenant rows while ignoring every other
+// filter — what the Nucleus backend does with a filter column it cannot
+// resolve (it is dropped, not refused). Only List is called.
+type firstRowStore struct {
+	datasource.RecordStore
+	rows []datasource.Record
+	err  error
+}
+
+func (s firstRowStore) List(_ context.Context, q datasource.Query) (datasource.Page, error) {
+	if s.err != nil {
+		return datasource.Page{}, s.err
+	}
+	for _, rec := range s.rows {
+		if rec["tenant_id"] == q.Filters["tenant_id"] {
+			return datasource.Page{Items: []datasource.Record{rec}, Total: 1, Page: 1, PageSize: 1}, nil
+		}
+	}
+	return datasource.Page{Page: 1, PageSize: 1}, nil
+}
+
+func TestTenantScope_OwnsRequiresTheRowItAskedFor(t *testing.T) {
+	ctx := context.Background()
+	mi := datasource.ModelInfo{Name: "Hidden", PrimaryKey: "ID", Fields: []datasource.FieldInfo{
+		{Column: "id", Name: "ID", IsPK: true},
+		{Column: "tenant_id", Name: "TenantID"},
+	}}
+	scope := newTenantScope(mi.Fields[1], "acme", "")
+	st := firstRowStore{rows: []datasource.Record{
+		{"id": float64(1), "tenant_id": "acme"},
+		{"id": float64(2), "tenant_id": "globex"},
+	}}
+
+	// A record that carries the tenant is compared in place.
+	for _, tc := range []struct {
+		id   string
+		rec  datasource.Record
+		want bool
+	}{
+		{"1", datasource.Record{"tenant_id": "acme"}, true},
+		{"2", datasource.Record{"tenant_id": "globex"}, false},
+		{"1", datasource.Record{"tenant_id": nil}, false},
+		// One that carries none is confirmed through the store, which
+		// must answer the row asked about — not the tenant's first row.
+		{"1", datasource.Record{"title": "hidden"}, true},
+		{"2", datasource.Record{"title": "hidden"}, false},
+		{"zz", datasource.Record{}, false},
+	} {
+		got, err := scope.owns(ctx, st, mi, tc.id, tc.rec)
+		if err != nil || got != tc.want {
+			t.Errorf("owns(%s, %v) = (%v, %v), want %v", tc.id, tc.rec, got, err, tc.want)
+		}
+	}
+	// A store failure is an error, not a verdict.
+	if _, err := scope.owns(ctx, firstRowStore{err: fmt.Errorf("boom")}, mi, "1", datasource.Record{}); err == nil {
+		t.Fatal("a failing lookup must surface its error")
+	}
+	// A model whose primary key the scope cannot name never confirms a
+	// row through the store.
+	if got, err := scope.owns(ctx, st, datasource.ModelInfo{Name: "NoPK", Fields: mi.Fields[1:]}, "1", datasource.Record{}); err != nil || got {
+		t.Fatalf("owns without a primary key = (%v, %v), want false", got, err)
 	}
 }

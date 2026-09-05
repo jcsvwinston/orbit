@@ -632,3 +632,116 @@ func fmtID(v any) string {
 func fmtFloat(f float64) string {
 	return json.Number(fmt.Sprintf("%d", int64(f))).String()
 }
+
+// QDHiddenNote hides its tenant column from JSON: the records the store
+// emits carry no tenant key, so the panel's tenant scope confirms a row
+// through a list filtered by tenant and primary key, and the tenant a
+// scoped create stamps under the column key has to reach the row.
+type QDHiddenNote struct {
+	ID       int64  `db:"id" pk:"true"`
+	TenantID string `db:"tenant_id" quark:"not_null" json:"-"`
+	Title    string `db:"title"`
+}
+
+func TestHiddenJSONTenantColumn_ScopedLookupAndStampedCreate(t *testing.T) {
+	client, err := quark.New("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("quark.New: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	ctx := context.Background()
+	if err := client.RegisterModel(&QDHiddenNote{}); err != nil {
+		t.Fatalf("RegisterModel: %v", err)
+	}
+	if err := client.MigrateRegistered(ctx); err != nil {
+		t.Fatalf("MigrateRegistered: %v", err)
+	}
+	a := New(client, WithTenantColumn("tenant_id"))
+	if err := Register[QDHiddenNote](a); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	mi, ok := a.Get("QDHiddenNote")
+	if !ok || mi.TenantField != "tenant_id" {
+		t.Fatalf("ModelInfo = %+v, want tenant_id as the tenant field", mi)
+	}
+	st, err := a.Store("QDHiddenNote", "")
+	if err != nil {
+		t.Fatalf("Store: %v", err)
+	}
+	for _, row := range []QDHiddenNote{{TenantID: "acme", Title: "Acme"}, {TenantID: "globex", Title: "Globex"}} {
+		row := row
+		if err := quark.For[QDHiddenNote](ctx, client).Create(&row); err != nil {
+			t.Fatalf("seed %s: %v", row.TenantID, err)
+		}
+	}
+
+	// The record carries the tenant under no key.
+	got, err := st.Get(ctx, "1")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	for _, key := range []string{"tenant_id", "TenantID"} {
+		if _, has := got[key]; has {
+			t.Fatalf("record %s carries %s; the column is hidden from JSON", mustKeys(got), key)
+		}
+	}
+
+	// A list filtered by tenant and primary key answers the tenant's row
+	// and nothing for another tenant's — the membership check the panel
+	// runs when a record carries no tenant key.
+	byPK := func(tenant, id string) []datasource.Record {
+		t.Helper()
+		page, err := st.List(ctx, datasource.Query{Page: 1, PageSize: 1, Filters: map[string]string{"tenant_id": tenant, "id": id}})
+		if err != nil {
+			t.Fatalf("List tenant=%s id=%s: %v", tenant, id, err)
+		}
+		return page.Items
+	}
+	if items := byPK("acme", "1"); len(items) != 1 || fmtID(items[0]["id"]) != "1" {
+		t.Fatalf("acme/1 = %v, want the row", items)
+	}
+	if items := byPK("acme", "2"); len(items) != 0 {
+		t.Fatalf("acme/2 = %v, want nothing (globex row)", items)
+	}
+	if items := byPK("globex", "2"); len(items) != 1 {
+		t.Fatalf("globex/2 = %v, want the row", items)
+	}
+
+	// A create naming the hidden column under its column key or its Go
+	// name stores it: json.Unmarshal never sets a json:"-" field, so the
+	// store sets it itself, else a scoped create stored a row of no tenant.
+	for _, rec := range []datasource.Record{
+		{"tenant_id": "acme", "title": "stamped"},
+		{"TenantID": "acme", "title": "by Go name"},
+	} {
+		created, err := st.Create(ctx, rec)
+		if err != nil {
+			t.Fatalf("create %s: %v", mustKeys(rec), err)
+		}
+		if items := byPK("acme", fmtID(created["id"])); len(items) != 1 {
+			t.Fatalf("create %s: row %s is not acme's", mustKeys(rec), fmtID(created["id"]))
+		}
+	}
+	// Named twice, or of the wrong type, the record is refused and
+	// nothing is written.
+	_, err = st.Create(ctx, datasource.Record{"tenant_id": "acme", "TenantID": "globex", "title": "twice"})
+	isBadRequest(t, err, "create hidden column twice")
+	_, err = st.Create(ctx, datasource.Record{"tenant_id": 7, "title": "number"})
+	isBadRequest(t, err, "create hidden column with a number")
+	page, err := st.List(ctx, datasource.Query{Filters: map[string]string{"tenant_id": "acme"}})
+	if err != nil || page.Total != 3 {
+		t.Fatalf("acme rows = %d (err %v), want the seed and the two creates", page.Total, err)
+	}
+	page, err = st.List(ctx, datasource.Query{})
+	if err != nil || page.Total != 4 {
+		t.Fatalf("all rows = %d (err %v), want 4: a refused record writes nothing", page.Total, err)
+	}
+
+	// An update carrying the column is applied by column, as before.
+	if err := st.Update(ctx, "1", datasource.Record{"tenant_id": "acme", "title": "renamed"}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if got, err := st.Get(ctx, "1"); err != nil || got["title"] != "renamed" {
+		t.Fatalf("after update: %v (err %v), want title renamed", got, err)
+	}
+}

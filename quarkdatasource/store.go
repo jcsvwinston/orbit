@@ -395,9 +395,15 @@ func (s *store[T]) entityToRecord(entity any) (datasource.Record, error) {
 // instead of resolved by map order: a caller that stamps one key (the
 // panel's tenant) must not be outvoted by another it does not know. Keys
 // are visited sorted so the key reported is deterministic.
+//
+// A schema field excluded from JSON (json:"-") never reaches json.Unmarshal,
+// so it is set on the entity by reflection afterwards: a column the panel
+// stamps under its column key (the tenant of a scoped create) is stored
+// whatever its JSON visibility — dropped, it stored the row under no tenant.
 func (s *store[T]) recordToEntity(rec datasource.Record) (*T, error) {
 	clean := make(map[string]any, len(rec))
 	origin := make(map[string]string, len(rec)) // folded object key -> record key
+	var hidden []hiddenValue                    // schema fields excluded from JSON
 	keys := make([]string, 0, len(rec))
 	for k := range rec {
 		keys = append(keys, k)
@@ -411,9 +417,20 @@ func (s *store[T]) recordToEntity(rec datasource.Record) (*T, error) {
 			}
 			jsonKey, ok := s.jsonKeyByCol[fi.Column]
 			if !ok {
-				// A schema field excluded from JSON (json:"-") is not
-				// settable through the record: dropping it mirrors what
-				// json.Unmarshal would do anyway.
+				fm, ok := s.meta.FieldByCol[strings.ToLower(fi.Column)]
+				if !ok {
+					continue
+				}
+				folded := strings.ToLower(fi.Column)
+				if first, dup := origin[folded]; dup {
+					return nil, gferrors.BadRequest(fmt.Sprintf("invalid record for %s: %q names the same field as %q", s.info.Name, k, first))
+				}
+				origin[folded] = k
+				v, err := coerceJSONValue(rec[k], fm.Kind)
+				if err != nil {
+					return nil, gferrors.BadRequest(fmt.Sprintf("invalid record for %s: %s: %v", s.info.Name, k, err))
+				}
+				hidden = append(hidden, hiddenValue{index: fm.Index, key: k, value: v})
 				continue
 			}
 			key = jsonKey
@@ -433,7 +450,48 @@ func (s *store[T]) recordToEntity(rec datasource.Record) (*T, error) {
 	if err := json.Unmarshal(data, entity); err != nil {
 		return nil, fmt.Errorf("quarkdatasource: invalid record for %s: %w", s.info.Name, err)
 	}
+	ev := reflect.ValueOf(entity).Elem()
+	for _, h := range hidden {
+		if err := setHiddenField(ev.Field(h.index), h.value); err != nil {
+			return nil, gferrors.BadRequest(fmt.Sprintf("invalid record for %s: %s: %v", s.info.Name, h.key, err))
+		}
+	}
 	return entity, nil
+}
+
+// hiddenValue is the coerced value of a schema field excluded from JSON,
+// addressed by its index in the struct, with the record key that named it.
+type hiddenValue struct {
+	index int
+	key   string
+	value any
+}
+
+// setHiddenField stores v, a value coerceJSONValue produced, in field. A
+// value of another type is refused rather than converted: reflect would turn
+// an integer into the string of its code point.
+func setHiddenField(field reflect.Value, v any) error {
+	if v == nil {
+		return nil
+	}
+	if field.Kind() == reflect.Pointer {
+		ptr := reflect.New(field.Type().Elem())
+		if err := setHiddenField(ptr.Elem(), v); err != nil {
+			return err
+		}
+		field.Set(ptr)
+		return nil
+	}
+	rv := reflect.ValueOf(v)
+	switch {
+	case rv.Type().AssignableTo(field.Type()):
+		field.Set(rv)
+	case rv.Kind() != reflect.String && field.Kind() != reflect.String && rv.Type().ConvertibleTo(field.Type()):
+		field.Set(rv.Convert(field.Type()))
+	default:
+		return fmt.Errorf("want %s, got %T", field.Type(), v)
+	}
+	return nil
 }
 
 // fieldForInput resolves a record key to its schema field: by column or Go

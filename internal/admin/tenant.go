@@ -113,16 +113,58 @@ func (s tenantScope) Column() string {
 	return runtimeColumn(s.Field.Column)
 }
 
-// contains reports whether rec belongs to the scope's tenant. Values are
-// compared in their canonical string form (a numeric tenant column arrives
-// as float64 from the JSON record), so it holds for Nucleus and Quark alike.
-func (s tenantScope) contains(rec datasource.Record) bool {
+// recordTenant returns the tenant rec carries under one of the scope's
+// keys, in canonical string form (a numeric tenant column arrives as
+// float64 from the JSON record), and whether rec carries the field at all.
+// A record without the field is not a record of another tenant: both
+// adapters leave a field hidden from JSON (json:"-") out of the records
+// they emit, so the caller confirms membership through the store (owns).
+func (s tenantScope) recordTenant(rec datasource.Record) (tenant string, present bool) {
 	v, ok := recordValueByKeys(rec, s.Keys)
 	if !ok {
-		return false
+		return "", false
 	}
-	id, ok := canonicalID(v)
-	return ok && id == s.Tenant
+	id, _ := canonicalID(v)
+	return id, true
+}
+
+// owns reports whether the row id names — rec being the record st returned
+// for it — belongs to the scope's tenant. A record that carries the tenant
+// field is compared in place. One that carries it under none of the
+// scope's keys (the field is hidden from JSON, so the record has no tenant
+// key at all) is confirmed through the store: a list filtered by the tenant
+// column and the primary key answers the row only when it is the tenant's.
+// The row that list returns must name id as its primary key — the Nucleus
+// backend drops a filter column it cannot resolve instead of refusing it,
+// and a list confined by tenant alone would answer the tenant's first row
+// for any id. A model whose primary key the scope cannot resolve never
+// confirms a row this way.
+func (s tenantScope) owns(ctx context.Context, st datasource.RecordStore, mi datasource.ModelInfo, id string, rec datasource.Record) (bool, error) {
+	if tenant, present := s.recordTenant(rec); present {
+		return tenant == s.Tenant, nil
+	}
+	want, ok := canonicalID(id)
+	if !ok {
+		return false, nil
+	}
+	pkColumn, _, ok := dsResolveField(mi, mi.PrimaryKey)
+	if !ok {
+		return false, nil
+	}
+	page, err := st.List(ctx, datasource.Query{
+		Page:     1,
+		PageSize: 1,
+		Filters:  map[string]string{s.Column(): s.Tenant, pkColumn: want},
+	})
+	if err != nil {
+		return false, err
+	}
+	for _, item := range page.Items {
+		if got, ok := canonicalID(recordPKValue(item, mi)); ok && got == want {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // fieldPayloadKeys returns, sorted, the keys of data the backend resolves
@@ -275,17 +317,23 @@ func (p *Panel) enforcedTenantID(r *http.Request) string {
 	return tc.TenantID
 }
 
-// scopedRecord loads id and confirms it belongs to the request's tenant. A
-// row of another tenant is reported as not found — the same answer as a
-// row that does not exist, so the id space of other tenants is not
-// disclosed.
+// scopedRecord loads id and confirms it belongs to the request's tenant
+// (tenantScope.owns). A row of another tenant is reported as not found —
+// the same answer as a row that does not exist, so the id space of other
+// tenants is not disclosed.
 func scopedRecord(ctx context.Context, st datasource.RecordStore, mi datasource.ModelInfo, id string, scope tenantScope) (datasource.Record, error) {
 	rec, err := st.Get(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	if scope.Enforced() && !scope.contains(rec) {
-		return nil, gferrors.NotFound(mi.Name, id)
+	if scope.Enforced() {
+		owned, err := scope.owns(ctx, st, mi, id, rec)
+		if err != nil {
+			return nil, err
+		}
+		if !owned {
+			return nil, gferrors.NotFound(mi.Name, id)
+		}
 	}
 	return rec, nil
 }

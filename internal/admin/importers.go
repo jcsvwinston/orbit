@@ -274,13 +274,27 @@ func (p *Panel) ExecuteImport(ctx context.Context, cfg ImportConfig, records []m
 				// found by a pk of another tenant is neither skipped (that
 				// would confirm it) nor updated (that overwrote it with the
 				// stamped tenant, moving it). Not found, as a get answers.
-				if scope.Enforced() && !scope.contains(existing) {
-					report.Failed++
-					report.Errors = append(report.Errors, ImportError{
-						Row:     rowIdx,
-						Message: fmt.Sprintf("record %s not found in tenant %q", existingID, cfg.TenantID),
-					})
-					continue
+				// A record that carries no tenant key (the field is hidden
+				// from JSON) is confirmed through the store rather than
+				// taken for another tenant's.
+				if scope.Enforced() {
+					owned, err := scope.owns(ctx, st, mi, existingID, existing)
+					if err != nil {
+						report.Failed++
+						report.Errors = append(report.Errors, ImportError{
+							Row:     rowIdx,
+							Message: fmt.Sprintf("record %s: %v", existingID, err),
+						})
+						continue
+					}
+					if !owned {
+						report.Failed++
+						report.Errors = append(report.Errors, ImportError{
+							Row:     rowIdx,
+							Message: fmt.Sprintf("record %s not found in tenant %q", existingID, cfg.TenantID),
+						})
+						continue
+					}
 				}
 				if cfg.OnConflict == "skip" {
 					report.Skipped++

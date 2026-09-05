@@ -29,7 +29,13 @@ two of those keys is a 400. Both backends refuse a payload that names one
 field twice (Nucleus 422, Quark 400) whichever keys it uses, so a key the
 panel does not resolve cannot outvote the tenant it stamps; Quark's store
 applies the keys of an update by column and Go name only, so a JSON-tag
-alias in an update is dropped, never applied. Exports, imports and fixtures
+alias in an update is dropped, never applied. A tenant column hidden from
+JSON (`json:"-"`) is confined the same way: the records both backends emit
+carry no tenant key, so a row is confirmed by id through a list filtered by
+tenant and primary key instead of read off the record, the guard knows the
+field by its column and Go name, and a create is stamped there — Quark's
+store sets a schema column hidden from JSON on the entity itself, since
+`json.Unmarshal` never would. Exports, imports and fixtures
 work inside that tenant whatever `tenant_id` their request body carries — a
 row that names another tenant fails, a row whose id belongs to another
 tenant's record fails as *not found*, and an export job (`/api/exports`, its
