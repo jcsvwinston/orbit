@@ -72,7 +72,7 @@ requires the other.
 
 ## Status
 
-The current tagged release is **v1.8.24**. <!-- x-release-please-version --> The
+The current tagged release is **v1.8.25**. <!-- x-release-please-version --> The
 public API — the root module and `datasource` — is stable for the life of v1.x:
 it will not change in a breaking way within v1.
 
