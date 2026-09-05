@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.2](https://github.com/jcsvwinston/orbit/compare/server/v0.11.1...server/v0.11.2) (2026-09-05)
+
+
+### Fixed
+
+* **deps:** align root, agent, server, quarkbridge, quarkdatasource to the set (nucleus v1.24.0, quark v1.11.0) ([#433](https://github.com/jcsvwinston/orbit/issues/433)) ([d3fe9b6](https://github.com/jcsvwinston/orbit/commit/d3fe9b61fe92df0e47bcc01d4afc9f8b2faf1212))
+
 ## [0.11.1](https://github.com/jcsvwinston/orbit/compare/server/v0.11.0...server/v0.11.1) (2026-09-05)
 
 
