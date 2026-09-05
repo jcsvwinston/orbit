@@ -67,7 +67,9 @@ it comes back with a status below 500; a request that fails, or a
 502/503/504 from a proxy whose upstream is restarting, ends in the error
 state instead — sidebar in place, pages already loaded still opening — with
 the **Reload** button for when the server is back. That probe spends
-nothing, so the next failure probes again; it is skipped while the browser
+nothing and waits at most ten seconds (a proxy holding the request with no
+healthy upstream is shown as a failure, not a spinner), so the next failure
+probes again; it is skipped while the browser
 reports itself offline, the outcome being known. A page that throws while
 rendering lands in the same boundary with **Try again**. The boundary is
 keyed by pathname, so navigating elsewhere starts clean.

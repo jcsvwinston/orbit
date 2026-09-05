@@ -37,6 +37,8 @@
  */
 
 const RELOAD_FLAG = 'orbit-admin:chunk-reload'
+/** How long the HEAD probe waits for the server before the failure is shown instead. */
+export const PROBE_TIMEOUT_MS = 10_000
 
 /** How long after an automatic reload a further chunk failure shows the error instead of reloading again. */
 export const RELOAD_SPENT_MS = 60_000
@@ -87,15 +89,24 @@ function offline(): boolean {
  * cannot serve yet (a reverse proxy during the restart).
  */
 async function serverAnswers(): Promise<boolean> {
+  // A server that accepts the connection and never answers (a proxy holding
+  // requests with no healthy upstream) must not hold the decision open: the
+  // browser's own fetch timeout is minutes. Past the probe timeout the
+  // failure is shown with its Reload button and nothing is spent.
+  const abort = new AbortController()
+  const timer = setTimeout(() => abort.abort(), PROBE_TIMEOUT_MS)
   try {
     const response = await fetch(window.location.href, {
       method: 'HEAD',
       cache: 'no-store',
       credentials: 'same-origin',
+      signal: abort.signal,
     })
     return response.status < 500
   } catch {
     return false
+  } finally {
+    clearTimeout(timer)
   }
 }
 

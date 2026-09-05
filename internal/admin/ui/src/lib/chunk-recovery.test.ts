@@ -84,7 +84,7 @@ describe('chunk recovery', () => {
       const decision = recovery.reloadOnce(chrome())
       // The reload waits for the probe, which asks for the document the
       // reload will fetch; nothing is reloaded or spent before it answers.
-      expect(probe).toHaveBeenCalledWith(window.location.href, PROBE)
+      expect(probe).toHaveBeenCalledWith(window.location.href, expect.objectContaining(PROBE))
       expect(reload).not.toHaveBeenCalled()
       expect(sessionStorage.getItem(FLAG)).toBeNull()
 
@@ -116,6 +116,34 @@ describe('chunk recovery', () => {
       await expect(recovery.reloadOnce(chrome())).resolves.toBe(true)
       expect(reload).toHaveBeenCalledTimes(1)
       expect(sessionStorage.getItem(FLAG)).not.toBeNull()
+    })
+
+    it('shows the error when the server accepts the connection but never answers', async () => {
+      vi.useFakeTimers()
+      try {
+        // Accepts the connection and never answers; only the abort settles it.
+        serverThat(
+          vi.fn(
+            (_url: string | URL | Request, init?: RequestInit) =>
+              new Promise<Response>((_resolve, reject) => {
+                init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+              }),
+          ) as unknown as Mock<() => Promise<Response>>,
+        )
+        const decision = recovery.reloadOnce(chrome())
+        // While the probe is out, the boundary keeps its loading state up.
+        expect(recovery.reloadPending(chrome())).toBe(true)
+        await vi.advanceTimersByTimeAsync(recovery.PROBE_TIMEOUT_MS + 1)
+        await expect(decision).resolves.toBe(false)
+        expect(reload).not.toHaveBeenCalled()
+        expect(sessionStorage.getItem(FLAG)).toBeNull()
+        const [, init] = (probe.mock.calls as unknown as [string, RequestInit][])[0] ?? []
+        expect(init?.signal?.aborted).toBe(true)
+        // Nothing is in flight any more: a render error is not mistaken for a pending reload.
+        expect(recovery.reloadPending(new Error('render exploded'))).toBe(false)
+      } finally {
+        vi.useRealTimers()
+      }
     })
 
     it.each([500, 502, 503, 504])(
