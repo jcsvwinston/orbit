@@ -6,7 +6,7 @@ description: What changed in each Orbit release, in plain terms.
 
 # Release notes
 
-The current release is **v1.8.21**. <!-- x-release-please-version -->
+The current release is **v1.8.22**. <!-- x-release-please-version -->
 
 Every heading below is a version of the **root module**
 (`github.com/jcsvwinston/orbit`) — the one an application mounts for the
@@ -23,7 +23,12 @@ Releases the dependency bumps that Dependabot merged into `proto`, `agent`
 and `server` on 2026-09-04 (connect-go 1.20, modernc SQLite 1.58 and
 friends) — the suite's manifest guard refuses to certify a root whose
 module directories carry code their tags do not — and moves every module to
-Nucleus v1.23.2. No behaviour changes.
+Nucleus v1.23.2.
+
+One behaviour fix rode along: with only database handles configured (no
+database metadata), the panel derived the app's default alias from Go's map
+iteration order, so it could change on every process start; it is now
+`default` when present, otherwise the smallest alias.
 
 Fleet tags cut alongside: `proto/v0.4.4`, `agent/v0.6.13`,
 `server/v0.10.15`, `quarkbridge/v1.8.19`.
