@@ -49,7 +49,12 @@ func (s *Sampler) Collect() *adminv1.HostMetrics {
 		if !s.prevWall.IsZero() {
 			wall := now.Sub(s.prevWall)
 			if wall > 0 {
-				pct := float64(cpu-s.prevCPU) / float64(wall) * 100
+				// Process CPU time over wall time, divided by the CPUs the
+				// process can use, so 100 means every core busy and a
+				// two-core box saturating one reads 50 — the convention
+				// a dashboard expects. It used to exceed 100 on any
+				// multi-core host (F15).
+				pct := float64(cpu-s.prevCPU) / float64(wall) * 100 / float64(runtime.NumCPU())
 				if pct < 0 {
 					pct = 0
 				}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime/debug"
+	"sync"
 	"time"
 
 	"connectrpc.com/connect"
@@ -27,7 +28,34 @@ type ControlService struct {
 
 	// SnapshotTimeout caps how long GetSnapshot waits for the agent.
 	SnapshotTimeout time.Duration
+
+	// MaxStreamsPerOperator caps the StreamEvents subscriptions one
+	// identity may hold at once; the next open is refused with
+	// ResourceExhausted. Every open used to fan the whole ring out and
+	// push a new aggregate filter to every agent, with no ceiling per
+	// operator (OR-26). Zero means the default, 8.
+	MaxStreamsPerOperator int
+
+	// MaxReplayEvents caps how many ring-buffer events include_recent
+	// replays into a fresh stream. Zero means the default, 500.
+	MaxReplayEvents int
+
+	streamsMu sync.Mutex
+	streams   map[string]int // open StreamEvents per identity subject
+
+	// The agent-side aggregate filter is recomputed when a subscription
+	// opens or closes. A burst of opens (the SPA reconnecting every
+	// panel at once) used to push it to every agent once per
+	// subscription; the push is now coalesced within pushDebounce.
+	pushMu    sync.Mutex
+	pushTimer *time.Timer
 }
+
+const (
+	defaultMaxStreamsPerOperator = 8
+	defaultMaxReplayEvents       = 500
+	pushDebounce                 = 100 * time.Millisecond
+)
 
 // NewControlService constructs the handler.
 func NewControlService(state *State, eventChannelSize int, snapshotTimeout time.Duration) *ControlService {
@@ -107,18 +135,28 @@ func (s *ControlService) StreamEvents(ctx context.Context, req *connect.Request[
 	}
 	body := req.Msg
 
+	release, err := s.acquireStreamSlot(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
+
 	sub, cancel := s.state.EventBus.Subscribe(body.GetFilter(), body.GetSamplingRate(), s.EventChannelSize)
 	defer cancel()
 
 	// Recompute the agent-side aggregate Subscribe and push it to every
-	// connected agent. The agent is responsible for replacing any
-	// previous server-aggregate sub atomically (proto guarantees this on
-	// duplicate subscription_id).
-	s.pushAggregateToAgents()
-	defer s.pushAggregateToAgents()
+	// connected agent — coalesced, so a burst of opens is one push. The
+	// agent replaces any previous server-aggregate sub atomically (proto
+	// guarantees this on duplicate subscription_id).
+	s.schedulePushAggregate()
+	defer s.schedulePushAggregate()
 
 	if body.GetIncludeRecent() && s.state.Replay != nil {
-		for _, ev := range s.state.Replay.Snapshot(body.GetFilter(), 0) {
+		limit := s.MaxReplayEvents
+		if limit <= 0 {
+			limit = defaultMaxReplayEvents
+		}
+		for _, ev := range s.state.Replay.Snapshot(body.GetFilter(), limit) {
 			if err := stream.Send(ev); err != nil {
 				return err
 			}
@@ -253,6 +291,56 @@ func (s *ControlService) pushAggregateToAgents() {
 	s.state.Nodes.ForEach(func(e *nodes.Entry) {
 		nodes.TryEnqueue(e, frame)
 	})
+}
+
+// schedulePushAggregate coalesces pushes: the first call arms a timer,
+// the calls that follow within pushDebounce ride on it. The aggregate is
+// computed when the timer fires, so it reflects every subscription that
+// opened or closed in the window.
+func (s *ControlService) schedulePushAggregate() {
+	s.pushMu.Lock()
+	defer s.pushMu.Unlock()
+	if s.pushTimer != nil {
+		return
+	}
+	s.pushTimer = time.AfterFunc(pushDebounce, func() {
+		s.pushMu.Lock()
+		s.pushTimer = nil
+		s.pushMu.Unlock()
+		s.pushAggregateToAgents()
+	})
+}
+
+// acquireStreamSlot counts the open StreamEvents of the caller's identity
+// and refuses the one past the cap. An unauthenticated context (tests,
+// a proxy that stamps no identity) shares one anonymous bucket.
+func (s *ControlService) acquireStreamSlot(ctx context.Context) (func(), error) {
+	limit := s.MaxStreamsPerOperator
+	if limit <= 0 {
+		limit = defaultMaxStreamsPerOperator
+	}
+	subject := auth.IdentityFromContext(ctx).Subject
+	if subject == "" {
+		subject = "anonymous"
+	}
+	s.streamsMu.Lock()
+	defer s.streamsMu.Unlock()
+	if s.streams == nil {
+		s.streams = make(map[string]int)
+	}
+	if s.streams[subject] >= limit {
+		return nil, connect.NewError(connect.CodeResourceExhausted,
+			fmt.Errorf("admin server: %s already holds %d live event streams (the limit); close one before opening another", subject, limit))
+	}
+	s.streams[subject]++
+	return func() {
+		s.streamsMu.Lock()
+		defer s.streamsMu.Unlock()
+		s.streams[subject]--
+		if s.streams[subject] <= 0 {
+			delete(s.streams, subject)
+		}
+	}, nil
 }
 
 // Compile-time assertion.

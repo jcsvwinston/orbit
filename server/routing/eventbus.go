@@ -338,6 +338,20 @@ func (s *EventSubscription) Cancel() {
 	})
 }
 
+// nodeIDMatches is the one NodeIds comparison the live bus and the replay
+// buffer share: trimmed, case-insensitive. The two used to differ (exact
+// vs. folded), so a filter could match live events and miss the replay of
+// the same node (F12).
+func nodeIDMatches(want []string, got string) bool {
+	target := strings.TrimSpace(got)
+	for _, w := range want {
+		if strings.EqualFold(strings.TrimSpace(w), target) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *EventSubscription) matches(e *adminv1.Event) bool {
 	if s == nil || e == nil {
 		return false
@@ -361,18 +375,8 @@ func (s *EventSubscription) matches(e *adminv1.Event) bool {
 		}
 	}
 
-	if len(f.NodeIds) > 0 {
-		ok := false
-		target := strings.TrimSpace(e.NodeId)
-		for _, want := range f.NodeIds {
-			if strings.EqualFold(strings.TrimSpace(want), target) {
-				ok = true
-				break
-			}
-		}
-		if !ok {
-			return false
-		}
+	if len(f.NodeIds) > 0 && !nodeIDMatches(f.NodeIds, e.NodeId) {
+		return false
 	}
 
 	if http := e.GetHttpRequest(); http != nil {
