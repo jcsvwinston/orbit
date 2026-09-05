@@ -3,7 +3,6 @@ package admin
 import (
 	"encoding/csv"
 	"fmt"
-	"strconv"
 	"strings"
 
 	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
@@ -40,19 +39,13 @@ func (p *Panel) handleExportCSV(c *router.Context) error {
 	if err != nil {
 		return err
 	}
-	idSet, err := parseIDSet(c.Query("ids"))
-	if err != nil {
-		return gferrors.BadRequest("invalid ids query param")
-	}
+	idSet := parseIDSet(c.Query("ids"))
 
 	// Same tenant scope as the list endpoint, so an export never shows more
 	// than the grid it was requested from.
 	var filters map[string]string
-	if tenantCtx := tenantContextFromRequest(r); tenantCtx != nil && tenantCtx.Enabled && tenantCtx.AutoFilter {
-		tenantField := p.resolveTenantField(mi.Name)
-		if tenantField != "" && tenantCtx.TenantID != "" {
-			filters = map[string]string{tenantField: tenantCtx.TenantID}
-		}
+	if scope := p.requestTenantScope(r, mi); scope.Enforced() {
+		filters = map[string]string{scope.Column(): scope.Tenant}
 	}
 
 	// Determine visible columns and the primary-key field for id filtering.
@@ -149,32 +142,27 @@ func (p *Panel) handleExportCSV(c *router.Context) error {
 // exportCSVPageSize is the page size the CSV export walks the table with.
 const exportCSVPageSize = 1000
 
-func parseIDSet(raw string) (map[uint64]struct{}, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return map[uint64]struct{}{}, nil
-	}
-
-	set := make(map[uint64]struct{})
+// parseIDSet splits the ?ids= selection of an export into the set of
+// boundary-string ids it names (ADR-001 D1). Ids are opaque here: a UUID
+// is as selectable as "7", and an id that matches no row selects nothing
+// (it used to be a 400 for anything that was not an unsigned integer).
+func parseIDSet(raw string) map[string]struct{} {
+	set := make(map[string]struct{})
 	for _, part := range strings.Split(raw, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
+		if id, ok := canonicalID(part); ok {
+			set[id] = struct{}{}
 		}
-		id, err := strconv.ParseUint(part, 10, 64)
-		if err != nil {
-			return nil, err
-		}
-		set[id] = struct{}{}
 	}
-	return set, nil
+	return set
 }
 
-// recordID reads a record's primary-key value and coerces it to uint64 for the
-// id-set membership check. It prefers the model's PK field (when known) and
-// falls back to the conventional "id" key. Values arrive from JSON records as
-// float64, but int/uint/string forms are tolerated.
-func recordID(rec datasource.Record, pkField datasource.FieldInfo, hasPK bool) (uint64, bool) {
+// recordID reads a record's primary-key value in its canonical string form
+// for the id-set membership check. It prefers the model's PK field (when
+// known) and falls back to the conventional "id" key. Values arrive from
+// JSON records as float64, but int/uint/string and textual forms (uuid) are
+// all normalised by canonicalID; a row whose key has no usable text is not
+// selectable.
+func recordID(rec datasource.Record, pkField datasource.FieldInfo, hasPK bool) (string, bool) {
 	var v any
 	var found bool
 	if hasPK {
@@ -183,42 +171,8 @@ func recordID(rec datasource.Record, pkField datasource.FieldInfo, hasPK bool) (
 	if !found {
 		v, found = rec["id"]
 	}
-	if !found || v == nil {
-		return 0, false
+	if !found {
+		return "", false
 	}
-
-	switch n := v.(type) {
-	case float64:
-		if n < 0 {
-			return 0, false
-		}
-		return uint64(n), true
-	case float32:
-		if n < 0 {
-			return 0, false
-		}
-		return uint64(n), true
-	case int:
-		if n < 0 {
-			return 0, false
-		}
-		return uint64(n), true
-	case int64:
-		if n < 0 {
-			return 0, false
-		}
-		return uint64(n), true
-	case uint:
-		return uint64(n), true
-	case uint64:
-		return n, true
-	case string:
-		id, err := strconv.ParseUint(strings.TrimSpace(n), 10, 64)
-		if err != nil {
-			return 0, false
-		}
-		return id, true
-	default:
-		return 0, false
-	}
+	return canonicalID(v)
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -55,10 +56,23 @@ func payloadToEntity(meta *model.ModelMeta, rec datasource.Record) (any, error) 
 // applyPayload assigns rec onto entity (a settable struct value) and returns
 // the set of fields it touched, keyed by field meta. Validation problems come
 // back as one gferrors.ValidationFailed carrying every offending key.
+//
+// A field named more than once — under its column and its json tag, or under
+// two letter cases — is a problem, not a race: the keys used to be applied in
+// map order, so which value won was a coin flip, and a caller that stamps one
+// key (the panel's tenant) could be outvoted by another it did not know.
+// Keys are visited in sorted order so the key reported is deterministic.
 func applyPayload(meta *model.ModelMeta, entity reflect.Value, rec datasource.Record) (map[string]model.FieldMeta, error) {
 	touched := make(map[string]model.FieldMeta, len(rec))
 	problems := map[string]string{}
-	for key, raw := range rec {
+	named := make(map[string]string, len(rec)) // field name -> first key naming it
+	keys := make([]string, 0, len(rec))
+	for key := range rec {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		raw := rec[key]
 		if strings.HasPrefix(key, "_") {
 			continue
 		}
@@ -67,6 +81,11 @@ func applyPayload(meta *model.ModelMeta, entity reflect.Value, rec datasource.Re
 			problems[key] = "unknown field"
 			continue
 		}
+		if first, dup := named[fm.Name]; dup {
+			problems[key] = fmt.Sprintf("names the same field as %q", first)
+			continue
+		}
+		named[fm.Name] = key
 		if fm.IsPK || fm.IsReadOnly {
 			continue
 		}

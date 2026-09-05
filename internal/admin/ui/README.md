@@ -88,8 +88,13 @@ touching `services/api.ts`:
 - `GET /api/models/{name}` caps `page_size` at 200 and sorts with
   `order_by=<column> <asc|desc>`; the grid sorts server-side and appends
   pages on "Load more".
-- Bulk delete (`POST /api/models/{name}/bulk`) decodes ids as `[]uint`; the
-  grid routes non-numeric primary keys through the single-record DELETE.
+- Bulk delete (`POST /api/models/{name}/bulk`) takes ids as strings (numbers
+  are still accepted); a UUID key travels like an integer one, and the ids
+  the backend cannot narrow or reach come back per id in `errors[]`
+  (`{id: string, error}`), not as a failed request.
+- `GET /api/models/{name}?search=` answers 400 on a model with no
+  searchable field; the grid reads `is_search` from the schema and disables
+  the search box for those models.
 - Import is three calls: `POST /api/imports` (multipart, returns `key` and
   detected `format`), `POST /api/import/validate?key=` and
   `POST /api/import/execute?key=`, both with `{model, format}` — nothing is

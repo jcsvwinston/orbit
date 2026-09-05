@@ -22,6 +22,7 @@ import (
 	"github.com/jcsvwinston/nucleus/pkg/auth"
 	"github.com/jcsvwinston/nucleus/pkg/authz"
 	"github.com/jcsvwinston/nucleus/pkg/db"
+	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
 	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/router"
 	"github.com/jcsvwinston/nucleus/pkg/signals"
@@ -83,15 +84,30 @@ type PanelConfig struct {
 	SessionStore        string               // configured session store label (memory|sql|redis)
 	SessionRuntime      auth.SessionRuntimeIdentity
 
-	// Multi-tenant configuration
+	// Multi-tenant configuration. When enabled, Data Studio is confined to
+	// the tenant of each request — list, get, create, update, delete, bulk,
+	// CSV export, exports (and their job list, status and download),
+	// imports and fixtures — resolved by TenantResolver (the host
+	// application's request scope) and falling back to MultiTenantDefault.
+	// A request that resolves no tenant is refused (403) unless its operator
+	// may switch tenants; it does not fall back to every tenant. Only a
+	// superuser, or a subject granted the tenant_switch RBAC action on
+	// admin:*, may switch the request to another tenant or to all of them
+	// with ?tenant=; every switch is audited. The confinement trusts the
+	// resolver: a tenant read from a header the client controls is the
+	// client's choice, not the host's.
 	MultiTenantEnabled    bool     // whether multi-tenant mode is active
-	MultiTenantDefault    string   // default tenant ID when none specified
-	MultiTenantAutoFilter bool     // auto-filter CRUD queries by tenant (default true when multi-tenant enabled)
+	MultiTenantDefault    string   // default tenant ID when none resolved
+	MultiTenantAutoFilter bool     // confine Data Studio to the request's tenant (default true when multi-tenant enabled)
 	MultiTenantField      string   // override tenant field name (empty = auto-detect from model)
 	MultiTenantIDs        []string // known tenant IDs for the selector UI (empty = discover from scope)
-	MultiSiteEnabled      bool     // whether multi-site mode is active
-	MultiSiteDefault      string   // default site name
-	MultiSiteNames        []string // known site names for the selector UI
+	// TenantResolver returns the tenant the host application resolved for the
+	// request (nucleus resolves it from the subdomain or a header before the
+	// panel runs). Nil means no host resolution: the default tenant applies.
+	TenantResolver   func(*http.Request) (tenant string, ok bool)
+	MultiSiteEnabled bool     // whether multi-site mode is active
+	MultiSiteDefault string   // default site name
+	MultiSiteNames   []string // known site names for the selector UI
 
 	// RBAC configuration
 	RBACEnforcer *authz.Enforcer // optional Casbin enforcer for fine-grained authorization
@@ -672,27 +688,52 @@ func (p *Panel) tenantContextMiddleware(next http.Handler) http.Handler {
 			AutoFilter: p.config.MultiTenantAutoFilter,
 		}
 
-		// Extract tenant from request scope (subdomain/header resolution)
-		if scope, ok := requestScopeFromContext(r.Context()); ok {
-			if scope.Tenant != "" {
-				tenantCtx.TenantID = scope.Tenant
+		// The tenant the host application resolved for this request
+		// (subdomain/header — nucleus' request scope) wins over the default.
+		if p.config.TenantResolver != nil {
+			if tenant, ok := p.config.TenantResolver(r); ok && strings.TrimSpace(tenant) != "" {
+				tenantCtx.TenantID = strings.TrimSpace(tenant)
 			}
 		}
 
-		// Allow explicit tenant override via query parameter
-		if explicit := requestTenant(r); explicit != "" {
-			tenantCtx.TenantID = explicit
+		// ?tenant=<id> / ?tenant=all switches the request to another tenant
+		// or to every tenant. It is a way out of the confinement, so it is
+		// gated (superuser or the tenant_switch action) and audited; a
+		// value equal to the resolved tenant is a no-op. With multi-tenant
+		// off there is nothing to switch and the parameter is ignored.
+		if explicit := requestTenant(r); explicit != "" && tenantCtx.Enabled {
+			target := explicit
+			if strings.EqualFold(explicit, "all") {
+				target = ""
+			}
+			if target != tenantCtx.TenantID {
+				if !p.canSwitchTenant(r) {
+					writeErr(w, r, gferrors.Forbidden("switching tenant requires a superuser or the "+tenantSwitchAction+" permission"))
+					return
+				}
+				tenantCtx.TenantID = target
+				tenantCtx.Overridden = true
+				p.recordAuditEntry(r, AuditEntry{Action: "tenant.override", RecordID: explicit})
+			}
 		}
 
-		// When multi-tenant is enabled but no tenant specified, use default
-		if tenantCtx.Enabled && tenantCtx.TenantID == "" {
-			tenantCtx.TenantID = p.config.MultiTenantDefault
+		// No tenant resolved and no default: with confinement on there is
+		// nothing to confine the request to, so it is refused — unless the
+		// operator may look at every tenant anyway (superuser or
+		// tenant_switch), for whom the request is unscoped as with
+		// ?tenant=all. It used to fall open: AutoFilter went off and a
+		// plain operator on a bare host saw and edited every tenant's rows.
+		if tenantCtx.Enabled && tenantCtx.AutoFilter && tenantCtx.TenantID == "" && !tenantCtx.Overridden {
+			if !p.canSwitchTenant(r) {
+				writeErr(w, r, gferrors.Forbidden("no tenant resolved for this request: Data Studio is confined to the request's tenant, and seeing every tenant requires a superuser or the "+tenantSwitchAction+" permission"))
+				return
+			}
 		}
 
-		// If tenant is empty string or "all", disable auto-filtering (view all tenants)
-		if tenantCtx.TenantID == "" || tenantCtx.TenantID == "all" {
+		// No tenant (a switch to all, or none resolved for an operator who
+		// may see every tenant): nothing to confine the request to.
+		if tenantCtx.TenantID == "" {
 			tenantCtx.AutoFilter = false
-			tenantCtx.TenantID = ""
 		}
 
 		ctx := context.WithValue(r.Context(), adminTenantCtxKey, tenantCtx)
@@ -937,10 +978,13 @@ func (p *Panel) authenticatedUser(r *http.Request) (*auth.User, error) {
 			return user, nil
 		}
 	}
+	// The open posture (no auth provider, warned at mount) has no operator
+	// to name: the callers that only annotate — the audit log, the tenant
+	// switch gate, the live feed — take the error as "anonymous", and
+	// authorizeAction never gets here. Calling through the nil interface
+	// panicked, which dropped every ?tenant= request of that posture once
+	// AuditEnabled tried to record the switch.
 	if p.config.Auth == nil {
-		// Open posture (no provider): there is no operator to name. The
-		// audit entries a handler records in this posture stay anonymous
-		// instead of dereferencing a nil provider.
 		return nil, errors.New("admin auth provider is not configured")
 	}
 	return p.config.Auth.Authenticate(r)
