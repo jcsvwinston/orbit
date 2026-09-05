@@ -77,6 +77,9 @@ describe('App', () => {
     meta = setPrefix('/nucleus-admin')
     sessionStorage.clear()
     reload = stubLocationReload()
+    // Before reloading, the recovery module asks the server for the document
+    // (a HEAD request) to be sure the reload can fetch it; here it answers.
+    vi.stubGlobal('fetch', vi.fn(async () => ({ status: 200 }) as Response))
     routes.load = { rbac: realRBACPage, audit: realAuditPage }
     App = await loadApp()
   })
@@ -151,6 +154,52 @@ describe('App', () => {
       expect(contentSpinner()).toBeInTheDocument()
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
       expect(await nav()).toBeInTheDocument()
+    })
+
+    it('shows the error with a Reload button, sidebar in place, when the chunk fails while the server is restarting', async () => {
+      // The redeploy window itself: the process serving the panel is not
+      // answering yet, so the probe that precedes the reload fails. Reloading
+      // now would replace the whole panel with the browser's connection-error
+      // page; the boundary's error state, with the sidebar still there, is
+      // the outcome instead.
+      const probe = deferred<Response>()
+      const fetchMock = vi.fn(() => probe.promise)
+      vi.stubGlobal('fetch', fetchMock)
+      routes.load.rbac = () => Promise.reject(missingChunkError('RBACPage-old.js'))
+      window.history.pushState({}, '', '/nucleus-admin/audit')
+
+      render(<App />)
+      expect(await auditHeading()).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('link', { name: 'Access Control' }))
+
+      // The chunk fails and the probe goes out; while it is out the spinner
+      // stays, the usual outcome being the reload.
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+      expect(contentSpinner()).toBeInTheDocument()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(reload).not.toHaveBeenCalled()
+
+      probe.reject(new TypeError('Failed to fetch'))
+
+      const alert = await (await main()).findByRole('alert')
+      expect(alert).toHaveTextContent('This page could not be loaded')
+      expect(contentSpinner()).not.toBeInTheDocument()
+      expect(reload).not.toHaveBeenCalled()
+      // Nothing was spent: the tab keeps its automatic reload for when the server is back.
+      expect(sessionStorage.getItem('orbit-admin:chunk-reload')).toBeNull()
+      expect(await nav()).toBeInTheDocument()
+
+      // Pages already loaded still open from the sidebar...
+      fireEvent.click(screen.getByRole('link', { name: 'Audit Log' }))
+      expect(await auditHeading()).toBeInTheDocument()
+      expect(reload).not.toHaveBeenCalled()
+
+      // ...and the failed page shows the same error again, whose Reload button is the way back.
+      fireEvent.click(screen.getByRole('link', { name: 'Access Control' }))
+      const again = await (await main()).findByRole('alert')
+      fireEvent.click(within(again).getByRole('button', { name: 'Reload' }))
+      expect(reload).toHaveBeenCalledTimes(1)
     })
 
     it('shows an error with a Reload button when the chunk fails again in the reloaded document', async () => {

@@ -21,10 +21,13 @@ interface State {
  *
  * A missing chunk usually means the tab holds an index.html older than the
  * binary serving it. Such a failure reloads the page, keeping the spinner up
- * until the new document lands; one that follows a reload within a minute,
- * or arrives while the browser is offline, gets an error state with a Reload
- * button instead (src/lib/chunk-recovery.ts). React.lazy remembers a
- * rejected loader for good, so a reload is the only retry for a chunk. Any
+ * until the new document lands — and, before that, while a probe checks
+ * that the server answers. One that follows a reload within a minute,
+ * arrives while the browser is offline, or finds the server not answering
+ * (the process is restarting, a proxy in front says 502) gets an error
+ * state with a Reload button instead (src/lib/chunk-recovery.ts).
+ * React.lazy remembers a rejected loader for good, so a reload is the only
+ * retry for a chunk. Any
  * other error gets the same state with Try again, which renders the page
  * afresh. DashboardLayout keys this boundary by pathname, so navigating
  * elsewhere always starts clean.
@@ -37,8 +40,12 @@ export class RouteErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error) {
-    const reloading = reloadOnce(error)
-    if (reloading !== this.state.reloading) this.setState({ reloading })
+    // getDerivedStateFromError read the failure as a reload and put the
+    // spinner up; the probe settles whether it is one. Navigating away
+    // meanwhile unmounts this boundary, and a late setState is then a no-op.
+    void reloadOnce(error).then((reloading) => {
+      if (reloading !== this.state.reloading) this.setState({ reloading })
+    })
   }
 
   private retry = () => {

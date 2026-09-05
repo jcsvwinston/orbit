@@ -84,7 +84,11 @@ Redeploy. There is nothing else: the panel's UI is embedded in the module,
 so app and admin upgrade atomically. A panel tab that was open across the
 redeploy reloads itself once, the first time it opens a page it had not
 loaded yet — pages are fetched on demand and the old page still names the
-previous build's files.
+previous build's files. If that first visit happens while the process is
+still restarting, the tab does not reload into a connection error: the
+content area shows "This page could not be loaded" with a **Reload**
+button, the sidebar and the pages already open keep working, and opening
+the page again once the server answers reloads the tab as above.
 
 ### Fleet: server first, then agents
 
