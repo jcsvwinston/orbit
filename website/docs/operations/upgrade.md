@@ -81,7 +81,10 @@ go mod tidy && go build ./...
 ```
 
 Redeploy. There is nothing else: the panel's UI is embedded in the module,
-so app and admin upgrade atomically.
+so app and admin upgrade atomically. A panel tab that was open across the
+redeploy reloads itself once, the first time it opens a page it had not
+loaded yet — pages are fetched on demand and the old page still names the
+previous build's files.
 
 ### Fleet: server first, then agents
 

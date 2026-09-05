@@ -6,11 +6,13 @@ interface Props {
   error: unknown
   title?: string
   onRetry?: () => void
+  /** Label of the retry button; say what it does when it is not a plain retry (e.g. "Reload"). */
+  retryLabel?: string
 }
 
 // ErrorState renders a failed page load. A 403 gets its own "no permission"
 // screen so an operator knows to ask for a role rather than retry.
-export function ErrorState({ error, title, onRetry }: Props) {
+export function ErrorState({ error, title, onRetry, retryLabel = 'Try again' }: Props) {
   const forbidden = isApiError(error) && error.isForbidden
   const Icon = forbidden ? ShieldOff : AlertTriangle
   return (
@@ -22,7 +24,7 @@ export function ErrorState({ error, title, onRetry }: Props) {
       <p className="max-w-md text-sm text-muted-foreground break-words">{errorMessage(error)}</p>
       {!forbidden && onRetry && (
         <Button variant="outline" size="sm" onClick={onRetry}>
-          Try again
+          {retryLabel}
         </Button>
       )}
     </div>
