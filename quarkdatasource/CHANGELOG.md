@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.8.20](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v1.8.19...quarkdatasource/v1.8.20) (2026-09-05)
+
+
+### Fixed
+
+* **admin:** string record ids end to end, tenant scope on every Data Studio operation, 400 for search without searchable fields ([#430](https://github.com/jcsvwinston/orbit/issues/430)) ([df8676f](https://github.com/jcsvwinston/orbit/commit/df8676f02567a32ae98b3fc7a8eb192b68aa0bff))
+* **fleet:** cap live streams per operator, coalesce the aggregate push, share the node matcher, bound agent commands, count real reconnects, normalise CPU, pin CSP to the host ([#427](https://github.com/jcsvwinston/orbit/issues/427)) ([6016a75](https://github.com/jcsvwinston/orbit/commit/6016a75b4ac171cd8ae2b6ee229a1a6c3bb9a5d3))
+
 ## [1.8.19](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v1.8.18...quarkdatasource/v1.8.19) (2026-09-05)
 
 
