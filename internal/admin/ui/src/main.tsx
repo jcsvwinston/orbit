@@ -23,7 +23,8 @@ document.title = getAdminTitle();
 })()
 
 // A chunk or stylesheet that fails to load (the tab predates the binary now
-// serving it) reloads the page once; see src/lib/chunk-recovery.ts.
+// serving it) reloads the page once, when the server answers; see
+// src/lib/chunk-recovery.ts.
 installPreloadErrorReload()
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

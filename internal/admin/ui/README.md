@@ -57,12 +57,20 @@ a minute of it shows an error with a **Reload** button instead, since
 chunk that loads clears it) because the reloaded document often lands on a
 static page — the upgrade invalidated the session, so `/rbac` reloads into
 `/login` and the Overview — and a flag that lived for the tab's lifetime
-would deny the next upgrade its reload. While the browser reports itself
-offline there is no automatic reload either: the chunk failed for want of a
-network, and a reload would replace the panel with the browser's offline
-page, so the error state with its **Reload** button is shown at once. A page
-that throws while rendering lands in the same boundary with **Try again**.
-The boundary is keyed by pathname, so navigating elsewhere starts clean.
+would deny the next upgrade its reload. The reload also waits for the server
+to answer: a chunk fails to load just as well while the process serving the
+panel is restarting — the redeploy window itself — and a reload then cannot
+fetch `index.html`, so it would replace the whole panel with the browser's
+connection-error page. Before reloading, the module sends a `HEAD` request
+for the current document (what the reload will fetch) and reloads only when
+it comes back with a status below 500; a request that fails, or a
+502/503/504 from a proxy whose upstream is restarting, ends in the error
+state instead — sidebar in place, pages already loaded still opening — with
+the **Reload** button for when the server is back. That probe spends
+nothing, so the next failure probes again; it is skipped while the browser
+reports itself offline, the outcome being known. A page that throws while
+rendering lands in the same boundary with **Try again**. The boundary is
+keyed by pathname, so navigating elsewhere starts clean.
 
 Consequences to keep in mind:
 
@@ -71,7 +79,8 @@ Consequences to keep in mind:
   `internal/admin/ui_embed_test.go` keeps the assets `index.html` loads
   directly under a size budget, so a page imported eagerly by mistake fails
   the Go tests. `src/App.test.tsx` drives the layout with mocked loaders
-  (pending, rejected, throwing page) and pins where the boundaries sit.
+  (pending, rejected, rejected while the server does not answer, throwing
+  page) and pins where the boundaries sit.
 - Vite emits one JS (and, for Data Studio, one CSS) file per page under
   `dist/assets/`; all of them are embedded and served under the mount prefix
   by the same handlers as the entry, and the entry resolves them relative to
