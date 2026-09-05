@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.17](https://github.com/jcsvwinston/orbit/compare/server/v0.10.16...server/v0.10.17) (2026-09-05)
+
+
+### Fixed
+
+* **deps:** move the internal sibling pins to the tags cut in the previous release ([#419](https://github.com/jcsvwinston/orbit/issues/419)) ([69a1b82](https://github.com/jcsvwinston/orbit/commit/69a1b823eae871de0e9373cf24a697b2dd9e24af))
+
 ## [0.10.16](https://github.com/jcsvwinston/orbit/compare/server/v0.10.15...server/v0.10.16) (2026-09-05)
 
 
