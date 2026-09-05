@@ -25,7 +25,12 @@ found* by id (get, update, delete, bulk delete); a create or an update cannot
 name another tenant under any key the backend resolves to the tenant field —
 its storage column, its Go field name or, for a Nucleus model, the JSON key
 its records carry, in any letter case — and a payload naming the field under
-two of those keys is a 400. Both backends refuse a payload that names one
+two of those keys is a 400. The tenant value itself is compared exactly:
+both backends store it verbatim, so a padded spelling of the request's
+tenant (`" acme "`) is another tenant and is refused the same way, and a
+payload naming the request's tenant has that value replaced by the resolved
+tenant before it reaches the backend, so the stored column is always the
+tenant the request resolved. Both backends refuse a payload that names one
 field twice (Nucleus 422, Quark 400) whichever keys it uses, so a key the
 panel does not resolve cannot outvote the tenant it stamps; Quark's store
 applies the keys of an update by column and Go name only, so a JSON-tag

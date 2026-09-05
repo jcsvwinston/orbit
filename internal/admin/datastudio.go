@@ -185,9 +185,9 @@ func resolveOrderColumn(mi datasource.ModelInfo, key string) (string, bool) {
 	return "", false
 }
 
-// canonicalID renders a record's key (or any scalar the panel compares by
-// identity, such as a tenant value) the way ids cross the API boundary: as
-// the string of ADR-001 D1. Records come out of a JSON round-trip, so an
+// canonicalID renders a record's key the way ids cross the API boundary:
+// as the string of ADR-001 D1 (a tenant value goes through canonicalTenant,
+// which does not trim). Records come out of a JSON round-trip, so an
 // integer key arrives as float64 — 3, 3.0 and "3" all become "3"; strings
 // are trimmed; anything with a textual form (uuid.UUID, json.Number) uses
 // it. It returns false for nil and for values with no usable text.

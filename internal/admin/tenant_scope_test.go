@@ -230,6 +230,57 @@ func tenantRows(t *testing.T, sqlDB *sql.DB, table, tenant string) int {
 	return n
 }
 
+// strayTenantRows counts the live rows of table whose tenant is neither of
+// the two tenants the fixtures seed — a row a padded tenant value produced.
+func strayTenantRows(t *testing.T, sqlDB *sql.DB, table string) int {
+	t.Helper()
+	var n int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM ` + table + ` WHERE tenant_id NOT IN ('acme', 'globex') AND deleted_at IS NULL`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+// rowTenant reads the tenant column of row id in table, verbatim.
+func rowTenant(t *testing.T, sqlDB *sql.DB, table string, id int) string {
+	t.Helper()
+	var tenant string
+	if err := sqlDB.QueryRow(`SELECT tenant_id FROM `+table+` WHERE id = ?`, id).Scan(&tenant); err != nil {
+		t.Fatal(err)
+	}
+	return tenant
+}
+
+// paddedTenants are spellings of the own tenant that differ from it only
+// by surrounding whitespace. Each is another tenant to the guard: the
+// adapters store the value verbatim, so accepting one would create or move
+// rows into a tenant no request ever resolves to.
+var paddedTenants = []string{" acme ", "acme\n", "acme "}
+
+// assertPaddedTenantRefused sends every padded spelling of the own tenant
+// under key on an update of row 1 and on a create at base, expects a 400
+// for each, and checks that row 1 still reads acme and that table gained
+// no row outside acme/globex.
+func assertPaddedTenantRefused(t *testing.T, sqlDB *sql.DB, base, key, table string) {
+	t.Helper()
+	for _, padded := range paddedTenants {
+		resp, status := doJSON(t, http.MethodPut, base+"/1", map[string]any{key: padded})
+		if status != http.StatusBadRequest {
+			t.Errorf("PUT %s=%q: status %d body=%s, want 400", key, padded, status, mustJSON(resp))
+		}
+		if got := rowTenant(t, sqlDB, table, 1); got != "acme" {
+			t.Fatalf("PUT %s=%q: row 1 tenant = %q, want acme", key, padded, got)
+		}
+		resp, status = doJSON(t, http.MethodPost, base, map[string]any{key: padded, "title": "padded"})
+		if status != http.StatusBadRequest {
+			t.Errorf("POST %s=%q: status %d body=%s, want 400", key, padded, status, mustJSON(resp))
+		}
+	}
+	if n := strayTenantRows(t, sqlDB, table); n != 0 {
+		t.Fatalf("%d %s rows outside acme/globex after the padded writes, want 0", n, table)
+	}
+}
+
 func auditActions(t *testing.T, srv *httptest.Server, action string) int {
 	t.Helper()
 	resp, status := doJSON(t, http.MethodGet, srv.URL+"/api/audit?action="+action, nil)
@@ -376,7 +427,7 @@ func TestTenantScope_BulkDeleteSkipsOtherTenantRows(t *testing.T) {
 }
 
 func TestTenantScope_WritesCannotChangeTenant(t *testing.T) {
-	_, sqlDB, srv := scopedPanel(t, operatorAuth())
+	panel, sqlDB, srv := scopedPanel(t, operatorAuth())
 
 	// Moving a row to another tenant.
 	resp, status := doJSON(t, http.MethodPut, srv.URL+"/api/models/ScopedNote/1", map[string]any{"tenant_id": "globex"})
@@ -398,6 +449,27 @@ func TestTenantScope_WritesCannotChangeTenant(t *testing.T) {
 	resp, status = doJSON(t, http.MethodPost, srv.URL+"/api/models/ScopedNote", map[string]any{"tenant_id": "globex", "title": "smuggled"})
 	if status != http.StatusBadRequest {
 		t.Fatalf("POST tenant_id=globex: status %d body=%s, want 400", status, mustJSON(resp))
+	}
+	// A padded spelling of the own tenant is another tenant: the guard
+	// used to compare it trimmed and let the adapters store it verbatim,
+	// so the row landed under ' acme ' — a value no request resolves to,
+	// invisible to the tenant's list and 404 by id.
+	assertPaddedTenantRefused(t, sqlDB, srv.URL+"/api/models/ScopedNote", "tenant_id", "scoped_notes")
+	report, err := panel.ExecuteImport(context.Background(), ImportConfig{Model: "ScopedNote", TenantID: "acme", OnConflict: "skip"},
+		[]map[string]interface{}{{"tenant_id": " acme ", "title": "padded"}})
+	if err != nil || report.Failed != 1 || report.Imported != 0 {
+		t.Fatalf("ExecuteImport tenant_id=' acme ': err=%v report=%+v, want the row failed", err, report)
+	}
+	store := panel.store.(*keyedStore)
+	store.objects["_tmp/fixture_padded.json"] = fixtureJSON(t,
+		map[string]any{"model": "ScopedNote", "fields": map[string]any{"tenant_id": "acme ", "title": "padded"}},
+	)
+	resp, status = doJSON(t, http.MethodPost, srv.URL+"/api/fixtures/loaddata", map[string]any{"key": "_tmp/fixture_padded.json"})
+	if status != http.StatusOK || int(resp["failed"].(float64)) != 1 || int(resp["imported"].(float64)) != 0 {
+		t.Fatalf("loaddata tenant_id='acme ': status %d report=%s, want the row failed", status, mustJSON(resp))
+	}
+	if n := strayTenantRows(t, sqlDB, "scoped_notes"); n != 0 {
+		t.Fatalf("%d scoped_notes rows outside acme/globex after the padded writes, want 0", n)
 	}
 	// Creating without a tenant stamps the request's.
 	resp, status = doJSON(t, http.MethodPost, srv.URL+"/api/models/ScopedNote", map[string]any{"title": "mine"})
@@ -538,14 +610,29 @@ func TestTenantScope_HelpersOnUnscopedRequest(t *testing.T) {
 	if _, present := scope.recordTenant(map[string]any{"title": "no tenant key"}); present {
 		t.Fatal("a record without the tenant field does not name a tenant")
 	}
-	if got, ok, err := scope.payloadTenant(map[string]any{"TenantID": 7}); !ok || got != "7" || err != nil {
-		t.Fatalf("payloadTenant by Go name = (%q, %v, %v)", got, ok, err)
+	if tenant, present := scope.recordTenant(map[string]any{"tenant_id": "acme "}); !present || tenant != "acme " {
+		t.Fatalf("recordTenant of a padded value = (%q, %v), want it verbatim: a row stored under 'acme ' is not acme's", tenant, present)
 	}
-	if got, ok, err := scope.payloadTenant(map[string]any{"TENANT_ID": "globex"}); !ok || got != "globex" || err != nil {
-		t.Fatalf("payloadTenant by upper-cased column = (%q, %v, %v)", got, ok, err)
+	if got, key, ok, err := scope.payloadTenant(map[string]any{"TenantID": 7}); !ok || got != "7" || key != "TenantID" || err != nil {
+		t.Fatalf("payloadTenant by Go name = (%q, %q, %v, %v)", got, key, ok, err)
 	}
-	if _, _, err := scope.payloadTenant(map[string]any{"tenant_id": "acme", "TenantID": "acme"}); err == nil {
+	if got, key, ok, err := scope.payloadTenant(map[string]any{"TENANT_ID": "globex"}); !ok || got != "globex" || key != "TENANT_ID" || err != nil {
+		t.Fatalf("payloadTenant by upper-cased column = (%q, %q, %v, %v)", got, key, ok, err)
+	}
+	if got, _, ok, err := scope.payloadTenant(map[string]any{"tenant_id": " acme "}); !ok || got != " acme " || err != nil {
+		t.Fatalf("payloadTenant of a padded value = (%q, %v, %v), want it verbatim", got, ok, err)
+	}
+	if _, _, _, err := scope.payloadTenant(map[string]any{"tenant_id": "acme", "TenantID": "acme"}); err == nil {
 		t.Fatal("payloadTenant must refuse the tenant under two spellings")
+	}
+	// The guard hands the adapter the resolved tenant under the payload's
+	// own key, whatever rendering the payload used for it.
+	data := map[string]any{"TENANT_ID": "acme", "title": "kept"}
+	if err := scope.guardPayload(data, false); err != nil || data["TENANT_ID"] != "acme" || len(data) != 2 {
+		t.Fatalf("guardPayload own tenant = err %v, data %v, want the value kept under TENANT_ID", err, data)
+	}
+	if err := scope.guardPayload(map[string]any{"tenant_id": "acme "}, false); err == nil {
+		t.Fatal("guardPayload must refuse a padded spelling of the own tenant")
 	}
 	b, _ := json.Marshal(scope.Field)
 	if !strings.Contains(string(b), `"tenant_id"`) {
@@ -918,6 +1005,10 @@ func TestTenantScope_JSONTaggedTenantFieldIsGuardedAndReadable(t *testing.T) {
 			t.Errorf("PUT %s=globex: status %d body=%s, want 400", key, status, mustJSON(resp))
 		}
 	}
+	// A padded spelling of the own tenant under the json key: the read
+	// trimmed too, so a row moved to 'acme ' still answered GET 200 while
+	// the list hid it.
+	assertPaddedTenantRefused(t, sqlDB, base, "org", "camel_notes")
 	// Naming the field under the json key and the column at once is
 	// ambiguous even when both agree.
 	resp, status := doJSON(t, http.MethodPost, base, map[string]any{"org": "acme", "tenant_id": "acme", "title": "twice"})
@@ -1126,6 +1217,10 @@ func TestTenantScope_HiddenJSONTenantFieldOwnRowsReachable(t *testing.T) {
 		if status != http.StatusBadRequest {
 			t.Errorf("POST %s=globex: status %d body=%s, want 400", key, status, mustJSON(resp))
 		}
+		// A padded spelling of the own tenant is another tenant here too:
+		// a row moved to 'acme ' carried no tenant key, so it was unreachable
+		// by id and gone from the list.
+		assertPaddedTenantRefused(t, sqlDB, base, key, "hidden_notes")
 	}
 	// A create without a tenant is stamped, and the stamped row is the
 	// operator's: reachable, and deletable, by id.

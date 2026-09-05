@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"reflect"
 	"sort"
@@ -113,19 +114,40 @@ func (s tenantScope) Column() string {
 	return runtimeColumn(s.Field.Column)
 }
 
+// canonicalTenant renders a tenant value the way the scope compares it: a
+// number or a json.Number as its decimal text (a numeric tenant column
+// arrives as float64 from the JSON record), a string, []byte or Stringer
+// exactly as it is. It never trims: both adapters store the tenant value
+// verbatim, so ' acme ' is a tenant of its own — one no request resolves to
+// — and a guard that compared it trimmed let a scoped operator create or
+// move rows into it. It returns false for nil and for an empty string.
+func canonicalTenant(v any) (string, bool) {
+	switch n := v.(type) {
+	case string:
+		return n, n != ""
+	case []byte:
+		return string(n), len(n) != 0
+	case fmt.Stringer:
+		s := n.String()
+		return s, s != ""
+	default:
+		return canonicalID(v)
+	}
+}
+
 // recordTenant returns the tenant rec carries under one of the scope's
-// keys, in canonical string form (a numeric tenant column arrives as
-// float64 from the JSON record), and whether rec carries the field at all.
-// A record without the field is not a record of another tenant: both
-// adapters leave a field hidden from JSON (json:"-") out of the records
-// they emit, so the caller confirms membership through the store (owns).
+// keys, in canonical string form (canonicalTenant), and whether rec
+// carries the field at all. A record without the field is not a record of
+// another tenant: both adapters leave a field hidden from JSON (json:"-")
+// out of the records they emit, so the caller confirms membership through
+// the store (owns).
 func (s tenantScope) recordTenant(rec datasource.Record) (tenant string, present bool) {
 	v, ok := recordValueByKeys(rec, s.Keys)
 	if !ok {
 		return "", false
 	}
-	id, _ := canonicalID(v)
-	return id, true
+	tenant, _ = canonicalTenant(v)
+	return tenant, true
 }
 
 // owns reports whether the row id names — rec being the record st returned
@@ -196,28 +218,33 @@ func matchingKeys(candidates []string, data map[string]any) []string {
 
 // payloadTenant returns the tenant a write payload names under any key the
 // backend resolves to the tenant field (see tenantScope.Keys), in any
-// letter case, and whether it names one at all. A payload naming it under
-// two keys is refused: the backend would keep whichever map order hands it
-// last.
-func (s tenantScope) payloadTenant(data map[string]any) (tenant string, named bool, err error) {
+// letter case, the key it names it under, and whether it names one at all.
+// The value is compared exactly (canonicalTenant): the adapters store it
+// verbatim. A payload naming it under two keys is refused: the backend
+// would keep whichever map order hands it last.
+func (s tenantScope) payloadTenant(data map[string]any) (tenant, key string, named bool, err error) {
 	keys := matchingKeys(s.Keys, data)
 	switch len(keys) {
 	case 0:
-		return "", false, nil
+		return "", "", false, nil
 	case 1:
-		id, _ := canonicalID(data[keys[0]])
-		return id, true, nil
+		tenant, _ = canonicalTenant(data[keys[0]])
+		return tenant, keys[0], true, nil
 	default:
-		return "", true, gferrors.BadRequest("tenant field " + s.Field.Column + " appears more than once in the payload (" + strings.Join(keys, ", ") + ")")
+		return "", "", true, gferrors.BadRequest("tenant field " + s.Field.Column + " appears more than once in the payload (" + strings.Join(keys, ", ") + ")")
 	}
 }
 
 // guardPayload confines a write payload to the scope's tenant: a payload
-// naming another tenant, or the tenant under two spellings, is refused
-// (400); one naming none has the tenant stamped when stamp is set (creates
-// and imports; an update leaves the row's tenant alone).
+// naming another tenant — a padded spelling of the own tenant included —
+// or the tenant under two spellings, is refused (400); one naming none has
+// the tenant stamped when stamp is set (creates and imports; an update
+// leaves the row's tenant alone). One naming the own tenant has the value
+// replaced under its key by the resolved tenant, so what reaches the
+// adapter is the scope's tenant and not the payload's rendering of it (a
+// number for a numeric tenant column, say).
 func (s tenantScope) guardPayload(data map[string]any, stamp bool) error {
-	got, named, err := s.payloadTenant(data)
+	got, key, named, err := s.payloadTenant(data)
 	if err != nil {
 		return err
 	}
@@ -230,6 +257,7 @@ func (s tenantScope) guardPayload(data map[string]any, stamp bool) error {
 	if got != s.Tenant {
 		return tenantChangeError(s, got)
 	}
+	data[key] = s.Tenant
 	return nil
 }
 

@@ -52,6 +52,35 @@ func TestCanonicalID(t *testing.T) {
 	}
 }
 
+// canonicalTenant formats the same scalars as canonicalID but never trims:
+// a tenant value is stored verbatim by both adapters, so ' acme ' is not
+// acme, on the way in (the write guard) or on the way out (the tenant read).
+func TestCanonicalTenant(t *testing.T) {
+	cases := []struct {
+		in   any
+		want string
+		ok   bool
+	}{
+		{nil, "", false},
+		{"", "", false},
+		{" ", " ", true},
+		{"acme", "acme", true},
+		{" acme ", " acme ", true},
+		{"acme\n", "acme\n", true},
+		{[]byte(" acme"), " acme", true},
+		{fmt.Stringer(stringerValue{" acme "}), " acme ", true},
+		{float64(3), "3", true},
+		{int64(-5), "-5", true},
+		{json.Number("8"), "8", true},
+	}
+	for _, tc := range cases {
+		got, ok := canonicalTenant(tc.in)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("canonicalTenant(%#v) = (%q, %v), want (%q, %v)", tc.in, got, ok, tc.want, tc.ok)
+		}
+	}
+}
+
 type stringerValue struct{ s string }
 
 func (v stringerValue) String() string { return v.s }
