@@ -9,7 +9,7 @@ go 1.26.6
 // it is a separate module: Quark must never enter the orbit core's dependency
 // graph, and Quark itself must not depend on Orbit.
 require (
-	github.com/jcsvwinston/orbit v1.8.14
+	github.com/jcsvwinston/orbit v1.8.24
 	github.com/jcsvwinston/quark v1.10.1
 	modernc.org/sqlite v1.58.0 // indirect
 )
@@ -39,15 +39,11 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/sijms/go-ora/v2 v2.9.0 // indirect
-	go.opentelemetry.io/otel v1.46.0 // indirect
-	go.opentelemetry.io/otel/sdk v1.46.0 // indirect
-	go.opentelemetry.io/otel/trace v1.46.0 // indirect
 	golang.org/x/crypto v0.56.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
-	google.golang.org/protobuf v1.36.12 // indirect
 	modernc.org/libc v1.75.6 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect

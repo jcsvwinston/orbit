@@ -17,6 +17,14 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.8.25 — 2026-09-05
+
+Releases `quarkdatasource` with the root pin Dependabot moved on
+2026-09-04 (its tag did not cover the bump) and brings that pin to the
+current root. Nothing else changes.
+
+Fleet tags cut alongside: `quarkdatasource/v1.8.19`.
+
 ## v1.8.24 — 2026-09-05
 
 Convergence cut for the internal module pins after v1.8.22: the modules are
