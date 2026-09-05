@@ -17,6 +17,15 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.8.23 — 2026-09-05
+
+Convergence cut for the internal module pins after v1.8.22: the modules are
+tagged from the same commit as the ones they depend on, so each is cut still
+requiring the previous tag of its sibling. This release moves those pins
+forward. Nothing else changes.
+
+Fleet tags cut alongside: `agent/v0.6.14`, `server/v0.10.16`.
+
 ## v1.8.22 — 2026-09-05
 
 Releases the dependency bumps that Dependabot merged into `proto`, `agent`
