@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.8.22](https://github.com/jcsvwinston/orbit/compare/v1.8.21...v1.8.22) (2026-09-05)
+
+
+### Fixed
+
+* **admin:** derive the default database alias deterministically from the handles ([#416](https://github.com/jcsvwinston/orbit/issues/416)) ([f8d6fa8](https://github.com/jcsvwinston/orbit/commit/f8d6fa81d4e4124a053c9e0fa67d44f87f998360))
+* **deps:** release the module dependency bumps and move to nucleus v1.23.2 ([#414](https://github.com/jcsvwinston/orbit/issues/414)) ([eeb5483](https://github.com/jcsvwinston/orbit/commit/eeb5483ab2b9cfc52ec2e4b0b6ef1cdb18bffc0b))
+
 ## [1.8.21](https://github.com/jcsvwinston/orbit/compare/v1.8.20...v1.8.21) (2026-09-04)
 
 

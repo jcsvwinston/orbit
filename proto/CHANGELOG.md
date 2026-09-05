@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.4](https://github.com/jcsvwinston/orbit/compare/proto/v0.4.3...proto/v0.4.4) (2026-09-05)
+
+
+### Fixed
+
+* **deps:** release the module dependency bumps and move to nucleus v1.23.2 ([#414](https://github.com/jcsvwinston/orbit/issues/414)) ([eeb5483](https://github.com/jcsvwinston/orbit/commit/eeb5483ab2b9cfc52ec2e4b0b6ef1cdb18bffc0b))
+
 ## [0.4.3](https://github.com/jcsvwinston/orbit/compare/proto/v0.4.2...proto/v0.4.3) (2026-09-04)
 
 
