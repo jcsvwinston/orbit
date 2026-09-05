@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/jcsvwinston/orbit/compare/server/v0.10.17...server/v0.11.0) (2026-09-05)
+
+
+### Added
+
+* **fleet:** ADR-006 — server no longer requires agent; agent-driving tests move to internal/fleettest ([#423](https://github.com/jcsvwinston/orbit/issues/423)) ([82a5fc2](https://github.com/jcsvwinston/orbit/commit/82a5fc219a5ac355210c79515716286b9d0504dd))
+
 ## [0.10.17](https://github.com/jcsvwinston/orbit/compare/server/v0.10.16...server/v0.10.17) (2026-09-05)
 
 
