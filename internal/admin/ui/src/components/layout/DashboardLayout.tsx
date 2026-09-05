@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { useAuth } from '@/stores/authStore'
 import { useTheme } from '@/stores/themeStore'
 import { getAdminTitle } from '@/config'
+import { RouteFallback } from '@/components/ui/route-fallback'
 import {
   LayoutDashboard,
   Database,
@@ -192,7 +193,11 @@ export default function DashboardLayout() {
       {/* Main content */}
       <main className={`transition-all duration-300 ${sidebarOpen ? 'lg:ml-64' : 'lg:ml-16'}`}>
         <div className="p-4 lg:p-8 mt-14 lg:mt-0">
-          <Outlet />
+          {/* Feature pages are lazy (src/routes.ts); the fallback replaces only
+              the content area, so the sidebar stays while a chunk loads. */}
+          <Suspense fallback={<RouteFallback className="h-[60vh]" />}>
+            <Outlet />
+          </Suspense>
         </div>
       </main>
     </div>
