@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.25](https://github.com/jcsvwinston/orbit/compare/v1.8.24...v1.8.25) (2026-09-05)
+
+
+### Fixed
+
+* **deps:** release quarkdatasource with its root pin on v1.8.24 ([#421](https://github.com/jcsvwinston/orbit/issues/421)) ([ff83b56](https://github.com/jcsvwinston/orbit/commit/ff83b56ecbe71bca888202d96e4af872c54c719a))
+
 ## [1.8.24](https://github.com/jcsvwinston/orbit/compare/v1.8.23...v1.8.24) (2026-09-05)
 
 
