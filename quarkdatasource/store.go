@@ -2,12 +2,15 @@ package quarkdatasource
 
 import (
 	"context"
+	"encoding"
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 
+	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
 	"github.com/jcsvwinston/quark"
 
 	"github.com/jcsvwinston/orbit/datasource"
@@ -86,7 +89,12 @@ func (s *store[T]) applyQuery(ctx context.Context, qb *quark.Query[T], q datasou
 		}
 		qb = qb.Where(col, "=", v)
 	}
-	if search := strings.TrimSpace(q.Search); search != "" && len(s.searchCols) > 0 {
+	if search := strings.TrimSpace(q.Search); search != "" {
+		// Nothing to look in: say so rather than answer every row, which
+		// reads as "no match" while showing everything.
+		if len(s.searchCols) == 0 {
+			return nil, gferrors.BadRequest(fmt.Sprintf("search is not available for %s: it has no string columns to search", s.info.Name))
+		}
 		// The search text is data, not a pattern: a `%` or `_` typed by the
 		// operator used to widen the match instead of matching itself (F13).
 		// Escaping is per engine, with the engine's default escape.
@@ -261,7 +269,14 @@ func (s *store[T]) readOnlyErr() error {
 	return fmt.Errorf("quarkdatasource: %s has no primary key (model is read-only)", s.info.Name)
 }
 
-// parseID narrows the boundary string id (D1) to the PK field's Go kind.
+var textUnmarshalerType = reflect.TypeOf((*encoding.TextUnmarshaler)(nil)).Elem()
+
+// parseID narrows the boundary string id (D1) to the PK field's Go type:
+// integers and strings by kind, and any other key type with a textual form
+// — google/uuid's UUID ([16]byte), ULIDs — through encoding.TextUnmarshaler,
+// which is also what database/sql needs for the value to round-trip. An id
+// that does not narrow is the caller's mistake and surfaces as a 400 (a
+// plain error used to reach the operator as a 500).
 func (s *store[T]) parseID(id string) (any, error) {
 	if s.info.ReadOnly {
 		return nil, s.readOnlyErr()
@@ -271,23 +286,33 @@ func (s *store[T]) parseID(id string) (any, error) {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		n, err := strconv.ParseInt(id, 10, 64)
 		if err != nil {
-			return nil, fmt.Errorf("quarkdatasource: invalid id %q for %s", id, s.info.Name)
+			return nil, s.invalidIDErr(id, "ids are integers")
 		}
 		return n, nil
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		n, err := strconv.ParseUint(id, 10, 64)
 		if err != nil {
-			return nil, fmt.Errorf("quarkdatasource: invalid id %q for %s", id, s.info.Name)
+			return nil, s.invalidIDErr(id, "ids are non-negative integers")
 		}
 		return n, nil
 	case reflect.String:
 		if id == "" {
-			return nil, fmt.Errorf("quarkdatasource: empty id for %s", s.info.Name)
+			return nil, s.invalidIDErr(id, "ids must not be empty")
 		}
 		return id, nil
-	default:
-		return nil, fmt.Errorf("quarkdatasource: unsupported primary key kind %s for %s", s.meta.PK.Kind, s.info.Name)
 	}
+	if typ := s.typ.Field(s.meta.PK.Index).Type; reflect.PointerTo(typ).Implements(textUnmarshalerType) {
+		v := reflect.New(typ)
+		if err := v.Interface().(encoding.TextUnmarshaler).UnmarshalText([]byte(id)); err != nil {
+			return nil, s.invalidIDErr(id, err.Error())
+		}
+		return v.Elem().Interface(), nil
+	}
+	return nil, fmt.Errorf("quarkdatasource: unsupported primary key kind %s for %s", s.meta.PK.Kind, s.info.Name)
+}
+
+func (s *store[T]) invalidIDErr(id, why string) error {
+	return gferrors.BadRequest(fmt.Sprintf("invalid id %q for %s: %s", id, s.info.Name, why))
 }
 
 // coerceFilterValue converts a panel filter value (always a string) to the
@@ -359,26 +384,63 @@ func (s *store[T]) entityToRecord(entity any) (datasource.Record, error) {
 
 // recordToEntity builds a *T from a Record via the inverse JSON round-trip,
 // after dropping PK and read-only (version) fields — the database owns those.
-// Schema keys (column or Go name) are re-keyed to the struct's JSON key first:
-// json.Unmarshal alone never matches a multi-word column ("customer_id") to
-// its Go field (CustomerID), which silently dropped those values (PR-DS-01,
-// write path). Unknown keys pass through for json.Unmarshal to resolve.
+// Schema keys (column, Go name or the struct's JSON key) are re-keyed to the
+// JSON key first: json.Unmarshal alone never matches a multi-word column
+// ("customer_id") to its Go field (CustomerID), which silently dropped those
+// values (PR-DS-01, write path). Unknown keys pass through for
+// json.Unmarshal to resolve.
+//
+// A field named more than once — under its column and its JSON key, or
+// under two letter cases json.Unmarshal folds together — is refused (400)
+// instead of resolved by map order: a caller that stamps one key (the
+// panel's tenant) must not be outvoted by another it does not know. Keys
+// are visited sorted so the key reported is deterministic.
+//
+// A schema field excluded from JSON (json:"-") never reaches json.Unmarshal,
+// so it is set on the entity by reflection afterwards: a column the panel
+// stamps under its column key (the tenant of a scoped create) is stored
+// whatever its JSON visibility — dropped, it stored the row under no tenant.
 func (s *store[T]) recordToEntity(rec datasource.Record) (*T, error) {
 	clean := make(map[string]any, len(rec))
-	for k, v := range rec {
-		if fi, ok := s.info.Field(k); ok {
+	origin := make(map[string]string, len(rec)) // folded object key -> record key
+	var hidden []hiddenValue                    // schema fields excluded from JSON
+	keys := make([]string, 0, len(rec))
+	for k := range rec {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		key := k
+		if fi, ok := s.fieldForInput(k); ok {
 			if fi.IsPK || fi.IsReadOnly {
 				continue
 			}
-			if key, ok := s.jsonKeyByCol[fi.Column]; ok {
-				clean[key] = v
+			jsonKey, ok := s.jsonKeyByCol[fi.Column]
+			if !ok {
+				fm, ok := s.meta.FieldByCol[strings.ToLower(fi.Column)]
+				if !ok {
+					continue
+				}
+				folded := strings.ToLower(fi.Column)
+				if first, dup := origin[folded]; dup {
+					return nil, gferrors.BadRequest(fmt.Sprintf("invalid record for %s: %q names the same field as %q", s.info.Name, k, first))
+				}
+				origin[folded] = k
+				v, err := coerceJSONValue(rec[k], fm.Kind)
+				if err != nil {
+					return nil, gferrors.BadRequest(fmt.Sprintf("invalid record for %s: %s: %v", s.info.Name, k, err))
+				}
+				hidden = append(hidden, hiddenValue{index: fm.Index, key: k, value: v})
+				continue
 			}
-			// A schema field excluded from JSON (json:"-") is not settable
-			// through the record: dropping it mirrors what json.Unmarshal
-			// would do anyway.
-			continue
+			key = jsonKey
 		}
-		clean[k] = v
+		folded := strings.ToLower(key)
+		if first, dup := origin[folded]; dup {
+			return nil, gferrors.BadRequest(fmt.Sprintf("invalid record for %s: %q names the same field as %q", s.info.Name, k, first))
+		}
+		origin[folded] = k
+		clean[key] = rec[k]
 	}
 	data, err := json.Marshal(clean)
 	if err != nil {
@@ -388,23 +450,94 @@ func (s *store[T]) recordToEntity(rec datasource.Record) (*T, error) {
 	if err := json.Unmarshal(data, entity); err != nil {
 		return nil, fmt.Errorf("quarkdatasource: invalid record for %s: %w", s.info.Name, err)
 	}
+	ev := reflect.ValueOf(entity).Elem()
+	for _, h := range hidden {
+		if err := setHiddenField(ev.Field(h.index), h.value); err != nil {
+			return nil, gferrors.BadRequest(fmt.Sprintf("invalid record for %s: %s: %v", s.info.Name, h.key, err))
+		}
+	}
 	return entity, nil
 }
 
+// hiddenValue is the coerced value of a schema field excluded from JSON,
+// addressed by its index in the struct, with the record key that named it.
+type hiddenValue struct {
+	index int
+	key   string
+	value any
+}
+
+// setHiddenField stores v, a value coerceJSONValue produced, in field. A
+// value of another type is refused rather than converted: reflect would turn
+// an integer into the string of its code point.
+func setHiddenField(field reflect.Value, v any) error {
+	if v == nil {
+		return nil
+	}
+	if field.Kind() == reflect.Pointer {
+		ptr := reflect.New(field.Type().Elem())
+		if err := setHiddenField(ptr.Elem(), v); err != nil {
+			return err
+		}
+		field.Set(ptr)
+		return nil
+	}
+	rv := reflect.ValueOf(v)
+	switch {
+	case rv.Type().AssignableTo(field.Type()):
+		field.Set(rv)
+	case rv.Kind() != reflect.String && field.Kind() != reflect.String && rv.Type().ConvertibleTo(field.Type()):
+		field.Set(rv.Convert(field.Type()))
+	default:
+		return fmt.Errorf("want %s, got %T", field.Type(), v)
+	}
+	return nil
+}
+
+// fieldForInput resolves a record key to its schema field: by column or Go
+// name (ModelInfo.Field), or by the JSON key the struct field marshals under
+// — which json.Unmarshal matched anyway, in any letter case, when the key
+// passed through unresolved.
+func (s *store[T]) fieldForInput(key string) (datasource.FieldInfo, bool) {
+	if fi, ok := s.info.Field(key); ok {
+		return fi, true
+	}
+	for _, fk := range s.fieldKeys {
+		if strings.EqualFold(key, fk.jsonKey) {
+			return s.info.Field(fk.column)
+		}
+	}
+	return datasource.FieldInfo{}, false
+}
+
 // recordToColumnMap resolves record keys (column or Go field name) to column
-// names and coerces JSON values to the column's Go type, for UpdateMap.
+// names and coerces JSON values to the column's Go type, for UpdateMap. A
+// JSON-key alias is not resolved here, on purpose: the panel's tenant guard
+// knows a Quark field by column and Go name only, so an update that honoured
+// a key the guard cannot see could move a row. A column named twice is
+// refused rather than resolved by map order.
 func (s *store[T]) recordToColumnMap(rec datasource.Record) (map[string]any, error) {
 	out := make(map[string]any, len(rec))
-	for k, v := range rec {
+	origin := make(map[string]string, len(rec)) // column -> first record key naming it
+	keys := make([]string, 0, len(rec))
+	for k := range rec {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
 		fi, ok := s.info.Field(k)
 		if !ok || fi.IsPK || fi.IsReadOnly {
 			continue
 		}
+		if first, dup := origin[fi.Column]; dup {
+			return nil, gferrors.BadRequest(fmt.Sprintf("invalid record for %s: %q names the same field as %q", s.info.Name, k, first))
+		}
+		origin[fi.Column] = k
 		fm, ok := s.meta.FieldByCol[strings.ToLower(fi.Column)]
 		if !ok {
 			continue
 		}
-		cv, err := coerceJSONValue(v, fm.Kind)
+		cv, err := coerceJSONValue(rec[k], fm.Kind)
 		if err != nil {
 			return nil, fmt.Errorf("quarkdatasource: invalid value for %s: %w", k, err)
 		}
@@ -494,8 +627,9 @@ func toInt64(v any) (int64, bool) {
 	}
 }
 
-// assignPK writes a parsed id (int64/uint64/string from parseID) into the PK
-// struct field.
+// assignPK writes a parsed id (int64/uint64/string from parseID, or a value
+// of the PK's own type narrowed through TextUnmarshaler) into the PK struct
+// field.
 func assignPK(field reflect.Value, pk any) error {
 	switch v := pk.(type) {
 	case int64:
@@ -514,7 +648,11 @@ func assignPK(field reflect.Value, pk any) error {
 		}
 		field.SetString(v)
 	default:
-		return fmt.Errorf("quarkdatasource: unsupported pk value %T", pk)
+		rv := reflect.ValueOf(pk)
+		if !rv.IsValid() || !rv.Type().AssignableTo(field.Type()) {
+			return fmt.Errorf("quarkdatasource: unsupported pk value %T", pk)
+		}
+		field.Set(rv)
 	}
 	return nil
 }

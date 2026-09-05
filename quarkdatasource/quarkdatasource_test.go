@@ -3,8 +3,13 @@ package quarkdatasource
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
 	"testing"
 
+	"github.com/google/uuid"
+	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
 	"github.com/jcsvwinston/quark"
 	// El módulo, no el driver a secas: registra el driver Y los predicados de
 	// clasificación de errores (quark ADR-0023). Con el driver suelto,
@@ -404,5 +409,339 @@ func TestStore_HonoursDatabaseAlias(t *testing.T) {
 	}
 	if _, err := named.Store("QDWidget", DefaultDatabaseAlias); err == nil {
 		t.Fatal("\"default\" is not this adapter's alias and must be refused")
+	}
+}
+
+// QDDocument is keyed by a google/uuid UUID ([16]byte, reflect.Array): a key
+// Data Studio's string ids (ADR-001 D1) must reach through
+// encoding.TextUnmarshaler, and one the store used to refuse outright as
+// "unsupported primary key kind array".
+type QDDocument struct {
+	ID    uuid.UUID `db:"id" pk:"true"`
+	Title string    `db:"title"`
+}
+
+func TestUUIDPK_CRUD(t *testing.T) {
+	client, err := quark.New("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("quark.New: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	ctx := context.Background()
+	if err := client.RegisterModel(&QDDocument{}); err != nil {
+		t.Fatalf("RegisterModel: %v", err)
+	}
+	if err := client.MigrateRegistered(ctx); err != nil {
+		t.Fatalf("MigrateRegistered: %v", err)
+	}
+	a := New(client)
+	if err := Register[QDDocument](a); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	mi, _ := a.Get("QDDocument")
+	if mi.ReadOnly {
+		t.Fatal("a uuid-keyed model is editable")
+	}
+	st, err := a.Store("QDDocument", "")
+	if err != nil {
+		t.Fatalf("Store: %v", err)
+	}
+
+	id := uuid.MustParse("0b1c2d3e-0000-4000-8000-000000000001")
+	if err := quark.For[QDDocument](ctx, client).Create(&QDDocument{ID: id, Title: "draft"}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	got, err := st.Get(ctx, id.String())
+	if err != nil {
+		t.Fatalf("Get by uuid string: %v", err)
+	}
+	if got["id"] != id.String() || got["title"] != "draft" {
+		t.Errorf("Get = %v", got)
+	}
+	// The boundary trims the id like every other one.
+	if _, err := st.Get(ctx, "  "+id.String()+" "); err != nil {
+		t.Errorf("Get with padded uuid: %v", err)
+	}
+
+	if err := st.Update(ctx, id.String(), datasource.Record{"title": "final"}); err != nil {
+		t.Fatalf("Update by uuid string: %v", err)
+	}
+	if got, _ = st.Get(ctx, id.String()); got["title"] != "final" {
+		t.Errorf("after Update: %v", got)
+	}
+
+	if err := st.Delete(ctx, id.String()); err != nil {
+		t.Fatalf("Delete by uuid string: %v", err)
+	}
+	page, err := st.List(ctx, datasource.Query{})
+	if err != nil {
+		t.Fatalf("List after delete: %v", err)
+	}
+	if len(page.Items) != 0 {
+		t.Errorf("items after delete = %d, want 0", len(page.Items))
+	}
+
+	// A malformed uuid is the caller's mistake: a 400, not a 500.
+	_, err = st.Get(ctx, "not-a-uuid")
+	assertBadRequest(t, err, "Get with a malformed uuid")
+}
+
+func assertBadRequest(t *testing.T, err error, what string) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("%s: expected an error", what)
+	}
+	var domErr *gferrors.DomainError
+	if !errors.As(err, &domErr) || domErr.StatusCode != http.StatusBadRequest {
+		t.Fatalf("%s: err = %v (%T), want a 400 domain error", what, err, err)
+	}
+}
+
+func TestInvalidID_Is400(t *testing.T) {
+	a, ctx := setup(t)
+	st, _ := a.Store("QDWidget", "")
+	_, err := st.Get(ctx, "not-a-number")
+	assertBadRequest(t, err, "Get with a non-numeric id on an int64 key")
+	err = st.Update(ctx, "", datasource.Record{"name": "x"})
+	assertBadRequest(t, err, "Update with an empty id")
+	err = st.Delete(ctx, "1.5")
+	assertBadRequest(t, err, "Delete with a fractional id")
+}
+
+func TestList_SearchWithoutStringColumnsIs400(t *testing.T) {
+	a, ctx := setup(t)
+	// QDMembership has only integer columns: nothing to search in.
+	st, _ := a.Store("QDMembership", "")
+	_, err := st.List(ctx, datasource.Query{Search: "x"})
+	assertBadRequest(t, err, "List with ?search= on a model without string columns")
+	// Without search the list still works.
+	if _, err := st.List(ctx, datasource.Query{}); err != nil {
+		t.Fatalf("List without search: %v", err)
+	}
+}
+
+// QDTenantNote is a tenant-scoped model whose tenant field marshals under a
+// json tag that is neither the column nor the Go name.
+type QDTenantNote struct {
+	ID       int64  `db:"id" pk:"true"`
+	TenantID string `db:"tenant_id" quark:"not_null" json:"org"`
+	Title    string `db:"title"`
+}
+
+func setupTenantNotes(t *testing.T) (datasource.RecordStore, context.Context) {
+	t.Helper()
+	client, err := quark.New("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("quark.New: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	ctx := context.Background()
+	if err := client.RegisterModel(&QDTenantNote{}); err != nil {
+		t.Fatalf("RegisterModel: %v", err)
+	}
+	if err := client.MigrateRegistered(ctx); err != nil {
+		t.Fatalf("MigrateRegistered: %v", err)
+	}
+	a := New(client)
+	if err := Register[QDTenantNote](a); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	st, err := a.Store("QDTenantNote", "")
+	if err != nil {
+		t.Fatalf("Store: %v", err)
+	}
+	return st, ctx
+}
+
+func isBadRequest(t *testing.T, err error, stage string) {
+	t.Helper()
+	var de *gferrors.DomainError
+	if !errors.As(err, &de) || de.StatusCode != http.StatusBadRequest {
+		t.Fatalf("%s: want a 400 domain error, got %T: %v", stage, err, err)
+	}
+}
+
+// TestRecord_FieldNamedTwiceIsRefused pins the write-side defense the
+// panel's tenant guard relies on: a record naming one field under two keys
+// — its column and its json tag, or two letter cases — is refused instead
+// of resolved by map order. The panel stamps the tenant under its column and
+// knows a Quark field by column and Go name only, so a json-tag alias it
+// cannot see must never outvote the stamp.
+func TestRecord_FieldNamedTwiceIsRefused(t *testing.T) {
+	st, ctx := setupTenantNotes(t)
+
+	for _, rec := range []datasource.Record{
+		{"tenant_id": "acme", "org": "globex", "title": "smuggled"},
+		{"tenant_id": "acme", "ORG": "globex", "title": "smuggled"},
+		{"tenant_id": "acme", "TenantID": "globex", "title": "smuggled"},
+		{"title": "a", "TITLE": "b", "tenant_id": "acme"},
+	} {
+		_, err := st.Create(ctx, rec)
+		isBadRequest(t, err, "create "+mustKeys(rec))
+	}
+	page, err := st.List(ctx, datasource.Query{})
+	if err != nil || page.Total != 0 {
+		t.Fatalf("nothing may be written when a field is named twice: total=%d err=%v", page.Total, err)
+	}
+
+	// The json key alone is a valid spelling on create, and the record
+	// comes back keyed by column.
+	created, err := st.Create(ctx, datasource.Record{"org": "acme", "title": "mine"})
+	if err != nil {
+		t.Fatalf("create by json key: %v", err)
+	}
+	if created["tenant_id"] != "acme" {
+		t.Fatalf("created = %v, want tenant_id=acme", created)
+	}
+	id := fmtID(created["id"])
+
+	// An update resolves keys by column and Go name only: the json-tag alias
+	// is not applied, so the row cannot move under a key the panel's guard
+	// does not know; two spellings of a column are refused.
+	if err := st.Update(ctx, id, datasource.Record{"org": "globex"}); err != nil {
+		t.Fatalf("update by json key: %v", err)
+	}
+	got, err := st.Get(ctx, id)
+	if err != nil || got["tenant_id"] != "acme" {
+		t.Fatalf("after update by json key: %v (err %v), want tenant_id=acme unchanged", got, err)
+	}
+	err = st.Update(ctx, id, datasource.Record{"tenant_id": "acme", "TENANT_ID": "globex"})
+	isBadRequest(t, err, "update two spellings")
+	got, _ = st.Get(ctx, id)
+	if got["tenant_id"] != "acme" {
+		t.Fatalf("after refused update: %v, want tenant_id=acme unchanged", got)
+	}
+}
+
+func mustKeys(rec datasource.Record) string {
+	b, _ := json.Marshal(rec)
+	return string(b)
+}
+
+func fmtID(v any) string {
+	switch n := v.(type) {
+	case float64:
+		return json.Number(fmtFloat(n)).String()
+	default:
+		b, _ := json.Marshal(v)
+		return string(b)
+	}
+}
+
+func fmtFloat(f float64) string {
+	return json.Number(fmt.Sprintf("%d", int64(f))).String()
+}
+
+// QDHiddenNote hides its tenant column from JSON: the records the store
+// emits carry no tenant key, so the panel's tenant scope confirms a row
+// through a list filtered by tenant and primary key, and the tenant a
+// scoped create stamps under the column key has to reach the row.
+type QDHiddenNote struct {
+	ID       int64  `db:"id" pk:"true"`
+	TenantID string `db:"tenant_id" quark:"not_null" json:"-"`
+	Title    string `db:"title"`
+}
+
+func TestHiddenJSONTenantColumn_ScopedLookupAndStampedCreate(t *testing.T) {
+	client, err := quark.New("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("quark.New: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	ctx := context.Background()
+	if err := client.RegisterModel(&QDHiddenNote{}); err != nil {
+		t.Fatalf("RegisterModel: %v", err)
+	}
+	if err := client.MigrateRegistered(ctx); err != nil {
+		t.Fatalf("MigrateRegistered: %v", err)
+	}
+	a := New(client, WithTenantColumn("tenant_id"))
+	if err := Register[QDHiddenNote](a); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	mi, ok := a.Get("QDHiddenNote")
+	if !ok || mi.TenantField != "tenant_id" {
+		t.Fatalf("ModelInfo = %+v, want tenant_id as the tenant field", mi)
+	}
+	st, err := a.Store("QDHiddenNote", "")
+	if err != nil {
+		t.Fatalf("Store: %v", err)
+	}
+	for _, row := range []QDHiddenNote{{TenantID: "acme", Title: "Acme"}, {TenantID: "globex", Title: "Globex"}} {
+		row := row
+		if err := quark.For[QDHiddenNote](ctx, client).Create(&row); err != nil {
+			t.Fatalf("seed %s: %v", row.TenantID, err)
+		}
+	}
+
+	// The record carries the tenant under no key.
+	got, err := st.Get(ctx, "1")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	for _, key := range []string{"tenant_id", "TenantID"} {
+		if _, has := got[key]; has {
+			t.Fatalf("record %s carries %s; the column is hidden from JSON", mustKeys(got), key)
+		}
+	}
+
+	// A list filtered by tenant and primary key answers the tenant's row
+	// and nothing for another tenant's — the membership check the panel
+	// runs when a record carries no tenant key.
+	byPK := func(tenant, id string) []datasource.Record {
+		t.Helper()
+		page, err := st.List(ctx, datasource.Query{Page: 1, PageSize: 1, Filters: map[string]string{"tenant_id": tenant, "id": id}})
+		if err != nil {
+			t.Fatalf("List tenant=%s id=%s: %v", tenant, id, err)
+		}
+		return page.Items
+	}
+	if items := byPK("acme", "1"); len(items) != 1 || fmtID(items[0]["id"]) != "1" {
+		t.Fatalf("acme/1 = %v, want the row", items)
+	}
+	if items := byPK("acme", "2"); len(items) != 0 {
+		t.Fatalf("acme/2 = %v, want nothing (globex row)", items)
+	}
+	if items := byPK("globex", "2"); len(items) != 1 {
+		t.Fatalf("globex/2 = %v, want the row", items)
+	}
+
+	// A create naming the hidden column under its column key or its Go
+	// name stores it: json.Unmarshal never sets a json:"-" field, so the
+	// store sets it itself, else a scoped create stored a row of no tenant.
+	for _, rec := range []datasource.Record{
+		{"tenant_id": "acme", "title": "stamped"},
+		{"TenantID": "acme", "title": "by Go name"},
+	} {
+		created, err := st.Create(ctx, rec)
+		if err != nil {
+			t.Fatalf("create %s: %v", mustKeys(rec), err)
+		}
+		if items := byPK("acme", fmtID(created["id"])); len(items) != 1 {
+			t.Fatalf("create %s: row %s is not acme's", mustKeys(rec), fmtID(created["id"]))
+		}
+	}
+	// Named twice, or of the wrong type, the record is refused and
+	// nothing is written.
+	_, err = st.Create(ctx, datasource.Record{"tenant_id": "acme", "TenantID": "globex", "title": "twice"})
+	isBadRequest(t, err, "create hidden column twice")
+	_, err = st.Create(ctx, datasource.Record{"tenant_id": 7, "title": "number"})
+	isBadRequest(t, err, "create hidden column with a number")
+	page, err := st.List(ctx, datasource.Query{Filters: map[string]string{"tenant_id": "acme"}})
+	if err != nil || page.Total != 3 {
+		t.Fatalf("acme rows = %d (err %v), want the seed and the two creates", page.Total, err)
+	}
+	page, err = st.List(ctx, datasource.Query{})
+	if err != nil || page.Total != 4 {
+		t.Fatalf("all rows = %d (err %v), want 4: a refused record writes nothing", page.Total, err)
+	}
+
+	// An update carrying the column is applied by column, as before.
+	if err := st.Update(ctx, "1", datasource.Record{"tenant_id": "acme", "title": "renamed"}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if got, err := st.Get(ctx, "1"); err != nil || got["title"] != "renamed" {
+		t.Fatalf("after update: %v (err %v), want title renamed", got, err)
 	}
 }

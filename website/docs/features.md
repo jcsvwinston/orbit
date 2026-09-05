@@ -16,6 +16,70 @@ Browse, create, edit, and delete records for every model in the application's
 registry. It is **tenant-aware** (when multitenancy is enabled) and supports
 import/export.
 
+**Tenant scope.** With `multitenant_enabled` on, every Data Studio operation is
+confined to the tenant the host application resolves for the request (in
+Nucleus, from the subdomain or the configured header), or to
+`multitenant_default` when it resolves none. Confined means: the list and the
+CSV export only show that tenant's rows; a record of another tenant is *not
+found* by id (get, update, delete, bulk delete); a create or an update cannot
+name another tenant under any key the backend resolves to the tenant field —
+its storage column, its Go field name or, for a Nucleus model, the JSON key
+its records carry, in any letter case — and a payload naming the field under
+two of those keys is a 400. The tenant value itself is compared exactly:
+both backends store it verbatim, so a padded spelling of the request's
+tenant (`" acme "`) is another tenant and is refused the same way, and a
+payload naming the request's tenant has that value replaced by the resolved
+tenant before it reaches the backend, so the stored column is always the
+tenant the request resolved. Both backends refuse a payload that names one
+field twice (Nucleus 422, Quark 400) whichever keys it uses, so a key the
+panel does not resolve cannot outvote the tenant it stamps; Quark's store
+applies the keys of an update by column and Go name only, so a JSON-tag
+alias in an update is dropped, never applied. A tenant column hidden from
+JSON (`json:"-"`) is confined the same way: the records both backends emit
+carry no tenant key, so a row is confirmed by id through a list filtered by
+tenant and primary key instead of read off the record, the guard knows the
+field by its column and Go name, and a create is stamped there — Quark's
+store sets a schema column hidden from JSON on the entity itself, since
+`json.Unmarshal` never would. Exports, imports and fixtures
+work inside that tenant whatever `tenant_id` their request body carries — a
+row that names another tenant fails, a row whose id belongs to another
+tenant's record fails as *not found*, and an export job (`/api/exports`, its
+status and its download) is listed and served only to requests scoped to the
+tenant it was produced for. Models without a tenant column are not scoped. A
+request the host resolves no tenant for, with no default configured, is
+refused with a 403 rather than opened to every tenant — unless it comes from
+a superuser or a subject granted `tenant_switch`, who is then unscoped (every
+tenant) without an audit entry: only an explicit `?tenant=` switch is
+recorded. Looking at another tenant, or at all of them, is that explicit
+switch: `?tenant=<id>` or `?tenant=all` on the request, accepted only from a
+superuser or a subject granted the `tenant_switch` action on `admin:*` (a
+policy granting every action, `*`, on `admin:*` includes it), and recorded in
+the [audit log](#audit-log) as `tenant.override`. Anyone else gets a 403. Without an auth provider (the open posture, warned at mount) there is no operator to gate: `?tenant=` is accepted from any client and a request with no resolved tenant is unscoped.
+The audit log itself is not filtered by tenant (see below). The confinement
+is only as strong as the host's resolution: a
+tenant read from a request header the client can set (Nucleus' `header`
+resolver with no proxy overwriting that header) is the client's choice, so
+resolve it from the host name, or from a header a trusted proxy sets, for the
+scope to hold.
+
+**Record ids.** Ids are strings everywhere the API exchanges them — record
+paths, the bulk endpoint's `ids` and `errors[].id`, the export's `?ids=`,
+fixture `pk` values — so a UUID key works like an integer one. Numbers are
+still accepted on input. An id the backend cannot narrow to the model's key
+type is a 400 on a single-record call and a per-id entry in `errors[]` on a
+bulk one.
+
+**Search.** `?search=` looks in the fields a model declares searchable: in
+Nucleus, fields tagged `admin:"search"`, listed in `ModelConfig.SearchFields`,
+or switched on in the panel's Field settings; Quark models search every
+string column. A Nucleus model that declares none is not searchable today —
+the registry does not yet default search to its string columns — so a search
+on it answers `400` naming the model and how to enable search, rather than
+every row, and the grid disables its search box. The two backends match
+differently (Nucleus lower-cases both sides;
+Quark escapes `%` and `_` in the text per engine), so do not expect identical
+results across them.
+
 ![Data Studio with the Articles model selected: a sidebar listing the registered models with their record counts, and a grid showing seven article records with their real column values](./img/orbit-data-studio-light.png)
 
 What it lists comes entirely from the host application: a model appears
@@ -108,7 +172,9 @@ If you need a durable audit trail, write it at the data layer: applications
 on the Quark ORM can enable its transactional `quark_audit` log
 (`EnableAuditLog`), which survives restarts and is written in the same
 transaction as the change. The panel's ring complements it — it also covers
-panel-only actions (logins, session terminations) that never touch a model.
+panel-only actions (logins, session terminations, tenant switches recorded as
+`tenant.override` with the requested tenant as `record_id`) that never touch
+a model.
 
 ### What is recorded
 
@@ -123,6 +189,7 @@ performed it. The `action` names the operation:
 | Operations | `migration.apply`, `cache.flush`, `live.exclude.add`, `live.exclude.remove`, `audit.clear` (the one entry that survives the clear) |
 | Data management | `export.create`, `fixtures.dumpdata`, `import.upload`, `import.validate`, `import.execute`, `fixtures.loaddata` — exports are recorded whether they completed or failed |
 | Sessions | `login`, `login.failed`, `login.locked`, `logout`, `session.terminate` |
+| Tenant scope | `tenant.override` (an accepted `?tenant=` switch, with the requested tenant as `record_id`; a refused switch leaves no entry) |
 
 `old_value` and `new_value` are redacted before they are stored, because the
 log is readable by any operator with `audit_view`: fields the model excludes
@@ -131,6 +198,12 @@ salt…) appear as `[redacted]`, string values longer than 4 KB are truncated,
 a Redis URL loses its password, a session token is shortened, imports and
 exports record counts rather than rows, and login entries carry the attempted
 username, never the password.
+
+Entries are not filtered by tenant. With `multitenant_enabled`, an operator
+granted `audit_view` reads every entry the ring holds — the redacted old and
+new values of rows written by other tenants' operators, and every
+`tenant.override` — not only the entries of the tenant the request resolved
+to.
 
 Entries are bounded as well as redacted. The user id, username, model,
 record id and client IP are cut at 256 bytes and the User-Agent at 512, with
