@@ -17,6 +17,70 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.9.1 — 2026-09-05
+
+The patch that pays Orbit's share of the maturity audit of 2026-09-03
+(arc A1), in two halves: the fleet and the in-process panel.
+
+**Fleet.** A `server` operator now holds at most `MaxStreamsPerOperator`
+(8) live streams; the ninth answers `ResourceExhausted` instead of adding a
+goroutine per browser tab. `include_recent` replays at most
+`MaxReplayEvents` (500) events, and the aggregate push to agents is
+coalesced within 100 ms, so a burst of subscriptions costs one push, not
+one per subscription. The live bus and the replay buffer share one node
+matcher, trimmed and case-insensitive: they used to differ (exact versus
+folded), so a filter could match live events and miss the replay of the
+same node. `quarkdatasource` treats the search text as data, not as a
+pattern: `%` and `_` are escaped with the engine's default escape on
+PostgreSQL, MySQL, MariaDB and SQL Server (SQLite and Oracle have none, so
+there a `%` still widens the match). On the agent, `reconnects_total`
+counts accepted streams after the first (it used to count every attempt,
+the first connection included), `cpu_percent` is divided by `NumCPU` so it
+reads 0–100 on every host, RSS outside Linux is documented as not reported
+rather than reported as zero, and commands run under a 16-slot semaphore
+instead of one goroutine per request.
+
+**Panel.** Record ids are strings end to end, as the datasource contract
+always said: bulk
+operations, the CSV export, fixtures and the SPA carry the id the backend
+handed out, so a UUID key works in Get, Update and Delete and an id the
+backend cannot narrow is a per-id failure, not a 500. The tenant is
+enforced on every Data Studio operation, not only on the list view: the
+panel resolves it from the request (`PanelConfig.TenantResolver`, wired to
+Nucleus) and Get, Update, Delete, bulk, fixtures, imports and export jobs
+are confined to it; a payload may name the tenant column only as its own
+tenant, under any spelling the backends accept (column, Go field name or
+the JSON key of a Nucleus model), and a request that resolves no tenant
+is refused with 403. `?tenant=<id>` and `?tenant=all` are accepted only
+from a superuser or a subject granted `tenant_switch`, and audited. A search against a model that
+declares no searchable field answers 400 naming the model and how to
+enable search, instead of 200 with every row (Quark models search every
+string column; a Nucleus model needs the `admin:"search"` tag). Every
+mutating route writes its own audit entry with the values before and after
+where there is a record — Data Studio, RBAC policies and roles, flags,
+job queues, migrations, cache flush, exports and imports, live excludes,
+`audit.clear` and login (success, failure, lockout) — replacing the path
+heuristic that only saw writes with a model name in the URL. The admin
+lookup on every authenticated request is one query bounded by the user's
+name or e-mail on every engine, not a scan of the whole table. The SPA
+loads its seven feature pages on demand
+(`React.lazy` behind one `Suspense` boundary that keeps the sidebar while
+a chunk loads) and strips the AG Grid theme variant nobody imports at
+build time, so the first load of the panel drops from about 1.7 MB of
+JavaScript and 252 kB of CSS to about 310 kB and 29 kB (100 kB and 6 kB
+gzipped);
+the grid stylesheet travels with the Data Studio chunk. Moving to AG
+Grid's Theming API, which would remove the grid CSS altogether, waits for
+the major bump reserved for arc A6.
+
+**Everywhere.** The Content-Security-Policy names the request host in
+`connect-src` for `ws:`/`wss:` instead of allowing any origin. Commit
+messages and pull-request titles are in English, and CI rejects a title
+that is not.
+
+Fleet tags cut alongside: `agent/v0.6.15`, `server/v0.11.1`,
+`quarkdatasource/v1.8.20`.
+
 ## v1.9.0 — 2026-09-05
 
 A minor because the shape of the `server` module changes for whoever
