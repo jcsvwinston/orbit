@@ -7,8 +7,9 @@ get the panel as a normal Go dependency with no Node toolchain.
 
 ## Stack
 
-- Vite 6 + React 19 + TypeScript 5.6
-- Tailwind CSS 3 (`src/index.css` holds the theme tokens)
+- Vite 8 (rolldown) + React 19 + TypeScript 5.9
+- Tailwind CSS 3 (`src/index.css` holds the theme tokens); PostCSS is
+  configured inline in `vite.config.ts`
 - Base UI (`@base-ui/react`) for dialogs and buttons, `lucide-react` icons
 - AG Grid Community (Data Studio grid), Recharts (System Pulse)
 - Zustand (auth / theme stores), React Router 7
@@ -32,6 +33,38 @@ npm run build     # tsc -b && vite build  -> dist/ (COMMIT the result)
 differs from the committed one — after changing anything under `src/`,
 rebuild and commit `dist/` in the same change.
 
+## Code splitting
+
+Feature pages are loaded on demand. `src/routes.ts` lists every route
+mounted under `DashboardLayout` with a dynamic `import()` of its page;
+`App.tsx` wraps each one in `React.lazy`, and the `Suspense` boundary around
+the `<Outlet />` in `DashboardLayout` shows a spinner in the content area
+while the chunk loads. The login page, the layout and the Overview landing
+stay in the entry chunk because they render on every sign-in.
+
+Consequences to keep in mind:
+
+- A new page goes into `src/routes.ts` (with a `default` export), not as a
+  static import in `App.tsx`. `src/routes.test.ts` resolves every loader and
+  `internal/admin/ui_embed_test.go` keeps the assets `index.html` loads
+  directly under a size budget, so a page imported eagerly by mistake fails
+  the Go tests.
+- Vite emits one JS (and, for Data Studio, one CSS) file per page under
+  `dist/assets/`; all of them are embedded and served under the mount prefix
+  by the same handlers as the entry, and the entry resolves them relative to
+  its own URL, so no prefix-specific work is needed.
+- `vite.config.ts` pins React, the router and the lucide icons to the
+  `vendor` and `icons` chunks. Rolldown groups capture a module's
+  dependencies too, so do not add a group for a library the entry does not
+  use (a Recharts group used to drag `clsx` and a React helper into a chunk
+  the entry then had to load).
+- The AG Grid stylesheet ships the `ag-theme-quartz`, `-dark` and
+  `-auto-dark` variants sharing one selector list; the panel only ever
+  applies the first two, so `tools/postcss-strip-unused-grid-themes.ts`
+  drops the third at build time. Replacing the stylesheet imports with AG
+  Grid's Theming API waits for the major upgrade (the API is a preview on
+  the 32.x line the panel pins).
+
 While iterating on the SPA against a running app you can bypass the embedded
 copy: set `NUCLEUS_ADMIN_UI_DIR=/path/to/internal/admin/ui/dist` and the panel
 serves that directory instead.
@@ -52,10 +85,11 @@ Login feedback (`nucleus-admin-login-error` / `-info`) travels the same way.
 ```
 src/
 ├── App.tsx                 # routes; ProtectedRoute gates on the session check
+├── routes.ts               # lazy feature pages (path -> dynamic import) (+ test)
 ├── config.ts               # prefix/title from the injected meta tags
 ├── components/
-│   ├── layout/             # DashboardLayout (sidebar, theme, sign out)
-│   └── ui/                 # button, dialog, toast, table, error-state, ...
+│   ├── layout/             # DashboardLayout (sidebar, theme, sign out, Suspense)
+│   └── ui/                 # button, dialog, toast, table, error-state, route-fallback, ...
 ├── features/
 │   ├── auth/               # /login
 │   ├── overview/           # /            models + runtime summary
@@ -72,6 +106,8 @@ src/
 ├── stores/                 # zustand: auth (session known, identity NOT known), theme
 ├── types/                  # backend contracts
 └── test/setup.ts           # vitest + jest-dom
+tools/
+└── postcss-strip-unused-grid-themes.ts   # build-time CSS pass (+ test)
 ```
 
 ## Backend contract notes
