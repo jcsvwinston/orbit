@@ -9,15 +9,28 @@
  * React 19 would unmount the whole panel. Reloading fetches the current
  * index.html, whose chunk names exist again.
  *
- * The automatic reload happens once per browser session (a sessionStorage
- * flag survives the reload, a module variable remembers one already started
- * in this document), so a chunk that keeps failing — the server is down, a
+ * The automatic reload is bounded: a sessionStorage flag records when the
+ * last one started and counts as spent for RELOAD_SPENT_MS (a module
+ * variable also remembers a reload already started in this document), so a
+ * chunk that keeps failing right after the reload — the server is down, a
  * proxy strips /assets — ends in an error state with a Reload button rather
- * than a reload loop. A chunk that loads clears the flag (markChunkLoaded),
- * so the next upgrade gets its automatic reload again.
+ * than a reload loop. The flag ages out rather than living for the tab's
+ * lifetime because the reloaded document often lands on a static page (the
+ * upgrade invalidated the session: /rbac reloads into /login, then the
+ * Overview), so no chunk ever loads to clear it, and a tab kept open across
+ * a later upgrade would otherwise be denied its reload. A chunk that loads
+ * clears the flag outright (markChunkLoaded).
+ *
+ * No automatic reload while the browser reports itself offline: the import
+ * failed for want of a network, not of a chunk, and a reload would replace
+ * the whole panel with the browser's offline page. The error state's Reload
+ * button remains for when the connection is back.
  */
 
 const RELOAD_FLAG = 'orbit-admin:chunk-reload'
+
+/** How long after an automatic reload a further chunk failure shows the error instead of reloading again. */
+export const RELOAD_SPENT_MS = 60_000
 
 // Browsers word a failed dynamic import differently:
 //   Chrome   TypeError: Failed to fetch dynamically imported module: <url>
@@ -34,9 +47,13 @@ export function isChunkLoadError(error: unknown): boolean {
 
 let reloadInFlight = false
 
-function reloadedThisSession(): boolean {
+function reloadedRecently(): boolean {
   try {
-    return sessionStorage.getItem(RELOAD_FLAG) !== null
+    const startedAt = Number(sessionStorage.getItem(RELOAD_FLAG))
+    // A missing flag reads as 0 and an unparsable one as NaN; neither is a
+    // recent reload. A clock that went backwards counts as recent, which
+    // errs on the side of not reloading.
+    return Number.isFinite(startedAt) && Date.now() - startedAt < RELOAD_SPENT_MS
   } catch {
     // Without storage there is no way to bound the reloads; behave as if the
     // one reload was spent so the failure surfaces as an error state.
@@ -44,18 +61,21 @@ function reloadedThisSession(): boolean {
   }
 }
 
+function offline(): boolean {
+  return typeof navigator !== 'undefined' && navigator.onLine === false
+}
+
 /**
  * True when a reload is already under way, or `error` warrants one. Reads
  * only, so an error boundary can call it from getDerivedStateFromError.
  */
 export function reloadPending(error: unknown): boolean {
-  return reloadInFlight || (isChunkLoadError(error) && !reloadedThisSession())
+  return reloadInFlight || (isChunkLoadError(error) && !offline() && !reloadedRecently())
 }
 
 /**
- * Starts the session's one automatic reload if `error` warrants it. Returns
- * whether a reload is in flight; false means the caller should show the
- * error.
+ * Starts an automatic reload if `error` warrants one. Returns whether a
+ * reload is in flight; false means the caller should show the error.
  */
 export function reloadOnce(error: unknown): boolean {
   if (reloadInFlight) return true
@@ -82,7 +102,7 @@ export function markChunkLoaded(): void {
 /**
  * Vite's preload helper announces a failed chunk or stylesheet on `window`
  * before rejecting the import. The layout's error boundary handles that
- * rejection for the feature pages; this listener applies the same one-reload
+ * rejection for the feature pages; this listener applies the same reload
  * rule to a dynamic import anywhere else in the tree. Returns a function
  * that removes the listener.
  */

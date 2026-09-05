@@ -47,14 +47,22 @@ opened before the binary was upgraded still holds the old `index.html`, and
 its first visit to a page it has not loaded yet asks for a file the new
 binary does not ship (404). `RouteErrorBoundary` (`components/layout/`)
 wraps the `Suspense` so the failure replaces only the content area — without
-it React 19 unmounts the whole tree and the panel goes blank. The first such
-failure in a browser session reloads the page, which fetches the current
-`index.html` (`lib/chunk-recovery.ts`; `main.tsx` applies the same rule to
-Vite's `vite:preloadError` event); a later one shows an error with a
-**Reload** button, since `React.lazy` remembers a rejected loader for good.
-A page that throws while rendering lands in the same boundary with **Try
-again**. The boundary is keyed by pathname, so navigating elsewhere starts
-clean.
+it React 19 unmounts the whole tree and the panel goes blank. Such a failure
+reloads the page, which fetches the current `index.html`
+(`lib/chunk-recovery.ts`; `main.tsx` applies the same rule to Vite's
+`vite:preloadError` event). The reload is bounded rather than looped: a
+`sessionStorage` flag records when it started, and a further failure within
+a minute of it shows an error with a **Reload** button instead, since
+`React.lazy` remembers a rejected loader for good. The flag ages out (and a
+chunk that loads clears it) because the reloaded document often lands on a
+static page — the upgrade invalidated the session, so `/rbac` reloads into
+`/login` and the Overview — and a flag that lived for the tab's lifetime
+would deny the next upgrade its reload. While the browser reports itself
+offline there is no automatic reload either: the chunk failed for want of a
+network, and a reload would replace the panel with the browser's offline
+page, so the error state with its **Reload** button is shown at once. A page
+that throws while rendering lands in the same boundary with **Try again**.
+The boundary is keyed by pathname, so navigating elsewhere starts clean.
 
 Consequences to keep in mind:
 

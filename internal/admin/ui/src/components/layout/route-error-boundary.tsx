@@ -20,13 +20,14 @@ interface State {
  * boundary React 19 unmounts the whole tree and the panel goes blank.
  *
  * A missing chunk usually means the tab holds an index.html older than the
- * binary serving it. The first such failure in a session reloads the page,
- * keeping the spinner up until the new document lands; a later one gets an
- * error state with a Reload button (src/lib/chunk-recovery.ts). React.lazy
- * remembers a rejected loader for good, so a reload is the only retry for a
- * chunk. Any other error gets the same state with Try again, which renders
- * the page afresh. DashboardLayout keys this boundary by pathname, so
- * navigating elsewhere always starts clean.
+ * binary serving it. Such a failure reloads the page, keeping the spinner up
+ * until the new document lands; one that follows a reload within a minute,
+ * or arrives while the browser is offline, gets an error state with a Reload
+ * button instead (src/lib/chunk-recovery.ts). React.lazy remembers a
+ * rejected loader for good, so a reload is the only retry for a chunk. Any
+ * other error gets the same state with Try again, which renders the page
+ * afresh. DashboardLayout keys this boundary by pathname, so navigating
+ * elsewhere always starts clean.
  */
 export class RouteErrorBoundary extends Component<Props, State> {
   state: State = { error: undefined, failed: false, reloading: false }

@@ -205,7 +205,7 @@ describe('App', () => {
     })
 
     it('leaves the error behind when the sidebar navigates to another page', async () => {
-      sessionStorage.setItem('orbit-admin:chunk-reload', '1') // the automatic reload is spent
+      sessionStorage.setItem('orbit-admin:chunk-reload', String(Date.now())) // the automatic reload is spent
       routes.load.rbac = () => Promise.reject(missingChunkError('RBACPage-old.js'))
       window.history.pushState({}, '', '/nucleus-admin/rbac')
 
