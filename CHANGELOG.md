@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.23](https://github.com/jcsvwinston/orbit/compare/v1.8.22...v1.8.23) (2026-09-05)
+
+
+### Fixed
+
+* **deps:** move the internal sibling pins to the tags cut in the previous release ([#417](https://github.com/jcsvwinston/orbit/issues/417)) ([ac9ad69](https://github.com/jcsvwinston/orbit/commit/ac9ad69fbad6ca4cc594ca514372fb2667eb3068))
+
 ## [1.8.22](https://github.com/jcsvwinston/orbit/compare/v1.8.21...v1.8.22) (2026-09-05)
 
 
