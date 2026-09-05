@@ -94,8 +94,8 @@ github.com/jcsvwinston/nucleus/drivers/postgres v0.1.0 h1:6gQvsYV9YhgaYEBfFdW0z1
 github.com/jcsvwinston/nucleus/drivers/postgres v0.1.0/go.mod h1:345+I64t8h/3vw9rJv/LGioI++c0Xg0vQbQyum9gVII=
 github.com/jcsvwinston/nucleus/drivers/sqlite v0.1.0 h1:YxSNfawwOaQrS2iEwCUhWyfSysbF7xi4JHIEC1l1+AI=
 github.com/jcsvwinston/nucleus/drivers/sqlite v0.1.0/go.mod h1:xzQrDoyyYMYLNLjODEYnxib6pWmS1PgzNjtptH+u3O0=
-github.com/jcsvwinston/orbit/agent v0.6.13 h1:BkycqxIMlVN2guDM9Ssgea9bsUiUK/Yu7UqLqUyvHbM=
-github.com/jcsvwinston/orbit/agent v0.6.13/go.mod h1:wkdcYxeizs9FYO/NFvkdD0j+WIV3OU/xgRdApVu3DCs=
+github.com/jcsvwinston/orbit/agent v0.6.14 h1:2oGno8Ouj5vwe6jOVwpmA43n8L64LLs3so80TzIAKKI=
+github.com/jcsvwinston/orbit/agent v0.6.14/go.mod h1:pRgpcq/T5Rw90JK1/VTCfJ1YB5IUEN94Q+1k5as5zf4=
 github.com/jcsvwinston/orbit/proto v0.4.4 h1:MsYz860UgDznTf2f9DXIwpkPD+9k/n6vPLjhCNsfSwU=
 github.com/jcsvwinston/orbit/proto v0.4.4/go.mod h1:HpW6Nxp8jW4Ig+8RKwdDt75NiN85WmT1k70hWSRSV74=
 github.com/klauspost/compress v1.19.1 h1:VsB4HPswih7mmZ8WleSFQ75c/Ui1M4trX5oAsJnhSlk=
