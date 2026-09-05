@@ -9,30 +9,30 @@ go 1.26.6
 // it is a separate module: Quark must never enter the orbit core's dependency
 // graph, and Quark itself must not depend on Orbit.
 require (
-	github.com/jcsvwinston/orbit v1.8.24
-	github.com/jcsvwinston/quark v1.10.1
+	github.com/jcsvwinston/orbit v1.9.1
+	github.com/jcsvwinston/quark v1.11.0
 	modernc.org/sqlite v1.58.0 // indirect
 )
 
 require (
 	github.com/google/uuid v1.6.0
-	github.com/jcsvwinston/nucleus v1.23.2
+	github.com/jcsvwinston/nucleus v1.24.0
 	github.com/jcsvwinston/quark/drivers/sqlite v0.1.0
 )
 
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/gabriel-vasile/mimetype v1.4.8 // indirect
+	github.com/gabriel-vasile/mimetype v1.4.13 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
-	github.com/go-playground/validator/v10 v10.25.0 // indirect
+	github.com/go-playground/validator/v10 v10.30.3 // indirect
 	github.com/go-sql-driver/mysql v1.10.0 // indirect
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
-	github.com/jackc/pgx/v5 v5.9.2 // indirect
+	github.com/jackc/pgx/v5 v5.10.0 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/klauspost/compress v1.19.1 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect

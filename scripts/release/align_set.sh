@@ -32,7 +32,7 @@
 #
 # Modes (combine with either target form above):
 #   (default)   rewrite pins, tidy each touched module, commit ONCE as
-#               `fix(deps): alinea <módulos> al set (nucleus vX, quark vY)`
+#               `fix(deps): align <modules> to the set (nucleus vX, quark vY)`
 #               — `fix` on purpose: the alignment must be releasable so the
 #               release-please cascade can cut the re-pinned modules.
 #   --no-commit rewrite + tidy, leave the commit to the caller
@@ -212,13 +212,13 @@ case "$MODE" in
     exit 0 ;;
   no-commit)
     echo "Done (no commit). Touched: ${changed_mods[*]}. Review the diff and commit as:"
-    echo "  fix(deps): alinea ${changed_mods[*]} al set (nucleus $NUCLEUS, quark $QUARK)"
+    echo "  fix(deps): align ${changed_mods[*]} to the set (nucleus $NUCLEUS, quark $QUARK)"
     exit 0 ;;
 esac
 
 # ONE commit, only the files this script touched — a dirty tree or a staged
 # index elsewhere is left exactly as it was.
 mods_list=$(IFS=,; echo "${changed_mods[*]}" | sed 's/,/, /g')
-msg="fix(deps): alinea $mods_list al set (nucleus $NUCLEUS, quark $QUARK)"
+msg="fix(deps): align $mods_list to the set (nucleus $NUCLEUS, quark $QUARK)"
 git commit -m "$msg" -- "${changed_files[@]}"
 echo "OK: committed — $msg"
