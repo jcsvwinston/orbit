@@ -139,3 +139,37 @@ func TestInvalidID_IsBadRequest(t *testing.T) {
 		}
 	}
 }
+
+// A field named more than once — under its column and its json tag, or two
+// letter cases — used to be applied in map order, so which value won was a
+// coin flip; the panel's tenant guard stamps one key and must not be
+// outvoted by another. Now it is a 422 naming the second key, and nothing
+// is written.
+func TestPayload_FieldNamedTwiceIsRefused(t *testing.T) {
+	st, _ := setupAdapter(t).Store("DSPost", "")
+	ctx := context.Background()
+
+	_, err := st.Create(ctx, datasource.Record{"Title": "a", "title": "b", "views": 1})
+	fields := validationDetails(t, err)
+	if fields["title"] != `names the same field as "Title"` {
+		t.Fatalf("create with title twice: got %v", fields)
+	}
+	page, _ := st.List(ctx, datasource.Query{})
+	if len(page.Items) != 0 {
+		t.Fatalf("nothing may be written when a field is named twice, got %d rows", len(page.Items))
+	}
+
+	created, err := st.Create(ctx, datasource.Record{"title": "first", "views": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := recordID(t, created)
+	err = st.Update(ctx, id, datasource.Record{"TITLE": "x", "title": "y"})
+	if fields := validationDetails(t, err); fields["title"] == "" {
+		t.Fatalf("update with title twice: got %v", fields)
+	}
+	got, _ := st.Get(ctx, id)
+	if got["title"] != "first" {
+		t.Fatalf("refused update must not write, title = %v", got["title"])
+	}
+}

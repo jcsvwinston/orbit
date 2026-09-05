@@ -292,9 +292,10 @@ func TestPanel_BulkExportSelected(t *testing.T) {
 		"active": true,
 	})
 
+	// Ids are strings at the boundary (ADR-001 D1); the SPA sends them so.
 	payload := map[string]interface{}{
 		"action": "export",
-		"ids":    []uint{selected.ID},
+		"ids":    []string{fmt.Sprint(selected.ID)},
 	}
 	body, _ := json.Marshal(payload)
 	req, err := http.NewRequest(http.MethodPost, srv.URL+"/api/models/AdminUser/bulk", bytes.NewReader(body))
@@ -351,9 +352,10 @@ func TestPanel_BulkDelete_ErrorReport(t *testing.T) {
 		"active": true,
 	})
 
+	// A number and a string are both accepted (older clients sent numbers).
 	reqPayload := map[string]interface{}{
 		"action": "delete",
-		"ids":    []uint{created.ID, 999999},
+		"ids":    []interface{}{created.ID, "999999"},
 	}
 	resp, status := doJSON(t, http.MethodPost, srv.URL+"/api/models/AdminUser/bulk", reqPayload)
 	if status != http.StatusOK {
@@ -372,8 +374,9 @@ func TestPanel_BulkDelete_ErrorReport(t *testing.T) {
 	if !ok || len(errorsRaw) != 1 {
 		t.Fatalf("expected one bulk delete error entry, got %#v", resp["errors"])
 	}
+	// errors[].id echoes the id as the string it is at the boundary.
 	errRow, _ := errorsRaw[0].(map[string]interface{})
-	if int(errRow["id"].(float64)) != 999999 {
+	if errRow["id"] != "999999" {
 		t.Fatalf("unexpected failed id row: %#v", errRow)
 	}
 }

@@ -38,6 +38,7 @@ type ExportResult struct {
 	ID         string    `json:"id"`
 	Status     string    `json:"status"` // completed, processing, failed
 	Format     string    `json:"format"`
+	Tenant     string    `json:"tenant,omitempty"` // tenant the export was confined to ("" = every tenant)
 	Filename   string    `json:"filename"`
 	StorageKey string    `json:"storage_key"` // Key in storage for download
 	Size       int64     `json:"size"`
@@ -400,8 +401,11 @@ func sqlValue(v interface{}) string {
 	}
 }
 
-// listExportJobs returns all completed exports for download.
-func (p *Panel) listExportJobs() []ExportResult {
+// listExportJobs returns the recorded exports for download — every one when
+// tenant is empty (an unscoped request), otherwise only those produced for
+// that tenant: an export is data of the tenant it was cut for, so a scoped
+// request must not see one cut for another tenant or for all of them.
+func (p *Panel) listExportJobs(tenant string) []ExportResult {
 	if p.exportResults == nil {
 		return []ExportResult{}
 	}
@@ -410,6 +414,9 @@ func (p *Panel) listExportJobs() []ExportResult {
 
 	results := make([]ExportResult, 0, len(p.exportResults))
 	for _, r := range p.exportResults {
+		if tenant != "" && r.Tenant != tenant {
+			continue
+		}
 		results = append(results, r)
 	}
 	sort.Slice(results, func(i, j int) bool {

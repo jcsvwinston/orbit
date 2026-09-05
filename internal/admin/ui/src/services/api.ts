@@ -215,16 +215,18 @@ export async function deleteRecord(name: string, id: string): Promise<void> {
 export interface BulkDeleteResult {
   deleted: number
   failed: number
-  errors?: Array<{ id: number; error: string }>
+  // errors[].id echoes the id as the string it is at the boundary.
+  errors?: Array<{ id: string; error: string }>
 }
 
-// The bulk endpoint decodes ids as []uint (internal/admin/handlers.go); the
-// caller is responsible for only passing non-negative integers here and
-// deleting anything else one by one (see AGGridTable.handleBulkDelete).
-export async function bulkDelete(name: string, ids: number[]): Promise<BulkDeleteResult> {
+// Ids travel as strings — the boundary type of the backend's datasource
+// contract — so a UUID key is as valid as an integer one. The backend
+// narrows each id to the model's key type and reports the ones it cannot
+// (or cannot reach) per id in `errors`, never as a failed request.
+export async function bulkDelete(name: string, ids: Array<string | number>): Promise<BulkDeleteResult> {
   return fetchAPI(`/api/models/${encodeURIComponent(name)}/bulk`, {
     method: 'POST',
-    body: JSON.stringify({ action: 'delete', ids }),
+    body: JSON.stringify({ action: 'delete', ids: ids.map(String) }),
   })
 }
 

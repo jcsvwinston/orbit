@@ -1,8 +1,10 @@
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { useAuth } from '@/stores/authStore'
 import { useTheme } from '@/stores/themeStore'
 import { getAdminTitle } from '@/config'
+import { RouteFallback } from '@/components/ui/route-fallback'
+import { RouteErrorBoundary } from '@/components/layout/route-error-boundary'
 import {
   LayoutDashboard,
   Database,
@@ -192,7 +194,17 @@ export default function DashboardLayout() {
       {/* Main content */}
       <main className={`transition-all duration-300 ${sidebarOpen ? 'lg:ml-64' : 'lg:ml-16'}`}>
         <div className="p-4 lg:p-8 mt-14 lg:mt-0">
-          <Outlet />
+          {/* Feature pages are lazy (src/routes.ts): the fallback and, if the
+              chunk or the page fails, the error state replace only the content
+              area, so the sidebar stays. The key remounts both on navigation:
+              a new page never inherits the previous one's error, and a page
+              still loading shows the spinner right away instead of holding
+              the old page (router navigations run in a transition). */}
+          <RouteErrorBoundary key={location.pathname}>
+            <Suspense fallback={<RouteFallback className="h-[60vh]" />}>
+              <Outlet />
+            </Suspense>
+          </RouteErrorBoundary>
         </div>
       </main>
     </div>
