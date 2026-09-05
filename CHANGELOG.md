@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.9.1](https://github.com/jcsvwinston/orbit/compare/v1.9.0...v1.9.1) (2026-09-05)
+
+
+### Fixed
+
+* **admin:** audit every mutating route with before/after values and bound the per-request admin lookup ([#429](https://github.com/jcsvwinston/orbit/issues/429)) ([2487105](https://github.com/jcsvwinston/orbit/commit/2487105f2207e0e293cde094099237ad7f2c883d))
+* **admin:** string record ids end to end, tenant scope on every Data Studio operation, 400 for search without searchable fields ([#430](https://github.com/jcsvwinston/orbit/issues/430)) ([df8676f](https://github.com/jcsvwinston/orbit/commit/df8676f02567a32ae98b3fc7a8eb192b68aa0bff))
+* **fleet:** cap live streams per operator, coalesce the aggregate push, share the node matcher, bound agent commands, count real reconnects, normalise CPU, pin CSP to the host ([#427](https://github.com/jcsvwinston/orbit/issues/427)) ([6016a75](https://github.com/jcsvwinston/orbit/commit/6016a75b4ac171cd8ae2b6ee229a1a6c3bb9a5d3))
+
+
+### Performance
+
+* **admin:** load feature pages of the panel SPA on demand and drop the unused AG Grid theme variant ([#431](https://github.com/jcsvwinston/orbit/issues/431)) ([720bec5](https://github.com/jcsvwinston/orbit/commit/720bec5dcf192884fbd1d3955e40b0e42af154de))
+
 ## [1.9.0](https://github.com/jcsvwinston/orbit/compare/v1.8.25...v1.9.0) (2026-09-05)
 
 
