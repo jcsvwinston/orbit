@@ -322,7 +322,9 @@ func (m *module) start(ctx context.Context) error {
 		// still refused.
 		// WithTitle propagates the configured Title to the login page, which
 		// renders before any authenticated API call can serve it.
-		Auth:         admin.NewDatabaseAdminAuth(authSQL, rt.Session(), m.cfg.Prefix).WithAuthChain(rt.AuthChain()).WithTitle(m.cfg.Title),
+		// WithSystem names the auth database's dialect so the per-request
+		// user lookup is a bounded query with the right placeholders.
+		Auth:         admin.NewDatabaseAdminAuth(authSQL, rt.Session(), m.cfg.Prefix).WithAuthChain(rt.AuthChain()).WithTitle(m.cfg.Title).WithSystem(authSystem),
 		Session:      rt.Session(),
 		RBACEnforcer: rt.Authorizer(),
 		Store:        rt.Storage(),

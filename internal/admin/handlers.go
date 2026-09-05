@@ -444,9 +444,23 @@ func (p *Panel) handleUpdateFieldMeta(c *router.Context) error {
 		return gferrors.BadRequest("no field updates provided")
 	}
 
+	// Snapshot the touched fields before and after, so the audit entry
+	// carries the schema change itself (a generic "update of <model>" with
+	// no record and no values told nothing).
+	before := auditFieldMetaSnapshot(meta, payload.Fields)
 	if err := p.registry.BulkUpdateFieldMeta(name, payload.Fields); err != nil {
 		return gferrors.BadRequest(err.Error())
 	}
+	var after map[string]any
+	if updated, ok := p.registry.Get(name); ok {
+		after = auditFieldMetaSnapshot(updated, payload.Fields)
+	}
+	p.recordAuditEntry(r, AuditEntry{
+		Action:    "schema.update",
+		ModelName: meta.Name,
+		OldValue:  before,
+		NewValue:  after,
+	})
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"ok":      true,
@@ -640,6 +654,13 @@ func (p *Panel) handleCreateRecord(c *router.Context) error {
 		return err
 	}
 
+	p.recordAuditEntry(r, AuditEntry{
+		Action:    "create",
+		ModelName: mi.Name,
+		RecordID:  auditRecordID(mi, created),
+		NewValue:  auditValues(mi, created),
+	})
+
 	return c.JSON(http.StatusCreated, created)
 }
 
@@ -680,9 +701,21 @@ func (p *Panel) handleUpdateRecord(c *router.Context) error {
 	if err != nil {
 		return err
 	}
+	// The row before and after the change go into the audit entry. A
+	// failed read leaves that side nil but never turns a valid write into
+	// an error: the update is the operation, the snapshot is its record.
+	before := auditRecordSnapshot(r, st, idStr)
 	if err := st.Update(r.Context(), idStr, datasource.Record(updates)); err != nil {
 		return err
 	}
+	after := auditRecordSnapshot(r, st, idStr)
+	p.recordAuditEntry(r, AuditEntry{
+		Action:    "update",
+		ModelName: mi.Name,
+		RecordID:  idStr,
+		OldValue:  auditValues(mi, before),
+		NewValue:  auditValues(mi, after),
+	})
 
 	return c.JSON(http.StatusOK, map[string]interface{}{"updated": true, "id": idStr})
 }
@@ -719,9 +752,16 @@ func (p *Panel) handleDeleteRecord(c *router.Context) error {
 	if err != nil {
 		return err
 	}
+	before := auditRecordSnapshot(r, st, idStr)
 	if err := st.Delete(r.Context(), idStr); err != nil {
 		return err
 	}
+	p.recordAuditEntry(r, AuditEntry{
+		Action:    "delete",
+		ModelName: mi.Name,
+		RecordID:  idStr,
+		OldValue:  auditValues(mi, before),
+	})
 
 	return c.JSON(http.StatusOK, map[string]interface{}{"deleted": true, "id": idStr})
 }
@@ -778,10 +818,23 @@ func (p *Panel) handleBulkAction(c *router.Context) error {
 
 		deleted := 0
 		failures := make([]bulkDeleteError, 0)
+		deletedIDs := make([]string, 0, len(req.IDs))
 		for _, id := range req.IDs {
-			deleteErr := st.Delete(r.Context(), strconv.FormatUint(uint64(id), 10))
+			idStr := strconv.FormatUint(uint64(id), 10)
+			// Each row that goes is audited as its own delete, with the
+			// values it had, so "who removed record N" has the same answer
+			// whether N went alone or in a batch.
+			before := auditRecordSnapshot(r, st, idStr)
+			deleteErr := st.Delete(r.Context(), idStr)
 			if deleteErr == nil {
 				deleted++
+				deletedIDs = append(deletedIDs, idStr)
+				p.recordAuditEntry(r, AuditEntry{
+					Action:    "delete",
+					ModelName: mi.Name,
+					RecordID:  idStr,
+					OldValue:  auditValues(mi, before),
+				})
 				continue
 			}
 			failures = append(failures, bulkDeleteError{
@@ -789,6 +842,16 @@ func (p *Panel) handleBulkAction(c *router.Context) error {
 				Error: deleteErr.Error(),
 			})
 		}
+		p.recordAuditEntry(r, AuditEntry{
+			Action:    "bulk_delete",
+			ModelName: mi.Name,
+			NewValue: map[string]any{
+				"requested": len(req.IDs),
+				"deleted":   deleted,
+				"failed":    len(failures),
+				"ids":       deletedIDs,
+			},
+		})
 		return c.JSON(http.StatusOK, map[string]interface{}{
 			"action":    "delete",
 			"requested": len(req.IDs),
@@ -804,6 +867,15 @@ func (p *Panel) handleBulkAction(c *router.Context) error {
 		if len(req.IDs) == 0 {
 			return gferrors.BadRequest("ids are required for export action")
 		}
+		p.recordAuditEntry(r, AuditEntry{
+			Action:    "bulk_export",
+			ModelName: mi.Name,
+			NewValue: map[string]any{
+				"count":    len(req.IDs),
+				"ids":      req.IDs,
+				"database": databaseAlias,
+			},
+		})
 		return c.JSON(http.StatusOK, map[string]interface{}{
 			"export_url": buildBulkExportURL(r.URL.Path, req.IDs, databaseAlias),
 			"ids":        req.IDs,
@@ -812,6 +884,52 @@ func (p *Panel) handleBulkAction(c *router.Context) error {
 	default:
 		return gferrors.BadRequest("unknown action: " + req.Action)
 	}
+}
+
+// auditRecordSnapshot reads one record for an audit entry's before/after
+// value. A read failure yields nil: the snapshot documents the write, it
+// must never decide whether the write happens.
+func auditRecordSnapshot(r *http.Request, st datasource.RecordStore, id string) datasource.Record {
+	if st == nil || r == nil {
+		return nil
+	}
+	rec, err := st.Get(r.Context(), id)
+	if err != nil {
+		return nil
+	}
+	return rec
+}
+
+// auditFieldMetaSnapshot captures the runtime-editable properties of the
+// fields that updates names (matched by Go name or column, as the registry
+// matches them), keyed by the name the caller used.
+func auditFieldMetaSnapshot(meta *model.ModelMeta, updates map[string]model.FieldMetaUpdate) map[string]any {
+	if meta == nil || len(updates) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(updates))
+	for key := range updates {
+		for i := range meta.Fields {
+			f := &meta.Fields[i]
+			if f.Name != key && f.Column != key {
+				continue
+			}
+			out[key] = map[string]any{
+				"label":       f.Label,
+				"html_type":   f.HTMLType,
+				"is_list":     f.IsList,
+				"is_search":   f.IsSearch,
+				"is_filter":   f.IsFilter,
+				"is_excluded": f.IsExcluded,
+				"is_readonly": f.IsReadOnly,
+			}
+			break
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {

@@ -235,6 +235,13 @@ func (p *Panel) handleAddRBACPolicy(c *router.Context) error {
 		return err
 	}
 
+	p.recordAuditEntry(r, AuditEntry{
+		Action:    "rbac.policy.add",
+		ModelName: "rbac",
+		RecordID:  req.Sub,
+		NewValue:  map[string]any{"sub": req.Sub, "obj": req.Obj, "act": req.Act},
+	})
+
 	return c.JSON(http.StatusCreated, map[string]interface{}{
 		"added": true,
 		"sub":   req.Sub,
@@ -270,6 +277,13 @@ func (p *Panel) handleRemoveRBACPolicy(c *router.Context) error {
 		return err
 	}
 
+	p.recordAuditEntry(r, AuditEntry{
+		Action:    "rbac.policy.remove",
+		ModelName: "rbac",
+		RecordID:  req.Sub,
+		OldValue:  map[string]any{"sub": req.Sub, "obj": req.Obj, "act": req.Act},
+	})
+
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"removed": true,
 		"sub":     req.Sub,
@@ -304,6 +318,13 @@ func (p *Panel) handleAssignRBACRole(c *router.Context) error {
 		return err
 	}
 
+	p.recordAuditEntry(r, AuditEntry{
+		Action:    "rbac.role.assign",
+		ModelName: "rbac",
+		RecordID:  req.User,
+		NewValue:  map[string]any{"user": req.User, "role": req.Role},
+	})
+
 	return c.JSON(http.StatusCreated, map[string]interface{}{
 		"assigned": true,
 		"user":     req.User,
@@ -336,6 +357,13 @@ func (p *Panel) handleRemoveRBACRole(c *router.Context) error {
 	if err := p.rbac.RemoveRole(req.User, req.Role); err != nil {
 		return err
 	}
+
+	p.recordAuditEntry(r, AuditEntry{
+		Action:    "rbac.role.remove",
+		ModelName: "rbac",
+		RecordID:  req.User,
+		OldValue:  map[string]any{"user": req.User, "role": req.Role},
+	})
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"removed": true,

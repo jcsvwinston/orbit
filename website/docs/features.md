@@ -110,6 +110,33 @@ on the Quark ORM can enable its transactional `quark_audit` log
 transaction as the change. The panel's ring complements it — it also covers
 panel-only actions (logins, session terminations) that never touch a model.
 
+### What is recorded
+
+Every write the panel performs leaves an entry, recorded by the handler that
+performed it. The `action` names the operation:
+
+| Surface | Actions |
+|---|---|
+| Data Studio | `create`, `update`, `delete` (each with the record's values before and/or after the change), `bulk_delete` (one summary plus one `delete` per row), `bulk_export`, `export.csv`, `schema.update` (field metadata edits, with the fields before and after) |
+| Access control | `rbac.policy.add`, `rbac.policy.remove`, `rbac.role.assign`, `rbac.role.remove` |
+| Feature flags and jobs | `flag.create`, `flag.set`, `flag.delete`, `jobs.queue.<action>` |
+| Operations | `migration.apply`, `cache.flush`, `live.exclude.add`, `live.exclude.remove`, `audit.clear` (the one entry that survives the clear) |
+| Data management | `export.create`, `fixtures.dumpdata`, `import.upload`, `import.validate`, `import.execute`, `fixtures.loaddata` — exports are recorded whether they completed or failed |
+| Sessions | `login`, `login.failed`, `login.locked`, `logout`, `session.terminate` |
+
+`old_value` and `new_value` are redacted before they are stored, because the
+log is readable by any operator with `audit_view`: fields the model excludes
+from Data Studio and credential-shaped names (password, secret, token, hash,
+salt…) appear as `[redacted]`, string values longer than 4 KB are truncated,
+a Redis URL loses its password, a session token is shortened, imports and
+exports record counts rather than rows, and login entries carry the attempted
+username, never the password.
+
+`GET /api/audit` pages newest first; `total` and `total_pages` count the
+entries that match the `user_id`, `model` and `action` filters, so a filtered
+listing does not page into nothing. `POST /api/audit/clear` answers
+`{"cleared": true, "dropped": <n>}`.
+
 ## Overview & Health
 
 A dashboard summarizing the above, plus a health-at-a-glance view.

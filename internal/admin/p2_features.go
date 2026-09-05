@@ -121,6 +121,19 @@ func (p *Panel) handleFlushCache(c *router.Context) error {
 		return gferrors.BadRequest(err.Error())
 	}
 
+	// The Redis URL is stored with its password masked: the audit log is
+	// readable by anyone with audit_view.
+	p.recordAuditEntry(r, AuditEntry{
+		Action:    "cache.flush",
+		ModelName: "cache",
+		NewValue: map[string]any{
+			"redis_url":        redactURLCredentials(result.RedisURL),
+			"status":           result.Status,
+			"key_count_before": result.KeyCountBefore,
+			"key_count_after":  result.KeyCountAfter,
+		},
+	})
+
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"flushed":          true,
 		"redis_url":        result.RedisURL,

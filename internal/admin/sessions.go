@@ -387,8 +387,8 @@ func (p *Panel) handleTerminateSession(c *router.Context) error {
 		return fmt.Errorf("admin.TerminateSession delete: %w", err)
 	}
 
-	// The audit middleware only covers /api/models/* writes; record this
-	// one explicitly (never the full token — it is a bearer credential).
+	// Audited explicitly like every other mutation (never the full token —
+	// it is a bearer credential).
 	p.recordAuditEntry(r, AuditEntry{
 		Action:   "session.terminate",
 		RecordID: shortenToken(token),

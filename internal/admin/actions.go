@@ -84,6 +84,7 @@ func (p *Panel) handleExportCSV(c *router.Context) error {
 	// wire an error can only abort the download, so a failed page or a
 	// broken client connection is returned (the response is left
 	// incomplete) rather than swallowed.
+	rowsWritten := 0
 	for pageNo := 1; ; pageNo++ {
 		page, err := st.List(r.Context(), datasource.Query{
 			Page: pageNo, PageSize: exportCSVPageSize, Filters: filters,
@@ -112,6 +113,7 @@ func (p *Panel) handleExportCSV(c *router.Context) error {
 			if err := writer.Write(row); err != nil {
 				return fmt.Errorf("export csv: write row: %w", err)
 			}
+			rowsWritten++
 		}
 		if len(page.Items) == 0 || len(page.Items) < exportCSVPageSize || !page.HasMore && page.TotalPages > 0 && pageNo >= page.TotalPages {
 			break
@@ -124,6 +126,23 @@ func (p *Panel) handleExportCSV(c *router.Context) error {
 	if err := writer.Error(); err != nil {
 		return fmt.Errorf("export csv: flush: %w", err)
 	}
+
+	// A GET, but data leaving the system: audited like the other exports,
+	// with the scope and the row count, never the rows.
+	tenantID := ""
+	for _, v := range filters {
+		tenantID = v
+	}
+	p.recordAuditEntry(r, AuditEntry{
+		Action:    "export.csv",
+		ModelName: mi.Name,
+		NewValue: map[string]any{
+			"database":      databaseAlias,
+			"tenant_id":     tenantID,
+			"requested_ids": len(idSet),
+			"rows":          rowsWritten,
+		},
+	})
 	return nil
 }
 

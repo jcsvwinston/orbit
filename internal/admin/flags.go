@@ -171,11 +171,28 @@ func (p *Panel) handleSetSystemFlag(c *router.Context) error {
 		return gferrors.BadRequest("invalid JSON")
 	}
 
+	prev, existed := p.flags.get(name)
 	row := p.flags.set(name, payload.Enabled, p.runtimeActor(r))
+	p.recordAuditEntry(r, p.flagAuditEntry("flag.set", name, prev, existed, row))
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"updated": true,
 		"flag":    row,
 	})
+}
+
+// flagAuditEntry builds the audit entry of a feature-flag write: the row
+// before (when the flag existed) and the row after.
+func (p *Panel) flagAuditEntry(action, name string, prev featureFlagState, existed bool, row featureFlagState) AuditEntry {
+	entry := AuditEntry{
+		Action:    action,
+		ModelName: "feature_flag",
+		RecordID:  name,
+		NewValue:  auditJSONValues(row),
+	}
+	if existed {
+		entry.OldValue = auditJSONValues(prev)
+	}
+	return entry
 }
 
 func (p *Panel) handleCreateSystemFlag(c *router.Context) error {
@@ -200,12 +217,15 @@ func (p *Panel) handleCreateSystemFlag(c *router.Context) error {
 		return gferrors.BadRequest("feature flag name is required")
 	}
 
-	_, existed := p.flags.get(name)
+	prev, existed := p.flags.get(name)
 	row := p.flags.set(name, payload.Enabled, p.runtimeActor(r))
 	status := http.StatusCreated
+	action := "flag.create"
 	if existed {
 		status = http.StatusOK
+		action = "flag.set"
 	}
+	p.recordAuditEntry(r, p.flagAuditEntry(action, name, prev, existed, row))
 	return c.JSON(status, map[string]interface{}{
 		"created": !existed,
 		"flag":    row,
@@ -229,6 +249,12 @@ func (p *Panel) handleDeleteSystemFlag(c *router.Context) error {
 	if !ok {
 		return gferrors.NotFound("feature flag", name)
 	}
+	p.recordAuditEntry(c.Request, AuditEntry{
+		Action:    "flag.delete",
+		ModelName: "feature_flag",
+		RecordID:  name,
+		OldValue:  auditJSONValues(row),
+	})
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"deleted": true,
 		"flag":    row,
@@ -298,5 +324,17 @@ func (p *Panel) handleSystemQueueAction(c *router.Context) error {
 			"action": action,
 		})
 	}
+	p.recordAuditEntry(r, AuditEntry{
+		Action:    "jobs.queue." + action,
+		ModelName: "job_queue",
+		RecordID:  queue,
+		NewValue: map[string]any{
+			"action":   action,
+			"force":    payload.Force,
+			"applied":  result.Applied,
+			"affected": result.Affected,
+			"message":  result.Message,
+		},
+	})
 	return c.JSON(http.StatusOK, result)
 }

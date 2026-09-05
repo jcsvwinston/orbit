@@ -334,6 +334,23 @@ func (p *Panel) handleDumpdata(c *router.Context) error {
 		p.exportMu.Unlock()
 	}
 
+	// Data leaving the system: audited whether it completed or failed.
+	p.recordAuditEntry(r, AuditEntry{
+		Action:    "fixtures.dumpdata",
+		ModelName: "export",
+		RecordID:  result.StorageKey,
+		NewValue: map[string]any{
+			"models":    cfg.Models,
+			"format":    result.Format,
+			"database":  cfg.Database,
+			"tenant_id": cfg.TenantID,
+			"status":    result.Status,
+			"records":   result.Records,
+			"size":      result.Size,
+			"error":     result.Error,
+		},
+	})
+
 	status := http.StatusOK
 	if result.Status == "failed" {
 		status = http.StatusInternalServerError
@@ -364,6 +381,12 @@ func (p *Panel) handleLoaddata(c *router.Context) error {
 	if err != nil {
 		return fmt.Errorf("loaddata: %w", err)
 	}
+
+	entry := auditImportReportEntry("fixtures.loaddata", cfg.StorageKey, report)
+	entry.NewValue["on_conflict"] = cfg.OnConflict
+	entry.NewValue["database"] = cfg.Database
+	entry.NewValue["tenant_id"] = cfg.TenantID
+	p.recordAuditEntry(r, entry)
 
 	return c.JSON(http.StatusOK, report)
 }

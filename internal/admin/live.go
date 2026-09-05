@@ -1141,6 +1141,12 @@ func (p *Panel) handleAddLiveExcludePattern(c *router.Context) error {
 	if err != nil {
 		return gferrors.BadRequest(err.Error())
 	}
+	p.recordAuditEntry(r, AuditEntry{
+		Action:    "live.exclude.add",
+		ModelName: "live_exclude",
+		RecordID:  normalizeLiveExcludePattern(payload.Pattern),
+		NewValue:  map[string]any{"pattern": normalizeLiveExcludePattern(payload.Pattern), "patterns": patterns},
+	})
 	return c.JSON(http.StatusCreated, map[string]interface{}{
 		"updated":  true,
 		"patterns": patterns,
@@ -1157,6 +1163,13 @@ func (p *Panel) handleDeleteLiveExcludePattern(c *router.Context) error {
 	if err != nil {
 		return gferrors.BadRequest(err.Error())
 	}
+	p.recordAuditEntry(c.Request, AuditEntry{
+		Action:    "live.exclude.remove",
+		ModelName: "live_exclude",
+		RecordID:  normalizeLiveExcludePattern(pattern),
+		OldValue:  map[string]any{"pattern": normalizeLiveExcludePattern(pattern)},
+		NewValue:  map[string]any{"patterns": patterns},
+	})
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"updated":  true,
 		"patterns": patterns,
