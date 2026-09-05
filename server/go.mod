@@ -8,7 +8,7 @@ require (
 )
 
 require (
-	github.com/jcsvwinston/nucleus v1.23.1
+	github.com/jcsvwinston/nucleus v1.23.2
 	github.com/jcsvwinston/nucleus/drivers/mysql v0.1.0
 	github.com/jcsvwinston/nucleus/drivers/postgres v0.1.0
 	github.com/jcsvwinston/nucleus/drivers/sqlite v0.1.0
