@@ -60,16 +60,49 @@ describe('chunk recovery', () => {
     })
 
     it('does not reload again in the document the reload produced', () => {
-      sessionStorage.setItem(FLAG, '1')
+      sessionStorage.setItem(FLAG, String(Date.now() - 5_000))
       expect(recovery.reloadPending(chrome())).toBe(false)
       expect(recovery.reloadOnce(chrome())).toBe(false)
       expect(reload).not.toHaveBeenCalled()
+      // The spent flag is left as it was, not refreshed.
+      expect(Number(sessionStorage.getItem(FLAG))).toBeLessThan(Date.now() - 4_000)
+    })
+
+    it('reloads again once the previous reload is older than the window', () => {
+      // The reloaded document landed on a static page (session invalidated by
+      // the upgrade: /rbac -> /login -> Overview), so no chunk cleared the
+      // flag; a later upgrade with the tab still open must get its reload.
+      sessionStorage.setItem(FLAG, String(Date.now() - recovery.RELOAD_SPENT_MS - 1_000))
+      expect(recovery.reloadPending(chrome())).toBe(true)
+      expect(recovery.reloadOnce(chrome())).toBe(true)
+      expect(reload).toHaveBeenCalledTimes(1)
+      // The flag is fresh again, so the reloaded document sees it as spent.
+      expect(Number(sessionStorage.getItem(FLAG))).toBeGreaterThan(Date.now() - 1_000)
+    })
+
+    it('treats a flag it cannot read as a date as not spent', () => {
+      sessionStorage.setItem(FLAG, 'yes')
+      expect(recovery.reloadPending(chrome())).toBe(true)
+      expect(recovery.reloadOnce(chrome())).toBe(true)
+      expect(reload).toHaveBeenCalledTimes(1)
     })
 
     it('reloads again once a chunk has loaded in between', () => {
-      sessionStorage.setItem(FLAG, '1')
+      sessionStorage.setItem(FLAG, String(Date.now()))
       recovery.markChunkLoaded()
       expect(recovery.reloadOnce(firefox())).toBe(true)
+      expect(reload).toHaveBeenCalledTimes(1)
+    })
+
+    it('shows the error instead of reloading while the browser is offline', () => {
+      vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+      expect(recovery.reloadPending(chrome())).toBe(false)
+      expect(recovery.reloadOnce(safari())).toBe(false)
+      expect(reload).not.toHaveBeenCalled()
+      // Nothing was spent: once back online the next failure reloads.
+      expect(sessionStorage.getItem(FLAG)).toBeNull()
+      vi.restoreAllMocks()
+      expect(recovery.reloadOnce(chrome())).toBe(true)
       expect(reload).toHaveBeenCalledTimes(1)
     })
 
@@ -119,6 +152,17 @@ describe('chunk recovery', () => {
 
         window.dispatchEvent(preloadError(chrome()))
         expect(reload).toHaveBeenCalledTimes(1)
+      } finally {
+        remove()
+      }
+    })
+
+    it('does not reload for a preload failure while offline', () => {
+      vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+      const remove = recovery.installPreloadErrorReload()
+      try {
+        window.dispatchEvent(preloadError(viteCss()))
+        expect(reload).not.toHaveBeenCalled()
       } finally {
         remove()
       }
