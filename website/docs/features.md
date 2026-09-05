@@ -54,7 +54,7 @@ recorded. Looking at another tenant, or at all of them, is that explicit
 switch: `?tenant=<id>` or `?tenant=all` on the request, accepted only from a
 superuser or a subject granted the `tenant_switch` action on `admin:*` (a
 policy granting every action, `*`, on `admin:*` includes it), and recorded in
-the [audit log](#audit-log) as `tenant.override`. Anyone else gets a 403.
+the [audit log](#audit-log) as `tenant.override`. Anyone else gets a 403. Without an auth provider (the open posture, warned at mount) there is no operator to gate: `?tenant=` is accepted from any client and a request with no resolved tenant is unscoped.
 The audit log itself is not filtered by tenant (see below). The confinement
 is only as strong as the host's resolution: a
 tenant read from a request header the client can set (Nucleus' `header`
