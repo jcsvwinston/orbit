@@ -42,13 +42,28 @@ the `<Outlet />` in `DashboardLayout` shows a spinner in the content area
 while the chunk loads. The login page, the layout and the Overview landing
 stay in the entry chunk because they render on every sign-in.
 
+A chunk can also fail to load, which a single bundle never could: a tab
+opened before the binary was upgraded still holds the old `index.html`, and
+its first visit to a page it has not loaded yet asks for a file the new
+binary does not ship (404). `RouteErrorBoundary` (`components/layout/`)
+wraps the `Suspense` so the failure replaces only the content area — without
+it React 19 unmounts the whole tree and the panel goes blank. The first such
+failure in a browser session reloads the page, which fetches the current
+`index.html` (`lib/chunk-recovery.ts`; `main.tsx` applies the same rule to
+Vite's `vite:preloadError` event); a later one shows an error with a
+**Reload** button, since `React.lazy` remembers a rejected loader for good.
+A page that throws while rendering lands in the same boundary with **Try
+again**. The boundary is keyed by pathname, so navigating elsewhere starts
+clean.
+
 Consequences to keep in mind:
 
 - A new page goes into `src/routes.ts` (with a `default` export), not as a
   static import in `App.tsx`. `src/routes.test.ts` resolves every loader and
   `internal/admin/ui_embed_test.go` keeps the assets `index.html` loads
   directly under a size budget, so a page imported eagerly by mistake fails
-  the Go tests.
+  the Go tests. `src/App.test.tsx` drives the layout with mocked loaders
+  (pending, rejected, throwing page) and pins where the boundaries sit.
 - Vite emits one JS (and, for Data Studio, one CSS) file per page under
   `dist/assets/`; all of them are embedded and served under the mount prefix
   by the same handlers as the entry, and the entry resolves them relative to
@@ -84,11 +99,11 @@ Login feedback (`nucleus-admin-login-error` / `-info`) travels the same way.
 
 ```
 src/
-├── App.tsx                 # routes; ProtectedRoute gates on the session check
+├── App.tsx                 # routes; ProtectedRoute gates on the session check (+ test)
 ├── routes.ts               # lazy feature pages (path -> dynamic import) (+ test)
 ├── config.ts               # prefix/title from the injected meta tags
 ├── components/
-│   ├── layout/             # DashboardLayout (sidebar, theme, sign out, Suspense)
+│   ├── layout/             # DashboardLayout (sidebar, theme, sign out, Suspense), RouteErrorBoundary
 │   └── ui/                 # button, dialog, toast, table, error-state, route-fallback, ...
 ├── features/
 │   ├── auth/               # /login
@@ -101,11 +116,11 @@ src/
 │   ├── health/             # /health
 │   ├── rbac/               # /rbac       policies with allow/deny effect
 │   └── audit/              # /audit      filtered, paginated audit log
-├── lib/                    # utils, datetime codecs
+├── lib/                    # utils, datetime codecs, chunk recovery (one reload per session) (+ tests)
 ├── services/api.ts         # every backend call; throws ApiError{status, body}
 ├── stores/                 # zustand: auth (session known, identity NOT known), theme
 ├── types/                  # backend contracts
-└── test/setup.ts           # vitest + jest-dom
+└── test/                   # vitest setup (jest-dom, storage shim), location.reload stub
 tools/
 └── postcss-strip-unused-grid-themes.ts   # build-time CSS pass (+ test)
 ```

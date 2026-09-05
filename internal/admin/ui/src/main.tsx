@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.tsx'
 import { getAdminTitle } from './config'
+import { installPreloadErrorReload } from './lib/chunk-recovery'
 import './index.css'
 
 // Reflect the configured panel title (injected by the backend as a meta tag)
@@ -20,6 +21,10 @@ document.title = getAdminTitle();
   if (theme === 'dark') document.documentElement.classList.add('dark')
   else document.documentElement.classList.remove('dark')
 })()
+
+// A chunk or stylesheet that fails to load (the tab predates the binary now
+// serving it) reloads the page once; see src/lib/chunk-recovery.ts.
+installPreloadErrorReload()
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
