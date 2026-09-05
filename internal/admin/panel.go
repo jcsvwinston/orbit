@@ -741,10 +741,23 @@ func defaultDatabaseAlias(cfg PanelConfig) string {
 			return strings.TrimSpace(item.Alias)
 		}
 	}
+	// Handles only (no Databases metadata): choose deterministically.
+	// Ranging over the map picked a different alias on every process start
+	// — with {"default","audit"} half the runs treated "audit" as the app's
+	// default database, so the model listing attributed every model to it
+	// and errors on it were the ones that surfaced.
+	if _, ok := cfg.DatabaseHandles["default"]; ok {
+		return "default"
+	}
+	aliases := make([]string, 0, len(cfg.DatabaseHandles))
 	for alias := range cfg.DatabaseHandles {
 		if trimmed := strings.TrimSpace(alias); trimmed != "" {
-			return trimmed
+			aliases = append(aliases, trimmed)
 		}
+	}
+	sort.Strings(aliases)
+	if len(aliases) > 0 {
+		return aliases[0]
 	}
 	return "default"
 }
