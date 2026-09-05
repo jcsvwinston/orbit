@@ -40,7 +40,8 @@ reads 0–100 on every host, RSS outside Linux is documented as not reported
 rather than reported as zero, and commands run under a 16-slot semaphore
 instead of one goroutine per request.
 
-**Panel.** Record ids are strings end to end, as ADR-001 decided: bulk
+**Panel.** Record ids are strings end to end, as the datasource contract
+always said: bulk
 operations, the CSV export, fixtures and the SPA carry the id the backend
 handed out, so a UUID key works in Get, Update and Delete and an id the
 backend cannot narrow is a per-id failure, not a 500. The tenant is
