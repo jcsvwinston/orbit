@@ -78,7 +78,7 @@ func jsonFieldKey(sf reflect.StructField) (string, bool) {
 
 // applyQuery translates the neutral Query's filters and search onto a Quark
 // builder. Column names go through Quark's own SQLGuard inside the builder.
-func (s *store[T]) applyQuery(qb *quark.Query[T], q datasource.Query) (*quark.Query[T], error) {
+func (s *store[T]) applyQuery(ctx context.Context, qb *quark.Query[T], q datasource.Query) (*quark.Query[T], error) {
 	for col, val := range q.Filters {
 		v, err := s.coerceFilterValue(col, val)
 		if err != nil {
@@ -87,7 +87,14 @@ func (s *store[T]) applyQuery(qb *quark.Query[T], q datasource.Query) (*quark.Qu
 		qb = qb.Where(col, "=", v)
 	}
 	if search := strings.TrimSpace(q.Search); search != "" && len(s.searchCols) > 0 {
-		pattern := "%" + search + "%"
+		// The search text is data, not a pattern: a `%` or `_` typed by the
+		// operator used to widen the match instead of matching itself (F13).
+		// Escaping is per engine, with the engine's default escape.
+		dialect := ""
+		if c, err := s.adapter.provider.GetClient(ctx); err == nil && c != nil {
+			dialect = c.Dialect().Name()
+		}
+		pattern := "%" + escapeLike(search, dialect) + "%"
 		parts := make([]quark.Expr, 0, len(s.searchCols))
 		for _, col := range s.searchCols {
 			parts = append(parts, quark.Cmp(quark.Col(col), "LIKE", quark.Lit(pattern)))
@@ -110,7 +117,7 @@ func (s *store[T]) List(ctx context.Context, q datasource.Query) (datasource.Pag
 		size = defaultPageSize
 	}
 
-	counted, err := s.applyQuery(quark.For[T](ctx, s.adapter.provider), q)
+	counted, err := s.applyQuery(ctx, quark.For[T](ctx, s.adapter.provider), q)
 	if err != nil {
 		return datasource.Page{}, err
 	}
@@ -119,7 +126,7 @@ func (s *store[T]) List(ctx context.Context, q datasource.Query) (datasource.Pag
 		return datasource.Page{}, fmt.Errorf("quarkdatasource: count %s: %w", s.info.Name, err)
 	}
 
-	qb, err := s.applyQuery(quark.For[T](ctx, s.adapter.provider), q)
+	qb, err := s.applyQuery(ctx, quark.For[T](ctx, s.adapter.provider), q)
 	if err != nil {
 		return datasource.Page{}, err
 	}
@@ -551,4 +558,22 @@ func isTableMissingErr(err error) bool {
 		strings.Contains(msg, "does not exist") ||
 		strings.Contains(msg, "unknown table") ||
 		strings.Contains(msg, "undefined table")
+}
+
+// escapeLike neutralises LIKE wildcards in operator-typed text using the
+// engine's DEFAULT escape character, since the builder emits no ESCAPE
+// clause: backslash on PostgreSQL, MySQL and MariaDB; bracket classes on
+// SQL Server. SQLite and Oracle have no default escape, so the text goes
+// through as typed there — a `%` widens the match, it never reaches the
+// engine as SQL.
+func escapeLike(text, dialect string) string {
+	switch dialect {
+	case "postgres", "postgresql", "pgx", "mysql", "mariadb":
+		r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+		return r.Replace(text)
+	case "mssql", "sqlserver":
+		r := strings.NewReplacer(`[`, `[[]`, `%`, `[%]`, `_`, `[_]`)
+		return r.Replace(text)
+	}
+	return text
 }

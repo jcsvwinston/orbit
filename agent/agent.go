@@ -172,6 +172,9 @@ type Agent struct {
 	// a timeout). Subsequent disconnects/reconnects do NOT re-open it.
 	connectedOnce     chan struct{}
 	connectedOnceOnce sync.Once
+	// acceptedStreams counts the streams the server accepted; the
+	// reconnect metric is that count minus the first (F14).
+	acceptedStreams atomic.Int64
 
 	// authWarnLast rate-limits the operator-facing auth WARNs (the hard
 	// 401 of OR5-2 and the no-accepted-frame suspicion of OR6-2) to one
@@ -339,8 +342,9 @@ func (a *Agent) Run(ctx context.Context) error {
 				return nil
 			}
 			a.cfg.Logger.Debug("admin agent stream cycle ended", "error", err.Error())
-			a.metrics.ReconnectsTotal.Inc()
-			// Backoff before the next reconnect attempt.
+			// Backoff before the next reconnect attempt. The reconnect
+			// counter moves in OnAccepted, when a stream is actually
+			// re-established, not here on every failed cycle (F14).
 			sleep := a.dialer.Backoff()
 			select {
 			case <-ctx.Done():
@@ -401,6 +405,11 @@ func (a *Agent) runOnce(ctx context.Context) error {
 		// /healthz probe as proof of a working connection (OR5-2/OR6-1).
 		OnAccepted: func() {
 			accepted.Store(true)
+			// The first accepted stream is a connect; every accepted
+			// stream after it is a reconnect (F14).
+			if a.acceptedStreams.Add(1) > 1 {
+				a.metrics.ReconnectsTotal.Inc()
+			}
 			a.resetNoFrameCycles(res.Endpoint)
 			a.dialer.ResetBackoff()
 			a.metrics.Connected.WithLabelValues(res.Endpoint).Set(1)

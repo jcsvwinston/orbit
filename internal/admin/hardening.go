@@ -32,9 +32,17 @@ import (
 func securityHeadersMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
+		// connect-src names the panel's own host for WebSocket upgrades
+		// instead of the bare `ws: wss:` schemes, which allowed a script to
+		// open a socket anywhere (OR-42). Some browsers do not extend
+		// 'self' to the ws scheme, hence the explicit host.
+		connect := "'self'"
+		if host := strings.TrimSpace(r.Host); host != "" {
+			connect += " ws://" + host + " wss://" + host
+		}
 		h.Set("Content-Security-Policy",
 			"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "+
-				"img-src 'self' data:; font-src 'self'; connect-src 'self' ws: wss:; "+
+				"img-src 'self' data:; font-src 'self'; connect-src "+connect+"; "+
 				"frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")

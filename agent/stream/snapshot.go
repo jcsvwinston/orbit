@@ -21,7 +21,7 @@ func (s *Stream) handleSnapshotRequest(req *adminv1.SnapshotRequest) {
 	if req == nil {
 		return
 	}
-	go func() {
+	s.runCommand(func() {
 		resp := &adminv1.SnapshotResponse{
 			RequestId: req.GetRequestId(),
 			Type:      req.GetType(),
@@ -35,7 +35,7 @@ func (s *Stream) handleSnapshotRequest(req *adminv1.SnapshotRequest) {
 		s.queueFrame(&adminv1.Frame{
 			Body: &adminv1.Frame_SnapshotResponse{SnapshotResponse: resp},
 		})
-	}()
+	})
 }
 
 func (s *Stream) snapshotPayload(t adminv1.SnapshotType) ([]byte, error) {

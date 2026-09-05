@@ -42,7 +42,7 @@ core de Nucleus por su `ADR-019`; Nucleus ya no lleva código de admin.
 1. **Anti-hype**: sin superlativos de marketing (afirmaciones exageradas de
    madurez o rendimiento) en commits, README, ADRs ni docs.
 2. **Docs en el mismo PR que la API** (cultura Quark/Nucleus, QADR-0003 de la suite).
-3. **Conventional Commits**; trabaja en rama y abre PR, no commitees a `main`.
+3. **Conventional Commits, en inglés**: el producto habla inglés (QADR-0007) y el título del squash es la línea del changelog y de la release — CI rechaza un título de PR en español (`scripts/ci/check_pr_title_english.sh`). Un `!` o un `BREAKING CHANGE:` es una MAJOR de Orbit y, por QADR-0002, de toda la suite: se decide antes del merge. Trabaja en rama y abre PR, no commitees a `main`.
 4. **No rompas el uso in-process**: Orbit lee del `Runtime`, no de internals de Nucleus.
 
 ## Decisiones arquitectónicas (`docs/adrs/`)

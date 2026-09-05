@@ -116,17 +116,8 @@ func replayMatches(f *adminv1.Filter, e *adminv1.Event) bool {
 		}
 	}
 
-	if len(f.NodeIds) > 0 {
-		ok := false
-		for _, n := range f.NodeIds {
-			if n == e.NodeId {
-				ok = true
-				break
-			}
-		}
-		if !ok {
-			return false
-		}
+	if len(f.NodeIds) > 0 && !nodeIDMatches(f.NodeIds, e.NodeId) {
+		return false
 	}
 
 	if http := e.GetHttpRequest(); http != nil {

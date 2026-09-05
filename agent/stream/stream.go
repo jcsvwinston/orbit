@@ -142,6 +142,13 @@ type Stream struct {
 	// pushes through this channel; the lone send goroutine drains it.
 	frameSendCh chan *adminv1.Frame
 
+	// cmdSem bounds the commands (RBAC, Data Studio, snapshots) the
+	// agent runs concurrently on the server's behalf. Each used to get a
+	// goroutine with no ceiling, so a server could make the agent spawn
+	// without limit (F17). A command past the cap waits its turn, off
+	// the recvLoop, which keeps draining frames.
+	cmdSem chan struct{}
+
 	// acceptedOnce guards cfg.OnAccepted: fired on the first successful
 	// Receive from the server, at most once per Stream.
 	acceptedOnce sync.Once
@@ -165,7 +172,32 @@ func New(client adminv1connect.AgentServiceClient, cfg Config) *Stream {
 		client:      client,
 		activeSubs:  make(map[string]*activeSub),
 		frameSendCh: make(chan *adminv1.Frame, 64),
+		cmdSem:      make(chan struct{}, maxConcurrentCommands),
 	}
+}
+
+// maxConcurrentCommands is the ceiling of server-driven commands the
+// agent runs at once (F17).
+const maxConcurrentCommands = 16
+
+// runCommand runs fn on its own goroutine under the command semaphore.
+// Acquisition happens on the new goroutine, so the recvLoop that called
+// us keeps draining frames while a burst of commands queues up; a command
+// still waiting when the stream ends is dropped with it.
+func (s *Stream) runCommand(fn func()) {
+	go func() {
+		ctx := s.streamCtx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		select {
+		case s.cmdSem <- struct{}{}:
+		case <-ctx.Done():
+			return
+		}
+		defer func() { <-s.cmdSem }()
+		fn()
+	}()
 }
 
 // Run opens the bidi stream, sends NodeRegistration, and runs the
@@ -421,7 +453,7 @@ func (s *Stream) handleRbac(req *adminv1.RbacRequest) {
 		})
 		return
 	}
-	go func() {
+	s.runCommand(func() {
 		resp := s.cfg.Rbac.Dispatch(req)
 		if resp == nil {
 			resp = &adminv1.RbacResponse{
@@ -432,7 +464,7 @@ func (s *Stream) handleRbac(req *adminv1.RbacRequest) {
 		s.queueFrame(&adminv1.Frame{
 			Body: &adminv1.Frame_RbacResponse{RbacResponse: resp},
 		})
-	}()
+	})
 }
 
 // handleDataStudio runs a Data Studio request on the agent and ships
@@ -453,7 +485,7 @@ func (s *Stream) handleDataStudio(req *adminv1.DataStudioRequest) {
 		})
 		return
 	}
-	go func() {
+	s.runCommand(func() {
 		resp := s.cfg.DataStudio.Dispatch(s.streamCtx, req)
 		if resp == nil {
 			resp = &adminv1.DataStudioResponse{
@@ -464,7 +496,7 @@ func (s *Stream) handleDataStudio(req *adminv1.DataStudioRequest) {
 		s.queueFrame(&adminv1.Frame{
 			Body: &adminv1.Frame_DataStudioResponse{DataStudioResponse: resp},
 		})
-	}()
+	})
 }
 
 func (s *Stream) handleSubscribe(in *adminv1.Subscribe) {
