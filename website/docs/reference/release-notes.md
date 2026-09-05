@@ -6,7 +6,7 @@ description: What changed in each Orbit release, in plain terms.
 
 # Release notes
 
-The current release is **v1.9.1**. <!-- x-release-please-version -->
+The current release is **v1.9.2**. <!-- x-release-please-version -->
 
 Every heading below is a version of the **root module**
 (`github.com/jcsvwinston/orbit`) — the one an application mounts for the
@@ -16,6 +16,16 @@ The fleet modules (`agent`, `server`, `proto`) release independently with their
 own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
+
+## v1.9.2 — 2026-09-05
+
+An alignment release with no product change: every module now requires
+Nucleus v1.24.0 and Quark v1.11.0, the versions Quantum 1.28.0 certifies,
+and `quarkdatasource` pins the root at v1.9.1. Nothing in the binaries or
+the panel behaves differently from v1.9.1.
+
+Fleet tags cut alongside: `agent/v0.6.16`, `server/v0.11.2`,
+`quarkbridge/v1.8.20`, `quarkdatasource/v1.8.21`.
 
 ## v1.9.1 — 2026-09-05
 
