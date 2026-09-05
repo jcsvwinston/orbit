@@ -14,6 +14,7 @@
 | [ADR-003](ADR-003-plano-fleet-agente-servidor.md) | Plano fleet como subsistema opt-in (agent/server/proto, stream bidi) | Accepted · retroactivo | ADR-001 · quantum QADR-0006 |
 | [ADR-004](ADR-004-frontera-authn-delegada-authz-panel.md) | Autenticación delegada, autorización del panel propia | Accepted · retroactivo | nucleus ADR-019 |
 | [ADR-005](ADR-005-confinamiento-storage-browse.md) | El navegador de storage del panel se confina a un root fijo | Accepted · retroactivo | ADR-004 |
+| [ADR-006](ADR-006-pines-internos-sin-cascada.md) | Ningún módulo hermano requiere a otro por tag salvo el contrato del protocolo (fin de la cascada de pines internos) | Accepted (2026-09-05) | ADR-003 · quantum QADR-0002 · QADR-0008 |
 
 **ADR-002 está aceptado pero no implementado**: la D2 de la auditoría
 integral 2026-08-30 decidió (2026-08-31) que el Data Studio del plano fleet

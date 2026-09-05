@@ -1,4 +1,4 @@
-package server_test
+package fleettest
 
 // Integration tests for the Manage surface (W1 of the v1.2 arc): the
 // RBAC snapshot routed server -> agent -> server, and the server-side

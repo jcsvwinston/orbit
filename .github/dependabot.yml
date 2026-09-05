@@ -15,14 +15,22 @@ updates:
       - dependency-name: github.com/jcsvwinston/quark
       - dependency-name: github.com/jcsvwinston/quark/*
       - dependency-name: github.com/jcsvwinston/orbit/*
+  # proto/ is the protocol contract and a leaf every fleet module pins by
+  # tag (ADR-006): its Go dependencies (connect-go, protobuf-go) move by
+  # hand together with the regenerated stubs (`make proto`), never alone —
+  # a lone bump here costs two release cuts across agent and server.
   - package-ecosystem: gomod
     directory: /proto
     schedule: { interval: weekly, day: monday }
-    groups:
-      go-deps: { patterns: ["*"] }
+    ignore:
+      - dependency-name: "*"
   - package-ecosystem: gomod
     directory: /agent
     schedule: { interval: weekly, day: monday }
+    # fix(deps): a bump in a sibling module must cut the module's tag in the
+    # same train (ADR-006); a chore commit leaves module code without a tag,
+    # which the suite manifest guard refuses.
+    commit-message: { prefix: "fix(deps)" }
     groups:
       go-deps: { patterns: ["*"] }
     ignore:
@@ -32,6 +40,10 @@ updates:
   - package-ecosystem: gomod
     directory: /server
     schedule: { interval: weekly, day: monday }
+    # fix(deps): a bump in a sibling module must cut the module's tag in the
+    # same train (ADR-006); a chore commit leaves module code without a tag,
+    # which the suite manifest guard refuses.
+    commit-message: { prefix: "fix(deps)" }
     groups:
       go-deps: { patterns: ["*"] }
     ignore:
@@ -41,6 +53,10 @@ updates:
   - package-ecosystem: gomod
     directory: /quarkbridge
     schedule: { interval: weekly, day: monday }
+    # fix(deps): a bump in a sibling module must cut the module's tag in the
+    # same train (ADR-006); a chore commit leaves module code without a tag,
+    # which the suite manifest guard refuses.
+    commit-message: { prefix: "fix(deps)" }
     groups:
       go-deps: { patterns: ["*"] }
     ignore:
@@ -52,6 +68,10 @@ updates:
   - package-ecosystem: gomod
     directory: /quarkdatasource
     schedule: { interval: weekly, day: monday }
+    # fix(deps): a bump in a sibling module must cut the module's tag in the
+    # same train (ADR-006); a chore commit leaves module code without a tag,
+    # which the suite manifest guard refuses.
+    commit-message: { prefix: "fix(deps)" }
     groups:
       go-deps: { patterns: ["*"] }
     ignore:
