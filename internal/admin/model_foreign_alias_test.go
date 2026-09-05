@@ -139,3 +139,19 @@ func TestHandleListModels_OwnAliasErrorStillFails(t *testing.T) {
 		t.Fatalf("an error on the served alias must not be swallowed; got 200")
 	}
 }
+
+// The default alias derived from DatabaseHandles alone must not depend on
+// map iteration order: {"default","audit"} is always "default", and a set
+// without "default" picks the smallest alias every time.
+func TestDefaultDatabaseAlias_DeterministicFromHandles(t *testing.T) {
+	for i := 0; i < 50; i++ {
+		got := defaultDatabaseAlias(PanelConfig{DatabaseHandles: map[string]*db.DB{"default": nil, "audit": nil}})
+		if got != "default" {
+			t.Fatalf("run %d: expected \"default\", got %q", i, got)
+		}
+		got = defaultDatabaseAlias(PanelConfig{DatabaseHandles: map[string]*db.DB{"warehouse": nil, "audit": nil}})
+		if got != "audit" {
+			t.Fatalf("run %d: expected the smallest alias \"audit\", got %q", i, got)
+		}
+	}
+}
