@@ -22,13 +22,25 @@ Nucleus, from the subdomain or the configured header), or to
 `multitenant_default` when it resolves none. Confined means: the list and the
 CSV export only show that tenant's rows; a record of another tenant is *not
 found* by id (get, update, delete, bulk delete); a create or an update cannot
-name another tenant; exports, imports and fixtures work inside that tenant
-whatever `tenant_id` their request body carries. Models without a tenant
-column are not scoped. Looking at another tenant, or at all of them, is an
-explicit switch: `?tenant=<id>` or `?tenant=all` on the request, accepted
-only from a superuser or a subject granted the `tenant_switch` action on
-`admin:*`, and recorded in the [audit log](#audit-log) as `tenant.override`.
-Anyone else gets a 403.
+name another tenant, under any spelling of the tenant column, and a payload
+naming it twice is a 400; exports, imports and fixtures work inside that
+tenant whatever `tenant_id` their request body carries — a row that names
+another tenant fails, a row whose id belongs to another tenant's record fails
+as *not found*, and an export job (`/api/exports`, its status and its
+download) is listed and served only to requests scoped to the tenant it was
+produced for. Models without a tenant column are not scoped. A request the
+host resolves no tenant for, with no default configured, is refused with a
+403 rather than opened to every tenant — unless it comes from a superuser or
+a subject granted `tenant_switch`, who then sees every tenant, as with
+`?tenant=all`. Looking at another tenant, or at all of them, is an explicit
+switch: `?tenant=<id>` or `?tenant=all` on the request, accepted only from a
+superuser or a subject granted the `tenant_switch` action on `admin:*`, and
+recorded in the [audit log](#audit-log) as `tenant.override`. Anyone else
+gets a 403. The confinement is only as strong as the host's resolution: a
+tenant read from a request header the client can set (Nucleus' `header`
+resolver with no proxy overwriting that header) is the client's choice, so
+resolve it from the host name, or from a header a trusted proxy sets, for the
+scope to hold.
 
 **Record ids.** Ids are strings everywhere the API exchanges them — record
 paths, the bulk endpoint's `ids` and `errors[].id`, the export's `?ids=`,
@@ -40,9 +52,11 @@ bulk one.
 **Search.** `?search=` looks in the fields a model declares searchable: in
 Nucleus, fields tagged `admin:"search"`, listed in `ModelConfig.SearchFields`,
 or switched on in the panel's Field settings; Quark models search every
-string column. A model with no searchable field answers a search with `400`
-naming the model, rather than every row, and the grid disables its search
-box. The two backends match differently (Nucleus lower-cases both sides;
+string column. A Nucleus model that declares none is not searchable today —
+the registry does not yet default search to its string columns — so a search
+on it answers `400` naming the model and how to enable search, rather than
+every row, and the grid disables its search box. The two backends match
+differently (Nucleus lower-cases both sides;
 Quark escapes `%` and `_` in the text per engine), so do not expect identical
 results across them.
 

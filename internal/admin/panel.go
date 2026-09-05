@@ -86,11 +86,16 @@ type PanelConfig struct {
 
 	// Multi-tenant configuration. When enabled, Data Studio is confined to
 	// the tenant of each request — list, get, create, update, delete, bulk,
-	// CSV export, exports, imports and fixtures — resolved by TenantResolver
-	// (the host application's request scope) and falling back to
-	// MultiTenantDefault. Only a superuser, or a subject granted the
-	// tenant_switch RBAC action on admin:*, may switch the request to another
-	// tenant or to all of them with ?tenant=; every switch is audited.
+	// CSV export, exports (and their job list, status and download),
+	// imports and fixtures — resolved by TenantResolver (the host
+	// application's request scope) and falling back to MultiTenantDefault.
+	// A request that resolves no tenant is refused (403) unless its operator
+	// may switch tenants; it does not fall back to every tenant. Only a
+	// superuser, or a subject granted the tenant_switch RBAC action on
+	// admin:*, may switch the request to another tenant or to all of them
+	// with ?tenant=; every switch is audited. The confinement trusts the
+	// resolver: a tenant read from a header the client controls is the
+	// client's choice, not the host's.
 	MultiTenantEnabled    bool     // whether multi-tenant mode is active
 	MultiTenantDefault    string   // default tenant ID when none resolved
 	MultiTenantAutoFilter bool     // confine Data Studio to the request's tenant (default true when multi-tenant enabled)
@@ -712,8 +717,21 @@ func (p *Panel) tenantContextMiddleware(next http.Handler) http.Handler {
 			}
 		}
 
-		// No tenant (none resolved and no default, or a switch to all):
-		// nothing to confine the request to.
+		// No tenant resolved and no default: with confinement on there is
+		// nothing to confine the request to, so it is refused — unless the
+		// operator may look at every tenant anyway (superuser or
+		// tenant_switch), for whom the request is unscoped as with
+		// ?tenant=all. It used to fall open: AutoFilter went off and a
+		// plain operator on a bare host saw and edited every tenant's rows.
+		if tenantCtx.Enabled && tenantCtx.AutoFilter && tenantCtx.TenantID == "" && !tenantCtx.Overridden {
+			if !p.canSwitchTenant(r) {
+				writeErr(w, r, gferrors.Forbidden("no tenant resolved for this request: Data Studio is confined to the request's tenant, and seeing every tenant requires a superuser or the "+tenantSwitchAction+" permission"))
+				return
+			}
+		}
+
+		// No tenant (a switch to all, or none resolved for an operator who
+		// may see every tenant): nothing to confine the request to.
 		if tenantCtx.TenantID == "" {
 			tenantCtx.AutoFilter = false
 		}
@@ -960,10 +978,13 @@ func (p *Panel) authenticatedUser(r *http.Request) (*auth.User, error) {
 			return user, nil
 		}
 	}
+	// The open posture (no auth provider, warned at mount) has no operator
+	// to name: the callers that only annotate — the audit log, the tenant
+	// switch gate, the live feed — take the error as "anonymous", and
+	// authorizeAction never gets here. Calling through the nil interface
+	// panicked, which dropped every ?tenant= request of that posture once
+	// AuditEnabled tried to record the switch.
 	if p.config.Auth == nil {
-		// Open posture (no provider): there is no operator to name. The
-		// audit entries a handler records in this posture stay anonymous
-		// instead of dereferencing a nil provider.
 		return nil, errors.New("admin auth provider is not configured")
 	}
 	return p.config.Auth.Authenticate(r)

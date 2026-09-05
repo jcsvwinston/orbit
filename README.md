@@ -153,8 +153,8 @@ links point elsewhere.
 | `auth_database` | string | app default | DB alias whose handle backs admin auth + the bootstrap user (use a dedicated DB for the admin user store). |
 | `migrations_path` | string | `migrations` | Directory the migrations view reads. |
 | `audit_max_size` | int | `10000` | In-memory audit-log ring size. |
-| `multitenant_enabled` | bool | `false` | Confine Data Studio (list, get, create, update, delete, bulk, CSV export, exports, imports, fixtures) to the tenant the host app resolves for the request. `?tenant=<id>` / `?tenant=all` are accepted only from a superuser or a subject granted the `tenant_switch` RBAC action, and audited as `tenant.override`. |
-| `multitenant_default` | string | — | Tenant applied when the host resolves none. |
+| `multitenant_enabled` | bool | `false` | Confine Data Studio (list, get, create, update, delete, bulk, CSV export, exports and their jobs, imports, fixtures) to the tenant the host app resolves for the request; a request with no resolved tenant and no default is a 403. `?tenant=<id>` / `?tenant=all` are accepted only from a superuser or a subject granted the `tenant_switch` RBAC action, and audited as `tenant.override`. The host's resolution must not be client-controlled (a header the client sets) for the confinement to hold. |
+| `multitenant_default` | string | — | Tenant applied when the host resolves none; without it such a request is refused unless the operator may switch tenants. |
 | `multitenant_ids` | []string | — | Known tenant IDs for the selector UI. |
 | `live_exclude_patterns` | []string | — | Path patterns excluded from the live HTTP feed. |
 | `trace_url_template` | string | — | External trace-explorer URL template (supports `{trace_id}`). |

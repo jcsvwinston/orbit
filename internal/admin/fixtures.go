@@ -219,6 +219,7 @@ func (p *Panel) Loaddata(ctx context.Context, cfg LoaddataConfig) (*ImportReport
 		if err != nil {
 			return report, fmt.Errorf("loaddata model %s: %w", modelName, err)
 		}
+		scope := importTenantScope(mi, cfg.TenantID)
 
 		// Process records for this model
 		for _, rec := range records {
@@ -249,15 +250,14 @@ func (p *Panel) Loaddata(ctx context.Context, cfg LoaddataConfig) (*ImportReport
 			}
 
 			// A fixture loaded into a tenant belongs to it: a record naming
-			// another tenant fails, one naming none gets the tenant stamped.
-			if mi.TenantField != "" && cfg.TenantID != "" {
-				if v, exists := data[mi.TenantField]; !exists {
-					data[mi.TenantField] = cfg.TenantID
-				} else if got, _ := canonicalID(v); got != cfg.TenantID {
+			// another tenant (under any spelling of the column) fails, one
+			// naming none gets the tenant stamped.
+			if scope.Enforced() {
+				if err := scope.guardPayload(data, true); err != nil {
 					report.Failed++
 					report.Errors = append(report.Errors, ImportError{
 						Field:   mi.TenantField,
-						Message: fmt.Sprintf("model %s pk=%s: tenant %q does not match the fixture's tenant %q", modelName, pkValue, got, cfg.TenantID),
+						Message: fmt.Sprintf("model %s pk=%s: %v", modelName, pkValue, err),
 					})
 					continue
 				}
@@ -299,6 +299,19 @@ func (p *Panel) Loaddata(ctx context.Context, cfg LoaddataConfig) (*ImportReport
 				} else {
 					report.Imported++
 				}
+				continue
+			}
+
+			// The row the pk names must be the tenant's: a fixture can
+			// neither update another tenant's row (it used to overwrite and
+			// re-tenant it) nor, under on_conflict=skip, confirm it exists.
+			// Reported as not found, the same answer a get gives, so the id
+			// space of other tenants is not disclosed.
+			if scope.Enforced() && !scope.contains(existing) {
+				report.Failed++
+				report.Errors = append(report.Errors, ImportError{
+					Message: fmt.Sprintf("model %s pk=%s: not found in tenant %q", modelName, pkValue, cfg.TenantID),
+				})
 				continue
 			}
 
@@ -358,6 +371,7 @@ func (p *Panel) handleDumpdata(c *router.Context) error {
 		result.Status = "failed"
 		result.Error = err.Error()
 	}
+	result.Tenant = cfg.TenantID
 
 	// Store result for status lookup
 	if p.exportResults != nil {

@@ -253,6 +253,9 @@ func (p *Panel) handleExportCreate(c *router.Context) error {
 		result.Status = "failed"
 		result.Error = err.Error()
 	}
+	// The export records the tenant it was confined to, so the job list,
+	// status and download can be scoped the way the export itself was.
+	result.Tenant = cfg.TenantID
 
 	// Store result for status lookup
 	if p.exportResults != nil {
@@ -291,7 +294,7 @@ func (p *Panel) handleExportList(c *router.Context) error {
 	if err := p.authorizeAction(c, "*", "export_data"); err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, p.listExportJobs())
+	return c.JSON(http.StatusOK, p.listExportJobs(p.enforcedTenantID(c.Request)))
 }
 
 func (p *Panel) handleExportStatus(c *router.Context) error {
@@ -305,6 +308,11 @@ func (p *Panel) handleExportStatus(c *router.Context) error {
 
 	result, ok := p.getExportJob(id)
 	if !ok {
+		return gferrors.NotFound("export", id)
+	}
+	// An export of another tenant, or of every tenant, is not found for a
+	// scoped request — the same answer a record of another tenant gets.
+	if scoped := p.enforcedTenantID(c.Request); scoped != "" && result.Tenant != scoped {
 		return gferrors.NotFound("export", id)
 	}
 	return c.JSON(http.StatusOK, result)
@@ -327,6 +335,17 @@ func (p *Panel) handleExportDownload(c *router.Context) error {
 	// and come back as a 500).
 	if !isExportStorageKey(key) {
 		return gferrors.Forbidden("key is not an export produced by this panel")
+	}
+	// A scoped request downloads its own tenant's exports only: the key is
+	// checked against the job registry, and a key of an export produced for
+	// another tenant, for every tenant, or unknown to the registry (it is
+	// in memory; a restart empties it) is not found. Before this, the
+	// export_data permission of any tenant downloaded any export.
+	if scoped := p.enforcedTenantID(r); scoped != "" {
+		job, ok := p.getExportJob(key)
+		if !ok || job.Tenant != scoped {
+			return gferrors.NotFound("export", key)
+		}
 	}
 
 	if p.store == nil {

@@ -630,12 +630,12 @@ func (p *Panel) handleCreateRecord(c *router.Context) error {
 	}
 
 	// A scoped request creates in its own tenant: a payload naming another
-	// one is refused, a payload naming none gets the tenant stamped.
+	// one (under any spelling of the column) is refused, a payload naming
+	// none gets the tenant stamped.
 	if scope := p.requestTenantScope(r, mi); scope.Enforced() {
-		if got, ok := scope.payloadTenant(data); ok && got != scope.Tenant {
-			return tenantChangeError(scope, got)
+		if err := scope.guardPayload(data, true); err != nil {
+			return err
 		}
-		scope.inject(data)
 	}
 
 	created, err := st.Create(r.Context(), datasource.Record(data))
@@ -696,8 +696,8 @@ func (p *Panel) handleUpdateRecord(c *router.Context) error {
 		if _, err := scopedRecord(r.Context(), st, mi, idStr, scope); err != nil {
 			return err
 		}
-		if got, ok := scope.payloadTenant(updates); ok && got != scope.Tenant {
-			return tenantChangeError(scope, got)
+		if err := scope.guardPayload(updates, false); err != nil {
+			return err
 		}
 	}
 	// The row before and after the change go into the audit entry. A

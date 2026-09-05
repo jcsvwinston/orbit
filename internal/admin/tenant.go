@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"net/http"
+	"sort"
 	"strings"
 
 	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
@@ -111,26 +112,75 @@ func (s tenantScope) contains(rec datasource.Record) bool {
 	return ok && id == s.Tenant
 }
 
-// payloadTenant returns the tenant value a write payload carries under the
-// tenant column or its Go field name, and whether it carries one at all.
-func (s tenantScope) payloadTenant(data map[string]any) (string, bool) {
-	for _, key := range []string{s.Field.Column, runtimeColumn(s.Field.Column), s.Field.Name} {
-		if key == "" {
-			continue
-		}
-		if v, ok := data[key]; ok {
-			id, _ := canonicalID(v)
-			return id, true
+// fieldPayloadKeys returns, sorted, the keys of data the backend resolves
+// to field f. The Nucleus adapter matches a payload key against the storage
+// column and the Go field name case-insensitively, so a guard that looks
+// the key up exactly is not a guard: TENANT_ID slipped past it and reached
+// the backend, which wrote the row in the other tenant.
+func fieldPayloadKeys(f datasource.FieldInfo, data map[string]any) []string {
+	var keys []string
+	for key := range data {
+		for _, candidate := range []string{f.Column, runtimeColumn(f.Column), f.Name} {
+			if candidate != "" && strings.EqualFold(key, candidate) {
+				keys = append(keys, key)
+				break
+			}
 		}
 	}
-	return "", false
+	sort.Strings(keys)
+	return keys
 }
 
-// inject stamps the scope's tenant on a payload that does not name one.
-func (s tenantScope) inject(data map[string]any) {
-	if _, ok := s.payloadTenant(data); !ok {
-		data[s.Field.Column] = s.Tenant
+// payloadTenant returns the tenant a write payload names under the tenant
+// column or its Go field name, in any letter case, and whether it names one
+// at all. A payload naming it under two spellings is refused: the backend
+// would keep whichever map order hands it last.
+func (s tenantScope) payloadTenant(data map[string]any) (tenant string, named bool, err error) {
+	keys := fieldPayloadKeys(s.Field, data)
+	switch len(keys) {
+	case 0:
+		return "", false, nil
+	case 1:
+		id, _ := canonicalID(data[keys[0]])
+		return id, true, nil
+	default:
+		return "", true, gferrors.BadRequest("tenant field " + s.Field.Column + " appears more than once in the payload (" + strings.Join(keys, ", ") + ")")
 	}
+}
+
+// guardPayload confines a write payload to the scope's tenant: a payload
+// naming another tenant, or the tenant under two spellings, is refused
+// (400); one naming none has the tenant stamped when stamp is set (creates
+// and imports; an update leaves the row's tenant alone).
+func (s tenantScope) guardPayload(data map[string]any, stamp bool) error {
+	got, named, err := s.payloadTenant(data)
+	if err != nil {
+		return err
+	}
+	if !named {
+		if stamp {
+			data[s.Field.Column] = s.Tenant
+		}
+		return nil
+	}
+	if got != s.Tenant {
+		return tenantChangeError(s, got)
+	}
+	return nil
+}
+
+// importTenantScope is the confinement an import, a fixture load or an
+// export applies when it targets a tenant: the model's own tenant column
+// and that tenant. Zero when the model has no tenant column or no tenant is
+// targeted.
+func importTenantScope(mi datasource.ModelInfo, tenant string) tenantScope {
+	if mi.TenantField == "" || tenant == "" {
+		return tenantScope{}
+	}
+	if _, field, ok := dsResolveField(mi, mi.TenantField); ok {
+		return tenantScope{Field: field, Tenant: tenant}
+	}
+	return tenantScope{Field: datasource.FieldInfo{Column: mi.TenantField, Name: mi.TenantField}, Tenant: tenant}
 }
 
 // requestTenantScope resolves the tenant confinement of r for model mi. It is

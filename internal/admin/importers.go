@@ -248,19 +248,19 @@ func (p *Panel) ExecuteImport(ctx context.Context, cfg ImportConfig, records []m
 		return report, nil
 	}
 
+	scope := importTenantScope(mi, cfg.TenantID)
 	for rowIdx, record := range records {
 		// An import that targets a tenant writes every row into it: a row
-		// naming another tenant fails instead of landing there, a row naming
-		// none gets the tenant stamped.
-		if mi.TenantField != "" && cfg.TenantID != "" {
-			if v, exists := record[mi.TenantField]; !exists {
-				record[mi.TenantField] = cfg.TenantID
-			} else if got, _ := canonicalID(v); got != cfg.TenantID {
+		// naming another tenant (under any spelling of the column) fails
+		// instead of landing there, a row naming none gets the tenant
+		// stamped.
+		if scope.Enforced() {
+			if err := scope.guardPayload(record, true); err != nil {
 				report.Failed++
 				report.Errors = append(report.Errors, ImportError{
 					Row:     rowIdx,
 					Field:   mi.TenantField,
-					Message: fmt.Sprintf("tenant %q does not match the import's tenant %q", got, cfg.TenantID),
+					Message: err.Error(),
 				})
 				continue
 			}
@@ -268,8 +268,20 @@ func (p *Panel) ExecuteImport(ctx context.Context, cfg ImportConfig, records []m
 
 		// Check for existing record (for on_conflict handling)
 		if cfg.OnConflict == "skip" || cfg.OnConflict == "update" {
-			existingID, err := p.findExistingByUniqueFields(ctx, st, mi, record)
+			existingID, existing, err := p.findExistingByUniqueFields(ctx, st, mi, record, scope)
 			if err == nil && existingID != "" {
+				// The row the import matched must be the tenant's: a row
+				// found by a pk of another tenant is neither skipped (that
+				// would confirm it) nor updated (that overwrote it with the
+				// stamped tenant, moving it). Not found, as a get answers.
+				if scope.Enforced() && !scope.contains(existing) {
+					report.Failed++
+					report.Errors = append(report.Errors, ImportError{
+						Row:     rowIdx,
+						Message: fmt.Sprintf("record %s not found in tenant %q", existingID, cfg.TenantID),
+					})
+					continue
+				}
 				if cfg.OnConflict == "skip" {
 					report.Skipped++
 					continue
@@ -316,16 +328,17 @@ func (p *Panel) ExecuteImport(ctx context.Context, cfg ImportConfig, records []m
 }
 
 // findExistingByUniqueFields looks up an existing record by primary key or by a
-// fully-populated unique index, returning its string ID (D1) or "" when none is
-// found. It operates over the neutral datasource contract.
-func (p *Panel) findExistingByUniqueFields(ctx context.Context, st datasource.RecordStore, mi datasource.ModelInfo, record map[string]interface{}) (string, error) {
+// fully-populated unique index, returning its string ID (D1) and the row, or ""
+// when none is found. It operates over the neutral datasource contract. The
+// unique-index lookup stays inside the scope's tenant, so a value that is
+// unique across tenants never matches another tenant's row; the pk lookup is
+// unscoped and the caller decides what a row of another tenant means.
+func (p *Panel) findExistingByUniqueFields(ctx context.Context, st datasource.RecordStore, mi datasource.ModelInfo, record map[string]interface{}, scope tenantScope) (string, datasource.Record, error) {
 	// Try to find by primary key first
-	pkField := mi.PrimaryKey
-	pkVal, ok := record[pkField]
-	if ok && pkVal != nil && pkVal != "" {
+	if pkVal, ok := recordPrimaryKey(record, mi); ok {
 		idStr := fmt.Sprintf("%v", pkVal)
-		if _, err := st.Get(ctx, idStr); err == nil {
-			return idStr, nil
+		if existing, err := st.Get(ctx, idStr); err == nil {
+			return idStr, existing, nil
 		}
 	}
 
@@ -348,6 +361,9 @@ func (p *Panel) findExistingByUniqueFields(ctx context.Context, st datasource.Re
 		if !allPresent {
 			continue
 		}
+		if scope.Enforced() {
+			filters[scope.Column()] = scope.Tenant
+		}
 
 		// Query with unique index filter
 		page, err := st.List(ctx, datasource.Query{
@@ -356,12 +372,34 @@ func (p *Panel) findExistingByUniqueFields(ctx context.Context, st datasource.Re
 		if err == nil && len(page.Items) > 0 {
 			found := page.Items[0]
 			if v := recordPKValue(found, mi); v != nil {
-				return fmt.Sprintf("%v", v), nil
+				return fmt.Sprintf("%v", v), found, nil
 			}
 		}
 	}
 
-	return "", fmt.Errorf("not found")
+	return "", nil, fmt.Errorf("not found")
+}
+
+// recordPrimaryKey reads the primary key an import row names: under
+// ModelInfo.PrimaryKey, or the pk field's column or Go name in any letter
+// case — the way the backend resolves payload keys. A CSV "id" header used
+// to miss the Go-named PrimaryKey ("ID"), so on_conflict=update created a
+// fresh row instead of updating the one named.
+func recordPrimaryKey(record map[string]interface{}, mi datasource.ModelInfo) (interface{}, bool) {
+	if v, ok := record[mi.PrimaryKey]; ok && v != nil && v != "" {
+		return v, true
+	}
+	for _, f := range mi.Fields {
+		if !f.IsPK {
+			continue
+		}
+		for _, key := range fieldPayloadKeys(f, record) {
+			if v := record[key]; v != nil && v != "" {
+				return v, true
+			}
+		}
+	}
+	return nil, false
 }
 
 // dsFindFieldByColumn is the datasource.ModelInfo variant of findFieldByColumn:
