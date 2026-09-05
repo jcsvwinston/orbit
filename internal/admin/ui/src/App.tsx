@@ -1,29 +1,37 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { useEffect } from 'react'
+import { lazy, useEffect } from 'react'
 import { useAuth } from '@/stores/authStore'
 import { useTheme } from '@/stores/themeStore'
 import { Toaster } from '@/components/ui/toaster'
+import { RouteFallback } from '@/components/ui/route-fallback'
 import { getAdminPrefix } from '@/config'
+import { lazyRoutes } from '@/routes'
+import { markChunkLoaded } from '@/lib/chunk-recovery'
 import LoginPage from '@/features/auth/pages/LoginPage'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import OverviewPage from '@/features/overview/pages/OverviewPage'
-import DataStudioPage from '@/features/data-studio/pages/DataStudioPage'
-import SystemPulsePage from '@/features/system/pages/SystemPulsePage'
-import NetworkInspectorPage from '@/features/network/pages/NetworkInspectorPage'
-import InfraManagerPage from '@/features/infra/pages/InfraManagerPage'
-import HealthPage from '@/features/health/pages/HealthPage'
-import RBACPage from '@/features/rbac/pages/RBACPage'
-import AuditLogPage from '@/features/audit/pages/AuditLogPage'
+
+// Built once at module load: lazy() inside render would create a new
+// component type on every render and remount the page. The Suspense boundary
+// that shows the fallback while a chunk loads, and the error boundary that
+// handles a chunk that fails to load, live in DashboardLayout, so the sidebar
+// stays put either way. A chunk that lands clears the one-reload flag of
+// src/lib/chunk-recovery.ts.
+const lazyPages = lazyRoutes.map((route) => ({
+  path: route.path,
+  Page: lazy(() =>
+    route.load().then((mod) => {
+      markChunkLoaded()
+      return mod
+    }),
+  ),
+}))
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth()
 
   if (isLoading) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-      </div>
-    )
+    return <RouteFallback />
   }
 
   if (!isAuthenticated) {
@@ -57,13 +65,9 @@ function App() {
           }
         >
           <Route index element={<OverviewPage />} />
-          <Route path="data-studio" element={<DataStudioPage />} />
-          <Route path="system" element={<SystemPulsePage />} />
-          <Route path="live" element={<NetworkInspectorPage />} />
-          <Route path="sessions" element={<InfraManagerPage />} />
-          <Route path="health" element={<HealthPage />} />
-          <Route path="rbac" element={<RBACPage />} />
-          <Route path="audit" element={<AuditLogPage />} />
+          {lazyPages.map(({ path, Page }) => (
+            <Route key={path} path={path} element={<Page />} />
+          ))}
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
