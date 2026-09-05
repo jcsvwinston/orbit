@@ -155,6 +155,10 @@ type Panel struct {
 
 	// Audit log store
 	audit *auditStore
+	// loginAuditBudget bounds the login entries one client IP can add to
+	// the ring per lockout window (auditLogin); the login route is the only
+	// unauthenticated writer of the store.
+	loginAuditBudget *loginLimiter
 
 	// Storage for exports/imports
 	store storage.Store
@@ -200,8 +204,9 @@ func NewPanel(src datasource.DataSource, logger *slog.Logger, cfg PanelConfig) *
 			}
 			return nil
 		}(),
-		store:         cfg.Store,
-		exportResults: make(map[string]ExportResult),
+		loginAuditBudget: newLoginLimiter(),
+		store:            cfg.Store,
+		exportResults:    make(map[string]ExportResult),
 	}
 
 	return p
@@ -386,8 +391,9 @@ func (p *Panel) mountRoutes(r *router.Mux) {
 		loginHandler := p.config.Auth.LoginHandler()
 		r.Get("/login", router.FromHandler(loginHandler))
 		// The login POST sits outside the authenticated group (there is no
-		// session yet); auditLogin records the attempt around the provider.
-		r.Post("/login", router.FromHandler(p.auditLogin(loginHandler)))
+		// session yet): limitLoginBody caps what an anonymous client can
+		// send and auditLogin records the attempt around the provider.
+		r.Post("/login", router.FromHandler(limitLoginBody(p.auditLogin(loginHandler))))
 
 		r.Group(func(sub *router.Mux) {
 			sub.Use(p.authMiddleware)

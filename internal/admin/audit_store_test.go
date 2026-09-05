@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -165,5 +166,57 @@ func BenchmarkAuditStoreList(b *testing.B) {
 		if got := s.list(opts); len(got) != 50 {
 			b.Fatalf("page = %d", len(got))
 		}
+	}
+}
+
+// TestAuditStore_AddBoundsStringFields pins that the store, not the caller,
+// bounds the string fields of every entry: the identity and request fields
+// at auditFieldMaxLen, the User-Agent at auditUserAgentMaxLen, on a rune
+// boundary and with the marker; Action and short fields are kept as is.
+func TestAuditStore_AddBoundsStringFields(t *testing.T) {
+	s := newAuditStore(10)
+	long := strings.Repeat("ü", 8*1024) // two bytes per rune
+	s.add(AuditEntry{
+		UserID: long, Username: long, ModelName: long, RecordID: long, IP: long,
+		UserAgent: long, Action: "login.failed",
+	})
+	got := s.list(auditQueryOpts{})[0]
+
+	for field, value := range map[string]string{
+		"user_id": got.UserID, "username": got.Username, "model_name": got.ModelName,
+		"record_id": got.RecordID, "ip": got.IP,
+	} {
+		if len(value) > auditFieldMaxLen+len(auditTruncatedMarker) || !strings.HasSuffix(value, auditTruncatedMarker) {
+			t.Fatalf("%s not bounded at %d: len=%d", field, auditFieldMaxLen, len(value))
+		}
+		if len(value) != auditFieldMaxLen+len(auditTruncatedMarker) {
+			t.Fatalf("%s cut off the rune boundary: len=%d", field, len(value)) // 256 is a rune boundary for a 2-byte rune
+		}
+	}
+	if len(got.UserAgent) != auditUserAgentMaxLen+len(auditTruncatedMarker) || !strings.HasSuffix(got.UserAgent, auditTruncatedMarker) {
+		t.Fatalf("user_agent not bounded at %d: len=%d", auditUserAgentMaxLen, len(got.UserAgent))
+	}
+	if got.Action != "login.failed" {
+		t.Fatalf("action altered: %q", got.Action)
+	}
+
+	s.add(AuditEntry{Username: "root", UserAgent: "curl/8", Action: "logout"})
+	short := s.list(auditQueryOpts{})[0]
+	if short.Username != "root" || short.UserAgent != "curl/8" {
+		t.Fatalf("short fields altered: %+v", short)
+	}
+}
+
+func TestTruncateAuditString_CutsOnRuneBoundary(t *testing.T) {
+	s := strings.Repeat("€", 100) // 3 bytes per rune: byte 256 lands mid-rune
+	got := truncateAuditString(s, 256)
+	if len(got) != 255+len(auditTruncatedMarker) || !strings.HasSuffix(got, auditTruncatedMarker) {
+		t.Fatalf("len=%d, want a cut at byte 255 plus the marker", len(got))
+	}
+	if got := truncateAuditString("short", 256); got != "short" {
+		t.Fatalf("a string within the bound was altered: %q", got)
+	}
+	if got := truncateAuditString(strings.Repeat("a", 256), 256); len(got) != 256 {
+		t.Fatalf("a string at the bound was cut: len=%d", len(got))
 	}
 }

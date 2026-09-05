@@ -132,6 +132,18 @@ a Redis URL loses its password, a session token is shortened, imports and
 exports record counts rather than rows, and login entries carry the attempted
 username, never the password.
 
+Entries are bounded as well as redacted. The user id, username, model,
+record id and client IP are cut at 256 bytes and the User-Agent at 512, with
+a `…[truncated]` marker on anything cut. The login route is the one place an
+anonymous client writes to the log, so it is bounded twice more: the login
+POST body is capped at 16 KB (a larger one is answered with 400 before any
+credential is checked, and leaves no entry), and per client IP and lockout
+window (one minute) the log keeps at most 10 `login.failed` entries and one
+`login.locked` — the lockout keeps answering 429 for the rest of the window
+without adding entries, and a successful login from that IP starts the
+count again. A single client can neither inflate the ring's memory nor
+push the entries recorded before its attempts out of it.
+
 `GET /api/audit` pages newest first; `total` and `total_pages` count the
 entries that match the `user_id`, `model` and `action` filters, so a filtered
 listing does not page into nothing. `POST /api/audit/clear` answers

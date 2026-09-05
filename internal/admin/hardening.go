@@ -137,16 +137,19 @@ func (l *loginLimiter) blocked(key string) bool {
 	return w.count >= loginFailureLimit
 }
 
-func (l *loginLimiter) fail(key string) {
+// fail counts one failure against key and returns the count of the current
+// window — 0 when the limiter is at capacity and could not track the key,
+// so a caller that gates on the count stays fail-open like blocked does.
+func (l *loginLimiter) fail(key string) int {
 	if l == nil || key == "" {
-		return
+		return 0
 	}
 	now := time.Now()
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if w, ok := l.windows[key]; ok && now.Before(w.resetAt) {
 		w.count++
-		return
+		return w.count
 	}
 	if len(l.windows) >= loginLimiterCap {
 		for k, w := range l.windows {
@@ -155,10 +158,11 @@ func (l *loginLimiter) fail(key string) {
 			}
 		}
 		if len(l.windows) >= loginLimiterCap {
-			return // fail-open on tracking, never on auth itself
+			return 0 // fail-open on tracking, never on auth itself
 		}
 	}
 	l.windows[key] = &loginWindow{count: 1, resetAt: now.Add(loginFailureWindow)}
+	return 1
 }
 
 func (l *loginLimiter) reset(key string) {
@@ -168,6 +172,24 @@ func (l *loginLimiter) reset(key string) {
 	l.mu.Lock()
 	delete(l.windows, key)
 	l.mu.Unlock()
+}
+
+// loginBodyMaxBytes bounds the body of the login POST. A login form is a
+// few hundred bytes (username, password, next); without a limit ParseForm
+// accepts 10 MB from an unauthenticated client, and everything past this
+// size could only feed the parser or the audit ring.
+const loginBodyMaxBytes = 16 << 10
+
+// limitLoginBody caps the request body at loginBodyMaxBytes before the auth
+// provider parses it. Past the limit the provider's ParseForm fails and it
+// answers 400 — no credential was checked, so no audit entry is recorded.
+func limitLoginBody(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, loginBodyMaxBytes)
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // sensitiveFieldName reports whether a field/column name looks like it

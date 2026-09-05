@@ -82,7 +82,13 @@ func newAuditStore(maxSize int) *auditStore {
 	}
 }
 
+// add stores entry with the next id and the current time. The string
+// fields are cut to their bounds here, at the one point every writer goes
+// through, so the ring's footprint is bounded by its size and not by what a
+// request carried (the login route writes here unauthenticated).
 func (s *auditStore) add(entry AuditEntry) {
+	entry = boundAuditEntry(entry)
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -217,6 +223,13 @@ func (p *Panel) addAuditEntry(r *http.Request, entry AuditEntry) {
 // password. Other statuses (a malformed form, a provider failure) record
 // nothing: no credential was checked. The provider itself stays unaware of
 // the audit store.
+//
+// The route is unauthenticated, so what one client can write to the ring
+// is bounded: the entry's strings are cut by the store, the body by
+// limitLoginBody, and per client IP and loginFailureWindow the log keeps at
+// most loginFailureLimit login.failed entries and one login.locked (see
+// loginAuditAllowed). Without that budget the lockout's 429, recorded on
+// every request, let one client evict the whole ring at the request rate.
 func (p *Panel) auditLogin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if p == nil || p.audit == nil || r.Method != http.MethodPost {
@@ -236,6 +249,9 @@ func (p *Panel) auditLogin(next http.Handler) http.Handler {
 		case status == http.StatusTooManyRequests:
 			action = "login.locked"
 		default:
+			return
+		}
+		if !p.loginAuditAllowed(action, auth.ClientIPFromRequest(r)) {
 			return
 		}
 
@@ -258,9 +274,70 @@ func (p *Panel) auditLogin(next http.Handler) http.Handler {
 	})
 }
 
-// auditValueMaxLen bounds one string value stored in an audit entry, so a
-// record with a large text column does not multiply the ring's footprint.
-const auditValueMaxLen = 4096
+// loginAuditAllowed applies the per-client budget of login entries and
+// reports whether this attempt's entry is recorded. Per client IP and
+// loginFailureWindow (a fixed window, like the lockout's) it admits
+// loginFailureLimit login.failed entries and one login.locked: the entries
+// already in the ring document the attack, and the 429 the lockout keeps
+// answering adds nothing. A successful login from the IP resets its budget,
+// as it resets the lockout. When the budget cannot track a client (at
+// loginLimiterCap keys) the entry is recorded — fail-open, like the lockout.
+func (p *Panel) loginAuditAllowed(action, ip string) bool {
+	budget := p.loginAuditBudget // nil-safe: a nil limiter tracks nothing
+	failedKey, lockedKey := "failed:"+ip, "locked:"+ip
+	switch action {
+	case "login":
+		budget.reset(failedKey)
+		budget.reset(lockedKey)
+		return true
+	case "login.failed":
+		return budget.fail(failedKey) <= loginFailureLimit
+	case "login.locked":
+		return budget.fail(lockedKey) <= 1
+	}
+	return true
+}
+
+// Bounds on the strings an audit entry stores, in bytes. A record's values
+// are cut at auditValueMaxLen (a large text column must not multiply the
+// ring's footprint); the identity and request fields at auditFieldMaxLen
+// and the User-Agent at auditUserAgentMaxLen. The login route reaches the
+// store unauthenticated, so the attempted username and the request headers
+// are the one place an anonymous client chooses what an entry holds.
+const (
+	auditValueMaxLen     = 4096
+	auditFieldMaxLen     = 256
+	auditUserAgentMaxLen = 512
+)
+
+// auditTruncatedMarker ends every string the store cut, so a reader can
+// tell a bounded value from a short one.
+const auditTruncatedMarker = "…[truncated]"
+
+// truncateAuditString cuts s to at most maxLen bytes on a rune boundary and
+// appends auditTruncatedMarker; a string within the bound is returned as is.
+func truncateAuditString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	cut := maxLen
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + auditTruncatedMarker
+}
+
+// boundAuditEntry cuts the string fields of entry to their bounds. Action
+// is not cut: every writer sets it to a literal or a validated name.
+func boundAuditEntry(entry AuditEntry) AuditEntry {
+	entry.UserID = truncateAuditString(entry.UserID, auditFieldMaxLen)
+	entry.Username = truncateAuditString(entry.Username, auditFieldMaxLen)
+	entry.ModelName = truncateAuditString(entry.ModelName, auditFieldMaxLen)
+	entry.RecordID = truncateAuditString(entry.RecordID, auditFieldMaxLen)
+	entry.IP = truncateAuditString(entry.IP, auditFieldMaxLen)
+	entry.UserAgent = truncateAuditString(entry.UserAgent, auditUserAgentMaxLen)
+	return entry
+}
 
 // auditValues prepares a record's values for the audit store: excluded and
 // credential-shaped fields are redacted (redactAuditValues) and long strings
@@ -276,15 +353,9 @@ func auditValues(mi datasource.ModelInfo, rec datasource.Record) map[string]any 
 // place (on the rune boundary) and returns the map.
 func boundAuditValues(values map[string]any) map[string]any {
 	for k, v := range values {
-		s, ok := v.(string)
-		if !ok || len(s) <= auditValueMaxLen {
-			continue
+		if s, ok := v.(string); ok && len(s) > auditValueMaxLen {
+			values[k] = truncateAuditString(s, auditValueMaxLen)
 		}
-		cut := auditValueMaxLen
-		for cut > 0 && !utf8.RuneStart(s[cut]) {
-			cut--
-		}
-		values[k] = s[:cut] + "…[truncated]"
 	}
 	return values
 }
