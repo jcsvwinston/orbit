@@ -386,7 +386,15 @@ func auditProbes() map[string][]auditProbe {
 			wantRecord: true,
 		}},
 		"POST /api/audit/clear": {{
-			name:       "audit.clear",
+			name: "audit.clear",
+			// The probes share one env and run in map order, so this one
+			// cannot assume another has already filled the ring: drawn first
+			// — one run in forty, or every run under `-run` — it cleared an
+			// empty ring and reported cleared=0 as a defect. It leaves an
+			// entry of its own instead.
+			setup: func(t *testing.T, env *auditProbeEnv) {
+				env.createRecord(t, "AuditClearSeed")
+			},
 			path:       literalPath("/api/audit/clear"),
 			body:       literalBody(`{}`),
 			wantAction: "audit.clear",
