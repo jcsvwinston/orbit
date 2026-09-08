@@ -46,9 +46,10 @@ jobs:
   analyze:
     name: Analyze Go
     runs-on: ubuntu-latest
-    # The lane measures about four minutes end to end. The cap is not a
-    # target, it is a stop: an extractor that wedges should cost twenty
-    # minutes of runner time, not six hours.
+    # The lane measures 2 min 51 s on a cold cache (first run of the pull
+    # request that added this file). The cap is not a target, it is a stop:
+    # an extractor that wedges should cost twenty minutes of runner time,
+    # not six hours.
     timeout-minutes: 20
     permissions:
       # The only write in the file: upload the results as code-scanning
