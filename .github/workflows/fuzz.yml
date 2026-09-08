@@ -1,0 +1,130 @@
+name: Fuzz
+
+# Weekly mutation runs of the native Go fuzz targets (scripts/ci/fuzz.sh).
+#
+# The pull-request lane runs the same targets over their seed corpora only.
+# Mutation lives here because `go test -fuzz` rebuilds the package and every
+# non-stdlib dependency with coverage instrumentation: measured at 20s wall
+# (102s CPU) for internal/admin alone on a 12-core machine with the ordinary
+# build already cached. That is minutes of rebuilding on the four packages
+# that hold targets — a cost worth paying once a week, not on every push.
+#
+# ONE TARGET PER JOB. The list comes from scripts/ci/fuzz.sh --list, so it
+# lives in one place, and each target fuzzes in its own runner with its own
+# build and corpus cache. That is the mitigation for a corpus-cache fault —
+# "open …/go-build/fuzz/…: no such file or directory", which reads like a
+# finding and is not one — that a reviewer of PR #443 hit twice on
+# darwin/arm64 and that reproduced here on the fourth attempt, at the fifth
+# target of a sequential list, on a run that had started from an empty cache.
+# Under the old `set -e` runner it ended the run and left the sixth target
+# unfuzzed. With one job per target and fail-fast disabled, no target can end
+# another's session; inside the script that error is also retried once after
+# `go clean -fuzzcache`, which is what recovered the run where it reproduced.
+#
+# What is verified is the recovery, not the absence: the fault has not been
+# observed on ubuntu-latest, and clearing the cache first demonstrably does
+# not prevent it (the entries that go missing are written by earlier targets
+# of the same session). This lane now also runs on any pull request that
+# touches it, so what is claimed here is exercised before it is merged rather
+# than after.
+#
+# When a run goes red it has found an input that breaks a property. Go writes
+# it to <package>/testdata/fuzz/<Target>/<hash>; the step below uploads it, and
+# committing that file turns the finding into a seed the PR lane keeps
+# checking forever.
+#
+# Every `uses:` is pinned to a commit SHA with the tag in the trailing comment,
+# for the reason written at the top of ci.yml.
+
+on:
+  schedule:
+    # Mondays at 05:23 UTC, after the Scorecard run and away from the hour.
+    - cron: '23 5 * * 1'
+  workflow_dispatch:
+    inputs:
+      fuzztime:
+        description: 'Go duration to fuzz each target for (e.g. 45s, 5m)'
+        required: false
+        default: '45s'
+  # The lane also runs on a pull request that changes the lane itself — the
+  # workflow, the runner, a target, or a corpus — for a short session each.
+  # Otherwise the machinery below would only ever be exercised after it was
+  # merged, which is how this workflow spent its first review: every claim in
+  # it (the timeout, the cache handling, the failure upload) asserted and none
+  # of them ever executed, because a workflow_dispatch needs the file on the
+  # default branch. It is not on the ordinary PR lane: that one runs the seed
+  # corpora, in seconds, on every pull request (ci.yml).
+  pull_request:
+    paths:
+      - '.github/workflows/fuzz.yml'
+      - 'scripts/ci/fuzz.sh'
+      # a3_fuzz*_test.go, not a3_fuzz_*_test.go: the second needs a segment
+      # between the prefix and the suffix, so it silently misses
+      # internal/admin/a3_fuzz_test.go — three of the six targets.
+      - '**/a3_fuzz*_test.go'
+      - '**/testdata/fuzz/**'
+
+permissions:
+  contents: read
+
+jobs:
+  targets:
+    name: List the targets
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      names: ${{ steps.list.outputs.names }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      # Also the guard: --list fails when TARGETS and the tree disagree, so a
+      # renamed or unlisted target stops the lane instead of emptying it.
+      - id: list
+        run: |
+          names=$(bash scripts/ci/fuzz.sh --list)
+          echo "names=$names" >> "$GITHUB_OUTPUT"
+
+  fuzz:
+    name: ${{ matrix.target }}
+    needs: targets
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.targets.outputs.names) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # A restored build cache can carry fuzz-corpus index entries whose files
+      # were pruned; `go test -fuzz` then dies on the first mutation with
+      # "open …/go-build/fuzz/…: no such file or directory", which reads like a
+      # finding and is not one. Starting from an empty corpus cache costs the
+      # week's accumulated inputs; the script retries this specific error once,
+      # so a red here is a property that broke and not the cache.
+      - name: Start from an empty fuzz corpus cache
+        run: go clean -fuzzcache
+
+      # A dispatch says how long; the weekly run takes 45s a target; a pull
+      # request that touched the lane takes 20s, enough to prove the lane runs
+      # end to end without spending ten minutes on it.
+      - name: Fuzz ${{ matrix.target }}
+        env:
+          FUZZTIME: ${{ inputs.fuzztime || (github.event_name == 'pull_request' && '20s') || '45s' }}
+        run: bash scripts/ci/fuzz.sh --only "${{ matrix.target }}" "$FUZZTIME"
+
+      - name: Upload the inputs that failed
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: fuzz-failures-${{ matrix.target }}
+          path: '**/testdata/fuzz/**'
+          retention-days: 30
+          if-no-files-found: ignore

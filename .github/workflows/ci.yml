@@ -190,6 +190,19 @@ jobs:
       - run: go test ./... -count=1
         working-directory: quarkdatasource
 
+      # The fuzz targets' SEED corpora — the inputs that broke these parsing
+      # surfaces before (F12, F13, OR-14) plus the ones a fuzzing session
+      # found interesting. This is the deterministic form on purpose: `go
+      # test -fuzz` rebuilds the package and every non-stdlib dependency with
+      # coverage instrumentation, which measured 20s wall (102s CPU) for
+      # internal/admin alone on a 12-core machine with the ordinary build
+      # already cached — minutes of rebuilding, on four packages, before the
+      # first mutation. The mutation runs live in the weekly Fuzz workflow;
+      # this step keeps the corpus green on every pull request and fails if a
+      # target in the tree is missing from that weekly list.
+      - name: Fuzz seed corpora
+        run: bash scripts/ci/fuzz.sh
+
   # -------------------------------------------------------------------------
   # Data Studio against engines people actually deploy on.
   #

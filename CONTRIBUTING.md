@@ -11,6 +11,7 @@ conventions a pull request is expected to follow.
 - [Repository layout](#repository-layout)
 - [Development setup](#development-setup)
 - [Building and testing like CI](#building-and-testing-like-ci)
+- [Fuzzing the parsing surfaces](#fuzzing-the-parsing-surfaces)
 - [The two web UIs](#the-two-web-uis)
 - [Protobuf changes](#protobuf-changes)
 - [Local guards](#local-guards)
@@ -76,6 +77,60 @@ proves your `go.mod` is honest.
 
 If you bump a sibling-module `require`, `scripts/ci/check_internal_pins.sh`
 verifies every internal pin matches the latest sibling tag.
+
+## Fuzzing the parsing surfaces
+
+Six native Go fuzz targets sit on parsing surfaces that read untrusted input:
+the Data Studio query string (`order_by`, filters, search, pagination), record
+ids and tenant values at the API boundary, the CSV import validator, the LIKE
+escaping of the Quark datasource, the event-stream filter shared by the live
+bus and the replay buffer, and the agent's record-id narrowing. They are not a
+survey of every such surface, and the list is meant to grow.
+
+Each target asserts a property — a round trip, an allow-list, an invariance,
+a differential between two implementations — not merely that the code does not
+panic. Write the property against the **rule the surface means to enforce**,
+not against what the code happens to return: a property fitted to the code's
+own behaviour is green by construction and can never report the thing the
+surface gets wrong. Four of the six were rewritten for exactly that reason
+during review, and each rewrite found a defect (a hidden column was sortable,
+a status class that is not a digit string matched a status, an id past the
+width of its key was accepted, a CSV cell past the width of its column was
+imported). The comment above each target says which property it states and
+where that property has a history.
+
+The tell of a property fitted to the code is that it is written in the code's
+own vocabulary: the same library calls, in the same order, with the same
+constants. `FuzzImportValidation` survived one round of review with a type
+check that called `strconv` the way the validator calls it, at the same 64-bit
+widths — so it could not see that an int8 column accepted `300` — and its
+`time.Time` branch was missing altogether, which made the datetime check
+untested rather than tested. State the rule in another vocabulary (a width
+from the language spec, an explicit sign policy, `math/big` instead of
+`strconv`), and where a full reading would mean writing a second parser, state
+a **necessary** condition and say so: it may stay silent, it may not refuse
+something the surface accepts.
+
+```bash
+make fuzz-seeds          # every seed corpus, deterministic, seconds — what CI runs
+make fuzz                # 20s of mutation per target
+make fuzz FUZZTIME=5m    # before changing one of those surfaces
+```
+
+Both forms go through `scripts/ci/fuzz.sh`, which holds the list of targets and
+fails when the list and the tree disagree in either direction — an unlisted
+target is one the weekly `Fuzz` workflow never runs, and a listed target that
+was renamed away is worse, because `go test -fuzz=^Gone$` exits 0 without
+fuzzing anything. The script also runs the whole list even when one target
+fails, so a single red (or a fuzz-corpus-cache fault, which it retries once)
+never leaves the rest of the list unfuzzed.
+
+When fuzzing finds an input that breaks a property, Go writes it to
+`<package>/testdata/fuzz/<Target>/<hash>`. Commit that file: it becomes a seed,
+and every later pull request re-checks it in seconds. Give it a name that says
+what it is (`f12_folded_and_padded_node_id`), and keep it even when the
+finding turns out to be in the property rather than in the product — that
+distinction is the thing you will want back.
 
 ## The two web UIs
 

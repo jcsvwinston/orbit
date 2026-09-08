@@ -1,0 +1,7 @@
+go test fuzz v1
+[]byte("\xed")
+string("0")
+string("/api/*")
+string("0")
+string("/api ")
+rune('d')

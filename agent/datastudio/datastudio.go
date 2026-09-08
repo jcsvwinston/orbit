@@ -678,6 +678,30 @@ func convertToFieldType(in any, t reflect.Type) (reflect.Value, error) {
 	return reflect.Value{}, fmt.Errorf("cannot convert %T into %s", in, t)
 }
 
+// idBits is the width the primary key's Go kind can actually hold. parseID
+// narrows to it: an id of 300 for an int8 key is not a row of that table, and
+// refusing it here says so, instead of sending a query no row can answer (or,
+// on a driver that narrows the argument itself, one that answers about row 44).
+// "int"/"uint" are the platform's width, which is what the field holds.
+func idBits(kind string) int {
+	switch kind {
+	case "int8", "uint8":
+		return 8
+	case "int16", "uint16":
+		return 16
+	case "int32", "uint32":
+		return 32
+	case "int", "uint":
+		return strconv.IntSize
+	default:
+		return 64
+	}
+}
+
+// parseID narrows a record id — a string at the wire boundary (ADR-001 D1) —
+// to the primary key's Go kind, so what reaches the typed CRUD call is a
+// number when the key is numeric and never a fragment of what came in. A key
+// of any other kind stays the trimmed boundary string.
 func parseID(raw string, meta *model.ModelMeta) (any, error) {
 	id := strings.TrimSpace(raw)
 	if id == "" {
@@ -691,16 +715,23 @@ func parseID(raw string, meta *model.ModelMeta) (any, error) {
 		if f.Name != pk {
 			continue
 		}
-		switch strings.ToLower(f.GoType) {
+		kind := strings.ToLower(f.GoType)
+		switch kind {
 		case "int", "int8", "int16", "int32", "int64":
-			n, err := strconv.ParseInt(id, 10, 64)
+			n, err := strconv.ParseInt(id, 10, idBits(kind))
 			if err != nil {
+				if errors.Is(err, strconv.ErrRange) {
+					return nil, fmt.Errorf("admin agent: id %q is out of range for %s", id, f.GoType)
+				}
 				return nil, fmt.Errorf("admin agent: id %q is not an integer", id)
 			}
 			return n, nil
 		case "uint", "uint8", "uint16", "uint32", "uint64":
-			n, err := strconv.ParseUint(id, 10, 64)
+			n, err := strconv.ParseUint(id, 10, idBits(kind))
 			if err != nil {
+				if errors.Is(err, strconv.ErrRange) {
+					return nil, fmt.Errorf("admin agent: id %q is out of range for %s", id, f.GoType)
+				}
 				return nil, fmt.Errorf("admin agent: id %q is not an unsigned integer", id)
 			}
 			return n, nil
