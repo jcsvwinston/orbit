@@ -1,0 +1,222 @@
+name: Release
+
+# Builds and publishes the admin-server binaries for a ROOT tag.
+#
+# Every `uses:` below is pinned to a commit SHA with the tag kept in the
+# trailing comment, like the rest of this directory. A tag is a pointer the
+# action's owner can repoint; the SHA is the code that was reviewed.
+#
+# `push: tags` only fires for tags pushed with user credentials. Tags cut by
+# release-please are created with the GITHUB_TOKEN, whose events GitHub
+# suppresses (workflow-recursion guard), so the Release Please workflow chains
+# this one via workflow_dispatch at the tag ref — github.ref_name is the tag
+# either way, and every job below keys off it.
+#
+# The `v*.*.*` filter is also what keeps module tags out: this repository cuts
+# six tags per release (`v1.9.3` plus `agent/v0.6.17`, `proto/…`,
+# `quarkbridge/…`, `quarkdatasource/…`, `server/v0.11.3`), and a GitHub tag
+# filter's `*` does not match `/`, so only the root tag can match. The
+# `root-tag` job below closes the remaining door, a manual dispatch at a module
+# ref.
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+# Read-only by default. `publish` re-declares what it actually needs.
+permissions:
+  contents: read
+
+jobs:
+  # A module tag must never build binaries. `server/v0.11.3` is the tag of a Go
+  # module, not of a release of the product: the release notes, the compatibility
+  # matrix and the version the docs claim all hang off the root tag, and the
+  # published binary is stamped with it. Running here at a module ref would
+  # publish assets on the wrong release page under the wrong version.
+  #
+  # It is also the first thing GoReleaser would trip over: with five module tags
+  # sharing the root tag's commit, `git tag --points-at HEAD` lists
+  # `agent/v0.6.17` first, and GoReleaser reports "current tag is not semver"
+  # and derives a nonsense version. The publish job pins the tag explicitly for
+  # that reason; this job makes sure the pinned value is the right shape.
+  root-tag:
+    name: Root tag only
+    runs-on: ubuntu-latest
+    steps:
+      - name: The ref must be a root tag
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$GITHUB_REF_NAME" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::${GITHUB_REF_NAME} is not a root tag. Binaries are published for the root release only; module tags (agent/…, proto/…, quarkbridge/…, quarkdatasource/…, server/…) ship as Go modules and have no assets."
+            exit 1
+          fi
+          echo "publishing assets for root tag ${GITHUB_REF_NAME}"
+
+  verify:
+    name: Verify Release Candidate
+    needs: root-tag
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # GOWORK=off, and only the server module: that is the module the binary
+      # is cut from, and the release build compiles it the same way. Proving it
+      # green in workspace mode would prove something no consumer, and no
+      # release, ever gets.
+      - name: Build, vet and test the server module standalone
+        working-directory: server
+        env:
+          GOWORK: "off"
+        run: |
+          go build ./...
+          go vet ./...
+          go test ./... -count=1
+
+  publish:
+    name: Publish Artifacts
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      # All three are load-bearing and none replaces another: `contents` is
+      # what GoReleaser uploads the assets with, `id-token` is the OIDC token
+      # cosign signs with (keyless: no key lives in this repository), and
+      # `attestations` is what writes the build provenance. Dropping any one
+      # of them fails a different step.
+      contents: write
+      id-token: write
+      attestations: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # GoReleaser reads the tag history to decide what it is building.
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # goreleaser-action installs neither of these, and .goreleaser.yaml calls
+      # both by bare name. Installing them before GoReleaser runs means a
+      # missing tool fails here, in one line, instead of halfway through a
+      # release.
+      - name: Install cosign
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
+
+      - name: Install syft
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+
+      # Ask whether the release is COMPLETE, not whether it has any assets at
+      # all. A run that uploaded the archives and then failed to sign leaves a
+      # release that "has assets", and a guard asking only that question would
+      # skip every re-run and leave the release unsigned for good. This asks
+      # for archives, one SBOM per archive, the checksum file, its signature
+      # and its certificate, and re-runs GoReleaser until all of them are
+      # there.
+      - name: Check Existing Release
+        id: release_check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          STATUS=$(curl -sS -o /tmp/release.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}")
+          if [ "$STATUS" = "200" ]; then
+            jq -r '.assets[].name' /tmp/release.json > /tmp/assets.txt
+          else
+            : > /tmp/assets.txt
+          fi
+
+          count() { grep -cE "$1" /tmp/assets.txt || true; }
+          archives=$(count '\.(tar\.gz|zip)$')
+          sboms=$(count '\.spdx\.json$')
+          checksums=$(count '^checksums\.txt$')
+          signature=$(count '^checksums\.txt\.sig$')
+          certificate=$(count '^checksums\.txt\.pem$')
+
+          echo "archives=$archives sboms=$sboms checksums=$checksums signature=$signature certificate=$certificate"
+
+          if [ "$archives" -eq 0 ] || [ "$sboms" -ne "$archives" ] ||
+             [ "$checksums" -ne 1 ] || [ "$signature" -ne 1 ] || [ "$certificate" -ne 1 ]; then
+            echo "complete=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # The assets are all there. The provenance attestation is NOT an
+          # asset — it lives in the attestations API — so the asset list
+          # cannot see it, and a run that signed and then failed to attest
+          # would look finished forever. Ask for it by the digest of the
+          # first archive the published checksum file lists: the attestation
+          # covers every entry in that file.
+          asset_url=$(jq -r '.assets[] | select(.name == "checksums.txt") | .url' /tmp/release.json)
+          curl -sSL -o /tmp/published_checksums.txt \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/octet-stream" \
+            "$asset_url"
+          digest=$(awk '$2 ~ /\.tar\.gz$/ { print $1; exit }' /tmp/published_checksums.txt)
+          attested=0
+          if [ -n "$digest" ]; then
+            ATT_STATUS=$(curl -sS -o /tmp/attestations.json -w "%{http_code}" \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/attestations/sha256:${digest}")
+            if [ "$ATT_STATUS" = "200" ]; then
+              attested=$(jq -r '(.attestations // []) | length' /tmp/attestations.json)
+            fi
+          fi
+          echo "attestations=$attested for sha256:${digest:-<none>}"
+
+          if [ "$attested" -gt 0 ]; then
+            echo "complete=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "complete=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish With GoReleaser
+        if: steps.release_check.outputs.complete != 'true'
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: v2.14.1
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Not optional here, and this is the line that makes a six-tag
+          # repository releasable at all. GoReleaser asks
+          # `git tag --points-at HEAD` first, and the root tag shares its
+          # commit with the five module tags cut in the same release: the
+          # answer comes back `agent/v0.6.17`, which is not a semantic version
+          # and is not this release. Naming the tag explicitly is what makes
+          # the archive names, the version stamped into the binary and the
+          # release the assets land on all agree with the tag we were
+          # dispatched at.
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
+
+      # One attestation over the checksum file covers every artifact listed in
+      # it — the six archives and the six SBOMs — instead of one round trip
+      # per artifact. `gh attestation verify <archive>` resolves it by digest,
+      # so a consumer never has to know that.
+      - name: Attest Build Provenance
+        if: steps.release_check.outputs.complete != 'true'
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-checksums: dist/checksums.txt
+
+      - name: Skip Publish (Already Released)
+        if: steps.release_check.outputs.complete == 'true'
+        run: |
+          echo "Release ${GITHUB_REF_NAME} already carries signed, attested artifacts."

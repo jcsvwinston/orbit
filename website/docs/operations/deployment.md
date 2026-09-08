@@ -39,7 +39,35 @@ your application nodes.
 ## Install the server binary
 
 The server is a single static binary with the operator UI embedded — no asset
-pipeline, no database, no Node toolchain needed:
+pipeline, no database, no Node toolchain needed. There are two ways to get it,
+and they differ in what you have to trust.
+
+### Download a signed release binary
+
+Every release publishes the binary for six operating system and architecture
+combinations, each with a bill of materials, a checksum file, a signature over
+that checksum file and a build provenance attestation. Nothing has to be
+compiled, and the download can be proved to be the artefact this repository's
+release workflow built:
+
+```bash
+TAG=vX.Y.Z                 # a release tag, e.g. the one on the Quick start page
+VERSION=${TAG#v}
+gh release download "$TAG" --repo jcsvwinston/orbit \
+  --pattern "orbit-admin-server_${VERSION}_linux_amd64.tar.gz"
+tar -xzf "orbit-admin-server_${VERSION}_linux_amd64.tar.gz"
+./admin-server --version
+```
+
+**Verify it before you run it.** The download is worth no more than the page
+it came from until you check the signature and the provenance; both commands
+are on [Verifying a release](./verifying-releases.md), and they take about
+thirty seconds.
+
+Releases cut before the project started publishing binaries have no assets on
+their release page — use `go install` for those.
+
+### Install from source with the Go toolchain
 
 ```bash
 go install github.com/jcsvwinston/orbit/server/cmd/admin-server@latest
@@ -49,12 +77,38 @@ go install github.com/jcsvwinston/orbit/server/cmd/admin-server@latest
 reproducible installs, pin the tag instead. The current release is stated on
 the [Quick start](../quick-start.md) page, and the module tags cut with each
 release are listed in the [Release notes](../reference/release-notes.md).
-
-```bash
-admin-server --version   # prints the installed tag (or "devel" for source builds)
-```
+Here the guarantee comes from the Go checksum database rather than from a
+signature: it proves the source you compiled is the source that was published.
 
 Building from a checkout works too (`cd server && go build ./cmd/admin-server`).
+
+### What `--version` prints
+
+```bash
+admin-server --version   # nucleus-admin-server v1.2.3
+```
+
+The two install routes report two different — and equally correct — versions,
+because they are versioned by two different things:
+
+| How you installed it | What it prints |
+|---|---|
+| Downloaded release archive | The **release** tag, e.g. `v1.9.4`. The binary is published once per release, and the release build stamps its tag in. |
+| `go install …@latest` or `@<tag>` | The **`orbit/server` module** tag, e.g. `v0.11.3` — the module you installed. |
+| Built from a checkout | `devel`, honestly, rather than a made-up number. |
+
+The [compatibility matrix](../reference/module-matrix.md) maps one to the
+other when you need to compare them.
+
+### Only the server is a binary
+
+The agent is not a separate program to install. It is a library your
+application imports (`orbit/agent`) and links into its own binary, so it
+arrives with `go get` and ships when you ship — there is nothing to download
+for it, and nothing on a release page. The same is true of the in-process
+panel, the wire contract and the Quark adapters. The admin server is the only
+component of Orbit that runs as a process of its own, which is why it is the
+only one published as an executable.
 
 ## Configuration
 

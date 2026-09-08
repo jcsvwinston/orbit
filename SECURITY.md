@@ -61,6 +61,21 @@ of truth for toolchain advisories is the
 [Go vulnerability database](https://vuln.go.dev/). Orbit does not maintain
 its own advisory list.
 
+## Verifying what you downloaded
+
+Each root release (`vX.Y.Z`) publishes the `admin-server` binary with an SPDX
+bill of materials per archive, a checksum file, a keyless cosign signature
+over that checksum file and a GitHub build provenance attestation. Every
+other module is a library with no `main` package and publishes no binary;
+those arrive through the Go module proxy, where the checksum database is the
+equivalent guarantee.
+
+Check a downloaded binary before you run it — the commands are in
+`website/docs/operations/verifying-releases.md`. An asset that verifies
+against an identity other than
+`https://github.com/jcsvwinston/orbit/.github/workflows/release.yml@refs/tags/<tag>`
+is a report worth making through the channels above.
+
 ## Disclosure policy
 
 We follow a **90-day coordinated disclosure** timeline:
