@@ -44,6 +44,36 @@ import (
 	server "github.com/jcsvwinston/orbit/server"
 )
 
+// version is stamped at link time by the release build (-X main.version=vX.Y.Z,
+// see .goreleaser.yaml). It is empty in every other build, and buildVersion
+// falls back to build info there.
+var version string
+
+// buildVersion answers "which release is this binary?" for the three ways it
+// can exist, in decreasing order of authority:
+//
+//  1. A binary downloaded from a release page: the release build stamps the
+//     tag it was cut at. Build info cannot supply it — a release build is a
+//     plain `go build` of a checkout, which records no module version — so
+//     without the stamp a published binary would report "devel".
+//  2. `go install …/server/cmd/admin-server@vX.Y.Z`: the module version is in
+//     build info, and it is the tag the user asked for.
+//  3. A source build: "devel", honestly, rather than a hardcoded label.
+//
+// Both stamped and installed forms keep the leading "v", so the output does
+// not depend on how the binary arrived.
+func buildVersion() string {
+	if v := strings.TrimSpace(version); v != "" {
+		return v
+	}
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		if v := bi.Main.Version; v != "" && v != "(devel)" {
+			return v
+		}
+	}
+	return "devel"
+}
+
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -85,16 +115,7 @@ func run(args []string) error {
 		return err
 	}
 	if *versionFlag {
-		// The module version comes from build info: `go install
-		// …/admin-server@vX.Y.Z` stamps the real tag; source builds
-		// report "devel" honestly instead of a hardcoded label.
-		version := "devel"
-		if bi, ok := debug.ReadBuildInfo(); ok {
-			if v := bi.Main.Version; v != "" && v != "(devel)" {
-				version = v
-			}
-		}
-		fmt.Println("nucleus-admin-server " + version)
+		fmt.Println("nucleus-admin-server " + buildVersion())
 		return nil
 	}
 

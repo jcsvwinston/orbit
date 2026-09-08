@@ -29,10 +29,14 @@ jobs:
     # The write scopes belong to this job, not to the workflow: the action
     # opens and updates the release PR (pull-requests), cuts the tags and the
     # GitHub Releases, and the matrix refresh below pushes a commit to main
-    # (contents). A job added later starts from the read-only default above.
+    # (contents). `actions` is what the last step needs to dispatch
+    # release.yml — without it that `gh workflow run` returns 403 and the root
+    # tag ships with no binaries. A job added later starts from the read-only
+    # default above.
     permissions:
       contents: write
       pull-requests: write
+      actions: write
     steps:
       - id: release
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5
@@ -47,10 +51,35 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
+      # Runs BEFORE the matrix refresh below on purpose: that step pushes a
+      # commit and can fail on its own, and a release whose binaries were
+      # never built because a docs table went stale is the worse of the two
+      # outcomes.
+      #
+      # Tags cut by this workflow are created with the GITHUB_TOKEN, and GitHub
+      # suppresses events from that token to prevent workflow recursion — so
+      # release.yml's `push: tags` trigger NEVER fires for an automatic cut.
+      # Chain the asset build explicitly instead; release.yml is idempotent
+      # (it re-runs only while the release is missing an archive, an SBOM, the
+      # signature, the certificate or the provenance attestation).
+      #
+      # `release_created` and `tag_name` without a prefix are the ROOT
+      # package's outputs — the manifest releaser prefixes every other package
+      # with its path (`server--release_created`, `agent--tag_name`, …). That
+      # is the whole rule for who publishes binaries: a release round that cuts
+      # five module tags and no root tag dispatches nothing, because only the
+      # root release has assets. Module tags ship through the Go module proxy;
+      # there is no artifact of theirs to build.
+      - name: Build release assets for the freshly cut root tag
+        if: steps.release.outputs.release_created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run release.yml -R "${{ github.repository }}" --ref "${{ steps.release.outputs.tag_name }}"
+
       # DX-26 follow-up: close the stale window instead of living with it.
       #
       # The module compatibility matrix is generated from git tags, and a tag
-      # does not exist until the release PR merges — the step above. So main's
+      # does not exist until the release PR merges — the release step above. So main's
       # committed copy went stale at the exact moment a release landed, and
       # the freshness check (which only runs on pull requests) slept until an
       # unrelated PR tripped over it. In a multi-module cascade that means

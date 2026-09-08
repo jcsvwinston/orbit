@@ -79,6 +79,23 @@ which is why the exclusion is a module missing from that build and not a
 
 The lane reports and does not gate: no check fails because of an alert.
 
+## Verifying what you downloaded
+
+Each root release (`vX.Y.Z`) publishes the `admin-server` binary with an SPDX
+bill of materials per archive, a checksum file, a keyless cosign signature
+over that checksum file and a GitHub build provenance attestation. Every
+other module is a library and ships no executable of its own; those arrive
+through the Go module proxy, where the checksum database is the equivalent
+guarantee. The runnable examples in the tree (`examples/minimal`,
+`agent/examples/fleet-app`) are demos, not release artefacts, and are
+published nowhere.
+
+Check a downloaded binary before you run it — the commands are in
+`website/docs/operations/verifying-releases.md`. An asset that verifies
+against an identity other than
+`https://github.com/jcsvwinston/orbit/.github/workflows/release.yml@refs/tags/<tag>`
+is a report worth making through the channels above.
+
 ## Disclosure policy
 
 We follow a **90-day coordinated disclosure** timeline:

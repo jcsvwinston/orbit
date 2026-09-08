@@ -99,6 +99,12 @@ the page again once the server answers reloads the tab as above.
    admin-server --version   # confirm what you now have
    ```
 
+   Or replace the binary with the signed one from the release page and check
+   its signature and provenance before it runs — see
+   [Verifying a release](./verifying-releases.md). An upgrade is the moment
+   the check is worth most: it is the one time you deliberately run a binary
+   you did not have yesterday.
+
    Server state is in memory only, so a restart is cheap: agents reconnect
    and re-register on their own, and only the bounded replay history is
    lost.
@@ -123,8 +129,10 @@ behind the server.
 
 ### Verifying what runs where
 
-- `admin-server --version` prints the installed module version (source
-  builds print `devel` rather than a made-up number).
+- `admin-server --version` prints the version of what you installed: the
+  release tag for a binary downloaded from a release page, the `orbit/server`
+  module tag for a `go install`, and `devel` for a source build rather than a
+  made-up number. [Deployment](./deployment.md) has the table.
 - The fleet UI shows the server's version and your operator identity.
 - Each node's row in the fleet UI shows the version string **your app**
   passed to `agent.NewExtension` — report a meaningful value there and

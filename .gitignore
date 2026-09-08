@@ -11,6 +11,11 @@ node_modules/
 *.out
 coverage*.txt
 
+# GoReleaser writes the release archives, SBOMs, checksums and signatures
+# here. `goreleaser release --clean` recreates it on every run; nothing in it
+# is ever committed.
+/dist/
+
 # Editor / OS noise
 .DS_Store
 *.swp
