@@ -242,19 +242,45 @@ jobs:
   # covers the standard library, which is how GO-2026-5856 (an Encrypted Client
   # Hello leak in crypto/tls, reachable from every TLS dial the agent and the
   # Redis relay make) was found: the modules built on Go 1.26.4, where it is
-  # unfixed. The go directive is now 1.26.5, so setup-go installs a patched
+  # unfixed. The go directive is now 1.26.6, so setup-go installs a patched
   # toolchain — this job is what stops it silently sliding back.
+  #
+  # One scan per module, like `standalone`. A single `govulncheck ./...` at the
+  # repository root covers the root module's six packages and stops there: in
+  # workspace mode `./...` does not descend into the sibling modules, so
+  # server/ — which holds cmd/admin-server — along with agent/, proto/,
+  # quarkbridge/ and quarkdatasource/ were never scanned. GOWORK=off for the
+  # reason the standalone job uses it: a consumer resolves each module from its
+  # own go.mod, not from the workspace's unified build list.
   vuln:
-    name: govulncheck
+    name: govulncheck — ${{ matrix.module }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [., proto, agent, server, quarkbridge, quarkdatasource]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
-      - run: go install golang.org/x/vuln/cmd/govulncheck@latest
-      - run: govulncheck ./...
+      # Pinned rather than `@latest`, so the tool that decides whether Orbit
+      # ships a known vulnerability cannot change under us between runs.
+      # v1.7.0 is the current release. One version must never be the pin:
+      # v1.4.0 builds on golang.org/x/tools v0.46.0, whose
+      # typesinternal.ForEachElement panics on generic types ("ForEachElement
+      # called on type containing *types.TypeParam") under Go 1.26, which
+      # aborts the scan of quarkbridge/ and quarkdatasource/. v1.5.0 moved to
+      # x/tools v0.47.0; v1.5.0, v1.6.0 and v1.7.0 analyse all six modules
+      # cleanly. The vulnerability database is fetched at run time, so a
+      # pinned binary still scans against current advisories.
+      - run: go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+      - name: govulncheck (no workspace)
+        working-directory: ${{ matrix.module }}
+        env:
+          GOWORK: "off"
+        run: govulncheck ./...
 
   # Keeps internal engineering vocabulary out of website/docs/**. A reader
   # evaluating Orbit does not know what ADR-019 is or what a "contract-freeze
