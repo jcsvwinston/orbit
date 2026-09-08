@@ -5,14 +5,22 @@ package admin
 
 // Native fuzz targets for the panel's parsing surfaces (arc A3). Each one
 // states a property the surface has to keep, not merely "does not panic":
-// the order-by clause is drawn from an allow-list, an id crosses the boundary
-// as the same string it came in as, a tenant is never trimmed into another
-// one, and no column the validator passed is a column the writer cannot take.
+// a query only ever sorts and filters by columns the panel shows, an id
+// crosses the boundary as the same string it came in as, a tenant is never
+// trimmed into another one, and no column the validator passed is a column
+// the writer cannot take.
 //
-// The seed corpora are the inputs of the tests already in this package plus
-// the shapes that broke in the 2026-09 maturity audit (OR-14 ids, the
-// TENANT_ID spelling that slipped past an exact-match guard, the
-// "order_by=drop table users" of TestPanel).
+// The properties are written from the rule the panel means to enforce, not
+// from what the code returns. That is not a stylistic preference: the first
+// version of FuzzDataStudioQuery built its allow-list out of every field of
+// the model, which is the sanitiser's own codomain, so it blessed the one
+// thing this surface got wrong (order_by=password_hash) and could never have
+// reported it.
+//
+// The seed corpora are the inputs of the tests already in this package, the
+// shapes that broke in the 2026-09 maturity audit (OR-14 ids, the TENANT_ID
+// spelling that slipped past an exact-match guard, the "order_by=drop table
+// users" of TestPanel), and the hidden-column queries the rewrite found.
 
 import (
 	"bytes"
@@ -30,7 +38,11 @@ import (
 
 // fuzzModelInfo is a model with one field of every shape the parsing surfaces
 // branch on: a synthetic pk column ("i_d" → "id"), a bool filter, a tenant
-// field, a read-only field and an excluded one.
+// field, a read-only field, an excluded one, and an excluded one that is
+// still tagged listable and filterable — the shape the Field settings editor
+// produces when an operator hides a column that was already in the list, and
+// the one that decides whether "excluded" is enforced or merely obeyed by
+// well-behaved clients.
 func fuzzModelInfo() datasource.ModelInfo {
 	return datasource.ModelInfo{
 		Name:       "AdminUser",
@@ -47,30 +59,65 @@ func fuzzModelInfo() datasource.ModelInfo {
 			{Name: "TenantID", Column: "tenant_id", GoType: "string", IsTenantField: true, IsFilter: true},
 			{Name: "CreatedAt", Column: "created_at", GoType: "time.Time", IsList: true, IsReadOnly: true},
 			{Name: "PasswordHash", Column: "password_hash", GoType: "string", IsExcluded: true},
+			{Name: "SecretToken", Column: "secret_token", GoType: "string", IsList: true, IsFilter: true, IsExcluded: true},
 		},
 		TenantField: "tenant_id",
 	}
 }
 
-// fuzzOrderColumns is the allow-list the sanitiser may draw from: every
-// runtime column of the model plus the synthetic "id".
-func fuzzOrderColumns(mi datasource.ModelInfo) map[string]bool {
+// fuzzVisibleColumns is the allow-list the query surfaces may draw from,
+// derived from the panel's own visibility rule rather than from what the code
+// happens to accept: a column the panel would show, plus the synthetic "id".
+//
+// IsExcluded is the rule (hardening.go: "the model marked them as never shown
+// in Data Studio" — handleGetSchema drops the field, the exporters skip the
+// column, redactAuditValues masks it). IsReadOnly deliberately is NOT: a
+// read-only created_at is rendered in the list and is the column operators
+// sort by most, so barring it here would fit the property to a restriction the
+// panel does not mean to have.
+func fuzzVisibleColumns(mi datasource.ModelInfo) map[string]bool {
 	allowed := map[string]bool{"id": true}
 	for _, f := range mi.Fields {
+		if f.IsExcluded {
+			continue
+		}
 		allowed[runtimeColumn(f.Column)] = true
 	}
 	return allowed
+}
+
+// fuzzExcludedColumns is the complement: the spellings by which a request
+// could name a hidden column (runtime column, storage column, Go name).
+func fuzzExcludedColumns(mi datasource.ModelInfo) map[string]bool {
+	hidden := map[string]bool{}
+	for _, f := range mi.Fields {
+		if !f.IsExcluded {
+			continue
+		}
+		for _, key := range []string{runtimeColumn(f.Column), f.Column, f.Name} {
+			if key != "" {
+				hidden[strings.ToLower(key)] = true
+			}
+		}
+	}
+	return hidden
 }
 
 // FuzzDataStudioQuery drives the list endpoint's query parsing — the whole of
 // it, the way the handler calls it: order_by, filters, search and pagination
 // off one untrusted query string.
 //
-// The property that matters is the order-by one: what comes out is built
-// exclusively from the model's own columns and the two directions, so no byte
-// of the request can reach the ORDER BY clause the store interpolates. The
-// filter map is bounded the same way (keys are runtime columns; a bool filter
-// is normalised to "1"/"0" and never carries the request's spelling).
+// The property that matters is the order-by one, and it is stated against the
+// panel's visibility rule, not against the sanitiser's codomain: what comes
+// out is built exclusively from the columns the panel would show and the two
+// directions, so no byte of the request reaches the ORDER BY clause the store
+// interpolates AND no request sorts by a column the panel hides. The second
+// half is what found the defect this PR fixes — order_by=password_hash was
+// accepted and handed to the store, which paginates the table in hash order:
+// a comparison oracle over a value the schema endpoint, the exporters and the
+// audit log all take care never to show. The filter map is bounded the same
+// way (keys are visible runtime columns; a bool filter is normalised to
+// "1"/"0" and never carries the request's spelling).
 func FuzzDataStudioQuery(f *testing.F) {
 	for _, seed := range []string{
 		"order_by=name+asc",                       // panel_test.go
@@ -81,6 +128,10 @@ func FuzzDataStudioQuery(f *testing.F) {
 		"page=1&page_size=25&search=%25",          // a bare LIKE wildcard in the search
 		"is_active=yes&order_by=id",               // bool normalisation
 		"TENANT_ID=other&tenant=acme",             // the spelling that slipped past an exact guard
+		"order_by=password_hash+desc",             // a column the panel never shows
+		"order_by=PasswordHash",                   // the same column, Go-name spelling
+		"password_hash=x",                         // the same asymmetry on the filter side
+		"secret_token=x&order_by=secret_token",    // hidden, yet tagged filterable and listable
 		"unknown_column=1",                        // must be a 400, never a filter
 		"page=-3&page_size=abc",                   // lenient pagination
 		"search=" + strings.Repeat("x", 300),      // over the 256-character bound
@@ -90,7 +141,8 @@ func FuzzDataStudioQuery(f *testing.F) {
 	}
 
 	mi := fuzzModelInfo()
-	allowed := fuzzOrderColumns(mi)
+	allowed := fuzzVisibleColumns(mi)
+	hidden := fuzzExcludedColumns(mi)
 
 	f.Fuzz(func(t *testing.T, rawQuery string) {
 		// The handler reads r.URL.Query(), which keeps whatever parsed and
@@ -110,8 +162,12 @@ func FuzzDataStudioQuery(f *testing.F) {
 					t.Fatalf("order_by %q produced %q: clause %q is not \"column direction\"",
 						values.Get("order_by"), clause, part)
 				}
+				if hidden[strings.ToLower(fields[0])] {
+					t.Fatalf("order_by %q sorts by %q, a column %s never shows: the clause is an oracle over it",
+						values.Get("order_by"), fields[0], mi.Name)
+				}
 				if !allowed[fields[0]] {
-					t.Fatalf("order_by %q produced column %q, which is not a column of %s",
+					t.Fatalf("order_by %q produced column %q, which is not a visible column of %s",
 						values.Get("order_by"), fields[0], mi.Name)
 				}
 				if fields[1] != "asc" && fields[1] != "desc" {
@@ -131,8 +187,11 @@ func FuzzDataStudioQuery(f *testing.F) {
 		filters, err := dsCollectFilters(mi, values)
 		if err == nil {
 			for col, val := range filters {
+				if hidden[strings.ToLower(col)] {
+					t.Fatalf("filter on %q, a column %s never shows (query %q)", col, mi.Name, rawQuery)
+				}
 				if !allowed[col] {
-					t.Fatalf("filter column %q is not a column of %s (query %q)", col, mi.Name, rawQuery)
+					t.Fatalf("filter column %q is not a visible column of %s (query %q)", col, mi.Name, rawQuery)
 				}
 				if col == "is_active" && val != "0" && val != "1" {
 					t.Fatalf("bool filter kept the request spelling %q (query %q)", val, rawQuery)
@@ -408,4 +467,31 @@ func typedValueError(field datasource.FieldInfo, value string) error {
 		}
 	}
 	return nil
+}
+
+// TestDataStudioQuery_AColumnThePanelHidesIsNotSortable is the named form of
+// the property FuzzDataStudioQuery found: the rule "IsExcluded means never
+// shown in Data Studio" is enforced by the query surfaces, not merely obeyed
+// by the SPA (which never learns the column exists, because handleGetSchema
+// drops it). A hidden column is not a sort key and not a filter key; every
+// other column, read-only ones included, still is.
+func TestDataStudioQuery_AColumnThePanelHidesIsNotSortable(t *testing.T) {
+	mi := fuzzModelInfo()
+
+	for _, key := range []string{"password_hash", "PasswordHash", "PASSWORD_HASH", "secret_token", "SecretToken"} {
+		if clause, err := dsSanitizeOrderBy(mi, key+" desc"); err == nil {
+			t.Errorf("order_by=%q was accepted as %q: sorting by a hidden column is a comparison oracle over it", key, clause)
+		}
+		if _, _, err := dsNormalizeFilter(mi, key, "x"); err == nil {
+			t.Errorf("filter %s=x was accepted: filtering by a hidden column is the same oracle", key)
+		}
+	}
+
+	// The columns the panel does show stay sortable — including the
+	// read-only one, which is the column operators sort by most.
+	for _, key := range []string{"id", "email", "name", "created_at", "CreatedAt", "is_active"} {
+		if _, err := dsSanitizeOrderBy(mi, key+" desc"); err != nil {
+			t.Errorf("order_by=%q was refused: %v", key, err)
+		}
+	}
 }

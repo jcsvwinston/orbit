@@ -112,6 +112,13 @@ func dsNormalizeFilter(mi datasource.ModelInfo, key, value string) (column, norm
 	if !found {
 		return "", "", gferrors.BadRequest(fmt.Sprintf("invalid filter field %q", key))
 	}
+	// An excluded field is not a field of this panel at all — the schema
+	// endpoint never emitted it, so no client can name it honestly, and
+	// filtering by one is the same oracle over a hidden value that sorting by
+	// one is (see resolveOrderColumn). Answer as if the column did not exist.
+	if field.IsExcluded {
+		return "", "", gferrors.BadRequest(fmt.Sprintf("invalid filter field %q", key))
+	}
 	if !field.IsFilter {
 		return "", "", gferrors.BadRequest(fmt.Sprintf("filter is not enabled for %q", key))
 	}
@@ -171,6 +178,19 @@ func dsSanitizeOrderBy(mi datasource.ModelInfo, raw string) (string, error) {
 
 // resolveOrderColumn accepts a model field's column or Go name (case-insensitive)
 // and the synthetic "id"; it returns the runtime column to sort by.
+//
+// An excluded field is not one of them. IsExcluded means "never shown in Data
+// Studio": handleGetSchema drops the field before the SPA sees it, the
+// exporters leave the column out, and redactAuditValues masks it precisely so
+// a password hash does not leak through the audit log. Sorting by such a
+// column leaks it all the same — ORDER BY password_hash paginates the table in
+// hash order, which is a comparison oracle over the hidden value, one page at
+// a time. So the three query surfaces now agree: search skips excluded fields
+// (modelSearchable), filters refuse them (dsNormalizeFilter), and so does the
+// sort.
+//
+// Read-only is a different flag and stays sortable: created_at is read-only,
+// rendered in the list, and the column operators sort by most.
 func resolveOrderColumn(mi datasource.ModelInfo, key string) (string, bool) {
 	key = strings.TrimSpace(key)
 	if key == "" {
@@ -179,7 +199,10 @@ func resolveOrderColumn(mi datasource.ModelInfo, key string) (string, bool) {
 	if strings.EqualFold(key, "id") {
 		return "id", true
 	}
-	if col, _, ok := dsResolveField(mi, key); ok {
+	if col, field, ok := dsResolveField(mi, key); ok {
+		if field.IsExcluded {
+			return "", false
+		}
 		return col, true
 	}
 	return "", false
