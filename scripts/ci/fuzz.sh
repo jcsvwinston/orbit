@@ -28,13 +28,23 @@
 # which is the fuzz corpus cache having index entries whose files are gone.
 # That one is retried once after `go clean -fuzzcache`; anything else is
 # recorded and the list carries on, with a summary and a non-zero exit at the
-# end. The failure was seen twice by a reviewer on darwin/arm64 (go1.26.6) at
-# targets 2 and 4 of a full list, including on a run that started from an
-# empty cache; three full-list runs here (5s, 20s, 45s per target, same
-# toolchain and platform) did not reproduce it, so what is verified is the
-# recovery and not the absence — the retry and the carry-on were exercised
-# against an injected failure of each kind. The weekly workflow gives every
-# target its own job for the same reason.
+# end.
+#
+# The fault is real and it is intermittent: a reviewer hit it twice on
+# darwin/arm64 (go1.26.6), at the second and the fourth target of a full list;
+# three full-list runs here (5s, 20s and 45s per target) did not reproduce it;
+# the fourth did, at the fifth target, 9.8s into a 90s session —
+#
+#   --- FAIL: FuzzEventFilterMatches (9.81s)
+#       open …/go-build/fuzz/…/FuzzEventFilterMatches/b952d08f…: no such file
+#
+# — on a run that had started from an empty cache, which is why clearing the
+# cache first does not prevent it: the entries that go missing are written by
+# earlier targets of the same session. Under the old `set -e` runner that was
+# the end of the run and FuzzParseID went unfuzzed. Here the retry recovered
+# and the list finished green ("NOTE: cleared the fuzz corpus cache and
+# re-ran: FuzzEventFilterMatches"). The weekly workflow gives every target its
+# own job so it does not depend on the retry at all.
 set -uo pipefail
 
 cd "$(dirname "$0")/../.."

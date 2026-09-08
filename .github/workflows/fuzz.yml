@@ -11,22 +11,22 @@ name: Fuzz
 #
 # ONE TARGET PER JOB. The list comes from scripts/ci/fuzz.sh --list, so it
 # lives in one place, and each target fuzzes in its own runner with its own
-# build and corpus cache. That is the mitigation for the failure a reviewer of
-# PR #443 hit twice on darwin/arm64, where a timed run died with
-# "open …/go-build/fuzz/…: no such file or directory" at the second and fourth
-# target of a single sequential list — a corpus-cache fault, not a finding,
-# that under the old `set -e` runner skipped every target after it. With
-# fail-fast disabled, one target's red now costs only that target; and inside
-# the script that error is retried once after `go clean -fuzzcache` before
-# anything is called a failure.
+# build and corpus cache. That is the mitigation for a corpus-cache fault —
+# "open …/go-build/fuzz/…: no such file or directory", which reads like a
+# finding and is not one — that a reviewer of PR #443 hit twice on
+# darwin/arm64 and that reproduced here on the fourth attempt, at the fifth
+# target of a sequential list, on a run that had started from an empty cache.
+# Under the old `set -e` runner it ended the run and left the sixth target
+# unfuzzed. With one job per target and fail-fast disabled, no target can end
+# another's session; inside the script that error is also retried once after
+# `go clean -fuzzcache`, which is what recovered the run where it reproduced.
 #
-# That mitigation is expected to help, not known to. The fault has never been
-# observed on ubuntu-latest, and three full-list runs on the machine that did
-# see it (go1.26.6, darwin/arm64, 5s/20s/45s per target) did not reproduce it,
-# so what is verified is the recovery, not the absence: the retry and the
-# carry-on were exercised against an injected failure, and this lane now runs
-# on any pull request that touches it, so the claims below are exercised
-# before they are merged rather than after.
+# What is verified is the recovery, not the absence: the fault has not been
+# observed on ubuntu-latest, and clearing the cache first demonstrably does
+# not prevent it (the entries that go missing are written by earlier targets
+# of the same session). This lane now also runs on any pull request that
+# touches it, so what is claimed here is exercised before it is merged rather
+# than after.
 #
 # When a run goes red it has found an input that breaks a property. Go writes
 # it to <package>/testdata/fuzz/<Target>/<hash>; the step below uploads it, and
