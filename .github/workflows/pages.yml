@@ -11,8 +11,6 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 # Allow one concurrent deployment; don't cancel an in-progress publish.
 concurrency:
@@ -22,6 +20,15 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # Only this job publishes: `pages` writes the deployment and `id-token`
+    # mints the OIDC token deploy-pages exchanges for it. A job-level block
+    # replaces the workflow set rather than adding to it — every scope left
+    # out becomes `none` — so `contents: read` is repeated here for the
+    # checkout below.
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

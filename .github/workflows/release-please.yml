@@ -21,12 +21,18 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    # The write scopes belong to this job, not to the workflow: the action
+    # opens and updates the release PR (pull-requests), cuts the tags and the
+    # GitHub Releases, and the matrix refresh below pushes a commit to main
+    # (contents). A job added later starts from the read-only default above.
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - id: release
         uses: googleapis/release-please-action@v5
