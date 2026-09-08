@@ -9,6 +9,25 @@ name: Fuzz
 # build already cached. That is minutes of rebuilding on the four packages
 # that hold targets — a cost worth paying once a week, not on every push.
 #
+# ONE TARGET PER JOB. The list comes from scripts/ci/fuzz.sh --list, so it
+# lives in one place, and each target fuzzes in its own runner with its own
+# build and corpus cache. That is the mitigation for the failure a reviewer of
+# PR #443 hit twice on darwin/arm64, where a timed run died with
+# "open …/go-build/fuzz/…: no such file or directory" at the second and fourth
+# target of a single sequential list — a corpus-cache fault, not a finding,
+# that under the old `set -e` runner skipped every target after it. With
+# fail-fast disabled, one target's red now costs only that target; and inside
+# the script that error is retried once after `go clean -fuzzcache` before
+# anything is called a failure.
+#
+# That mitigation is expected to help, not known to. The fault has never been
+# observed on ubuntu-latest, and three full-list runs on the machine that did
+# see it (go1.26.6, darwin/arm64, 5s/20s/45s per target) did not reproduce it,
+# so what is verified is the recovery, not the absence: the retry and the
+# carry-on were exercised against an injected failure, and this lane now runs
+# on any pull request that touches it, so the claims below are exercised
+# before they are merged rather than after.
+#
 # When a run goes red it has found an input that breaks a property. Go writes
 # it to <package>/testdata/fuzz/<Target>/<hash>; the step below uploads it, and
 # committing that file turns the finding into a seed the PR lane keeps
@@ -27,15 +46,51 @@ on:
         description: 'Go duration to fuzz each target for (e.g. 45s, 5m)'
         required: false
         default: '45s'
+  # The lane also runs on a pull request that changes the lane itself — the
+  # workflow, the runner, a target, or a corpus — for a short session each.
+  # Otherwise the machinery below would only ever be exercised after it was
+  # merged, which is how this workflow spent its first review: every claim in
+  # it (the timeout, the cache handling, the failure upload) asserted and none
+  # of them ever executed, because a workflow_dispatch needs the file on the
+  # default branch. It is not on the ordinary PR lane: that one runs the seed
+  # corpora, in seconds, on every pull request (ci.yml).
+  pull_request:
+    paths:
+      - '.github/workflows/fuzz.yml'
+      - 'scripts/ci/fuzz.sh'
+      - '**/a3_fuzz_*_test.go'
+      - '**/testdata/fuzz/**'
 
 permissions:
   contents: read
 
 jobs:
-  fuzz:
-    name: Fuzz targets
+  targets:
+    name: List the targets
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 5
+    outputs:
+      names: ${{ steps.list.outputs.names }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      # Also the guard: --list fails when TARGETS and the tree disagree, so a
+      # renamed or unlisted target stops the lane instead of emptying it.
+      - id: list
+        run: |
+          names=$(bash scripts/ci/fuzz.sh --list)
+          echo "names=$names" >> "$GITHUB_OUTPUT"
+
+  fuzz:
+    name: ${{ matrix.target }}
+    needs: targets
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.targets.outputs.names) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -49,18 +104,24 @@ jobs:
       # were pruned; `go test -fuzz` then dies on the first mutation with
       # "open …/go-build/fuzz/…: no such file or directory", which reads like a
       # finding and is not one. Starting from an empty corpus cache costs the
-      # week's accumulated inputs and buys a red that always means something.
+      # week's accumulated inputs; the script retries this specific error once,
+      # so a red here is a property that broke and not the cache.
       - name: Start from an empty fuzz corpus cache
         run: go clean -fuzzcache
 
-      - name: Fuzz every target
-        run: bash scripts/ci/fuzz.sh "${{ inputs.fuzztime || '45s' }}"
+      # A dispatch says how long; the weekly run takes 45s a target; a pull
+      # request that touched the lane takes 20s, enough to prove the lane runs
+      # end to end without spending ten minutes on it.
+      - name: Fuzz ${{ matrix.target }}
+        env:
+          FUZZTIME: ${{ inputs.fuzztime || (github.event_name == 'pull_request' && '20s') || '45s' }}
+        run: bash scripts/ci/fuzz.sh --only "${{ matrix.target }}" "$FUZZTIME"
 
       - name: Upload the inputs that failed
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: fuzz-failures
+          name: fuzz-failures-${{ matrix.target }}
           path: '**/testdata/fuzz/**'
           retention-days: 30
           if-no-files-found: ignore

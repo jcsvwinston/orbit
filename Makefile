@@ -93,8 +93,8 @@ test: ## go test ./... in every module.
 # ----------------------------------------------------------------------------
 # Fuzzing — native Go fuzz targets over the surfaces that take untrusted input
 # (the Data Studio query string, record ids and tenant values, the CSV import,
-# the LIKE escaping, the fleet node-id filter). scripts/ci/fuzz.sh holds the
-# list; a target missing from it fails the seed lane.
+# the LIKE escaping, the event-stream filter). scripts/ci/fuzz.sh holds the
+# list; a target the list and the tree disagree about fails the seed lane.
 # ----------------------------------------------------------------------------
 .PHONY: fuzz fuzz-seeds
 fuzz: ## Fuzz every target for FUZZTIME (default 20s).
