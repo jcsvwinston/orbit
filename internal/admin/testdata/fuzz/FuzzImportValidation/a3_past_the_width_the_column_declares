@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("level,visits\n300,70000\n")

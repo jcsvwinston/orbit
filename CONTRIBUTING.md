@@ -92,11 +92,24 @@ a differential between two implementations — not merely that the code does not
 panic. Write the property against the **rule the surface means to enforce**,
 not against what the code happens to return: a property fitted to the code's
 own behaviour is green by construction and can never report the thing the
-surface gets wrong. Three of the six were rewritten for exactly that reason
+surface gets wrong. Four of the six were rewritten for exactly that reason
 during review, and each rewrite found a defect (a hidden column was sortable,
 a status class that is not a digit string matched a status, an id past the
-width of its key was accepted). The comment above each target says which
-property it states and where that property has a history.
+width of its key was accepted, a CSV cell past the width of its column was
+imported). The comment above each target says which property it states and
+where that property has a history.
+
+The tell of a property fitted to the code is that it is written in the code's
+own vocabulary: the same library calls, in the same order, with the same
+constants. `FuzzImportValidation` survived one round of review with a type
+check that called `strconv` the way the validator calls it, at the same 64-bit
+widths — so it could not see that an int8 column accepted `300` — and its
+`time.Time` branch was missing altogether, which made the datetime check
+untested rather than tested. State the rule in another vocabulary (a width
+from the language spec, an explicit sign policy, `math/big` instead of
+`strconv`), and where a full reading would mean writing a second parser, state
+a **necessary** condition and say so: it may stay silent, it may not refuse
+something the surface accepts.
 
 ```bash
 make fuzz-seeds          # every seed corpus, deterministic, seconds — what CI runs

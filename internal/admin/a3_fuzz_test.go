@@ -27,6 +27,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/big"
 	"net/url"
 	"sort"
 	"strconv"
@@ -43,6 +44,14 @@ import (
 // produces when an operator hides a column that was already in the list, and
 // the one that decides whether "excluded" is enforced or merely obeyed by
 // well-behaved clients.
+//
+// The numeric columns are deliberately not all 64-bit: an int8 and a uint16
+// are where a width rule and a sign rule are visible at all, and a legacy
+// schema keys and counts on narrow columns as readily as on wide ones. The
+// datetime column is deliberately writable — created_at is read-only, so the
+// import path refuses it before it ever reaches a type check, and a datetime
+// rule that stopped being enforced would have been invisible with only that
+// one in the model.
 func fuzzModelInfo() datasource.ModelInfo {
 	return datasource.ModelInfo{
 		Name:       "AdminUser",
@@ -54,7 +63,10 @@ func fuzzModelInfo() datasource.ModelInfo {
 			{Name: "Email", Column: "email", GoType: "string", IsRequired: true, IsList: true, IsSearch: true, IsFilter: true},
 			{Name: "Name", Column: "name", GoType: "string", IsList: true, IsSearch: true, IsFilter: true},
 			{Name: "Age", Column: "age", GoType: "int", IsList: true, IsFilter: true},
+			{Name: "Level", Column: "level", GoType: "int8", IsList: true, IsFilter: true},
+			{Name: "Visits", Column: "visits", GoType: "uint16", IsList: true},
 			{Name: "Balance", Column: "balance", GoType: "float64", IsList: true},
+			{Name: "StartsAt", Column: "starts_at", GoType: "time.Time", IsList: true},
 			{Name: "IsActive", Column: "is_active", GoType: "bool", IsList: true, IsFilter: true},
 			{Name: "TenantID", Column: "tenant_id", GoType: "string", IsTenantField: true, IsFilter: true},
 			{Name: "CreatedAt", Column: "created_at", GoType: "time.Time", IsList: true, IsReadOnly: true},
@@ -331,9 +343,14 @@ func FuzzRecordIDBoundary(f *testing.F) {
 // property is the one ImportFromFile depends on — it aborts on any validation
 // error and hands the records straight to Create otherwise, so a record the
 // validator passed must carry only columns the writer can take, with values
-// of the declared type. The type checks are re-derived here with strconv
-// rather than by calling validateFieldValue, so the target does not agree
-// with the code by construction.
+// of the declared type.
+//
+// "Of the declared type" is stated by typedValueError below, from the rule:
+// the kind, the width the kind declares, a sign policy per signedness, and
+// the shape of a datetime. It is not validateFieldValue in another spelling —
+// it was, for one round, and being the same calls at the same 64-bit widths
+// is exactly what kept it from seeing that an int8 column accepted 300, and
+// what left the datetime check with no reader at all.
 func FuzzImportValidation(f *testing.F) {
 	for _, seed := range []string{
 		"email,name,age\nfoo@example.com,Foo,33\n",
@@ -344,7 +361,14 @@ func FuzzImportValidation(f *testing.F) {
 		"password_hash,email\nx,foo@example.com\n", // excluded column
 		"created_at,email\n2026-09-08,a@b.c\n",     // read-only column
 		"age,is_active\nnot-a-number,maybe\n",
-		"age,is_active\n9223372036854775808,1\n", // out of range for int64
+		"age,is_active\n9223372036854775808,1\n",        // out of range for int64
+		"level,email\n300,a@b.c\n",                      // an integer, and not a value of an int8 column
+		"level,email\n-129,a@b.c\n",                     // the same on the low side
+		"visits,email\n-1,a@b.c\n",                      // a sign an unsigned column does not take
+		"visits,email\n70000,a@b.c\n",                   // past uint16
+		"balance,email\n1e400,a@b.c\n",                  // past every finite float64
+		"starts_at,email\n2026-09-08T12:00:00Z,a@b.c\n", // the datetime that is one
+		"starts_at,email\n2026-13-45,a@b.c\n",           // a date naming no day
 		"_model,email\nOther,a@b.c\n",
 		" email , name \n a@b.c , Foo \n", // padding around headers and values
 		"email\n",                         // header only
@@ -442,31 +466,237 @@ func recordKeys(rec map[string]interface{}) []string {
 	return keys
 }
 
-// typedValueError re-derives, from the declared Go type alone, whether a cell
-// is of that type. It is the independent reading of what validateFieldValue
-// promises the writer.
+// typedValueError is what "a value of the type this column declares" means at
+// the import boundary, read off the rule rather than off the code: the Go
+// kind, its width from the language spec, an explicit sign policy, and the
+// shape the three documented datetime spellings share.
+//
+// It is written this way because the first version of it was
+// validateFieldValue in another spelling — the same strconv calls, the same
+// 64-bit widths for every integer kind, the same missing datetime branch — so
+// it agreed with the code by construction and could see neither of the two
+// things this round found: that "300" was a valid cell for an int8 column,
+// and that a datetime check which stopped checking would go unnoticed.
+//
+// It states a NECESSARY condition, not an equivalence. Where a full reading
+// would mean writing a second parser (RFC3339's zone and fraction forms, Go
+// float literals with their hex and underscore spellings), it judges only
+// what it is certain of and stays silent otherwise: everything it rejects is
+// a value no column of that kind can hold, so a failure here is always a cell
+// the validator should not have passed to the writer.
 func typedValueError(field datasource.FieldInfo, value string) error {
-	switch field.GoType {
-	case "int", "int8", "int16", "int32", "int64":
-		if _, err := strconv.ParseInt(value, 10, 64); err != nil {
-			return fmt.Errorf("column %q holds %q, which is not an integer", field.Column, value)
+	kind := field.GoType
+	switch {
+	case fuzzSignedKinds[kind], fuzzUnsignedKinds[kind]:
+		n, ok := decimalInteger(value, fuzzUnsignedKinds[kind])
+		if !ok {
+			return fmt.Errorf("column %q (%s) holds %q, which is not an integer of that kind",
+				field.Column, kind, value)
 		}
-	case "uint", "uint8", "uint16", "uint32", "uint64":
-		if _, err := strconv.ParseUint(value, 10, 64); err != nil {
-			return fmt.Errorf("column %q holds %q, which is not an unsigned integer", field.Column, value)
+		// The width the column declares is the width the row can hold: an
+		// int8 column holds -128..127, and 300 is not one of its values.
+		bits := specWidth(kind)
+		if fuzzUnsignedKinds[kind] {
+			max := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), bits), big.NewInt(1)) // 2^bits - 1
+			if n.Cmp(max) > 0 {
+				return fmt.Errorf("column %q (%s) holds %q, which is past %v", field.Column, kind, value, max)
+			}
+			return nil
 		}
-	case "float32", "float64":
-		if _, err := strconv.ParseFloat(value, 64); err != nil {
-			return fmt.Errorf("column %q holds %q, which is not a number", field.Column, value)
+		limit := new(big.Int).Lsh(big.NewInt(1), bits-1) // 2^(bits-1)
+		min := new(big.Int).Neg(limit)
+		max := new(big.Int).Sub(limit, big.NewInt(1))
+		if n.Cmp(min) < 0 || n.Cmp(max) > 0 {
+			return fmt.Errorf("column %q (%s) holds %q, which is outside %v..%v",
+				field.Column, kind, value, min, max)
 		}
-	case "bool":
+
+	case kind == "float32" || kind == "float64":
+		mag, ok := decimalMagnitude(value)
+		if !ok {
+			return nil // a spelling this reading does not judge
+		}
+		// A finite value of the kind is one below the power of two at which
+		// rounding overflows to infinity: 2^128 for a float32, 2^1024 for a
+		// float64. Anything at or above that is infinity, not a number the
+		// column holds.
+		over := 1024
+		if kind == "float32" {
+			over = 128
+		}
+		if mag.Cmp(new(big.Float).SetMantExp(big.NewFloat(1), over)) >= 0 {
+			return fmt.Errorf("column %q (%s) holds %q, a magnitude that is not a finite %s",
+				field.Column, kind, value, kind)
+		}
+
+	case kind == "bool":
+		// The import format's booleans, written out: the two words and the
+		// two digits, in any letter case. Not the filter surface's list —
+		// that one also takes yes/on/off, and a cell reaching Create is not
+		// a query parameter.
 		switch strings.ToLower(value) {
 		case "true", "false", "1", "0":
 		default:
 			return fmt.Errorf("column %q holds %q, which is not a boolean", field.Column, value)
 		}
+
+	case kind == "time.Time" || kind == "Time":
+		if !datetimeShape(value) {
+			return fmt.Errorf("column %q holds %q, which names no instant under any spelling the import takes",
+				field.Column, value)
+		}
 	}
 	return nil
+}
+
+var (
+	fuzzSignedKinds   = map[string]bool{"int": true, "int8": true, "int16": true, "int32": true, "int64": true}
+	fuzzUnsignedKinds = map[string]bool{"uint": true, "uint8": true, "uint16": true, "uint32": true, "uint64": true}
+)
+
+// specWidth is the width in bits of a Go numeric kind, from the language
+// spec. The target keeps its own table so that a change to declaredBits in
+// importers.go is a disagreement it reports, not a fact it inherits.
+func specWidth(kind string) uint {
+	switch kind {
+	case "int8", "uint8":
+		return 8
+	case "int16", "uint16":
+		return 16
+	case "int32", "uint32", "float32":
+		return 32
+	case "int64", "uint64", "float64":
+		return 64
+	case "int", "uint":
+		// The platform's word size; strconv.IntSize is how Go spells it.
+		return uint(strconv.IntSize)
+	}
+	return 64
+}
+
+// decimalInteger reads a cell as the decimal integer this boundary means, in
+// math/big rather than in strconv: a sign is a column's business — a signed
+// column takes an optional '+' or '-', an unsigned one takes none at all,
+// because "-1" is not a small unsigned number, it is not one — and after it
+// there are only ASCII digits. No underscores, no 0x, no Unicode digits, no
+// inner space (the CSV reader already trimmed the outer ones).
+func decimalInteger(value string, unsigned bool) (*big.Int, bool) {
+	digits := value
+	negative := false
+	if digits != "" && (digits[0] == '+' || digits[0] == '-') {
+		if unsigned {
+			return nil, false
+		}
+		negative = digits[0] == '-'
+		digits = digits[1:]
+	}
+	if digits == "" || !asciiDigits(digits) {
+		return nil, false
+	}
+	n, ok := new(big.Int).SetString(digits, 10)
+	if !ok {
+		return nil, false
+	}
+	if negative {
+		n.Neg(n)
+	}
+	return n, true
+}
+
+// decimalMagnitude reads |value| when the cell is an ordinary decimal float
+// literal — an optional sign, digits with at most one point, an optional
+// decimal exponent — and reports false for every other spelling strconv also
+// takes (Inf, NaN, hex floats, underscored literals), which this reading
+// deliberately leaves unjudged. The number itself is read by math/big, which
+// is not the parser under test.
+func decimalMagnitude(value string) (*big.Float, bool) {
+	s := value
+	if s != "" && (s[0] == '+' || s[0] == '-') {
+		s = s[1:]
+	}
+	mantissa := s
+	if i := strings.IndexAny(s, "eE"); i >= 0 {
+		mantissa = s[:i]
+		exp := s[i+1:]
+		if exp != "" && (exp[0] == '+' || exp[0] == '-') {
+			exp = exp[1:]
+		}
+		if exp == "" || !asciiDigits(exp) {
+			return nil, false
+		}
+	}
+	intPart, fracPart := mantissa, ""
+	if i := strings.IndexByte(mantissa, '.'); i >= 0 {
+		intPart, fracPart = mantissa[:i], mantissa[i+1:]
+	}
+	if intPart == "" && fracPart == "" {
+		return nil, false
+	}
+	if !asciiDigits(intPart) || !asciiDigits(fracPart) {
+		return nil, false
+	}
+	f, _, err := big.ParseFloat(value, 10, 200, big.ToNearestEven)
+	if err != nil {
+		return nil, false
+	}
+	return f.Abs(f), true
+}
+
+// datetimeShape is the shape every datetime the import accepts begins with,
+// read off the three layouts it documents (RFC3339, "2006-01-02 15:04:05" and
+// "2006-01-02") rather than off time.Parse: four digits, a month of 01..12, a
+// day of 01..31, and then either nothing at all or a separator and a clock of
+// hh:mm:ss with each field inside its range. What may follow the seconds — a
+// fraction, a zone — this reading does not judge, and it takes the separator
+// in either letter case; what it refuses is a cell that names no instant
+// under any of the three.
+func datetimeShape(value string) bool {
+	if len(value) < 10 || !asciiDigits(value[0:4]) || value[4] != '-' || value[7] != '-' {
+		return false
+	}
+	month, ok := twoDigitNumber(value[5:7])
+	if !ok || month < 1 || month > 12 {
+		return false
+	}
+	day, ok := twoDigitNumber(value[8:10])
+	if !ok || day < 1 || day > 31 {
+		return false
+	}
+	if len(value) == 10 {
+		return true
+	}
+	switch value[10] {
+	case 'T', 't', ' ':
+	default:
+		return false
+	}
+	if len(value) < 19 || value[13] != ':' || value[16] != ':' {
+		return false
+	}
+	hour, okH := twoDigitNumber(value[11:13])
+	minute, okM := twoDigitNumber(value[14:16])
+	second, okS := twoDigitNumber(value[17:19])
+	return okH && hour <= 23 && okM && minute <= 59 && okS && second <= 60
+}
+
+// twoDigitNumber reads exactly two ASCII digits, which is what every fixed
+// field of those layouts is.
+func twoDigitNumber(s string) (int, bool) {
+	if len(s) != 2 || !asciiDigits(s) {
+		return 0, false
+	}
+	return int(s[0]-'0')*10 + int(s[1]-'0'), true
+}
+
+// asciiDigits reports whether every byte is an ASCII digit. The empty string
+// has no non-digit in it, which is what the callers above want.
+func asciiDigits(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // TestDataStudioQuery_AColumnThePanelHidesIsNotSortable is the named form of
@@ -492,6 +722,96 @@ func TestDataStudioQuery_AColumnThePanelHidesIsNotSortable(t *testing.T) {
 	for _, key := range []string{"id", "email", "name", "created_at", "CreatedAt", "is_active"} {
 		if _, err := dsSanitizeOrderBy(mi, key+" desc"); err != nil {
 			t.Errorf("order_by=%q was refused: %v", key, err)
+		}
+	}
+}
+
+// TestImportValidation_ACellPastTheColumnsWidthIsRefused is the named form of
+// what FuzzImportValidation found once its type reading stopped being
+// validateFieldValue in another spelling: the width a column declares is part
+// of its type. Every integer kind was validated at 64 bits, so a CSV could
+// put 300 into an int8 column and 5000000000 into an int32 one — rows the
+// table cannot hold, handed to Create for the driver to refuse halfway
+// through the file or to truncate into a different number.
+func TestImportValidation_ACellPastTheColumnsWidthIsRefused(t *testing.T) {
+	mi := fuzzModelInfo()
+
+	for _, tc := range []struct{ column, value string }{
+		{"level", "300"}, {"level", "128"}, {"level", "-129"},
+		{"visits", "65536"}, {"visits", "70000"},
+		{"visits", "-1"}, // an unsigned column takes no sign, not even for zero
+	} {
+		field := dsFindFieldByColumn(mi, tc.column)
+		if field == nil {
+			t.Fatalf("the fuzz model has no %q column", tc.column)
+		}
+		if err := validateFieldValue(*field, tc.value); err == nil {
+			t.Errorf("import validation took %q for the %s column %q: no row of that table holds it",
+				tc.value, field.GoType, tc.column)
+		}
+	}
+
+	// The values each column does hold still pass — the rule is the declared
+	// width, not a narrower one.
+	for _, tc := range []struct{ column, value string }{
+		{"level", "127"}, {"level", "-128"}, {"level", "+7"},
+		{"visits", "0"}, {"visits", "65535"},
+		{"age", "1000000"}, {"balance", "1.5"}, {"starts_at", "2026-09-08"},
+	} {
+		field := dsFindFieldByColumn(mi, tc.column)
+		if field == nil {
+			t.Fatalf("the fuzz model has no %q column", tc.column)
+		}
+		if err := validateFieldValue(*field, tc.value); err != nil {
+			t.Errorf("import validation refused %q for the %s column %q: %v",
+				tc.value, field.GoType, tc.column, err)
+		}
+	}
+}
+
+// TestImportValidation_TheReadingRefusesNothingTheValidatorTakes pins the
+// direction that makes typedValueError usable as an oracle at all. It states
+// a necessary condition, so it is allowed to stay silent about a spelling it
+// does not judge, and never allowed to refuse a cell the import accepts —
+// otherwise the fuzz target reports the reading rather than the code, at
+// 3am, from a weekly job.
+//
+// The table is the awkward corner of each kind: the float spellings strconv
+// takes and a hand-written scan would not invent (the specials, a hex
+// literal, a bare point), the RFC3339 forms with a fraction and an offset,
+// and the letter cases.
+func TestImportValidation_TheReadingRefusesNothingTheValidatorTakes(t *testing.T) {
+	mi := fuzzModelInfo()
+
+	cells := []struct {
+		column string
+		values []string
+	}{
+		{"balance", []string{"NaN", "nan", "Inf", "+Inf", "-Inf", "infinity", "0x1p-2", "1_000.5", "1e308", "-0", ".5", "5.", "1E+10", "0"}},
+		{"level", []string{"0", "007", "+7", "-0", "127", "-128"}},
+		{"visits", []string{"0", "00042", "65535"}},
+		{"age", []string{"9223372036854775807", "-9223372036854775808", "+0"}},
+		{"starts_at", []string{"2026-09-08", "2026-09-08 15:04:05", "2026-09-08T15:04:05Z", "2026-09-08T15:04:05.123456789+02:00", "2026-09-08t15:04:05z", "0000-01-01", "2026-02-29"}},
+		{"is_active", []string{"TRUE", "False", "1", "0", "tRuE"}},
+		{"email", []string{"anything at all", "\x00", "300"}},
+	}
+
+	for _, tc := range cells {
+		field := dsFindFieldByColumn(mi, tc.column)
+		if field == nil {
+			t.Fatalf("the fuzz model has no %q column", tc.column)
+		}
+		for _, value := range tc.values {
+			if err := validateFieldValue(*field, value); err != nil {
+				// The import refuses this cell, so the reading may say
+				// whatever it likes about it: the target only consults the
+				// reading for cells that passed.
+				continue
+			}
+			if err := typedValueError(*field, value); err != nil {
+				t.Errorf("the import takes %q for the %s column %q and the reading refuses it: %v",
+					value, field.GoType, tc.column, err)
+			}
 		}
 	}
 }

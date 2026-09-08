@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -191,21 +192,63 @@ func ValidateImportData(mi datasource.ModelInfo, records []map[string]interface{
 	return errors
 }
 
+// declaredBits is the width, in bits, of the Go numeric kind a column
+// declares — the bitSize strconv asks for. Zero is how strconv spells "the
+// platform's word size", which is what "int" and "uint" are.
+func declaredBits(goType string) int {
+	switch goType {
+	case "int8", "uint8":
+		return 8
+	case "int16", "uint16":
+		return 16
+	case "int32", "uint32", "float32":
+		return 32
+	case "int64", "uint64", "float64":
+		return 64
+	}
+	return 0
+}
+
+// validateFieldValue reports whether a cell holds a value of the type its
+// column declares. It is what stands between a CSV and the writer: an import
+// aborts on any validation error and otherwise hands the parsed records
+// straight to Create, so a cell this function passes is a cell the store is
+// asked to write.
+//
+// THE WIDTH IS PART OF THE TYPE. This parsed every integer kind at 64 bits,
+// so "300" passed for an int8 column and "5000000000" for an int32 one:
+// values no row of that table can hold, left for the driver to refuse halfway
+// through an import or — on a driver that converts rather than refuses — to
+// truncate into a different number than the file said. It is the same
+// asymmetry the agent's parseID had, and it is fixed the same way, from the
+// declared kind.
 func validateFieldValue(field datasource.FieldInfo, value string) error {
 	if value == "" {
 		return nil
 	}
+	bits := declaredBits(field.GoType)
 	switch field.GoType {
 	case "int", "int8", "int16", "int32", "int64":
-		if _, err := strconv.ParseInt(value, 10, 64); err != nil {
+		if _, err := strconv.ParseInt(value, 10, bits); err != nil {
+			if errors.Is(err, strconv.ErrRange) {
+				return fmt.Errorf("integer value out of range for %s: %q", field.GoType, value)
+			}
 			return fmt.Errorf("invalid integer value: %q", value)
 		}
 	case "uint", "uint8", "uint16", "uint32", "uint64":
-		if _, err := strconv.ParseUint(value, 10, 64); err != nil {
+		// ParseUint permits no sign at all, which is the rule this column
+		// wants: "-1" is not a small unsigned number, it is not one.
+		if _, err := strconv.ParseUint(value, 10, bits); err != nil {
+			if errors.Is(err, strconv.ErrRange) {
+				return fmt.Errorf("unsigned integer value out of range for %s: %q", field.GoType, value)
+			}
 			return fmt.Errorf("invalid unsigned integer value: %q", value)
 		}
 	case "float32", "float64":
-		if _, err := strconv.ParseFloat(value, 64); err != nil {
+		if _, err := strconv.ParseFloat(value, bits); err != nil {
+			if errors.Is(err, strconv.ErrRange) {
+				return fmt.Errorf("float value out of range for %s: %q", field.GoType, value)
+			}
 			return fmt.Errorf("invalid float value: %q", value)
 		}
 	case "bool":
