@@ -1,0 +1,7 @@
+go test fuzz v1
+[]byte("\x10\x00")
+string("node-a")
+string("/api/*")
+string("0:0")
+string("/api/models")
+int32(100)
