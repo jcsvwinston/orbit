@@ -12,12 +12,13 @@ name: Release
 # this one via workflow_dispatch at the tag ref — github.ref_name is the tag
 # either way, and every job below keys off it.
 #
-# The `v*.*.*` filter is also what keeps module tags out: this repository cuts
-# six tags per release (`v1.9.3` plus `agent/v0.6.17`, `proto/…`,
-# `quarkbridge/…`, `quarkdatasource/…`, `server/v0.11.3`), and a GitHub tag
-# filter's `*` does not match `/`, so only the root tag can match. The
-# `root-tag` job below closes the remaining door, a manual dispatch at a module
-# ref.
+# The `v*.*.*` filter is also what keeps module tags out: a release round cuts
+# the root tag plus one tag for each module that changed — five tags share
+# `v1.9.3`'s commit, the root tag and four module ones (`agent/v0.6.17`,
+# `quarkbridge/…`, `quarkdatasource/…`, `server/v0.11.3`), with `proto/…`
+# joining in a round that touches it — and a GitHub tag filter's `*` does not
+# match `/`, so only the root tag can match. The `root-tag` job below closes
+# the remaining door, a manual dispatch at a module ref.
 on:
   push:
     tags:
@@ -35,11 +36,15 @@ jobs:
   # published binary is stamped with it. Running here at a module ref would
   # publish assets on the wrong release page under the wrong version.
   #
-  # It is also the first thing GoReleaser would trip over: with five module tags
-  # sharing the root tag's commit, `git tag --points-at HEAD` lists
-  # `agent/v0.6.17` first, and GoReleaser reports "current tag is not semver"
-  # and derives a nonsense version. The publish job pins the tag explicitly for
-  # that reason; this job makes sure the pinned value is the right shape.
+  # It also keeps a bad ref out of `GORELEASER_CURRENT_TAG` in the publish job.
+  # GoReleaser picks the root tag by itself when one is there: run at `v1.9.3`'s
+  # commit, where five tags share the commit (the root tag and four module
+  # ones), goreleaser v2.14.1 reports `current_tag=v1.9.3 previous_tag=v1.9.2` —
+  # it prefers the semver-valid tag out of the `git tag --points-at HEAD` list.
+  # Only with no root tag at HEAD does it fall back to a module tag and report
+  # "current tag is not semver", which is not a release scenario. Pinning the
+  # tag below is deliberate belt-and-braces, and this job is what makes sure the
+  # value being pinned is the right shape.
   root-tag:
     name: Root tag only
     runs-on: ubuntu-latest
@@ -195,15 +200,17 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Not optional here, and this is the line that makes a six-tag
-          # repository releasable at all. GoReleaser asks
-          # `git tag --points-at HEAD` first, and the root tag shares its
-          # commit with the five module tags cut in the same release: the
-          # answer comes back `agent/v0.6.17`, which is not a semantic version
-          # and is not this release. Naming the tag explicitly is what makes
-          # the archive names, the version stamped into the binary and the
-          # release the assets land on all agree with the tag we were
-          # dispatched at.
+          # Belt-and-braces, and deliberately kept — not a workaround for a
+          # bug. Left alone GoReleaser already gets this right: at `v1.9.3`'s
+          # commit, where five tags share the commit (the root tag and four
+          # module ones), goreleaser v2.14.1 reports
+          # `current_tag=v1.9.3 previous_tag=v1.9.2`, preferring the
+          # semver-valid tag out of `git tag --points-at HEAD`. Naming the tag
+          # pins the build to the ref this workflow was dispatched at instead
+          # of to whatever the checkout's tag heuristics resolve, so the
+          # archive names, the version stamped into the binary and the release
+          # the assets land on agree with that ref by construction rather than
+          # by a selection rule that could change under us.
           GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
 
       # One attestation over the checksum file covers every artifact listed in
