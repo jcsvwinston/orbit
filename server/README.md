@@ -199,8 +199,10 @@ This is also the only binary the repository publishes. Each ROOT release
 (`vX.Y.Z`, not the module tags) carries `admin-server` built by
 `.goreleaser.yaml` for six OS/arch combinations, one SPDX bill of materials
 per archive, a `checksums.txt`, a keyless cosign signature over it and a
-build provenance attestation — every other module here is a library with no
-`main` package and therefore nothing to publish. `.github/workflows/release.yml`
+build provenance attestation — every other module here is a library that
+ships no executable, and the runnable examples in the tree
+(`examples/minimal`, `agent/examples/fleet-app`) are demos rather than
+release artefacts. `.github/workflows/release.yml`
 builds them at the root tag ref, `release_asset_smoke.yml` verifies and runs
 a published one, and `website/docs/operations/verifying-releases.md` is the
 consumer-facing side of the same commands. Its Go API (`server.New`, config types) carries no

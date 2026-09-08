@@ -1,13 +1,16 @@
 # GoReleaser builds and publishes the ONE binary this repository ships.
 #
 # Scope: `server/cmd/admin-server` and nothing else. Orbit is six Go modules,
-# but only one of them has a `main` package. The other five — the root module
-# (the in-process panel), `agent`, `proto`, `quarkbridge` and `quarkdatasource`
-# — are libraries an application links into its own binary, so there is no
-# artifact of theirs to sign or to download; they are consumed with `go get`
-# and verified by the Go checksum database. In particular `agent/` has no
-# `cmd/` and no `main.go`: nothing here is missing for it, there is nothing to
-# publish.
+# but only one of them ships an executable: `server/cmd/admin-server`. The
+# other five — the root module (the in-process panel), `agent`, `proto`,
+# `quarkbridge` and `quarkdatasource` — are libraries an application links
+# into its own binary, so there is no artifact of theirs to sign or to
+# download; they are consumed with `go get` and verified by the Go checksum
+# database. In particular `agent/` has no `cmd/`; its only `main` package is
+# `examples/fleet-app`, a demo host application showing how to embed the
+# agent, not an agent you install. The root module likewise has a runnable
+# example of its own in `examples/minimal`. CI compiles both; no release
+# publishes either.
 #
 # The build runs inside the `server` module, not at the repository root — see
 # the `dir` key below — and the release workflow only ever runs at the ROOT
