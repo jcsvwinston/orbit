@@ -1,5 +1,11 @@
 name: CI
 
+# Every `uses:` below is pinned to a commit SHA with the tag kept in the
+# trailing comment. A tag is a pointer the action's owner can repoint; the SHA
+# is the code that was reviewed. The pins are kept current by the
+# github-actions entry of .github/dependabot.yml, which rewrites the SHA and
+# the comment together — read the rationale there before removing either.
+
 on:
   pull_request:
   push:
@@ -31,7 +37,7 @@ jobs:
       matrix:
         module: [., proto, agent, server, quarkbridge, quarkdatasource]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: PR title in English (QADR-0007)
         # The squash title becomes the changelog line and the release note of
         # an English-speaking product (QM-18). The title goes through an env
@@ -40,7 +46,7 @@ jobs:
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: bash scripts/ci/check_pr_title_english.sh
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
           cache: true
@@ -77,8 +83,8 @@ jobs:
       matrix:
         module: [., proto, agent, server, quarkbridge, quarkdatasource]
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
           cache: true
@@ -102,8 +108,8 @@ jobs:
     name: examples/minimal boots and serves /admin/login
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
           cache: true
@@ -146,10 +152,10 @@ jobs:
     name: Internal pins == latest sibling tags
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0 # the check compares against the full tag list
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
           cache: false
@@ -159,8 +165,8 @@ jobs:
     name: Go tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
           cache: true
@@ -226,8 +232,8 @@ jobs:
           --health-cmd "mysqladmin ping -h localhost -uroot -proot"
           --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
           cache: true
@@ -260,8 +266,8 @@ jobs:
       matrix:
         module: [., proto, agent, server, quarkbridge, quarkdatasource]
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
           cache: true
@@ -291,7 +297,7 @@ jobs:
     name: Docs product voice
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: bash scripts/ci/check_docs_product_voice.sh
       # The ADR index rots silently: orbit's said "Proposed" for a record
       # whose own frontmatter had been accepted for two months, and nucleus
@@ -337,8 +343,8 @@ jobs:
       run:
         working-directory: ui
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22
           cache: npm
@@ -365,8 +371,8 @@ jobs:
       run:
         working-directory: internal/admin/ui
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22
           cache: npm

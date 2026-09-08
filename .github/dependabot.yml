@@ -145,6 +145,20 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: eslint-plugin-react-hooks
         update-types: ["version-update:semver-major"]
+  # Every `uses:` in .github/workflows is pinned to the 40-hex commit SHA the
+  # tag pointed at, with the tag kept in a trailing comment
+  # (`uses: actions/checkout@3d3c42e… # v7`). A tag is a moving pointer the
+  # upstream owner can repoint at any commit, so a tag pin trusts that owner
+  # forever; a SHA pin trusts one reviewed commit.
+  #
+  # That trade only works with this entry present. Dependabot reads the
+  # trailing comment as the current version, opens a PR when a newer tag
+  # exists, and rewrites BOTH the SHA and the comment — so the pin keeps
+  # moving, but through a PR that runs CI. Without the bot the pins fossilise,
+  # and a fossilised pin is worse than a tag: it silently keeps the version
+  # that shipped the day it was written, security fixes included.
+  #
+  # Delete this entry and the pins stop moving. It is not optional decoration.
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly, day: monday }
