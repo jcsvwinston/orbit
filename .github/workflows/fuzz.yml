@@ -58,7 +58,10 @@ on:
     paths:
       - '.github/workflows/fuzz.yml'
       - 'scripts/ci/fuzz.sh'
-      - '**/a3_fuzz_*_test.go'
+      # a3_fuzz*_test.go, not a3_fuzz_*_test.go: the second needs a segment
+      # between the prefix and the suffix, so it silently misses
+      # internal/admin/a3_fuzz_test.go — three of the six targets.
+      - '**/a3_fuzz*_test.go'
       - '**/testdata/fuzz/**'
 
 permissions:
