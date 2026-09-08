@@ -61,6 +61,24 @@ of truth for toolchain advisories is the
 [Go vulnerability database](https://vuln.go.dev/). Orbit does not maintain
 its own advisory list.
 
+## Static analysis of this code
+
+`.github/workflows/codeql.yml` runs CodeQL over Orbit's Go on every pull
+request and once a week on `main`. `govulncheck` already reads our
+dependencies; this reads what we wrote. It follows a value from where it
+enters the program to where it is used, which is the only way to see a
+request parameter reaching a query, a path or a command several calls away —
+exactly the shape of the surfaces listed above.
+
+What it covers is what the workflow builds: the root module, `agent`,
+`server`, `quarkbridge` and `quarkdatasource`. `proto` is generated code and
+`internal/fleettest` is a test-only module, so neither is built and neither
+is analysed. For a compiled language CodeQL extracts what the build compiles,
+which is why the exclusion is a module missing from that build and not a
+`paths-ignore` glob (those do not apply to Go).
+
+The lane reports and does not gate: no check fails because of an alert.
+
 ## Verifying what you downloaded
 
 Each root release (`vX.Y.Z`) publishes the `admin-server` binary with an SPDX
