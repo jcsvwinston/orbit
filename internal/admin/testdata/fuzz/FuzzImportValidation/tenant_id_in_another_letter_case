@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("TENANT_ID,email\nother,a@b.c\n")

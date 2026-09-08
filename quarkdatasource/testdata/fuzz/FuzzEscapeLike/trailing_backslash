@@ -1,0 +1,3 @@
+go test fuzz v1
+string("50%_off\\")
+string("50%_off\\ this week")

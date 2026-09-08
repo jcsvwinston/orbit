@@ -1,0 +1,4 @@
+go test fuzz v1
+string("[\"abc\"]")
+string("acme")
+float64(3)

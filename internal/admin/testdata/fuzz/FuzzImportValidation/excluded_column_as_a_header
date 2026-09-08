@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("password_hash,email\nx,a@b.c\n")

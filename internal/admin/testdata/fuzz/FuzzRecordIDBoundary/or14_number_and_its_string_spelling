@@ -1,0 +1,4 @@
+go test fuzz v1
+string("[7, \"7\"]")
+string("acme")
+float64(3.5)
