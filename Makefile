@@ -7,12 +7,17 @@
 # Targets:
 #   * proto-*    — the admin observability proto (see proto/).
 #   * build/vet/test — workspace-wide Go convenience targets.
+#   * fuzz/fuzz-seeds — the native Go fuzz targets over the parsing surfaces.
 
 ROOT := $(shell pwd)
 
 # Allow callers to override executables (e.g. `make BUF=/opt/buf proto`).
 GO  ?= go
 BUF ?= buf
+
+# How long `make fuzz` mutates each target for. `make fuzz FUZZTIME=5m` before
+# touching one of the parsing surfaces those targets cover.
+FUZZTIME ?= 20s
 
 .DEFAULT_GOAL := help
 
@@ -84,3 +89,16 @@ test: ## go test ./... in every module.
 	cd $(ROOT)/server && $(GO) test ./...
 	cd $(ROOT)/quarkbridge && $(GO) test ./...
 	cd $(ROOT)/quarkdatasource && $(GO) test ./...
+
+# ----------------------------------------------------------------------------
+# Fuzzing — native Go fuzz targets over the surfaces that take untrusted input
+# (the Data Studio query string, record ids and tenant values, the CSV import,
+# the LIKE escaping, the fleet node-id filter). scripts/ci/fuzz.sh holds the
+# list; a target missing from it fails the seed lane.
+# ----------------------------------------------------------------------------
+.PHONY: fuzz fuzz-seeds
+fuzz: ## Fuzz every target for FUZZTIME (default 20s).
+	bash $(ROOT)/scripts/ci/fuzz.sh $(FUZZTIME)
+
+fuzz-seeds: ## Run every fuzz target over its seed corpus only (what CI does).
+	bash $(ROOT)/scripts/ci/fuzz.sh

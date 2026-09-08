@@ -1,0 +1,66 @@
+name: Fuzz
+
+# Weekly mutation runs of the native Go fuzz targets (scripts/ci/fuzz.sh).
+#
+# The pull-request lane runs the same targets over their seed corpora only.
+# Mutation lives here because `go test -fuzz` rebuilds the package and every
+# non-stdlib dependency with coverage instrumentation: measured at 20s wall
+# (102s CPU) for internal/admin alone on a 12-core machine with the ordinary
+# build already cached. That is minutes of rebuilding on the four packages
+# that hold targets — a cost worth paying once a week, not on every push.
+#
+# When a run goes red it has found an input that breaks a property. Go writes
+# it to <package>/testdata/fuzz/<Target>/<hash>; the step below uploads it, and
+# committing that file turns the finding into a seed the PR lane keeps
+# checking forever.
+#
+# Every `uses:` is pinned to a commit SHA with the tag in the trailing comment,
+# for the reason written at the top of ci.yml.
+
+on:
+  schedule:
+    # Mondays at 05:23 UTC, after the Scorecard run and away from the hour.
+    - cron: '23 5 * * 1'
+  workflow_dispatch:
+    inputs:
+      fuzztime:
+        description: 'Go duration to fuzz each target for (e.g. 45s, 5m)'
+        required: false
+        default: '45s'
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: Fuzz targets
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # A restored build cache can carry fuzz-corpus index entries whose files
+      # were pruned; `go test -fuzz` then dies on the first mutation with
+      # "open …/go-build/fuzz/…: no such file or directory", which reads like a
+      # finding and is not one. Starting from an empty corpus cache costs the
+      # week's accumulated inputs and buys a red that always means something.
+      - name: Start from an empty fuzz corpus cache
+        run: go clean -fuzzcache
+
+      - name: Fuzz every target
+        run: bash scripts/ci/fuzz.sh "${{ inputs.fuzztime || '45s' }}"
+
+      - name: Upload the inputs that failed
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: fuzz-failures
+          path: '**/testdata/fuzz/**'
+          retention-days: 30
+          if-no-files-found: ignore

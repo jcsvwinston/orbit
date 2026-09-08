@@ -11,6 +11,7 @@ conventions a pull request is expected to follow.
 - [Repository layout](#repository-layout)
 - [Development setup](#development-setup)
 - [Building and testing like CI](#building-and-testing-like-ci)
+- [Fuzzing the parsing surfaces](#fuzzing-the-parsing-surfaces)
 - [The two web UIs](#the-two-web-uis)
 - [Protobuf changes](#protobuf-changes)
 - [Local guards](#local-guards)
@@ -76,6 +77,30 @@ proves your `go.mod` is honest.
 
 If you bump a sibling-module `require`, `scripts/ci/check_internal_pins.sh`
 verifies every internal pin matches the latest sibling tag.
+
+## Fuzzing the parsing surfaces
+
+Six native Go fuzz targets cover the code that reads untrusted input: the Data
+Studio query string (`order_by`, filters, search, pagination), record ids and
+tenant values at the API boundary, the CSV import validator, the LIKE escaping
+of the Quark datasource, and the fleet node-id filter shared by the live bus
+and the replay buffer. Each one asserts a property — a round trip, an
+allow-list, an invariance — not merely that the code does not panic; the
+comment above each target says which, and why that property has a history.
+
+```bash
+make fuzz-seeds          # every seed corpus, deterministic, seconds — what CI runs
+make fuzz                # 20s of mutation per target
+make fuzz FUZZTIME=5m    # before changing one of those surfaces
+```
+
+Both forms go through `scripts/ci/fuzz.sh`, which holds the list of targets and
+fails if a `func FuzzXxx(f *testing.F)` in the tree is missing from it — an
+unlisted target is one the weekly `Fuzz` workflow never runs.
+
+When fuzzing finds an input that breaks a property, Go writes it to
+`<package>/testdata/fuzz/<Target>/<hash>`. Commit that file: it becomes a seed,
+and every later pull request re-checks it in seconds.
 
 ## The two web UIs
 
