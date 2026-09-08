@@ -37,14 +37,17 @@ jobs:
   # publish assets on the wrong release page under the wrong version.
   #
   # It also keeps a bad ref out of `GORELEASER_CURRENT_TAG` in the publish job.
-  # GoReleaser picks the root tag by itself when one is there: run at `v1.9.3`'s
-  # commit, where five tags share the commit (the root tag and four module
-  # ones), goreleaser v2.14.1 reports `current_tag=v1.9.3 previous_tag=v1.9.2` —
-  # it prefers the semver-valid tag out of the `git tag --points-at HEAD` list.
-  # Only with no root tag at HEAD does it fall back to a module tag and report
-  # "current tag is not semver", which is not a release scenario. Pinning the
-  # tag below is deliberate belt-and-braces, and this job is what makes sure the
-  # value being pinned is the right shape.
+  # Left to itself GoReleaser does NOT look for the root tag: `getTag` in
+  # v2.14.1 (internal/pipe/git/git.go) takes the FIRST line of
+  # `git tag --points-at HEAD --sort=-version:refname`, with no semver
+  # preference. At `v1.9.3`'s commit, where five tags share the commit, that
+  # first line is `v1.9.3` — but only because every module prefix in this
+  # repository (agent, proto, quarkbridge, quarkdatasource, server) sorts
+  # below "v". A module directory named `web/` or `worker/` would take the
+  # release instead, silently. That accident is exactly why the publish job
+  # pins `GORELEASER_CURRENT_TAG`: the pin is what makes the choice
+  # deterministic, and this job is what makes sure the pinned value is a root
+  # tag in the first place.
   root-tag:
     name: Root tag only
     runs-on: ubuntu-latest
@@ -200,17 +203,15 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Belt-and-braces, and deliberately kept — not a workaround for a
-          # bug. Left alone GoReleaser already gets this right: at `v1.9.3`'s
-          # commit, where five tags share the commit (the root tag and four
-          # module ones), goreleaser v2.14.1 reports
-          # `current_tag=v1.9.3 previous_tag=v1.9.2`, preferring the
-          # semver-valid tag out of `git tag --points-at HEAD`. Naming the tag
-          # pins the build to the ref this workflow was dispatched at instead
-          # of to whatever the checkout's tag heuristics resolve, so the
-          # archive names, the version stamped into the binary and the release
-          # the assets land on agree with that ref by construction rather than
-          # by a selection rule that could change under us.
+          # Load-bearing, not decoration. Without it GoReleaser takes the
+          # first line of `git tag --points-at HEAD --sort=-version:refname`
+          # (v2.14.1, internal/pipe/git/git.go): a sort order, not a semver
+          # rule. Today that returns `v1.9.3` at the root tag's commit only
+          # because every module prefix here sorts below "v"; a module named
+          # `web/` would win instead. Naming the tag pins the build to the ref
+          # this workflow was dispatched at, so the archive names, the version
+          # stamped into the binary and the release the assets land on agree
+          # with that ref by construction.
           GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
 
       # One attestation over the checksum file covers every artifact listed in
