@@ -144,9 +144,10 @@ func decimalSpelling(id string) string {
 // The property is idReading: for every kind and every id, parseID either
 // returns the value that reading names, or refuses. It is not the
 // implementation restated — where the two disagreed, the code was wrong: it
-// parsed every signed kind at 64 bits, so an id of 300 was accepted for an
-// int8 key and sent to the store as a row it cannot hold, against a doc
-// comment that says the id is narrowed to the key's Go kind.
+// parsed every integer kind at 64 bits, signed and unsigned alike, so an id
+// of 300 was accepted for an int8 key and sent to the store as a row it
+// cannot hold, against a doc comment that says the id is narrowed to the
+// key's Go kind.
 //
 // Also asserted: an error carries no value and a value carries no error; the
 // value reaching the query renders to the canonical decimal spelling of the
