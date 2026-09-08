@@ -670,13 +670,29 @@ func datetimeShape(value string) bool {
 	default:
 		return false
 	}
-	if len(value) < 19 || value[13] != ':' || value[16] != ':' {
+	// The clock is scanned from the separator rather than read at fixed
+	// offsets, because the hour is the one field of these layouts that
+	// time.Parse does not require to be padded: "15" is read with a
+	// non-fixed width, so "2026-09-08T1:00:00Z" names an instant the import
+	// takes. Minute and second come from "04" and "05", which are fixed at
+	// two digits, so only the hour varies.
+	clock := value[11:]
+	digits := 0
+	hour := 0
+	for digits < 2 && digits < len(clock) && clock[digits] >= '0' && clock[digits] <= '9' {
+		hour = hour*10 + int(clock[digits]-'0')
+		digits++
+	}
+	if digits == 0 || hour > 23 {
 		return false
 	}
-	hour, okH := twoDigitNumber(value[11:13])
-	minute, okM := twoDigitNumber(value[14:16])
-	second, okS := twoDigitNumber(value[17:19])
-	return okH && hour <= 23 && okM && minute <= 59 && okS && second <= 60
+	clock = clock[digits:]
+	if len(clock) < 6 || clock[0] != ':' || clock[3] != ':' {
+		return false
+	}
+	minute, okM := twoDigitNumber(clock[1:3])
+	second, okS := twoDigitNumber(clock[4:6])
+	return okM && minute <= 59 && okS && second <= 60
 }
 
 // twoDigitNumber reads exactly two ASCII digits, which is what every fixed
@@ -779,7 +795,8 @@ func TestImportValidation_ACellPastTheColumnsWidthIsRefused(t *testing.T) {
 // The table is the awkward corner of each kind: the float spellings strconv
 // takes and a hand-written scan would not invent (the specials, a hex
 // literal, a bare point), the RFC3339 forms with a fraction and an offset,
-// and the letter cases.
+// the letter cases, and the unpadded hour time.Parse takes because its
+// "15" is not a fixed-width field.
 func TestImportValidation_TheReadingRefusesNothingTheValidatorTakes(t *testing.T) {
 	mi := fuzzModelInfo()
 
@@ -791,7 +808,7 @@ func TestImportValidation_TheReadingRefusesNothingTheValidatorTakes(t *testing.T
 		{"level", []string{"0", "007", "+7", "-0", "127", "-128"}},
 		{"visits", []string{"0", "00042", "65535"}},
 		{"age", []string{"9223372036854775807", "-9223372036854775808", "+0"}},
-		{"starts_at", []string{"2026-09-08", "2026-09-08 15:04:05", "2026-09-08T15:04:05Z", "2026-09-08T15:04:05.123456789+02:00", "2026-09-08t15:04:05z", "0000-01-01", "2026-02-29"}},
+		{"starts_at", []string{"2026-09-08", "2026-09-08 15:04:05", "2026-09-08T15:04:05Z", "2026-09-08T15:04:05.123456789+02:00", "2026-09-08t15:04:05z", "0000-01-01", "2026-02-29", "2026-09-08T1:00:00Z", "2026-09-08 1:00:00", "0000-01-01T0:00:00Z"}},
 		{"is_active", []string{"TRUE", "False", "1", "0", "tRuE"}},
 		{"email", []string{"anything at all", "\x00", "300"}},
 	}

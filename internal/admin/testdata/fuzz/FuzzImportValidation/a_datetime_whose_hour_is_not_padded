@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("starts_at,email\n2026-09-08T1:00:00Z,a@b.c\n")
