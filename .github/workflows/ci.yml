@@ -161,6 +161,15 @@ jobs:
           cache: false
       - run: bash scripts/ci/check_internal_pins.sh
 
+      # The other half of the same rule. `check_internal_pins.sh` says the
+      # floors this repository declares are the right ones; this says nobody
+      # else may move them. Dependabot's ignore lists are hand-written per
+      # directory, and `github.com/jcsvwinston/orbit/*` does not match the
+      # bare `github.com/jcsvwinston/orbit` — which is how quarkdatasource's
+      # root requirement sat unignored.
+      - name: Every suite floor is ignored by Dependabot
+        run: bash scripts/ci/check_dependabot_floors.sh
+
   # -------------------------------------------------------------------------
   # The other kind of pin, and the workflows that carry it.
   #
