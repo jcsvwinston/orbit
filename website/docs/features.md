@@ -80,6 +80,18 @@ differently (Nucleus lower-cases both sides;
 Quark escapes `%` and `_` in the text per engine), so do not expect identical
 results across them.
 
+**What the grid refuses.** A column the panel does not show is not a sort key
+and not a filter. `?order_by=` and the filter parameters resolve only against
+the fields the panel would render, so a request naming an excluded field —
+`password_hash`, say — is refused instead of reaching the store's `ORDER BY`,
+where it would have paginated the table in that hidden column's order and
+turned the page numbers into a comparison oracle over a value the schema
+endpoint, the exporters and the audit redactor all take care never to emit.
+The import validator reads a cell against the width its column declares, in
+arbitrary precision rather than through the validator's own conversions, so
+`300` in an `int8` column and `70000` in a `uint16` one fail the row instead
+of reaching the writer.
+
 ![Data Studio with the Articles model selected: a sidebar listing the registered models with their record counts, and a grid showing seven article records with their real column values](./img/orbit-data-studio-light.png)
 
 What it lists comes entirely from the host application: a model appears
