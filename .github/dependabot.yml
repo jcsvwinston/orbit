@@ -10,10 +10,16 @@ updates:
     groups:
       go-deps: { patterns: ["*"] }
     ignore:
+      # This directory is a Go WORKSPACE root: go.work lists seven modules,
+      # so an update here rewrites every member's go.mod and go.sum, not just
+      # this one's. That is how Dependabot came to propose raising
+      # `github.com/jcsvwinston/orbit` inside quarkdatasource (#450) while
+      # this list carried only `orbit/*`, which does not match the bare path.
       - dependency-name: github.com/jcsvwinston/nucleus
       - dependency-name: github.com/jcsvwinston/nucleus/*
       - dependency-name: github.com/jcsvwinston/quark
       - dependency-name: github.com/jcsvwinston/quark/*
+      - dependency-name: github.com/jcsvwinston/orbit
       - dependency-name: github.com/jcsvwinston/orbit/*
   # proto/ is the protocol contract and a leaf every fleet module pins by
   # tag (ADR-006): its Go dependencies (connect-go, protobuf-go) move by
