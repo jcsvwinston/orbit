@@ -15,6 +15,11 @@ ROOT := $(shell pwd)
 GO  ?= go
 BUF ?= buf
 
+# The workflow linter, pinned exactly — the same rule the action pins in
+# .github/workflows follow. Keep in step with the version the `Lint the
+# workflows themselves` step of .github/workflows/ci.yml runs.
+ACTIONLINT_VERSION ?= v1.7.12
+
 # How long `make fuzz` mutates each target for. `make fuzz FUZZTIME=5m` before
 # touching one of the parsing surfaces those targets cover.
 FUZZTIME ?= 20s
@@ -102,3 +107,19 @@ fuzz: ## Fuzz every target for FUZZTIME (default 20s).
 
 fuzz-seeds: ## Run every fuzz target over its seed corpus only (what CI does).
 	bash $(ROOT)/scripts/ci/fuzz.sh
+
+# ----------------------------------------------------------------------------
+# Workflow guards — the `workflows` lane of .github/workflows/ci.yml, locally.
+#
+# check_action_pins.sh asserts every `uses:` is a commit SHA carrying its tag;
+# actionlint parses the workflows themselves. actionlint shells out to
+# shellcheck for the `run:` scripts when it finds one on PATH: CI's
+# ubuntu-latest ships it, so a local run without shellcheck installed checks
+# strictly less than CI does. `brew install shellcheck` closes that gap.
+# ----------------------------------------------------------------------------
+.PHONY: workflow-guards
+workflow-guards: ## Check the action pins and lint the workflows (what CI does).
+	bash $(ROOT)/scripts/ci/check_action_pins.sh
+	@command -v shellcheck >/dev/null 2>&1 || \
+	  echo "note: shellcheck not on PATH — actionlint will skip the run: scripts CI checks"
+	$(GO) run github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VERSION) -no-color

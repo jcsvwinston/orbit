@@ -159,6 +159,15 @@ updates:
   # that shipped the day it was written, security fixes included.
   #
   # Delete this entry and the pins stop moving. It is not optional decoration.
+  # scripts/ci/check_action_pins.sh is the other half: it fails CI if a `uses:`
+  # arrives as a tag or as a SHA with no comment for this bot to read.
+  #
+  # Grouped like the Go and npm ecosystems above, and for the same reason: the
+  # eight workflows share sixteen actions across forty-eight `uses:` lines, so
+  # an ungrouped week opens one pull request per action, each rewriting the
+  # same files and each conflicting with the last.
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly, day: monday }
+    groups:
+      github-actions: { patterns: ["*"] }

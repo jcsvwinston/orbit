@@ -161,6 +161,40 @@ jobs:
           cache: false
       - run: bash scripts/ci/check_internal_pins.sh
 
+  # -------------------------------------------------------------------------
+  # The other kind of pin, and the workflows that carry it.
+  #
+  # `internal-pins` above watches what this repository requires. This lane
+  # watches what it *runs*: every `uses:` in the eight workflows is pinned to
+  # a 40-hex commit SHA with its tag in a trailing comment. Those pins were
+  # placed by hand and, until now, held by review alone — Quark and Nucleus
+  # both grew a guard for this and Orbit was the one left without, so the
+  # next `uses: actions/checkout@v7` would simply have landed.
+  #
+  # actionlint is the second half. A malformed workflow used to be found by
+  # running it — on main, after the merge. It parses all eight here: unknown
+  # keys, `needs:`/matrix references that name nothing, expressions over a
+  # context that does not exist, and, through the shellcheck that
+  # ubuntu-latest ships, the `run:` scripts themselves. It is pinned to an
+  # exact version for the reason the step above enforces: a floating
+  # `@latest` in CI is the same trust it forbids.
+  # -------------------------------------------------------------------------
+  workflows:
+    name: Workflow pins and lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Every action is pinned to a commit SHA
+        run: bash scripts/ci/check_action_pins.sh
+      - name: Lint the workflows themselves
+        # Keep this version in step with ACTIONLINT_VERSION in the Makefile,
+        # which is how `make workflow-guards` reproduces this lane locally.
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -no-color
+
   test:
     name: Go tests
     runs-on: ubuntu-latest
@@ -421,6 +455,7 @@ jobs:
       - tidy
       - example-minimal
       - internal-pins
+      - workflows
       - test
       - datastudio-engines
       - vuln
@@ -439,6 +474,7 @@ jobs:
             tidy ${{ needs.tidy.result }}
             example-minimal ${{ needs.example-minimal.result }}
             internal-pins ${{ needs.internal-pins.result }}
+            workflows ${{ needs.workflows.result }}
             test ${{ needs.test.result }}
             datastudio-engines ${{ needs.datastudio-engines.result }}
             vuln ${{ needs.vuln.result }}
