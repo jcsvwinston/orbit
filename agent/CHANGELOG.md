@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.18](https://github.com/jcsvwinston/orbit/compare/agent/v0.6.17...agent/v0.6.18) (2026-09-10)
+
+
+### Fixed
+
+* **deps:** align quarkdatasource to the set, and teach align_set to target quark modules ([#456](https://github.com/jcsvwinston/orbit/issues/456)) ([8d2dd1c](https://github.com/jcsvwinston/orbit/commit/8d2dd1c5a9d4f185c6c65c87748a2a8de5cdd9dc))
+
 ## [0.6.17](https://github.com/jcsvwinston/orbit/compare/agent/v0.6.16...agent/v0.6.17) (2026-09-07)
 
 
