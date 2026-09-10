@@ -30,6 +30,14 @@
 #   bash scripts/release/align_set.sh --manifest ../quantum/versions.yaml
 #     # reads modules.quark / modules.nucleus from the umbrella's versions.yaml
 #
+#   Add --quark-module <path>=<version> (repeatable) for the quark modules this
+#   repository pins — today `quarkdatasource` pins `drivers/sqlite`. They have
+#   their own tag series, so they cannot be derived from the root version, and
+#   the caller (the release train, which has the quark checkout) names them.
+#   Leaving one behind is not cosmetic: quark v1.13.0 dropped
+#   `internal/driverclassify`, which `drivers/sqlite v0.1.0` imports, so the
+#   old pin does not build against the new root at all.
+#
 # Modes (combine with either target form above):
 #   (default)   rewrite pins, tidy each touched module, commit ONCE as
 #               `fix(deps): align <modules> to the set (nucleus vX, quark vY)`
@@ -61,6 +69,7 @@ DATASOURCE_EDGE_MODULE="quarkdatasource"
 
 NUCLEUS=""
 QUARK=""
+QUARK_MODULES=""   # "<module path> <version>" per line, from --quark-module
 MANIFEST=""
 MODE="write"   # write | no-commit | dry-run | check
 
@@ -71,6 +80,17 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --nucleus)  NUCLEUS="${2:?--nucleus needs a version}"; shift 2 ;;
     --quark)    QUARK="${2:?--quark needs a version}"; shift 2 ;;
+    # Quark publishes its drivers as modules of its own, and this repository
+    # pins one of them. They are NOT derivable from the root version — each
+    # has its own series — so the caller, which has the quark checkout, names
+    # them: --quark-module drivers/sqlite=v0.2.0 (repeatable).
+    --quark-module)
+      _qm="${2:?--quark-module needs <path>=<version>}"
+      case "$_qm" in
+        */*=v[0-9]*) QUARK_MODULES+="github.com/$OWNER/quark/${_qm%%=*} ${_qm#*=}"$'\n' ;;
+        *) echo "FAIL: --quark-module wants <path>=<vX.Y.Z>, got '$_qm'" >&2; exit 2 ;;
+      esac
+      shift 2 ;;
     --manifest) MANIFEST="${2:?--manifest needs a path}"; shift 2 ;;
     --dry-run)  MODE="dry-run"; shift ;;
     --check)    MODE="check"; shift ;;
@@ -147,6 +167,10 @@ want_for() {
   case "$path" in
     "github.com/$OWNER/nucleus") echo "$NUCLEUS" ;;
     "github.com/$OWNER/quark")   echo "$QUARK" ;;
+    # A quark module the caller named. Left alone when it did not: a pin this
+    # script cannot target is better untouched than guessed — but the set will
+    # not build if it lags, which is why the caller passes every one it finds.
+    "github.com/$OWNER/quark/"*) awk -v p="$path" '$1 == p {print $2}' <<<"$QUARK_MODULES" ;;
     "$MODULE_ROOT")
       local want
       want=$(sibling_latest "$MODULE_ROOT")
