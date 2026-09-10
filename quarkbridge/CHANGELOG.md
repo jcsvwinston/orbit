@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.22](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v1.8.21...quarkbridge/v1.8.22) (2026-09-10)
+
+
+### Fixed
+
+* **deps:** align quarkdatasource to the set, and teach align_set to target quark modules ([#456](https://github.com/jcsvwinston/orbit/issues/456)) ([8d2dd1c](https://github.com/jcsvwinston/orbit/commit/8d2dd1c5a9d4f185c6c65c87748a2a8de5cdd9dc))
+
 ## [1.8.21](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v1.8.20...quarkbridge/v1.8.21) (2026-09-07)
 
 

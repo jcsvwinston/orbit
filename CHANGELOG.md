@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.9.4](https://github.com/jcsvwinston/orbit/compare/v1.9.3...v1.9.4) (2026-09-10)
+
+
+### Fixed
+
+* **deps:** align quarkdatasource to the set, and teach align_set to target quark modules ([#456](https://github.com/jcsvwinston/orbit/issues/456)) ([8d2dd1c](https://github.com/jcsvwinston/orbit/commit/8d2dd1c5a9d4f185c6c65c87748a2a8de5cdd9dc))
+* refuse a hidden column as a sort key, a non-digit status class, and a number past the width its column declares ([#454](https://github.com/jcsvwinston/orbit/issues/454)) ([7b1df2a](https://github.com/jcsvwinston/orbit/commit/7b1df2a3f919e837dbb97cfdc20b5077611c2747))
+
 ## [1.9.3](https://github.com/jcsvwinston/orbit/compare/v1.9.2...v1.9.3) (2026-09-07)
 
 

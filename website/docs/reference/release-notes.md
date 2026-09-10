@@ -6,7 +6,7 @@ description: What changed in each Orbit release, in plain terms.
 
 # Release notes
 
-The current release is **v1.9.3**. <!-- x-release-please-version -->
+The current release is **v1.9.4**. <!-- x-release-please-version -->
 
 Every heading below is a version of the **root module**
 (`github.com/jcsvwinston/orbit`) — the one an application mounts for the
@@ -16,6 +16,31 @@ The fleet modules (`agent`, `server`, `proto`) release independently with their
 own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
+
+## v1.9.4 — 2026-09-10
+
+One fix in the Data Studio table, and the alignment to Quantum 1.30.0.
+
+**The table refuses three inputs it used to take.** A hidden column can no
+longer be used as a sort key — sorting by a column the caller cannot see is a
+way to read its order without reading its values. A status class has to be
+digits, and a number wider than the width its column declares is rejected
+rather than truncated. Found by the fuzz targets added over the request
+surfaces in this cycle.
+
+**Alignment.** Every module now requires Nucleus v1.26.0 and Quark v1.13.0,
+the versions Quantum 1.30.0 certifies, and `quarkdatasource` moves to
+`quark/drivers/sqlite v0.2.0`. That last pin had to move: Quark v1.13.0
+takes `internal/driverclassify` out of its root module, and the v0.1.x driver
+imports it, so the old pin does not build against the new library at all.
+
+Moving it is also a graph saving. Those predicates covered all six engines,
+so requiring one driver used to pull the other five in: `pgx`,
+`go-sql-driver/mysql`, `go-mssqldb` and `sijms/go-ora` leave
+`quarkdatasource`'s requirements with this release.
+
+Fleet tags cut alongside: `agent/v0.6.18`, `server/v0.11.4`,
+`quarkbridge/v1.8.22`, `quarkdatasource/v1.8.23`.
 
 ## v1.9.3 — 2026-09-08
 
