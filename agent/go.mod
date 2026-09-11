@@ -5,7 +5,7 @@ go 1.26.6
 require (
 	connectrpc.com/connect v1.20.0
 	github.com/google/uuid v1.6.0
-	github.com/jcsvwinston/nucleus v1.26.0
+	github.com/jcsvwinston/nucleus v1.27.0
 	github.com/jcsvwinston/orbit/proto v0.4.4
 	github.com/prometheus/client_golang v1.24.1
 	golang.org/x/net v0.58.0
