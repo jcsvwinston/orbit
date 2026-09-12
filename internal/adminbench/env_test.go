@@ -90,7 +90,7 @@ func contentModule() nucleus.ModuleSpec {
 // probe and torn down by the parent test.
 //
 // The application is what an author WRITES: a default config, one module with
-// models, and orbit.Module with the four fields examples/minimal uses. No
+// models, and orbit.Module with the four fields the quick start uses. No
 // probe reaches inside the panel to wire a capability into place — a control
 // that only works because the bench arranged it measures the bench.
 type env struct {
