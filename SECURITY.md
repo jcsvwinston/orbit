@@ -86,9 +86,7 @@ bill of materials per archive, a checksum file, a keyless cosign signature
 over that checksum file and a GitHub build provenance attestation. Every
 other module is a library and ships no executable of its own; those arrive
 through the Go module proxy, where the checksum database is the equivalent
-guarantee. The runnable examples in the tree (`examples/minimal`,
-`agent/examples/fleet-app`) are demos, not release artefacts, and are
-published nowhere.
+guarantee.
 
 Check a downloaded binary before you run it — the commands are in
 `website/docs/operations/verifying-releases.md`. An asset that verifies

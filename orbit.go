@@ -51,8 +51,9 @@ const defaultAuditMaxSize = 10000
 //
 //   - Panel (what almost every app uses): Prefix, Title, Bootstrap*,
 //     AuthDatabase, MultiTenant*, Environment, MigrationsPath, AuditMaxSize,
-//     LiveExcludePatterns, TraceURLTemplate. Nothing else is required; the
-//     four-field examples/minimal is a complete production shape.
+//     LiveExcludePatterns, TraceURLTemplate. Nothing else is required: a
+//     prefix, a title and the bootstrap fields are a complete production
+//     shape.
 //   - Cluster live-feed relay (opt-in, off by default): the Cluster* fields.
 //     They only matter once ClusterEnabled is true; in particular, NO Redis
 //     is needed to run the panel — ClusterRedisURL is read exclusively by

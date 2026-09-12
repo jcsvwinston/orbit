@@ -100,54 +100,6 @@ jobs:
             exit 1
           fi
 
-  # examples/minimal is advertised as runnable. It compiled for releases
-  # while refusing to boot ("the sqlite driver ships as its own module and is
-  # not imported yet"), because CI only built it. Boot it and ask for the
-  # login page: that is what a newcomer does first.
-  example-minimal:
-    name: examples/minimal boots and serves /admin/login
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: build
-        working-directory: examples/minimal
-        run: go build -o /tmp/orbit-minimal .
-      - name: boot and curl /admin/login
-        working-directory: examples/minimal
-        env:
-          ADMIN_BOOTSTRAP_PASSWORD: ci-only-password-1234
-          # nucleus.yaml says 8080; the env override keeps the job independent
-          # of whatever else a runner has on that port.
-          NUCLEUS_PORT: "18080"
-        run: |
-          /tmp/orbit-minimal > /tmp/orbit-minimal.log 2>&1 &
-          pid=$!
-          trap 'kill $pid 2>/dev/null || true' EXIT
-          for i in $(seq 1 30); do
-            if curl -fsS -o /tmp/login.html http://127.0.0.1:18080/admin/login; then
-              echo "login page served after ${i}s"
-              # The panel serves its SPA shell, stamped with the mount prefix.
-              grep -q 'nucleus-admin-prefix' /tmp/login.html || { echo "::error::/admin/login did not serve the panel shell" >&2; cat /tmp/login.html; exit 1; }
-              exit 0
-            fi
-            if ! kill -0 $pid 2>/dev/null; then
-              echo "::error::example exited before serving" >&2
-              cat /tmp/orbit-minimal.log
-              exit 1
-            fi
-            sleep 1
-          done
-          echo "::error::example did not serve /admin/login within 30s" >&2
-          cat /tmp/orbit-minimal.log
-          exit 1
-
-  # A sibling-module require that lags the sibling's latest tag ships stale
-  # code to consumers while the workspace hides it. See the script header for
-  # the two releases that proved it.
   internal-pins:
     name: Internal pins == latest sibling tags
     runs-on: ubuntu-latest
@@ -462,7 +414,6 @@ jobs:
     needs:
       - standalone
       - tidy
-      - example-minimal
       - internal-pins
       - workflows
       - test
@@ -481,7 +432,6 @@ jobs:
           RESULTS: |
             standalone ${{ needs.standalone.result }}
             tidy ${{ needs.tidy.result }}
-            example-minimal ${{ needs.example-minimal.result }}
             internal-pins ${{ needs.internal-pins.result }}
             workflows ${{ needs.workflows.result }}
             test ${{ needs.test.result }}

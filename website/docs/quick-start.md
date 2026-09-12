@@ -119,10 +119,7 @@ Orbit needs no per-model configuration.
 Model registration is a Nucleus concept, not an Orbit one — see the
 [Nucleus quickstart](/nucleus/getting-started/quickstart) and
 [models and database](/nucleus/concepts/models-and-database) for tags,
-relations, and real migrations. The runnable
-[`examples/minimal`](https://github.com/jcsvwinston/orbit/tree/main/examples/minimal)
-in the repository is exactly this page as a program: one `Note` model, one
-`Mount`, a populated Data Studio.
+relations, and real migrations.
 
 ## The bootstrap user
 
