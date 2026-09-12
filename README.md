@@ -93,16 +93,6 @@ its own session-based auth below that prefix.
 The zero value is valid too — `orbit.Module(orbit.Config{})` mounts under
 `/admin` with sensible defaults.
 
-## Examples
-
-Two runnable examples, both built by CI:
-
-- [`examples/minimal`](examples/minimal) — the in-process admin panel on a
-  Nucleus app (this Quick start, as a program you can `go run`).
-- [`agent/examples/fleet-app`](agent/examples/fleet-app) — the cluster leg:
-  a host app wired with the Orbit agent, shipping observability to a
-  standalone [admin server](server) you run alongside it.
-
 ## Signing in against your directory
 
 If the host application declares an authentication chain, the admin panel

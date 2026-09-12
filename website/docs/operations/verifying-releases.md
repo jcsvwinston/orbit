@@ -24,11 +24,8 @@ contract and the two Quark adapters are **libraries**: they ship no
 executable of their own — your application links them and ships them inside
 *your* binary. So there is no `orbit-agent` download and nothing is missing:
 you get those with `go get`, and the Go checksum database is what proves the
-source you received is the source that was published. The tree does carry
-runnable example programs (`examples/minimal`, `agent/examples/fleet-app`),
-but those are demos that CI compiles and no release publishes. The signatures
-on this page are for the one artefact that is downloaded rather than
-compiled.
+source you received is the source that was published. The signatures on this
+page are for the one artefact that is downloaded rather than compiled.
 
 A signed release carries:
 
