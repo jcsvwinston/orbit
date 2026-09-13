@@ -56,7 +56,8 @@ func TestHandleLoginPOST_UnknownUserBurnsBcryptCompare(t *testing.T) {
 
 	if _, err := db.Exec(`CREATE TABLE nucleus_admin_users (
 		id TEXT PRIMARY KEY, username TEXT, email TEXT,
-		password_hash TEXT, is_superuser INTEGER)`); err != nil {
+		password_hash TEXT, is_superuser INTEGER,
+		is_active INTEGER NOT NULL DEFAULT 1)`); err != nil {
 		t.Fatalf("create table: %v", err)
 	}
 	hash, err := auth.HashPassword("correct-horse-battery-staple")
@@ -64,7 +65,7 @@ func TestHandleLoginPOST_UnknownUserBurnsBcryptCompare(t *testing.T) {
 		t.Fatalf("HashPassword: %v", err)
 	}
 	if _, err := db.Exec(
-		`INSERT INTO nucleus_admin_users VALUES ('1','admin','admin@example.com',?,1)`,
+		`INSERT INTO nucleus_admin_users VALUES ('1','admin','admin@example.com',?,1,1)`,
 		hash,
 	); err != nil {
 		t.Fatalf("insert user: %v", err)

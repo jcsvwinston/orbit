@@ -1,6 +1,7 @@
 import type {
   Session, SessionsResponse, Record as AppRecord, AuditLogPage, AuditLogQuery, RBACPolicy, RBACPoliciesResponse,
   HealthCheck, LiveRequest, LiveQuery, LiveFeedEntry, ModelsResponse, ModelSchema, PaginatedResult, SystemSnapshot,
+  Operator, OperatorsResponse,
 } from '@/types'
 import { buildAdminPath } from '@/config'
 
@@ -335,6 +336,69 @@ export async function getAuditLogs(query: AuditLogQuery = {}): Promise<AuditLogP
     pageSize: response.page_size ?? query.page_size ?? 50,
     totalPages: response.total_pages ?? 1,
   }
+}
+
+// ── Operators ──
+//
+// The people who sign in to the panel. The routes answer 501 when the
+// application authenticates its operators somewhere else, and 409 — with the
+// reason in the message — when a change would lock everyone out.
+
+export async function getOperators(): Promise<OperatorsResponse> {
+  const response = await fetchAPI<{ operators?: Operator[]; total?: number }>('/api/admin-users')
+  const operators = (response.operators ?? []).map((op) => ({ ...op, roles: op.roles ?? [] }))
+  return { operators, total: response.total ?? operators.length }
+}
+
+export interface NewOperator {
+  username: string
+  email: string
+  password: string
+  is_superuser: boolean
+  roles: string[]
+}
+
+export async function createOperator(input: NewOperator): Promise<Operator> {
+  return fetchAPI<Operator>('/api/admin-users', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+export async function updateOperator(
+  id: string,
+  patch: { email?: string; is_superuser?: boolean },
+): Promise<Operator> {
+  return fetchAPI<Operator>(`/api/admin-users/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: JSON.stringify(patch),
+  })
+}
+
+export async function setOperatorPassword(id: string, password: string): Promise<void> {
+  await fetchAPI(`/api/admin-users/${encodeURIComponent(id)}/password`, {
+    method: 'POST',
+    body: JSON.stringify({ password }),
+  })
+}
+
+export async function setOperatorActive(id: string, active: boolean): Promise<void> {
+  const verb = active ? 'enable' : 'disable'
+  await fetchAPI(`/api/admin-users/${encodeURIComponent(id)}/${verb}`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
+}
+
+export async function deleteOperator(id: string): Promise<void> {
+  await fetchAPI(`/api/admin-users/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export async function setOperatorRole(id: string, role: string, grant: boolean): Promise<void> {
+  await fetchAPI(`/api/admin-users/${encodeURIComponent(id)}/roles`, {
+    method: grant ? 'POST' : 'DELETE',
+    body: JSON.stringify({ role }),
+  })
 }
 
 // ── RBAC ──

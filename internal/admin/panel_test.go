@@ -40,7 +40,13 @@ func (AdminUser) TableName() string {
 type testAdminAuth struct {
 	user  *auth.User
 	allow map[string]bool
+	// operators, when set, makes this provider one the panel may manage
+	// operators through — the same contract *DatabaseAdminAuth satisfies.
+	operators *operatorStore
 }
+
+// OperatorStore implements operatorManager when a test wires a store.
+func (a *testAdminAuth) OperatorStore() *operatorStore { return a.operators }
 
 func (a *testAdminAuth) Authenticate(_ *http.Request) (*auth.User, error) {
 	if a.user == nil {

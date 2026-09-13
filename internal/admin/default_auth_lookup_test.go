@@ -61,7 +61,8 @@ func openAdminUsersSQLite(t *testing.T) *sql.DB {
 	t.Cleanup(func() { sqlDB.Close() })
 	if _, err := sqlDB.Exec(`CREATE TABLE nucleus_admin_users (
 		id TEXT PRIMARY KEY, username TEXT, email TEXT,
-		password_hash TEXT, is_superuser INTEGER)`); err != nil {
+		password_hash TEXT, is_superuser INTEGER,
+		is_active INTEGER NOT NULL DEFAULT 1)`); err != nil {
 		t.Fatalf("create table: %v", err)
 	}
 	return sqlDB
@@ -75,7 +76,7 @@ func seedAdminUsers(t *testing.T, sqlDB *sql.DB) {
 		{"3", "carol", "carol@example.com", "h3", "true"},
 	}
 	for _, r := range rows {
-		if _, err := sqlDB.Exec(`INSERT INTO nucleus_admin_users VALUES (?,?,?,?,?)`, r...); err != nil {
+		if _, err := sqlDB.Exec(`INSERT INTO nucleus_admin_users VALUES (?,?,?,?,?,1)`, r...); err != nil {
 			t.Fatalf("insert: %v", err)
 		}
 	}
@@ -198,7 +199,7 @@ func TestAuthenticate_DeletedUserDestroysSession(t *testing.T) {
 	}
 	// The session was destroyed: even if the row came back, the cookie no
 	// longer names a user.
-	if _, err := sqlDB.Exec(`INSERT INTO nucleus_admin_users VALUES ('2','bob','bob@example.com','h2',0)`); err != nil {
+	if _, err := sqlDB.Exec(`INSERT INTO nucleus_admin_users VALUES ('2','bob','bob@example.com','h2',0,1)`); err != nil {
 		t.Fatal(err)
 	}
 	get("/who")

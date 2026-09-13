@@ -134,6 +134,10 @@ Orbit creates the `nucleus_admin_users` schema every time it mounts.
   after the first start, `createuser` works right away — no bootstrap
   password is ever required.
 
+Once the first operator is in, the rest are created from the panel itself —
+see [Operators](./features.md#operators). The bootstrap user is how the first
+one gets there, not how every one does.
+
 Reading the password from the environment, as the snippet above does, keeps it
 out of your source tree.
 

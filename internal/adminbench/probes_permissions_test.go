@@ -90,24 +90,105 @@ func probeRowPermissions(t *testing.T, e *env) verdict {
 }
 
 // probeAdminUserManagement is OR-4, the oldest P1 in the registry: an
-// operator who needs a colleague to have access has to leave the panel.
+// operator who needs a colleague to have access should not have to leave the
+// panel. The probe does what that colleague's first day looks like — an
+// account is created from the panel, it shows up in the list with the role it
+// was given, and the person signs in with it.
 func probeAdminUserManagement(t *testing.T, e *env) verdict {
-	models := e.get(t, "/admin/api/models")
-	if strings.Contains(models.raw(), `"name":"AdminUser"`) || strings.Contains(models.raw(), `"table":"nucleus_admin_users"`) {
-		t.Logf("admin users are a browsable model: %s", models.text())
+	const (
+		username = "bench-hired"
+		password = "a-long-enough-bench-password"
+	)
+	created := e.do(t, http.MethodPost, "/admin/api/admin-users", map[string]any{
+		"username": username,
+		"email":    username + "@example.test",
+		"password": password,
+		"roles":    []string{"viewers"},
+	})
+	if created.code == http.StatusNotFound || created.code == http.StatusMethodNotAllowed ||
+		created.code == http.StatusNotImplemented || created.servedTheShell() {
+		t.Logf("no route creates an operator (%d): accounts live in the table and the CLI", created.code)
+		return absent
+	}
+	if created.code != http.StatusCreated {
+		t.Logf("create operator answered %d: %s", created.code, created.text())
 		return partial
 	}
-	return e.unrouted(t, "/admin/api/users", "/admin/api/admins", "/admin/api/admin-users")
+	id, _ := created.json(t)["id"].(string)
+
+	list := e.get(t, "/admin/api/admin-users")
+	if list.code != http.StatusOK || !strings.Contains(list.raw(), username) {
+		t.Logf("the created operator is not in the list (%d): %s", list.code, list.text())
+		return partial
+	}
+	if !strings.Contains(list.raw(), "viewers") {
+		t.Logf("the role granted at creation is not on the record: %s", list.text())
+		return partial
+	}
+
+	// The account the panel wrote is an account the panel accepts.
+	if status := trySignIn(t, e.server(), username, password); !signedIn(status) {
+		t.Logf("the operator created from the panel cannot sign in (login answered %d)", status)
+		return partial
+	}
+	t.Logf("operator %s created, listed with its role, and signed in", id)
+	return present
 }
 
-// probeOperatorCredentialReset asks for the other half of operator
-// management: the password an operator forgot, or the account a leaver keeps.
+// probeOperatorCredentialReset is the other half of OR-4: the password
+// somebody forgot, and the account somebody left behind. Both are measured by
+// their effect on signing in, not by the status code of the call that changes
+// them.
 func probeOperatorCredentialReset(t *testing.T, e *env) verdict {
-	op := e.operatorNamed(t, "perm-reset")
-	return e.unrouted(t,
-		"/admin/api/users/"+op.id+"/password",
-		"/admin/api/users/"+op.id+"/disable",
-		"/admin/api/account/password")
+	const (
+		username = "bench-rotated"
+		first    = "the-first-bench-password"
+		second   = "the-second-bench-password"
+	)
+	created := e.do(t, http.MethodPost, "/admin/api/admin-users", map[string]any{
+		"username": username,
+		"email":    username + "@example.test",
+		"password": first,
+	})
+	if created.code != http.StatusCreated {
+		t.Logf("the operator this control needs could not be created (%d): %s", created.code, created.text())
+		return absent
+	}
+	id, _ := created.json(t)["id"].(string)
+
+	reset := e.do(t, http.MethodPost, "/admin/api/admin-users/"+id+"/password",
+		map[string]any{"password": second})
+	if reset.code == http.StatusNotFound || reset.code == http.StatusMethodNotAllowed || reset.servedTheShell() {
+		t.Logf("no route resets an operator's password (%d)", reset.code)
+		return absent
+	}
+	if reset.code != http.StatusOK {
+		t.Logf("password reset answered %d: %s", reset.code, reset.text())
+		return partial
+	}
+	if status := trySignIn(t, e.server(), username, second); !signedIn(status) {
+		t.Logf("the new password does not work (login answered %d)", status)
+		return partial
+	}
+	if status := trySignIn(t, e.server(), username, first); signedIn(status) {
+		t.Logf("the OLD password still works after the reset")
+		return partial
+	}
+
+	disable := e.do(t, http.MethodPost, "/admin/api/admin-users/"+id+"/disable", map[string]any{})
+	if disable.code == http.StatusNotFound || disable.code == http.StatusMethodNotAllowed || disable.servedTheShell() {
+		t.Logf("the password can be reset but no route deactivates an operator (%d)", disable.code)
+		return partial
+	}
+	if disable.code != http.StatusOK {
+		t.Logf("deactivate answered %d: %s", disable.code, disable.text())
+		return partial
+	}
+	if status := trySignIn(t, e.server(), username, second); signedIn(status) {
+		t.Logf("a deactivated operator can still sign in (login answered %d)", status)
+		return partial
+	}
+	return present
 }
 
 // probeRolesFromPanel assigns a role and reads it back — the part of operator

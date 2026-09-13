@@ -42,7 +42,8 @@ func newLoginAuditHarness(t *testing.T) *loginAuditHarness {
 
 	if _, err := sqlDB.Exec(`CREATE TABLE nucleus_admin_users (
 		id TEXT PRIMARY KEY, username TEXT, email TEXT,
-		password_hash TEXT, is_superuser INTEGER)`); err != nil {
+		password_hash TEXT, is_superuser INTEGER,
+		is_active INTEGER NOT NULL DEFAULT 1)`); err != nil {
 		t.Fatalf("create table: %v", err)
 	}
 	hash, err := auth.HashPassword(loginHarnessPassword)
@@ -50,7 +51,7 @@ func newLoginAuditHarness(t *testing.T) *loginAuditHarness {
 		t.Fatalf("HashPassword: %v", err)
 	}
 	if _, err := sqlDB.Exec(
-		`INSERT INTO nucleus_admin_users VALUES ('1',?,'root@example.com',?,1)`, loginHarnessUser, hash,
+		`INSERT INTO nucleus_admin_users VALUES ('1',?,'root@example.com',?,1,1)`, loginHarnessUser, hash,
 	); err != nil {
 		t.Fatalf("insert user: %v", err)
 	}

@@ -18,6 +18,7 @@ import {
   Sun,
   Moon,
   Menu,
+  UserCog,
   X,
   ChevronLeft,
   ChevronRight,
@@ -30,6 +31,7 @@ const navItems = [
   { icon: Network, label: 'Network Inspector', path: '/live' },
   { icon: Users, label: 'Sessions', path: '/sessions' },
   { icon: HeartPulse, label: 'Health', path: '/health' },
+  { icon: UserCog, label: 'Operators', path: '/operators' },
   { icon: Shield, label: 'Access Control', path: '/rbac' },
   { icon: FileText, label: 'Audit Log', path: '/audit' },
 ]

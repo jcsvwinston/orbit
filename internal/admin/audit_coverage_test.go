@@ -11,6 +11,8 @@ package admin
 
 import (
 	"bytes"
+	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -88,10 +90,55 @@ DROP TABLE IF EXISTS audit_probe;
 	sm := auth.NewSessionManager(auth.SessionConfig{})
 	panel.config.Session = sm
 
+	// The operator routes need a provider that owns an account store and a
+	// table to own: the probes create, edit and deactivate real rows.
+	if sqlDB, err := panel.config.DatabaseHandles["default"].SqlDB(); err == nil {
+		if err := EnsureBootstrapAdminUsersSchema(context.Background(), sqlDB, "sqlite"); err != nil {
+			t.Fatalf("ensure admin users schema: %v", err)
+		}
+		// The actor of every probe (id "1") is an active superuser, so the
+		// last-superuser guard never fires for a probe acting on someone
+		// else — which is what the probes are for.
+		seedOperatorRow(t, sqlDB, "1", "admin", "admin@example.com", true)
+		seedOperatorRow(t, sqlDB, "op-target", "target", "target@example.com", false)
+		authProvider.operators = &operatorStore{db: sqlDB, table: defaultAdminUsersTable, system: "sqlite"}
+	}
+
 	srv := httptest.NewServer(sm.Middleware()(panel.Handler()))
 	t.Cleanup(srv.Close)
 
 	return &auditProbeEnv{panel: panel, srv: srv, store: store, sm: sm, vars: map[string]string{}}
+}
+
+// operatorProbeDB is the handle the operator probes seed extra accounts on.
+func operatorProbeDB(t *testing.T, env *auditProbeEnv) *sql.DB {
+	t.Helper()
+	sqlDB, err := env.panel.config.DatabaseHandles["default"].SqlDB()
+	if err != nil {
+		t.Fatalf("SqlDB: %v", err)
+	}
+	return sqlDB
+}
+
+// seedOperatorRow writes one operator straight into the table: the probes
+// need accounts that exist before the routes under test run.
+func seedOperatorRow(t *testing.T, sqlDB *sql.DB, id, username, email string, superuser bool) {
+	t.Helper()
+	hash, err := auth.HashPassword("seeded-operator-password")
+	if err != nil {
+		t.Fatalf("HashPassword: %v", err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	su := 0
+	if superuser {
+		su = 1
+	}
+	if _, err := sqlDB.Exec(
+		`INSERT INTO nucleus_admin_users (id, username, email, password_hash, is_superuser, is_active, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, 1, ?, ?)`,
+		id, username, email, hash, su, now, now); err != nil {
+		t.Fatalf("seed operator %q: %v", username, err)
+	}
 }
 
 // createRecord inserts an AdminUser through the API and returns its id.
@@ -340,6 +387,91 @@ func auditProbes() map[string][]auditProbe {
 			path:       literalPath("/api/system/jobs/queues/critical/actions/pause"),
 			body:       literalBody(`{"confirm_queue":"critical","acknowledge":"I_UNDERSTAND_RUNTIME_OPERATION"}`),
 			wantAction: "jobs.queue.pause",
+			wantNew:    true,
+			wantRecord: true,
+		}},
+		// Operators (OR-4). The actor is id "1"; every probe that
+		// deactivates or deletes acts on someone else, which is what the
+		// guards in operators.go require and what an operator does.
+		"POST /api/admin-users": {{
+			name:       "operator.create",
+			path:       literalPath("/api/admin-users"),
+			body:       literalBody(`{"username":"probe-created","email":"probe-created@example.com","password":"probe-password-1234","roles":["viewers"]}`),
+			wantAction: "operator.create",
+			wantNew:    true,
+			wantRecord: true,
+			check: func(t *testing.T, _ *auditProbeEnv, e AuditEntry) {
+				if e.NewValue["username"] != "probe-created" {
+					t.Errorf("operator.create new_value = %v, want the username", e.NewValue)
+				}
+				if _, leaked := e.NewValue["password"]; leaked {
+					t.Error("operator.create wrote the password into the audit trail")
+				}
+			},
+		}},
+		"PUT /api/admin-users/{id}": {{
+			name:       "operator.update",
+			path:       literalPath("/api/admin-users/op-target"),
+			body:       literalBody(`{"email":"target-renamed@example.com"}`),
+			wantAction: "operator.update",
+			wantOld:    true,
+			wantNew:    true,
+			wantRecord: true,
+		}},
+		"DELETE /api/admin-users/{id}": {{
+			name: "operator.delete",
+			setup: func(t *testing.T, env *auditProbeEnv) {
+				seedOperatorRow(t, operatorProbeDB(t, env), "op-doomed", "doomed", "doomed@example.com", false)
+			},
+			path:       literalPath("/api/admin-users/op-doomed"),
+			wantAction: "operator.delete",
+			wantOld:    true,
+			wantRecord: true,
+		}},
+		"POST /api/admin-users/{id}/password": {{
+			name:       "operator.password.set",
+			path:       literalPath("/api/admin-users/op-target/password"),
+			body:       literalBody(`{"password":"another-long-password"}`),
+			wantAction: "operator.password.set",
+			wantNew:    true,
+			wantRecord: true,
+			check: func(t *testing.T, _ *auditProbeEnv, e AuditEntry) {
+				if _, leaked := e.NewValue["password"]; leaked {
+					t.Error("operator.password.set wrote the password into the audit trail")
+				}
+			},
+		}},
+		"POST /api/admin-users/{id}/disable": {{
+			name:       "operator.disable",
+			path:       literalPath("/api/admin-users/op-target/disable"),
+			body:       literalBody(`{}`),
+			wantAction: "operator.disable",
+			wantOld:    true,
+			wantNew:    true,
+			wantRecord: true,
+		}},
+		"POST /api/admin-users/{id}/enable": {{
+			name:       "operator.enable",
+			path:       literalPath("/api/admin-users/op-target/enable"),
+			body:       literalBody(`{}`),
+			wantAction: "operator.enable",
+			wantOld:    true,
+			wantNew:    true,
+			wantRecord: true,
+		}},
+		"POST /api/admin-users/{id}/roles": {{
+			name:       "operator.role.grant",
+			path:       literalPath("/api/admin-users/op-target/roles"),
+			body:       literalBody(`{"role":"editors"}`),
+			wantAction: "operator.role.grant",
+			wantNew:    true,
+			wantRecord: true,
+		}},
+		"DELETE /api/admin-users/{id}/roles": {{
+			name:       "operator.role.revoke",
+			path:       literalPath("/api/admin-users/op-target/roles"),
+			body:       literalBody(`{"role":"editors"}`),
+			wantAction: "operator.role.revoke",
 			wantNew:    true,
 			wantRecord: true,
 		}},

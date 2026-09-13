@@ -218,11 +218,11 @@ func TestBootstrapInsertPlaceholders(t *testing.T) {
 		system string
 		want   []string
 	}{
-		{"sqlite", []string{"?", "?", "?", "?", "?", "?", "?"}},
-		{"mysql", []string{"?", "?", "?", "?", "?", "?", "?"}},
-		{"postgresql", []string{"$1", "$2", "$3", "$4", "$5", "$6", "$7"}},
-		{"mssql", []string{"@p1", "@p2", "@p3", "@p4", "@p5", "@p6", "@p7"}},
-		{"oracle", []string{":1", ":2", ":3", ":4", ":5", ":6", ":7"}},
+		{"sqlite", []string{"?", "?", "?", "?", "?", "?", "?", "?"}},
+		{"mysql", []string{"?", "?", "?", "?", "?", "?", "?", "?"}},
+		{"postgresql", []string{"$1", "$2", "$3", "$4", "$5", "$6", "$7", "$8"}},
+		{"mssql", []string{"@p1", "@p2", "@p3", "@p4", "@p5", "@p6", "@p7", "@p8"}},
+		{"oracle", []string{":1", ":2", ":3", ":4", ":5", ":6", ":7", ":8"}},
 		{"", nil},
 		{"unknown", nil},
 	}
