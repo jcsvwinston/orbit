@@ -178,10 +178,26 @@ func probeAuditPersistence(t *testing.T, e *env) verdict {
 	var payload map[string]any
 	decodeInto(t, resp.Body, &payload)
 
-	if strings.Contains(mapText(payload), id) {
-		return present
+	// Look for THE entry — action, model and record id — not for the id
+	// anywhere in the payload. A record id is a short number: asking whether
+	// "7" appears in the new process's own trail (its login, its timestamps)
+	// answers yes for reasons that have nothing to do with persistence, and
+	// this probe reported the trail as surviving on exactly that.
+	raw, _ := payload["items"].([]any)
+	if raw == nil {
+		raw, _ = payload["entries"].([]any)
 	}
-	t.Logf("the record written before the restart (%s) has no trail in the new process: the log is a process-lifetime buffer", id)
+	for _, item := range raw {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if entry["action"] == "create" && entry["model_name"] == "Note" && entry["record_id"] == id {
+			return present
+		}
+	}
+	t.Logf("the record written before the restart (Note %s) has no create entry in the new process's trail (%d entries): the log is a process-lifetime buffer",
+		id, len(raw))
 	return absent
 }
 

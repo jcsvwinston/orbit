@@ -47,9 +47,18 @@ func probeCRUD(t *testing.T, e *env) verdict {
 		t.Logf("update answered %d: %s", upd.code, upd.text())
 		return partial
 	}
+	// Read the field back, not the payload: asking whether the new value
+	// appears anywhere in the answer is how AUD-05 reported a trail as
+	// surviving a restart because a record id matched a timestamp.
 	after := e.get(t, "/admin/api/models/Note/"+id)
-	if !strings.Contains(after.raw(), "second") {
-		t.Logf("update did not stick: %s", after.text())
+	body, _ := after.json(t)["body"].(string)
+	if body == "" {
+		if data, ok := after.json(t)["data"].(map[string]any); ok {
+			body, _ = data["body"].(string)
+		}
+	}
+	if body != "second" {
+		t.Logf("update did not stick: body reads %q — %s", body, after.text())
 		return partial
 	}
 

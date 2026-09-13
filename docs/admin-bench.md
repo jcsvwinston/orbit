@@ -123,3 +123,10 @@ recorded here because the next person to add a probe will hit the same edges.
   `NoteID` field and no relation declaration, so nothing marked it as a key —
   and the probe read that as "the panel has no relation metadata". It was
   measuring the model the bench wrote.
+- **A record id is a short number, and `Contains` finds it anywhere.** AUD-05
+  asked whether the id of a record written before a restart appeared in the
+  restarted process's audit payload. It does: in that process's own login
+  entry, in a timestamp. The probe reported a trail that survives restarts
+  for an application whose trail is a buffer in memory — and it did so only
+  on CI, where the ids happened to line up. Probes now look for THE entry
+  (action, model, record id), not for a substring.
