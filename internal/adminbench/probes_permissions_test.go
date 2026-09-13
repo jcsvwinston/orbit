@@ -39,54 +39,118 @@ func probeModelPermissions(t *testing.T, e *env) verdict {
 }
 
 // probeFieldPermissions grants an operator a policy that names a FIELD and
-// then writes that field. A per-field permission model would refuse; this
-// one does not know what a field is.
+// then writes that field. It is measured by EFFECT and in both directions:
+// the denied field must still hold its old value afterwards, and a field the
+// same operator DOES hold must still be writable — a panel that refused every
+// write would pass a one-sided probe.
 func probeFieldPermissions(t *testing.T, e *env) verdict {
 	op := e.operatorNamed(t, "perm-field")
 	e.grant(t, op.username, "admin:Note", "list")
+	e.grant(t, op.username, "admin:Note", "retrieve")
 	e.grant(t, op.username, "admin:Note", "create")
 	e.grant(t, op.username, "admin:Note", "update")
 
-	id := e.createNote(t, map[string]any{"title": "field-perms", "status": "draft"})
+	const original = "field-perms"
+	id := e.createNote(t, map[string]any{"title": original, "status": "draft"})
 	// Nothing grants this operator the title field; the only policy that
 	// could say so is the one below, in the grammar a field policy would use.
 	e.grant(t, op.username, "admin:Note.title", "deny")
 
 	r := e.asOperator(t, op, http.MethodPut, "/admin/api/models/Note/"+id,
 		map[string]any{"title": "rewritten by an operator who should not"})
-	if r.code == http.StatusForbidden {
-		return present
+	if r.code != http.StatusForbidden {
+		schema := e.asOperator(t, op, http.MethodGet, "/admin/api/models/Note/schema", nil)
+		if strings.Contains(schema.raw(), `"can_edit"`) || strings.Contains(schema.raw(), `"permissions"`) {
+			t.Logf("the schema carries per-field permission hints but the write went through (%d): %s", r.code, r.text())
+			return partial
+		}
+		t.Logf("a field-level policy changes nothing: the write answered %d", r.code)
+		return absent
 	}
-	schema := e.asOperator(t, op, http.MethodGet, "/admin/api/models/Note/schema", nil)
-	if strings.Contains(schema.raw(), `"can_edit"`) || strings.Contains(schema.raw(), `"permissions"`) {
-		t.Logf("the schema carries per-field permission hints: %s", schema.text())
+
+	// A 403 that wrote the row anyway would be worse than no permission at
+	// all, so the value is read back rather than assumed.
+	after := e.get(t, "/admin/api/models/Note/"+id)
+	if after.code != http.StatusOK {
+		t.Logf("the record could not be read back (%d): %s", after.code, after.text())
 		return partial
 	}
-	t.Logf("a field-level policy changes nothing: the write answered %d", r.code)
-	return absent
+	if got, _ := after.json(t)["title"].(string); got != original {
+		t.Logf("the refused write still changed the field: title is %q", got)
+		return absent
+	}
+
+	// The rest of the model stays writable: a field permission narrows one
+	// field, it does not turn the operator read-only.
+	allowed := e.asOperator(t, op, http.MethodPut, "/admin/api/models/Note/"+id,
+		map[string]any{"status": "reviewed"})
+	if allowed.code != http.StatusOK {
+		t.Logf("a field the operator DOES hold was refused too (%d): %s", allowed.code, allowed.text())
+		return partial
+	}
+	return present
 }
 
-// probeRowPermissions asks for "this operator may edit their own rows", the
-// permission every editorial admin needs. The policy vocabulary is
-// (subject, object, action) with the object naming a MODEL, so there is
-// nowhere to put the row.
+// probeRowPermissions asks for "this operator may work on their own rows",
+// the permission every editorial admin needs. It is measured on Article,
+// the one model of this application that says who owns a row.
+//
+// Everything here is by effect: the operator's OWN row is created through the
+// panel (so the panel decides who owns it), somebody else's is written by the
+// superuser, and the probe asks what the operator can see, edit and delete.
 func probeRowPermissions(t *testing.T, e *env) verdict {
 	op := e.operatorNamed(t, "perm-row")
-	e.grant(t, op.username, "admin:Note", "list")
-	mine := e.createNote(t, map[string]any{"title": "row-mine", "status": "rows"})
-	theirs := e.createNote(t, map[string]any{"title": "row-theirs", "status": "rows"})
+	for _, act := range []string{"list", "retrieve", "create", "update", "delete"} {
+		e.grant(t, op.username, "admin:Article#own", act)
+	}
 
-	list := e.asOperator(t, op, http.MethodGet, "/admin/api/models/Note?status=rows", nil)
+	theirs := e.createArticle(t, map[string]any{"title": "row-theirs", "owner": "somebody-else"})
+
+	created := e.asOperator(t, op, http.MethodPost, "/admin/api/models/Article",
+		map[string]any{"title": "row-mine"})
+	if created.code != http.StatusCreated {
+		t.Logf("a row-scoped operator could not create their own row (%d): %s", created.code, created.text())
+		return absent
+	}
+	mine := recordID(t, created.json(t))
+
+	list := e.asOperator(t, op, http.MethodGet, "/admin/api/models/Article", nil)
 	if list.code != http.StatusOK {
 		t.Logf("list answered %d: %s", list.code, list.text())
 		return absent
 	}
-	body := list.text()
-	if strings.Contains(body, "row-mine") && !strings.Contains(body, "row-theirs") {
-		return present
+	body := list.raw()
+	switch {
+	case !strings.Contains(body, "row-mine"):
+		t.Logf("the operator cannot see their own row (%s): %s", mine, list.text())
+		return absent
+	case strings.Contains(body, "row-theirs"):
+		t.Logf("another operator's row (%s) is visible: no row scope exists", theirs)
+		return absent
 	}
-	t.Logf("both rows (%s, %s) are visible to an operator granted the model: no row scope exists", mine, theirs)
-	return absent
+
+	// The confinement has to hold on the row endpoints too, or the grid
+	// hides what the URL still serves.
+	if got := e.asOperator(t, op, http.MethodGet, "/admin/api/models/Article/"+theirs, nil); got.code != http.StatusNotFound {
+		t.Logf("another operator's row is readable by id (%d): %s", got.code, got.text())
+		return partial
+	}
+	if put := e.asOperator(t, op, http.MethodPut, "/admin/api/models/Article/"+theirs,
+		map[string]any{"title": "taken over"}); put.code != http.StatusNotFound {
+		t.Logf("another operator's row is editable by id (%d): %s", put.code, put.text())
+		return partial
+	}
+	if del := e.asOperator(t, op, http.MethodDelete, "/admin/api/models/Article/"+theirs, nil); del.code != http.StatusNotFound {
+		t.Logf("another operator's row is deletable by id (%d): %s", del.code, del.text())
+		return partial
+	}
+	// And their own row is theirs to edit.
+	if put := e.asOperator(t, op, http.MethodPut, "/admin/api/models/Article/"+mine,
+		map[string]any{"title": "row-mine, edited"}); put.code != http.StatusOK {
+		t.Logf("the operator cannot edit their OWN row (%d): %s", put.code, put.text())
+		return partial
+	}
+	return present
 }
 
 // probeAdminUserManagement is OR-4, the oldest P1 in the registry: an
@@ -236,14 +300,17 @@ func probePolicyManagement(t *testing.T, e *env) verdict {
 	return present
 }
 
-// probeDeniedActionVisible asks whether the UI can grey out what the
-// operator may not do. The panel answers the question one call at a time
-// (/api/rbac/check), but nothing in what a screen loads — the model list,
-// the schema — says which verbs this operator holds, so a UI can only find
-// out by trying and being refused.
+// probeDeniedActionVisible asks whether the UI can grey out what the operator
+// may not do — without trying it. A hint is only worth anything if it agrees
+// with what the panel actually does, so the probe reads the hints from the
+// two payloads every model screen loads and then CHECKS them against the
+// answers: the verb the hints call true must succeed and the one they call
+// false must be refused.
 func probeDeniedActionVisible(t *testing.T, e *env) verdict {
 	op := e.operatorNamed(t, "perm-hints")
 	e.grant(t, op.username, "admin:Note", "list")
+	e.grant(t, op.username, "admin:Note", "get_schema")
+	e.grant(t, op.username, "admin:*", "list_models")
 
 	models := e.asOperator(t, op, http.MethodGet, "/admin/api/models", nil)
 	schema := e.asOperator(t, op, http.MethodGet, "/admin/api/models/Note/schema", nil)
@@ -255,14 +322,35 @@ func probeDeniedActionVisible(t *testing.T, e *env) verdict {
 	}
 	check := e.get(t, "/admin/api/rbac/check?sub="+op.username+"&obj=admin:Note&act=delete")
 	t.Logf("capability hints in the payloads a screen loads: %d; /api/rbac/check answers %d", hints, check.code)
-	switch {
-	case hints > 0:
-		return present
-	case check.code == http.StatusOK:
-		return partial
-	default:
+	if hints == 0 {
+		if check.code == http.StatusOK {
+			return partial
+		}
 		return absent
 	}
+
+	// A hint that does not match the enforcer is worse than none: the UI
+	// would hide a button that works, or offer one that does not.
+	perms, ok := schema.json(t)["permissions"].(map[string]any)
+	if !ok {
+		t.Logf("the schema carries hints but no permissions map: %s", schema.text())
+		return partial
+	}
+	if allowed, _ := perms["list"].(bool); !allowed {
+		t.Logf("the hints say this operator may not list, but the grant says otherwise: %v", perms)
+		return partial
+	}
+	if allowed, _ := perms["create"].(bool); allowed {
+		t.Logf("the hints claim a create this operator was never granted: %v", perms)
+		return partial
+	}
+	write := e.asOperator(t, op, http.MethodPost, "/admin/api/models/Note",
+		map[string]any{"title": "hint check", "status": "draft"})
+	if write.code != http.StatusForbidden {
+		t.Logf("the hints say create is refused and the panel answered %d", write.code)
+		return partial
+	}
+	return present
 }
 
 // probeReadOnlyOperator is the viewer role every admin ships with: allowed to

@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import type { SchemaField, ModelSchema, Record as AppRecord } from '@/types'
 import { errorMessage } from '@/services/api'
 import { fieldToInput, inputToPayload, isJsonField, readField } from '../lib/fieldValues'
+import { isFieldEditable } from '../lib/capabilities'
 import { Loader2 } from 'lucide-react'
 
 interface Props {
@@ -22,6 +23,11 @@ function editableFields(schema: ModelSchema, isEdit: boolean): SchemaField[] {
     if (f.is_pk) return false
     if (f.is_readonly) return false
     if (f.is_tenant_field) return false
+    // A field a policy keeps this operator out of is shown beside the
+    // read-only ones instead of as an input: the value is visible (the
+    // backend already omits the ones they may not read), and the save that
+    // would have been refused is never offered.
+    if (!isFieldEditable(f)) return false
     if (isEdit && f.name === 'CreatedAt') return false
     return true
   })
@@ -32,6 +38,7 @@ function displayFields(schema: ModelSchema): SchemaField[] {
     if (f.is_excluded) return false
     if (f.is_pk && f.is_readonly) return true
     if (f.is_readonly) return true
+    if (!isFieldEditable(f) && !f.is_tenant_field) return true
     return false
   })
 }

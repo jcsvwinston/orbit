@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jcsvwinston/nucleus/pkg/auth"
 	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
 	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/router"
@@ -37,6 +38,11 @@ func (p *Panel) handleListModels(c *router.Context) error {
 		Databases   []string         `json:"databases,omitempty"`
 		Database    string           `json:"database"`
 		Engine      string           `json:"engine"`
+
+		// What this operator may do with the model, so the sidebar and the
+		// grid can draw themselves from one payload instead of finding out
+		// by being refused.
+		modelCapabilities
 	}
 	type runtimeModelInfo struct {
 		Name        string `json:"name"`
@@ -80,6 +86,16 @@ func (p *Panel) handleListModels(c *router.Context) error {
 		SiteNames          []string `json:"site_names,omitempty"`
 	}
 
+	// The operator is resolved once: the capability hints below ask the same
+	// question for every model, and authenticating per model would turn a
+	// registry of fifty into fifty authentications.
+	var operator *auth.User
+	if p.config.Auth != nil {
+		if user, err := p.authenticatedUser(r); err == nil {
+			operator = user
+		}
+	}
+
 	models := p.src.All()
 	result := make([]modelInfo, 0, len(models))
 	for _, m := range models {
@@ -88,6 +104,8 @@ func (p *Panel) handleListModels(c *router.Context) error {
 			count = -1
 		}
 		info := modelInfo{
+			modelCapabilities: p.capabilitiesForUser(operator, m),
+
 			Name:       m.Name,
 			Plural:     m.Plural,
 			Table:      m.Table,
@@ -352,6 +370,7 @@ func (p *Panel) handleListModels(c *router.Context) error {
 
 // handleGetSchema returns metadata for a specific model.
 func (p *Panel) handleGetSchema(c *router.Context) error {
+	r := c.Request
 	name := c.Param("name")
 	mi, ok := p.src.Get(name)
 	if !ok {
@@ -362,6 +381,7 @@ func (p *Panel) handleGetSchema(c *router.Context) error {
 	}
 
 	type fieldInfo struct {
+		fieldCapabilities
 		Name          string              `json:"name"`
 		Column        string              `json:"column"`
 		Label         string              `json:"label"`
@@ -380,13 +400,25 @@ func (p *Panel) handleGetSchema(c *router.Context) error {
 		Choices       []datasource.Choice `json:"choices,omitempty"`
 	}
 
+	// The payload says what this operator may do, so a form can disable an
+	// input instead of failing the save that uses it. A field they may not
+	// READ is not in the schema at all: a name and a type are already more
+	// than a denied field should disclose.
+	caps := p.capabilitiesFor(r, mi)
+	rules := p.requestFieldRules(r, mi)
+
 	fields := make([]fieldInfo, 0, len(mi.Fields))
 	for _, f := range mi.Fields {
 		if f.IsExcluded {
 			continue
 		}
+		fieldCaps := rules.fieldCapabilitiesFor(runtimeColumn(f.Column))
+		if !fieldCaps.CanRead && !f.IsPK {
+			continue
+		}
 		fields = append(fields, fieldInfo{
-			Name: f.Name, Column: f.Column, Label: f.Label,
+			fieldCapabilities: fieldCaps,
+			Name:              f.Name, Column: f.Column, Label: f.Label,
 			Type: f.GoType, HTMLType: f.HTMLType,
 			IsPK: f.IsPK, IsRequired: f.IsRequired, IsReadOnly: f.IsReadOnly,
 			IsList: f.IsList, IsSearch: f.IsSearch, IsFilter: f.IsFilter,
@@ -407,6 +439,11 @@ func (p *Panel) handleGetSchema(c *router.Context) error {
 		"fields":       fields,
 		"foreign_keys": mi.ForeignKeys,
 		"tenant_field": tenantField,
+		"permissions":  caps.Permissions,
+		"row_scope":    caps.RowScope,
+		"can_create":   caps.CanCreate,
+		"can_update":   caps.CanUpdate,
+		"can_delete":   caps.CanDelete,
 	})
 }
 
@@ -476,7 +513,8 @@ func (p *Panel) handleListRecords(c *router.Context) error {
 	if !ok {
 		return gferrors.NotFound("model", name)
 	}
-	if err := p.authorizeAction(c, mi.Name, "list"); err != nil {
+	rowScope, err := p.authorizeRecordAction(c, mi, "list")
+	if err != nil {
 		return err
 	}
 
@@ -537,6 +575,15 @@ func (p *Panel) handleListRecords(c *router.Context) error {
 		}
 		filters[scope.Column()] = scope.Tenant
 	}
+	// And to the operator's own rows when the grant that let them here was
+	// on admin:<Model>#own. A filter the operator supplied on the same
+	// column is overwritten, not merged: the scope is not negotiable.
+	if rowScope.Enforced() {
+		if filters == nil {
+			filters = make(map[string]string)
+		}
+		filters[rowScope.Column()] = rowScope.Owner
+	}
 
 	if !pageSet {
 		page = 0
@@ -552,6 +599,7 @@ func (p *Panel) handleListRecords(c *router.Context) error {
 	if err != nil {
 		return err
 	}
+	p.requestFieldRules(r, mi).maskAll(mi, result.Items)
 
 	return c.JSON(http.StatusOK, result)
 }
@@ -566,7 +614,8 @@ func (p *Panel) handleGetRecord(c *router.Context) error {
 	if !ok {
 		return gferrors.NotFound("model", name)
 	}
-	if err := p.authorizeAction(c, mi.Name, "retrieve"); err != nil {
+	rowScope, err := p.authorizeRecordAction(c, mi, "retrieve")
+	if err != nil {
 		return err
 	}
 
@@ -589,6 +638,16 @@ func (p *Panel) handleGetRecord(c *router.Context) error {
 	if err != nil {
 		return err
 	}
+	if rowScope.Enforced() {
+		owned, err := rowScope.owns(r.Context(), st, mi, idStr, record)
+		if err != nil {
+			return err
+		}
+		if !owned {
+			return gferrors.NotFound(mi.Name, idStr)
+		}
+	}
+	p.requestFieldRules(r, mi).mask(mi, record)
 
 	return c.JSON(http.StatusOK, record)
 }
@@ -601,7 +660,8 @@ func (p *Panel) handleCreateRecord(c *router.Context) error {
 	if !ok {
 		return gferrors.NotFound("model", name)
 	}
-	if err := p.authorizeAction(c, mi.Name, "create"); err != nil {
+	rowScope, err := p.authorizeRecordAction(c, mi, "create")
+	if err != nil {
 		return err
 	}
 	if mi.ReadOnly {
@@ -637,6 +697,19 @@ func (p *Panel) handleCreateRecord(c *router.Context) error {
 			return err
 		}
 	}
+	// A row-scoped operator creates rows that belong to them: a payload
+	// naming another owner is refused, one naming none gets theirs stamped.
+	if rowScope.Enforced() {
+		if err := rowScope.guardPayload(data, true); err != nil {
+			return err
+		}
+	}
+	// A field this operator may not write is refused by name, not dropped:
+	// a form that believes it saved a value it did not save is worse.
+	fieldRules := p.requestFieldRules(r, mi)
+	if err := fieldRules.guardPayload(mi, data, fieldActionCreate); err != nil {
+		return err
+	}
 
 	created, err := st.Create(r.Context(), datasource.Record(data))
 	if err != nil {
@@ -649,6 +722,9 @@ func (p *Panel) handleCreateRecord(c *router.Context) error {
 		RecordID:  auditRecordID(mi, created),
 		NewValue:  auditValues(mi, created),
 	})
+	// The trail records what was written; the answer only shows back what
+	// this operator may read.
+	fieldRules.mask(mi, created)
 
 	return c.JSON(http.StatusCreated, created)
 }
@@ -663,7 +739,8 @@ func (p *Panel) handleUpdateRecord(c *router.Context) error {
 	if !ok {
 		return gferrors.NotFound("model", name)
 	}
-	if err := p.authorizeAction(c, mi.Name, "update"); err != nil {
+	rowScope, err := p.authorizeRecordAction(c, mi, "update")
+	if err != nil {
 		return err
 	}
 	if mi.ReadOnly {
@@ -673,6 +750,9 @@ func (p *Panel) handleUpdateRecord(c *router.Context) error {
 	var updates map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
 		return gferrors.BadRequest("invalid JSON")
+	}
+	if err := p.requestFieldRules(r, mi).guardPayload(mi, updates, fieldActionUpdate); err != nil {
+		return err
 	}
 
 	databaseAlias, err := p.requestDatabaseAlias(r)
@@ -697,6 +777,16 @@ func (p *Panel) handleUpdateRecord(c *router.Context) error {
 			return err
 		}
 		if err := scope.guardPayload(updates, false); err != nil {
+			return err
+		}
+	}
+	// A row-scoped operator only reaches their own rows, and cannot hand one
+	// over to somebody else.
+	if rowScope.Enforced() {
+		if err := scopedOwnedRecord(r.Context(), st, mi, idStr, rowScope); err != nil {
+			return err
+		}
+		if err := rowScope.guardPayload(updates, false); err != nil {
 			return err
 		}
 	}
@@ -729,7 +819,8 @@ func (p *Panel) handleDeleteRecord(c *router.Context) error {
 	if !ok {
 		return gferrors.NotFound("model", name)
 	}
-	if err := p.authorizeAction(c, mi.Name, "delete"); err != nil {
+	rowScope, err := p.authorizeRecordAction(c, mi, "delete")
+	if err != nil {
 		return err
 	}
 	if mi.ReadOnly {
@@ -755,6 +846,9 @@ func (p *Panel) handleDeleteRecord(c *router.Context) error {
 		if _, err := scopedRecord(r.Context(), st, mi, idStr, scope); err != nil {
 			return err
 		}
+	}
+	if err := scopedOwnedRecord(r.Context(), st, mi, idStr, rowScope); err != nil {
+		return err
 	}
 	before := auditRecordSnapshot(r, st, idStr)
 	if err := st.Delete(r.Context(), idStr); err != nil {
@@ -808,7 +902,8 @@ func (p *Panel) handleBulkAction(c *router.Context) error {
 	action := strings.ToLower(strings.TrimSpace(req.Action))
 	switch action {
 	case "delete":
-		if err := p.authorizeAction(c, mi.Name, "bulk_delete"); err != nil {
+		rowScope, err := p.authorizeRecordAction(c, mi, "bulk_delete")
+		if err != nil {
 			return err
 		}
 		if mi.ReadOnly {
@@ -840,6 +935,13 @@ func (p *Panel) handleBulkAction(c *router.Context) error {
 					failures = append(failures, bulkDeleteError{ID: id, Error: err.Error()})
 					continue
 				}
+			}
+			// A row somebody else owns fails as its own id, the same way a
+			// row of another tenant does: the batch is not refused, the row
+			// is.
+			if err := scopedOwnedRecord(r.Context(), st, mi, id, rowScope); err != nil {
+				failures = append(failures, bulkDeleteError{ID: id, Error: err.Error()})
+				continue
 			}
 			// Each row that goes is audited as its own delete, with the
 			// values it had, so "who removed record N" has the same answer
@@ -881,7 +983,10 @@ func (p *Panel) handleBulkAction(c *router.Context) error {
 		})
 
 	case "export":
-		if err := p.authorizeAction(c, mi.Name, "bulk_export"); err != nil {
+		// The download itself goes through handleExportCSV, which applies
+		// the same row scope to what it writes: this call only builds its
+		// URL.
+		if _, err := p.authorizeRecordAction(c, mi, "bulk_export"); err != nil {
 			return err
 		}
 		if len(ids) == 0 {

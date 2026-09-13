@@ -19,7 +19,8 @@ func (p *Panel) handleExportCSV(c *router.Context) error {
 	if !ok {
 		return gferrors.NotFound("model", name)
 	}
-	if err := p.authorizeAction(c, mi.Name, "export_csv"); err != nil {
+	rowScope, err := p.authorizeRecordAction(c, mi, "export_csv")
+	if err != nil {
 		return err
 	}
 
@@ -47,8 +48,20 @@ func (p *Panel) handleExportCSV(c *router.Context) error {
 	if scope := p.requestTenantScope(r, mi); scope.Enforced() {
 		filters = map[string]string{scope.Column(): scope.Tenant}
 	}
+	// An export never carries more than the grid it was requested from: a
+	// row-scoped operator exports their own rows.
+	if rowScope.Enforced() {
+		if filters == nil {
+			filters = map[string]string{}
+		}
+		filters[rowScope.Column()] = rowScope.Owner
+	}
 
 	// Determine visible columns and the primary-key field for id filtering.
+	// A field this operator may not read is not a column of their export
+	// either — a CSV is the easiest way there is to read a value off a
+	// screen that does not show it.
+	fieldRules := p.requestFieldRules(r, mi)
 	var headers []string
 	var columns []datasource.FieldInfo
 	var pkField datasource.FieldInfo
@@ -58,10 +71,14 @@ func (p *Panel) handleExportCSV(c *router.Context) error {
 			pkField = f
 			hasPK = true
 		}
-		if !f.IsExcluded {
-			headers = append(headers, f.Label)
-			columns = append(columns, f)
+		if f.IsExcluded {
+			continue
 		}
+		if !f.IsPK && !fieldRules.readable(runtimeColumn(f.Column)) {
+			continue
+		}
+		headers = append(headers, f.Label)
+		columns = append(columns, f)
 	}
 
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
