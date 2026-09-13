@@ -157,7 +157,8 @@ func TestLoginRateLimit_BlocksAfterRepeatedFailures(t *testing.T) {
 	defer sqlDB.Close()
 	if _, err := sqlDB.Exec(`CREATE TABLE nucleus_admin_users (
 		id TEXT PRIMARY KEY, username TEXT, email TEXT,
-		password_hash TEXT, is_superuser INTEGER)`); err != nil {
+		password_hash TEXT, is_superuser INTEGER,
+		is_active INTEGER NOT NULL DEFAULT 1)`); err != nil {
 		t.Fatal(err)
 	}
 

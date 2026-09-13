@@ -499,6 +499,22 @@ func (p *Panel) mountAPIRoutes(m *router.Mux) {
 	m.Post("/api/system/jobs/queues/{name}/actions/{action}", p.handleSystemQueueAction)
 
 	// RBAC management endpoints
+	// Operators (OR-4): the people who use the panel, as opposed to the
+	// policies below, which describe what they may do. Until these routes
+	// existed the second was editable from the UI and the first was not:
+	// an account could only be created by `nucleus createuser` on the
+	// server. `internal/admin/operators.go` has the guards.
+	m.Get("/api/admin-users", p.handleListOperators)
+	m.Post("/api/admin-users", p.handleCreateOperator)
+	m.Get("/api/admin-users/{id}", p.handleGetOperator)
+	m.Put("/api/admin-users/{id}", p.handleUpdateOperator)
+	m.Delete("/api/admin-users/{id}", p.handleDeleteOperator)
+	m.Post("/api/admin-users/{id}/password", p.handleSetOperatorPassword)
+	m.Post("/api/admin-users/{id}/disable", p.handleSetOperatorActive(false))
+	m.Post("/api/admin-users/{id}/enable", p.handleSetOperatorActive(true))
+	m.Post("/api/admin-users/{id}/roles", p.handleSetOperatorRole(true))
+	m.Delete("/api/admin-users/{id}/roles", p.handleSetOperatorRole(false))
+
 	m.Get("/api/rbac/policies", p.handleListRBACPolicies)
 	m.Post("/api/rbac/policies", p.handleAddRBACPolicy)
 	m.Delete("/api/rbac/policies", p.handleRemoveRBACPolicy)

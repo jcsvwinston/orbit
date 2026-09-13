@@ -9,6 +9,7 @@ describe('lazyRoutes', () => {
       'live',
       'sessions',
       'health',
+      'operators',
       'rbac',
       'audit',
     ])

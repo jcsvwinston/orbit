@@ -170,6 +170,25 @@ export interface AuditLogQuery {
 // A casbin policy row as GET /api/rbac/policies serves it. `eft` is the
 // effect column (allow|deny); the backend only sets it when the model has
 // one, so a missing value means allow.
+// An operator is a person who signs in to the panel. Deactivated accounts
+// stay in the list: the panel deactivates people rather than erasing them,
+// so their audit trail keeps a name.
+export interface Operator {
+  id: string
+  username: string
+  email: string
+  is_superuser: boolean
+  is_active: boolean
+  created_at?: string
+  updated_at?: string
+  roles: string[]
+}
+
+export interface OperatorsResponse {
+  operators: Operator[]
+  total: number
+}
+
 export interface RBACPolicy {
   sub: string
   obj: string

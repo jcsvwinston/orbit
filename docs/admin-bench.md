@@ -4,7 +4,9 @@ This is the numerator of the A6 gate ("Orbit as an admin product"). It exists
 because that gate needs a number, and a number needs something that produces
 it.
 
-**Measured on 2026-09-12 against the panel at v1.9.6.** Run it with:
+**Measured on 2026-09-12 against the panel at v1.9.6, and kept current as the
+arc closes its gaps: the numbers below are what the suite produced on its last
+run.** Run it with:
 
 ```bash
 go test ./internal/adminbench/ -run TestAdminBench -v
@@ -36,17 +38,17 @@ A control that cannot be probed does not belong in the bench.
 
 ## The result
 
-**32 of 59 controls present. 9 partial. 18 absent.**
+**34 of 59 controls present. 9 partial. 16 absent.**
 
 | family | present | partial | absent |
 |---|---|---|---|
 | data studio | 9 | 4 | 4 |
-| permissions | 4 | 1 | 4 |
+| permissions | 6 | 1 | 2 |
 | audit | 4 | 1 | 2 |
 | operations | 10 | 3 | 4 |
 | customization | 3 | 0 | 4 |
 | interface | 2 | 0 | 0 |
-| **total** | **32** | **9** | **18** |
+| **total** | **34** | **9** | **16** |
 
 ## What the shape of it says
 
@@ -59,11 +61,12 @@ The panel **browses and operates well, and administers poorly**.
 - Everything an operator does to *the application* works too, and this is the
   part no comparable product has: a live request and SQL feed, a runtime
   pulse, feature flags, migrations, storage, async exports.
-- Everything an operator does to *other operators* is missing. There is no
-  route that creates an admin user, resets one's password, or disables one:
-  the only way in is the `nucleus_admin_users` table and the `createuser`
-  CLI. Roles and policies can be managed from the panel; the people they
-  apply to cannot.
+- Everything an operator does to *other operators* used to be missing, and is
+  the first gap the arc closed: accounts are created, listed with their
+  roles, re-credentialled and deactivated from the panel (`PERM-02`,
+  `PERM-03`). The probes measure it by effect — the created account signs in,
+  the reset password works and the old one does not, the deactivated one
+  cannot get back in — not by the status code of the call that changes it.
 - The permission model stops at the model boundary. `(subject, model, action)`
   has nowhere to put a field or a row, so "an editor may change the title but
   not the price" and "an author may edit their own posts" cannot be

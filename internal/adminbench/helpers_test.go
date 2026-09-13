@@ -162,3 +162,32 @@ func requestAs(t *testing.T, client *http.Client, srv *nucleustest.Server, metho
 	}
 	return response{code: resp.StatusCode, ctype: resp.Header.Get("Content-Type"), body: raw}
 }
+
+// trySignIn attempts a sign-in and returns the status code instead of failing
+// the test: the probes that check a credential was revoked need a refusal to
+// be an answer, not a fatal.
+func trySignIn(t *testing.T, srv *nucleustest.Server, username, password string) int {
+	t.Helper()
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookie jar: %v", err)
+	}
+	client := &http.Client{
+		Jar: jar,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.PostForm(srv.URL("/admin/login"),
+		url.Values{"username": {username}, "password": {password}})
+	if err != nil {
+		t.Fatalf("sign in as %q: %v", username, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return resp.StatusCode
+}
+
+// signedIn reports whether those credentials were accepted. The login form
+// answers 303 on success and re-renders the page (200) on refusal.
+func signedIn(status int) bool { return status == http.StatusSeeOther || status == http.StatusFound }

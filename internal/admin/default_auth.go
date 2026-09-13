@@ -171,6 +171,12 @@ type adminLoginUserRecord struct {
 	Email        string
 	PasswordHash string
 	IsSuperuser  bool
+	// IsActive is false for an operator the panel deactivated. Every read
+	// below drops those rows rather than returning them: Authenticate runs
+	// on every request, so a deactivation takes effect on the operator's
+	// NEXT request — the same revocation the panel gets by deleting a row,
+	// without losing who they were in the audit trail.
+	IsActive bool
 }
 
 func (u adminLoginUserRecord) toUser() *auth.User {
@@ -347,7 +353,7 @@ func (a *DatabaseAdminAuth) sanitizeNext(raw string) string {
 
 // adminUserSelectColumns is the column list every admin-user read scans, in
 // the order adminLoginUserRecord is filled.
-const adminUserSelectColumns = "id, username, email, password_hash, is_superuser"
+const adminUserSelectColumns = "id, username, email, password_hash, is_superuser, is_active"
 
 // adminUserByIDSQL builds the bounded lookup by primary key. ok is false
 // when system has no known placeholder style.
@@ -445,8 +451,8 @@ func (a *DatabaseAdminAuth) queryOneUser(ctx context.Context, query string, args
 	}
 
 	var u adminLoginUserRecord
-	var superRaw interface{}
-	err := a.db.QueryRowContext(ctx, query, args...).Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &superRaw)
+	var superRaw, activeRaw interface{}
+	err := a.db.QueryRowContext(ctx, query, args...).Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &superRaw, &activeRaw)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) || isAdminUserTableMissing(err) {
 			return adminLoginUserRecord{}, false, nil
@@ -457,6 +463,10 @@ func (a *DatabaseAdminAuth) queryOneUser(ctx context.Context, query string, args
 	u.Username = strings.TrimSpace(u.Username)
 	u.Email = strings.TrimSpace(u.Email)
 	u.IsSuperuser = parseAdminSuperuserValue(superRaw)
+	u.IsActive = parseAdminSuperuserValue(activeRaw)
+	if !u.IsActive {
+		return adminLoginUserRecord{}, false, nil
+	}
 	return u, true, nil
 }
 
@@ -480,14 +490,21 @@ func (a *DatabaseAdminAuth) listUsers(ctx context.Context) ([]adminLoginUserReco
 	users := make([]adminLoginUserRecord, 0, 8)
 	for rows.Next() {
 		var u adminLoginUserRecord
-		var superRaw interface{}
-		if err := rows.Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &superRaw); err != nil {
+		var superRaw, activeRaw interface{}
+		if err := rows.Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &superRaw, &activeRaw); err != nil {
 			return nil, true, fmt.Errorf("scan admin user row: %w", err)
 		}
 		u.ID = strings.TrimSpace(u.ID)
 		u.Username = strings.TrimSpace(u.Username)
 		u.Email = strings.TrimSpace(u.Email)
 		u.IsSuperuser = parseAdminSuperuserValue(superRaw)
+		u.IsActive = parseAdminSuperuserValue(activeRaw)
+		if !u.IsActive {
+			// The fallback read is the dialect-unaware path; it filters
+			// here for the same reason the bounded one filters in its
+			// scan — a deactivated operator is not an operator.
+			continue
+		}
 		users = append(users, u)
 	}
 	if err := rows.Err(); err != nil {

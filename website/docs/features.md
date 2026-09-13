@@ -160,6 +160,43 @@ tracing.
 
 List active server-side sessions and revoke them individually.
 
+## Operators
+
+The people who sign in to the panel are managed from it: create an account,
+give it a role, reset a password somebody forgot, deactivate the account of
+somebody who left. Until this existed the panel could edit the policies and
+not the people they applied to — an account could only be created with
+`nucleus createuser` on the server.
+
+| What you do | Route |
+|---|---|
+| List operators, with the roles each one holds | `GET /admin/api/admin-users` |
+| Create one (optionally with roles) | `POST /admin/api/admin-users` |
+| Change an email, promote or demote a superuser | `PUT /admin/api/admin-users/{id}` |
+| Set a new password | `POST /admin/api/admin-users/{id}/password` |
+| Deactivate / reactivate | `POST /admin/api/admin-users/{id}/disable` · `/enable` |
+| Grant or revoke a role | `POST` · `DELETE /admin/api/admin-users/{id}/roles` |
+| Delete the account | `DELETE /admin/api/admin-users/{id}` |
+
+**Deactivating is not deleting.** A deactivated operator cannot sign in and
+their existing session stops working on its next request — the panel re-reads
+the account on every request — but the account and everything the audit log
+records about it stay. Deleting removes the row; the trail of what that person
+did remains.
+
+Two refusals are built in, because locking everyone out is a single click:
+you cannot deactivate, delete or demote **your own** account, and nobody can
+deactivate, delete or demote the **last active superuser**. Both answer `409`
+with the reason.
+
+Passwords set here are hashed like any other credential and are never written
+to the audit log — the entry records that a password changed, not what to.
+
+Operator management needs an admin authentication provider that owns the
+accounts, which is the default one (backed by `nucleus_admin_users`). An
+application that authenticates its operators elsewhere gets `501` on these
+routes rather than a second, competing account store.
+
 ## Access control (RBAC)
 
 Inspect and manage the Casbin policies and roles that back the application's

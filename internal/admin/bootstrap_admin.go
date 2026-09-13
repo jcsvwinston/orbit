@@ -144,6 +144,38 @@ func ensureBootstrapAdminUsersTable(ctx context.Context, sqlDB *sql.DB, system s
 	if _, err := sqlDB.ExecContext(ctx, query); err != nil {
 		return fmt.Errorf("admin bootstrap ensure users table: %w", err)
 	}
+	return ensureAdminUsersActiveColumn(ctx, sqlDB, system)
+}
+
+// ensureAdminUsersActiveColumn adds is_active to a table created before the
+// column existed. Deactivating an operator is what the panel does instead of
+// deleting one (their audit trail and their policies outlive the account), so
+// the column has to be there on databases the CREATE above no longer touches.
+//
+// The probe is a read, not a catalogue query: `SELECT is_active … WHERE 1 = 0`
+// costs nothing, answers the same on every engine, and needs no dialect-
+// specific information_schema. Only when it fails does the ALTER run, and a
+// failing ALTER is returned — a column that could not be added would make
+// every later read fail with something far less obvious.
+func ensureAdminUsersActiveColumn(ctx context.Context, sqlDB *sql.DB, system string) error {
+	probe := fmt.Sprintf("SELECT is_active FROM %s WHERE 1 = 0", defaultAdminUsersTable)
+	if rows, err := sqlDB.QueryContext(ctx, probe); err == nil {
+		_ = rows.Close()
+		return nil
+	}
+
+	var alter string
+	switch system {
+	case "mssql":
+		alter = fmt.Sprintf("ALTER TABLE %s ADD is_active BIT NOT NULL DEFAULT 1", defaultAdminUsersTable)
+	case "oracle":
+		alter = fmt.Sprintf("ALTER TABLE %s ADD (is_active NUMBER(1) DEFAULT 1 NOT NULL)", defaultAdminUsersTable)
+	default:
+		alter = fmt.Sprintf("ALTER TABLE %s ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1", defaultAdminUsersTable)
+	}
+	if _, err := sqlDB.ExecContext(ctx, alter); err != nil {
+		return fmt.Errorf("admin bootstrap add is_active column: %w", err)
+	}
 	return nil
 }
 
@@ -180,6 +212,7 @@ func bootstrapAdminUsersTableDDL(system string) string {
 		email NVARCHAR(191) NOT NULL UNIQUE,
 		password_hash NVARCHAR(MAX) NOT NULL,
 		is_superuser BIT NOT NULL DEFAULT 0,
+		is_active BIT NOT NULL DEFAULT 1,
 		created_at NVARCHAR(64) NOT NULL,
 		updated_at NVARCHAR(64) NOT NULL
 	)`, defaultAdminUsersTable, defaultAdminUsersTable)
@@ -191,6 +224,7 @@ func bootstrapAdminUsersTableDDL(system string) string {
 		email VARCHAR2(191) NOT NULL UNIQUE,
 		password_hash VARCHAR2(4000) NOT NULL,
 		is_superuser NUMBER(1) DEFAULT 0 NOT NULL,
+		is_active NUMBER(1) DEFAULT 1 NOT NULL,
 		created_at VARCHAR2(64) NOT NULL,
 		updated_at VARCHAR2(64) NOT NULL
 	)';
@@ -205,6 +239,7 @@ END;`, defaultAdminUsersTable)
 	email VARCHAR(191) NOT NULL UNIQUE,
 	password_hash TEXT NOT NULL,
 	is_superuser INTEGER NOT NULL DEFAULT 0,
+	is_active INTEGER NOT NULL DEFAULT 1,
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL
 )`, defaultAdminUsersTable)
@@ -225,7 +260,7 @@ type bootstrapAdminRow struct {
 
 // adminUsersInsertColumns is the column list (and, with it, the value
 // count) for the bootstrap admin INSERT.
-const adminUsersInsertColumns = "(id, username, email, password_hash, is_superuser, created_at, updated_at)"
+const adminUsersInsertColumns = "(id, username, email, password_hash, is_superuser, is_active, created_at, updated_at)"
 
 // insertBootstrapAdminUser inserts the first admin user. When system names
 // a known dialect the values are bound as parameters (no SQL-string
@@ -241,11 +276,11 @@ func insertBootstrapAdminUser(ctx context.Context, sqlDB *sql.DB, system string,
 		stmt := fmt.Sprintf("INSERT INTO %s %s VALUES (%s)",
 			defaultAdminUsersTable, adminUsersInsertColumns, strings.Join(ph, ", "))
 		_, err := sqlDB.ExecContext(ctx, stmt,
-			row.id, row.username, row.email, row.passwordHash, row.isSuperuser, row.createdAt, row.updatedAt)
+			row.id, row.username, row.email, row.passwordHash, row.isSuperuser, 1, row.createdAt, row.updatedAt)
 		return err
 	}
 
-	stmt := fmt.Sprintf("INSERT INTO %s %s VALUES (%s, %s, %s, %s, %d, %s, %s)",
+	stmt := fmt.Sprintf("INSERT INTO %s %s VALUES (%s, %s, %s, %s, %d, 1, %s, %s)",
 		defaultAdminUsersTable, adminUsersInsertColumns,
 		quoteBootstrapSQLString(row.id),
 		quoteBootstrapSQLString(row.username),
@@ -264,7 +299,7 @@ func insertBootstrapAdminUser(ctx context.Context, sqlDB *sql.DB, system string,
 // empty or unrecognised system, signalling the caller to use the portable
 // inline-literal fallback (no portable placeholder style exists).
 func bootstrapInsertPlaceholders(system string) []string {
-	const n = 7 // len(adminUsersInsertColumns) values
+	const n = 8 // len(adminUsersInsertColumns) values
 	return bindPlaceholders(system, n)
 }
 

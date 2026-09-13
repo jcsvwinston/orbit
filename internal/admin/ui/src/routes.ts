@@ -25,6 +25,7 @@ export const lazyRoutes: readonly LazyRoute[] = [
   { path: 'live', load: () => import('@/features/network/pages/NetworkInspectorPage') },
   { path: 'sessions', load: () => import('@/features/infra/pages/InfraManagerPage') },
   { path: 'health', load: () => import('@/features/health/pages/HealthPage') },
+  { path: 'operators', load: () => import('@/features/operators/pages/OperatorsPage') },
   { path: 'rbac', load: () => import('@/features/rbac/pages/RBACPage') },
   { path: 'audit', load: () => import('@/features/audit/pages/AuditLogPage') },
 ]
