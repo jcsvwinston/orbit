@@ -100,6 +100,20 @@ type Config struct {
 	MultiTenantDefault string   `yaml:"multitenant_default" koanf:"multitenant_default"`
 	MultiTenantIDs     []string `yaml:"multitenant_ids" koanf:"multitenant_ids"`
 
+	// Row ownership: which column of a model says WHICH OPERATOR a row
+	// belongs to, keyed by model name, with "*" as the default for every
+	// model that carries the same column. It is what makes an RBAC policy on
+	// admin:<Model>#own enforceable — the grant every editorial admin needs
+	// ("an author edits their own posts"): lists are filtered by the column,
+	// another operator's row is reported as not found, and a create stamps
+	// it. A #own grant on a model that has no entry here is refused, never
+	// widened to every row.
+	//
+	// RowOwnerSubject names which name of the operator the column holds:
+	// "username" (default) or "id".
+	RowOwnerFields  map[string]string `yaml:"row_owner_fields" koanf:"row_owner_fields"`
+	RowOwnerSubject string            `yaml:"row_owner_subject" koanf:"row_owner_subject"`
+
 	// Environment is a label shown in the UI (e.g. "production"). Optional.
 	Environment string `yaml:"environment" koanf:"environment"`
 	// MigrationsPath is the directory the migrations view reads (default "migrations").
@@ -339,6 +353,8 @@ func (m *module) start(ctx context.Context) error {
 		MultiTenantDefault:    m.cfg.MultiTenantDefault,
 		MultiTenantAutoFilter: m.cfg.MultiTenantEnabled,
 		MultiTenantIDs:        m.cfg.MultiTenantIDs,
+		RowOwnerFields:        m.cfg.RowOwnerFields,
+		RowOwnerSubject:       m.cfg.RowOwnerSubject,
 		TenantResolver:        resolvedTenant,
 
 		AuditEnabled:   true,

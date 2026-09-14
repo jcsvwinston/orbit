@@ -162,31 +162,11 @@ func (s tenantScope) recordTenant(rec datasource.Record) (tenant string, present
 // for any id. A model whose primary key the scope cannot resolve never
 // confirms a row this way.
 func (s tenantScope) owns(ctx context.Context, st datasource.RecordStore, mi datasource.ModelInfo, id string, rec datasource.Record) (bool, error) {
-	if tenant, present := s.recordTenant(rec); present {
-		return tenant == s.Tenant, nil
-	}
-	want, ok := canonicalID(id)
-	if !ok {
-		return false, nil
-	}
-	pkColumn, _, ok := dsResolveField(mi, mi.PrimaryKey)
-	if !ok {
-		return false, nil
-	}
-	page, err := st.List(ctx, datasource.Query{
-		Page:     1,
-		PageSize: 1,
-		Filters:  map[string]string{s.Column(): s.Tenant, pkColumn: want},
-	})
-	if err != nil {
-		return false, err
-	}
-	for _, item := range page.Items {
-		if got, ok := canonicalID(recordPKValue(item, mi)); ok && got == want {
-			return true, nil
-		}
-	}
-	return false, nil
+	// The mechanism is shared with the row-ownership scope
+	// (permissions_row.go): both confine a request to the rows whose column
+	// carries one value, and both have to survive a record that does not
+	// carry the column at all.
+	return columnScopeOwns(ctx, st, mi, id, s.Column(), s.Keys, s.Tenant, rec)
 }
 
 // fieldPayloadKeys returns, sorted, the keys of data the backend resolves

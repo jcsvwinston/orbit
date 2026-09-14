@@ -203,6 +203,82 @@ Inspect and manage the Casbin policies and roles that back the application's
 authorizer. Orbit registers its own prefix with the framework's default-deny
 RBAC, so the admin surface is gated like any other route.
 
+A policy is `(subject, object, action)`. The subject is an operator's id, role
+or username; the action is the verb a handler checks (`list`, `retrieve`,
+`create`, `update`, `delete`, `export_csv`, `bulk_delete`, `bulk_export`, and
+the panel-wide ones such as `list_models` or `audit_view`). The object names
+what the verb applies to, at three levels of resolution:
+
+| Object | Means |
+|---|---|
+| `admin:Post` | the whole model, every row and every field |
+| `admin:Post#own` | the same verb, confined to the rows that belong to this operator |
+| `admin:Post.title` | one field of the model |
+
+A superuser bypasses all three, as it always has.
+
+### Per-row permissions
+
+`admin:Post#own` is the grant an editorial admin needs: an author lists, opens
+and edits their own posts and does not see anybody else's. Lists are filtered
+by the owner column, a row owned by somebody else answers `404` on the record
+endpoints (the same answer as a row that does not exist, so ids are not
+disclosed), a create stamps the operator as the owner, and an update cannot
+hand a row over.
+
+Which column says who owns a row is the application's answer, not a guess:
+
+```yaml
+modules:
+  orbit:
+    row_owner_fields:
+      Post: author        # the column of Post that holds the operator
+      "*": owner          # the default for every other model
+    row_owner_subject: username   # or "id"
+```
+
+A `#own` grant on a model with no entry there is **refused** with a `403` that
+says why. It is never widened to every row: an ownership rule that silently
+degrades to "everything" is the failure this is built to prevent.
+
+### Per-field permissions
+
+A policy whose object names a field narrows one column, in either of the two
+shapes an admin needs — the exception, or the whole permitted set:
+
+| Policy | Means |
+|---|---|
+| `(editors, admin:Post.price, deny)` | editors neither read nor write `price` |
+| `(editors, admin:Post.title, update)` | an allow-list: editors update `title`, and nothing else |
+| `(editors, admin:Post.title, create)` | the same, for creates |
+| `(editors, admin:Post.title, write)` | both of the two above |
+| `(editors, admin:Post.title, read)` | a read allow-list: only the named fields are emitted |
+
+An allow-list only applies to a subject that holds at least one field policy of
+that action for the model; a subject with none keeps the model-level grant it
+always had. A write that names a field the operator may not write is refused
+with a `403` **naming the field** — not dropped silently, because a form that
+believes it saved a value it did not save is worse than one that is told. A
+field the operator may not read is left out of the record, the list, the CSV
+export and the schema.
+
+Field policies narrow a grant; they never widen one. An operator who cannot
+update the model at all is refused before any field is consulted.
+
+### What a screen is told
+
+The payloads a model screen loads carry what this operator may do, so the panel
+can disable what it may not instead of finding out by being refused:
+
+- `GET /api/models` and `GET /api/models/{name}/schema` carry `permissions`
+  (action → boolean), `can_create`, `can_update`, `can_delete`, and `row_scope`
+  — the actions confined to the operator's own rows;
+- each field of the schema carries `can_edit` (`can_read` is true for every
+  field that arrives: the ones it is false for are not in the schema).
+
+They are a rendering aid. Every one of them is enforced again on the request
+that follows, and a client that ignores them is refused exactly as before.
+
 ## System metrics
 
 Runtime and resource consumption at a glance — CPU, memory, goroutines, and the

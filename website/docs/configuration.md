@@ -44,6 +44,8 @@ relay.
 | `multitenant_enabled` | bool | `false` | Confine Data Studio to the tenant the host application resolves for the request — every operation, exports and their jobs included, not only the list (see [Features](./features.md#data-studio)); a request with no resolved tenant and no default is a 403. `?tenant=<id>` / `?tenant=all` are accepted only from a superuser or a subject granted the `tenant_switch` RBAC action, and audited as `tenant.override`. The host's resolution must not be client-controlled (a header the client sets) for the confinement to hold. |
 | `multitenant_default` | string | — | Tenant applied when the host resolves none; without it such a request is refused unless the operator may switch tenants. |
 | `multitenant_ids` | []string | — | Known tenant IDs for the selector UI. |
+| `row_owner_fields` | map[string]string | — | Which column of each model says WHICH OPERATOR a row belongs to, keyed by model name, with `"*"` as the default for every model carrying the same column. It is what makes an `admin:<Model>#own` policy enforceable (see [Access control](./features.md#per-row-permissions)); a `#own` grant on a model with no entry here is refused with a 403, never widened to every row. |
+| `row_owner_subject` | string | `username` | Which name of the operator the owner column holds: `username` or `id`. |
 
 ## The live feed
 

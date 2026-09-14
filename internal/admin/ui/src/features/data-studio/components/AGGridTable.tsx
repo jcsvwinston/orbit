@@ -20,6 +20,7 @@ import { useRecordsLoader } from '../lib/useRecordsLoader'
 import { BATCH_SIZE_OPTIONS, DEFAULT_PAGE_SIZE, FILTER_DEBOUNCE_MS } from '../lib/constants'
 import { primaryKeyColumn, recordId, toApiId, type RecordId } from '../lib/recordIds'
 import { isSearchable } from '../lib/searchable'
+import { screenCapabilities } from '../lib/capabilities'
 import {
   Search, Plus, Pencil, Trash2, Loader2,
   Download, Upload, X, Filter, ChevronDown,
@@ -33,6 +34,8 @@ interface Props {
 
 export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
   const { toast } = useToast()
+  // What this operator may do with this model (see lib/capabilities).
+  const { canCreate, canUpdate, canDelete } = screenCapabilities(schema)
   const { theme } = useTheme()
   const [gridApi, setGridApi] = useState<GridApi | null>(null)
   const [selectedCount, setSelectedCount] = useState(0)
@@ -108,7 +111,7 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
         return formatCellValue(f, value)
       },
     })),
-    ...(schema.read_only ? [] : [{
+    ...(!canUpdate && !canDelete ? [] : [{
       headerName: 'Actions',
       colId: '__actions',
       width: 100,
@@ -121,34 +124,38 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
         const id = recordId(row, pkColumn)
         return (
           <div className="flex items-center justify-end gap-1">
-            <button
-              type="button"
-              onClick={() => handleEdit(row)}
-              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
-              title="Edit"
-              aria-label={`Edit record ${id ?? ''}`}
-            >
-              <Pencil className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => id !== null && setDeleteId(id)}
-              disabled={id === null}
-              className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive disabled:opacity-40"
-              title="Delete"
-              aria-label={`Delete record ${id ?? ''}`}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
+            {canUpdate && (
+              <button
+                type="button"
+                onClick={() => handleEdit(row)}
+                className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                title="Edit"
+                aria-label={`Edit record ${id ?? ''}`}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {canDelete && (
+              <button
+                type="button"
+                onClick={() => id !== null && setDeleteId(id)}
+                disabled={id === null}
+                className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive disabled:opacity-40"
+                title="Delete"
+                aria-label={`Delete record ${id ?? ''}`}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
         )
       },
     } as ColDef]),
-  ], [listFields, schema.read_only, pkColumn, handleEdit])
+  ], [listFields, canUpdate, canDelete, pkColumn, handleEdit])
 
   const rowSelection = useMemo<RowSelectionOptions | undefined>(
-    () => (schema.read_only ? undefined : { mode: 'multiRow', checkboxes: true, headerCheckbox: true, enableClickSelection: false }),
-    [schema.read_only],
+    () => (canDelete ? { mode: 'multiRow', checkboxes: true, headerCheckbox: true, enableClickSelection: false } : undefined),
+    [canDelete],
   )
 
   const rowKey = useCallback((row: AppRecord) => {
@@ -310,7 +317,7 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
 
         <div className="flex-1" />
 
-        {selectedCount > 0 && !schema.read_only && (
+        {selectedCount > 0 && canDelete && (
           <Button variant="destructive" size="sm" onClick={() => setConfirmBulk(true)} className="gap-1.5">
             <Trash2 className="h-3.5 w-3.5" />
             Delete {selectedCount}
@@ -322,7 +329,7 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
           Export / Import
         </Button>
 
-        {!schema.read_only && (
+        {canCreate && (
           <Button size="sm" onClick={handleCreate} className="gap-1.5">
             <Plus className="h-3.5 w-3.5" />
             New Record
@@ -419,7 +426,7 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
             </Button>
           </div>
           <div className="h-6 w-px bg-border" />
-          <Button size="sm" variant="outline" onClick={() => setImportOpen(true)} disabled={schema.read_only} className="gap-1.5 h-8">
+          <Button size="sm" variant="outline" onClick={() => setImportOpen(true)} disabled={!canCreate} className="gap-1.5 h-8">
             <Upload className="h-3.5 w-3.5" />
             Import…
           </Button>

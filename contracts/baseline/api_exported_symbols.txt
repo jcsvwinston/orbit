@@ -17,6 +17,8 @@ github.com/jcsvwinston/orbit field:Config.MultiTenantDefault
 github.com/jcsvwinston/orbit field:Config.MultiTenantEnabled
 github.com/jcsvwinston/orbit field:Config.MultiTenantIDs
 github.com/jcsvwinston/orbit field:Config.Prefix
+github.com/jcsvwinston/orbit field:Config.RowOwnerFields
+github.com/jcsvwinston/orbit field:Config.RowOwnerSubject
 github.com/jcsvwinston/orbit field:Config.Title
 github.com/jcsvwinston/orbit field:Config.TraceURLTemplate
 github.com/jcsvwinston/orbit func:Module

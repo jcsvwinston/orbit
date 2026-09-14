@@ -15,6 +15,7 @@
 | [ADR-004](ADR-004-frontera-authn-delegada-authz-panel.md) | Autenticación delegada, autorización del panel propia | Accepted · retroactivo | nucleus ADR-019 |
 | [ADR-005](ADR-005-confinamiento-storage-browse.md) | El navegador de storage del panel se confina a un root fijo | Accepted · retroactivo | ADR-004 |
 | [ADR-006](ADR-006-pines-internos-sin-cascada.md) | Ningún módulo hermano requiere a otro por tag salvo el contrato del protocolo (fin de la cascada de pines internos) | Accepted (2026-09-05) | ADR-003 · quantum QADR-0002 · QADR-0008 |
+| [ADR-007](ADR-007-permisos-por-campo-y-por-fila.md) | Los permisos llegan al campo y a la fila por adición a la gramática de políticas | Accepted (2026-09-13) | ADR-001 · ADR-004 · quantum QADR-0010 |
 
 **ADR-002 está aceptado pero no implementado**: la D2 de la auditoría
 integral 2026-08-30 decidió (2026-08-31) que el Data Studio del plano fleet

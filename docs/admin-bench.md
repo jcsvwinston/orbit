@@ -38,17 +38,17 @@ A control that cannot be probed does not belong in the bench.
 
 ## The result
 
-**34 of 59 controls present. 9 partial. 16 absent.**
+**37 of 59 controls present. 8 partial. 14 absent.**
 
 | family | present | partial | absent |
 |---|---|---|---|
 | data studio | 9 | 4 | 4 |
-| permissions | 6 | 1 | 2 |
+| permissions | 9 | 0 | 0 |
 | audit | 4 | 1 | 2 |
 | operations | 10 | 3 | 4 |
 | customization | 3 | 0 | 4 |
 | interface | 2 | 0 | 0 |
-| **total** | **34** | **9** | **16** |
+| **total** | **37** | **8** | **14** |
 
 ## What the shape of it says
 
@@ -67,11 +67,18 @@ The panel **browses and operates well, and administers poorly**.
   `PERM-03`). The probes measure it by effect — the created account signs in,
   the reset password works and the old one does not, the deactivated one
   cannot get back in — not by the status code of the call that changes it.
-- The permission model stops at the model boundary. `(subject, model, action)`
-  has nowhere to put a field or a row, so "an editor may change the title but
-  not the price" and "an author may edit their own posts" cannot be
-  expressed — and the payloads a screen loads carry no capability hints, so a
-  UI can only discover a refusal by being refused.
+- The permission model used to stop at the model boundary, and no longer
+  does: the object of a policy also names a field (`admin:Post.title`) or
+  carries the `#own` qualifier (`admin:Post#own`), so "an editor may change
+  the title but not the price" and "an author may edit their own posts" are
+  now things a policy can say (`PERM-06`, `PERM-07`). The payloads a screen
+  loads carry the operator's verbs with them (`PERM-09`), so a UI disables
+  what it may not do instead of discovering it by being refused. Three things
+  worth keeping in mind about how it is measured: the row probe creates the
+  operator's own row THROUGH the panel and somebody else's as the superuser,
+  the field probe reads the value back after the refusal (a 403 that wrote
+  the row anyway would be worse than no permission at all), and the hint
+  probe checks each hint against the answer the panel actually gives.
 - The audit trail is a process-lifetime buffer. It covers every mutating
   surface and records both sides of an edit, and a second process on the same
   database sees none of it.

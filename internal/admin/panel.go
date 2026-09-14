@@ -112,6 +112,19 @@ type PanelConfig struct {
 	// RBAC configuration
 	RBACEnforcer *authz.Enforcer // optional Casbin enforcer for fine-grained authorization
 
+	// Row ownership. RowOwnerFields maps a model name to the column that
+	// says which operator a row belongs to, with "*" as the default for
+	// every model that carries the same column. It is what makes a policy on
+	// admin:<Model>#own enforceable: list is filtered by it, a row that
+	// belongs to somebody else is reported as not found, and a create stamps
+	// it. A #own grant on a model with no entry here is REFUSED, never
+	// widened to every row.
+	//
+	// RowOwnerSubject picks which name of the operator the column holds:
+	// "username" (default) or "id".
+	RowOwnerFields  map[string]string
+	RowOwnerSubject string
+
 	// Audit logging configuration
 	AuditEnabled bool // whether audit logging is enabled
 	AuditMaxSize int  // max audit entries in memory (default 10000)

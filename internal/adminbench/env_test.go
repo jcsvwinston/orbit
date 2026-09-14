@@ -52,6 +52,18 @@ type Author struct {
 	Name string `db:"required" json:"name" admin:"list,search"`
 }
 
+// Article is the model row permissions are measured on: it carries the column
+// that says WHICH OPERATOR a row belongs to, which is what an admin:<Model>#own
+// grant needs to mean anything. A bench whose every model belongs to nobody
+// cannot ask whether an author edits their own posts.
+type Article struct {
+	model.BaseModel
+
+	Title string `db:"required" json:"title" validate:"required" admin:"list,search"`
+	Owner string `json:"owner" admin:"list,filter"`
+	Body  string `json:"body"`
+}
+
 // Credential exists for the redaction probe: a model whose field names say
 // "secret" the way a real one does.
 type Credential struct {
@@ -79,9 +91,9 @@ type Comment struct {
 func contentModule() nucleus.ModuleSpec {
 	return nucleus.Module[struct{}]{
 		Name:   "content",
-		Models: []any{Note{}, Author{}, Comment{}, Credential{}},
+		Models: []any{Note{}, Author{}, Comment{}, Credential{}, Article{}},
 		OnStart: func(_ context.Context, rt nucleus.Runtime, _ struct{}) error {
-			return rt.AutoMigrate(Note{}, Author{}, Comment{}, Credential{})
+			return rt.AutoMigrate(Note{}, Author{}, Comment{}, Credential{}, Article{})
 		},
 	}.Build()
 }
@@ -127,6 +139,11 @@ func (e *env) server() *nucleustest.Server {
 					BootstrapUsername: "admin",
 					BootstrapEmail:    "admin@example.test",
 					BootstrapPassword: bootstrapPassword,
+					// The application says which column owns a row; without
+					// it an admin:Article#own grant has nothing to confine
+					// itself to, and the panel refuses it rather than
+					// widening it.
+					RowOwnerFields: map[string]string{"Article": "owner"},
 				}),
 			},
 		})
@@ -271,6 +288,17 @@ func (e *env) createNote(t *testing.T, fields map[string]any) string {
 	r := e.do(t, http.MethodPost, "/admin/api/models/Note", fields)
 	if r.code != http.StatusCreated && r.code != http.StatusOK {
 		t.Fatalf("create Note answered %d: %s", r.code, r.text())
+	}
+	return recordID(t, r.json(t))
+}
+
+// createArticle posts one Article as the superuser, with the owner the caller
+// names — the rows a row-scoped operator must NOT see are written this way.
+func (e *env) createArticle(t *testing.T, fields map[string]any) string {
+	t.Helper()
+	r := e.do(t, http.MethodPost, "/admin/api/models/Article", fields)
+	if r.code != http.StatusCreated && r.code != http.StatusOK {
+		t.Fatalf("create Article answered %d: %s", r.code, r.text())
 	}
 	return recordID(t, r.json(t))
 }

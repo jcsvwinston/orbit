@@ -24,7 +24,22 @@ export interface SessionsResponse {
 
 // ── Data Studio types (match backend handleListModels / handleGetSchema) ──
 
-export interface ModelSummary {
+// Capability hints the backend adds to the payloads a model screen loads
+// (handleListModels / handleGetSchema). They exist so a screen can disable
+// what this operator may not do instead of finding out by being refused —
+// they are a rendering aid, and every one of them is enforced again on the
+// request that follows.
+export interface CapabilityHints {
+  permissions?: { [action: string]: boolean }
+  // Actions this operator holds only over their OWN rows (an
+  // admin:<Model>#own grant). Empty when nothing is confined.
+  row_scope?: string[]
+  can_create?: boolean
+  can_update?: boolean
+  can_delete?: boolean
+}
+
+export interface ModelSummary extends CapabilityHints {
   name: string
   plural: string
   table: string
@@ -38,7 +53,7 @@ export interface ModelSummary {
   databases?: string[]
 }
 
-export interface ModelSchema {
+export interface ModelSchema extends CapabilityHints {
   name: string
   plural: string
   table: string
@@ -67,6 +82,11 @@ export interface SchemaField {
   is_tenant_field: boolean
   fk_model?: string
   choices?: FieldChoice[]
+  // Per-field hints. A field this operator may not READ is not in the
+  // schema at all, so can_read is true for every field that arrives;
+  // can_edit is false for one they may see and not write.
+  can_read?: boolean
+  can_edit?: boolean
 }
 
 export interface FieldChoice {

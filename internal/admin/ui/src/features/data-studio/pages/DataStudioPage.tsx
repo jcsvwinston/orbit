@@ -8,6 +8,7 @@ import type { ModelSummary, ModelSchema, RuntimeInfo } from '@/types'
 import ModelSidebar from '../components/ModelSidebar'
 import AGGridTable from '../components/AGGridTable'
 import FieldConfigPanel from '../components/FieldConfigPanel'
+import { screenCapabilities } from '../lib/capabilities'
 import { Database, Loader2, Server, Settings2 } from 'lucide-react'
 
 export default function DataStudioPage() {
@@ -161,6 +162,10 @@ export default function DataStudioPage() {
                   <p className="text-xs text-muted-foreground">
                     {schema.table}
                     {schema.read_only && ' (read-only)'}
+                    {/* A row-scoped operator is looking at their own rows,
+                        not at an empty table: say so, or the missing rows
+                        read as a bug. */}
+                    {screenCapabilities(schema).rowScoped && ' — showing your own records'}
                   </p>
                 </div>
 
