@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import type { ModelSchema, Record as AppRecord } from '@/types'
 import * as api from '@/services/api'
 import RecordForm from './RecordForm'
+import RecordHistoryDialog from './RecordHistoryDialog'
 import ImportDialog from './ImportDialog'
 import { formatCellValue } from '../lib/fieldValues'
 import { useRecordsLoader } from '../lib/useRecordsLoader'
@@ -22,7 +23,7 @@ import { primaryKeyColumn, recordId, toApiId, type RecordId } from '../lib/recor
 import { isSearchable } from '../lib/searchable'
 import { screenCapabilities } from '../lib/capabilities'
 import {
-  Search, Plus, Pencil, Trash2, Loader2,
+  Search, Plus, Pencil, Trash2, Loader2, History,
   Download, Upload, X, Filter, ChevronDown,
 } from 'lucide-react'
 
@@ -53,6 +54,9 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
   const [formOpen, setFormOpen] = useState(false)
   const [editingRecord, setEditingRecord] = useState<AppRecord | null>(null)
   const [deleteId, setDeleteId] = useState<RecordId | null>(null)
+  // The row whose history is open: the audit trail read by record, which is
+  // what an operator asks for after a bad edit.
+  const [historyId, setHistoryId] = useState<RecordId | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [confirmBulk, setConfirmBulk] = useState(false)
@@ -111,7 +115,7 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
         return formatCellValue(f, value)
       },
     })),
-    ...(!canUpdate && !canDelete ? [] : [{
+    ...([{
       headerName: 'Actions',
       colId: '__actions',
       width: 100,
@@ -124,6 +128,16 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
         const id = recordId(row, pkColumn)
         return (
           <div className="flex items-center justify-end gap-1">
+            <button
+              type="button"
+              onClick={() => id !== null && setHistoryId(id)}
+              disabled={id === null}
+              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-40"
+              title="History"
+              aria-label={`History of record ${id ?? ''}`}
+            >
+              <History className="h-3.5 w-3.5" />
+            </button>
             {canUpdate && (
               <button
                 type="button"
@@ -520,6 +534,14 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
         schema={schema}
         record={editingRecord}
         onSave={handleSave}
+      />
+
+      {/* The record's own history, read from the audit trail */}
+      <RecordHistoryDialog
+        open={historyId !== null}
+        onClose={() => setHistoryId(null)}
+        modelName={modelName}
+        recordId={historyId}
       />
 
       {/* Import dialog */}

@@ -433,13 +433,52 @@ func probeFixtures(t *testing.T, e *env) verdict {
 
 // probeRecordHistory asks what an operator asks after a bad edit: what did
 // this row look like before, and who changed it.
+//
+// The answer has to carry the VALUES, not just the fact that an edit
+// happened: a history that says "somebody updated this row" is a timestamp,
+// and what the operator needs is the title it used to have.
 func probeRecordHistory(t *testing.T, e *env) verdict {
-	id := e.createNote(t, map[string]any{"title": "historic", "status": "draft"})
-	e.do(t, http.MethodPut, "/admin/api/models/Note/"+id, map[string]any{"title": "historic (edited)"})
-	return e.unrouted(t,
-		"/admin/api/models/Note/"+id+"/history",
-		"/admin/api/models/Note/"+id+"/versions",
-		"/admin/api/models/Note/"+id+"/revisions")
+	const (
+		before = "historic"
+		after  = "historic (edited)"
+	)
+	id := e.createNote(t, map[string]any{"title": before, "status": "draft"})
+	e.do(t, http.MethodPut, "/admin/api/models/Note/"+id, map[string]any{"title": after})
+
+	history := e.get(t, "/admin/api/models/Note/"+id+"/history")
+	if history.code == http.StatusNotFound || history.code == http.StatusMethodNotAllowed || history.servedTheShell() {
+		return e.unrouted(t,
+			"/admin/api/models/Note/"+id+"/versions",
+			"/admin/api/models/Note/"+id+"/revisions")
+	}
+	if history.code != http.StatusOK {
+		t.Logf("the history of Note %s answered %d: %s", id, history.code, history.text())
+		return partial
+	}
+
+	entries, _ := history.json(t)["entries"].([]any)
+	for _, raw := range entries {
+		entry, ok := raw.(map[string]any)
+		if !ok || entry["action"] != "update" {
+			continue
+		}
+		old, _ := entry["old_value"].(map[string]any)
+		nu, _ := entry["new_value"].(map[string]any)
+		if old == nil || nu == nil {
+			continue
+		}
+		if fmt.Sprint(old["title"]) != before || fmt.Sprint(nu["title"]) != after {
+			continue
+		}
+		if fmt.Sprint(entry["username"]) == "" {
+			t.Logf("the history says what changed and not who changed it: %v", entry)
+			return partial
+		}
+		return present
+	}
+	t.Logf("the history of Note %s (%d entries) does not carry the edit's before and after: %s",
+		id, len(entries), history.text())
+	return partial
 }
 
 // probeSavedViews asks for the filter set an operator uses every morning.

@@ -1,7 +1,7 @@
 import type {
   Session, SessionsResponse, Record as AppRecord, AuditLogPage, AuditLogQuery, RBACPolicy, RBACPoliciesResponse,
   HealthCheck, LiveRequest, LiveQuery, LiveFeedEntry, ModelsResponse, ModelSchema, PaginatedResult, SystemSnapshot,
-  Operator, OperatorsResponse,
+  Operator, OperatorsResponse, AuditRetention,
 } from '@/types'
 import { buildAdminPath } from '@/config'
 
@@ -295,6 +295,9 @@ interface RawAuditEntry {
   record_id?: string
   ip?: string
   created_at: string
+  // Present on the record history, where the values ARE the answer.
+  old_value?: { [key: string]: unknown } | null
+  new_value?: { [key: string]: unknown } | null
 }
 
 // The backend filters by user_id / model / action and pages with
@@ -316,6 +319,8 @@ export async function getAuditLogs(query: AuditLogQuery = {}): Promise<AuditLogP
     page?: number
     page_size?: number
     total_pages?: number
+    persistent?: boolean
+    retention_days?: number
   }>(`/api/audit?${searchParams}`)
 
   return {
@@ -330,11 +335,93 @@ export async function getAuditLogs(query: AuditLogQuery = {}): Promise<AuditLogP
       modelName: entry.model_name ?? '',
       recordId: entry.record_id ?? '',
       ip: entry.ip ?? '',
+      oldValue: entry.old_value ?? null,
+      newValue: entry.new_value ?? null,
     })),
     total: response.total ?? 0,
     page: response.page ?? query.page ?? 1,
     pageSize: response.page_size ?? query.page_size ?? 50,
     totalPages: response.total_pages ?? 1,
+    persistent: response.persistent,
+    retentionDays: response.retention_days,
+  }
+}
+
+// auditExportURL is the same listing as a CSV file, with the filters the
+// screen is showing. A compliance request asks for a file; answering it by
+// scrolling is how a trail nobody can hand over stays one.
+export function auditExportURL(query: AuditLogQuery = {}): string {
+  const searchParams = new URLSearchParams({ format: 'csv' })
+  if (query.user_id) searchParams.set('user_id', query.user_id)
+  if (query.model) searchParams.set('model', query.model)
+  if (query.action) searchParams.set('action', query.action)
+  searchParams.set('page_size', String(query.page_size ?? 200))
+  return buildAdminPath(`/api/audit?${searchParams}`)
+}
+
+export async function getAuditRetention(): Promise<AuditRetention> {
+  const response = await fetchAPI<{
+    enabled?: boolean
+    retention_days?: number
+    configured_retention_days?: number
+    store?: string
+    persistent?: boolean
+    max_entries?: number
+  }>('/api/audit/retention')
+  return {
+    enabled: response.enabled ?? false,
+    retentionDays: response.retention_days ?? 0,
+    configuredRetentionDays: response.configured_retention_days ?? 0,
+    store: response.store ?? 'memory',
+    persistent: response.persistent ?? false,
+    maxEntries: response.max_entries ?? 0,
+  }
+}
+
+export async function setAuditRetention(days: number): Promise<AuditRetention> {
+  await fetchAPI('/api/audit/retention', {
+    method: 'PUT',
+    body: JSON.stringify({ retention_days: days }),
+  })
+  return getAuditRetention()
+}
+
+// getRecordHistory reads the audit trail BY RECORD: what this row said
+// before, and who changed it. It goes back as far as the trail does.
+export async function getRecordHistory(model: string, id: string | number, pageSize = 50): Promise<AuditLogPage> {
+  const response = await fetchAPI<{
+    enabled?: boolean
+    reason?: string
+    entries?: RawAuditEntry[]
+    total?: number
+    page?: number
+    page_size?: number
+    total_pages?: number
+    persistent?: boolean
+    retention_days?: number
+  }>(`/api/models/${encodeURIComponent(model)}/${encodeURIComponent(String(id))}/history?page_size=${pageSize}`)
+
+  return {
+    enabled: response.enabled ?? true,
+    reason: response.reason,
+    entries: (response.entries ?? []).map((entry) => ({
+      id: entry.id,
+      timestamp: entry.created_at,
+      userId: entry.user_id ?? '',
+      username: entry.username ?? '',
+      action: entry.action,
+      modelName: entry.model_name ?? '',
+      recordId: entry.record_id ?? '',
+      ip: entry.ip ?? '',
+      oldValue: entry.old_value ?? null,
+      newValue: entry.new_value ?? null,
+    })),
+    total: response.total ?? 0,
+    page: response.page ?? 1,
+    pageSize: response.page_size ?? pageSize,
+    totalPages: response.total_pages ?? 1,
+    persistent: response.persistent,
+    retentionDays: response.retention_days,
   }
 }
 

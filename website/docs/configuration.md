@@ -40,7 +40,9 @@ relay.
 | Key (`modules.orbit.*`) | Type | Default | Description |
 |---|---|---|---|
 | `migrations_path` | string | `migrations` | Directory the migrations view reads. |
-| `audit_max_size` | int | `10000` | In-memory audit-log ring size. The ring is per process and not persisted — a restart clears it (see [Audit log](./features.md#audit-log)). |
+| `audit_store` | string | `database` | Where the audit trail is kept: `database` writes a table the panel creates and owns, so the trail survives restarts and is shared by every replica; `memory` keeps the process-lifetime ring instead. An application with no database handle gets the ring either way (see [Audit log](./features.md#audit-log)). |
+| `audit_retention_days` | int | `0` | Drop trail entries older than this many days — a period, which is what a compliance window is. Applied when the panel comes up and at most hourly afterwards; zero keeps entries until the log is cleared. An operator can change the window in effect from the panel, and a restart comes back to this value. |
+| `audit_max_size` | int | `10000` | In-memory audit-log ring size. It bounds the `memory` store only — a trail in the database is bounded by `audit_retention_days`, not by a count. |
 | `multitenant_enabled` | bool | `false` | Confine Data Studio to the tenant the host application resolves for the request — every operation, exports and their jobs included, not only the list (see [Features](./features.md#data-studio)); a request with no resolved tenant and no default is a 403. `?tenant=<id>` / `?tenant=all` are accepted only from a superuser or a subject granted the `tenant_switch` RBAC action, and audited as `tenant.override`. The host's resolution must not be client-controlled (a header the client sets) for the confinement to hold. |
 | `multitenant_default` | string | — | Tenant applied when the host resolves none; without it such a request is refused unless the operator may switch tenants. |
 | `multitenant_ids` | []string | — | Known tenant IDs for the selector UI. |

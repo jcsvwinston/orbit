@@ -4,9 +4,12 @@
 package adminbench
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jcsvwinston/nucleus/pkg/nucleus"
 	"github.com/jcsvwinston/nucleus/pkg/nucleustest"
@@ -211,19 +214,79 @@ func probeAuditExport(t *testing.T, e *env) verdict {
 	return e.unrouted(t, "/admin/api/audit/export", "/admin/api/audit/download")
 }
 
-// probeAuditRetention asks whether the operator can say how long the trail is
-// kept. The only knob is a ring size in the mount config, and the panel does
-// not serve a retention surface at all.
+// probeAuditRetention asks whether an operator can say how long the trail is
+// kept — as a PERIOD, which is what a compliance window is, and not as a
+// count of entries.
+//
+// It is measured by effect, and the effect needs an OLD entry: the probe
+// writes one straight into the trail's table with a date outside the window,
+// declares the window through the panel, and then asks the panel what it
+// still holds. A retention endpoint that answered 200 and dropped nothing
+// would pass a probe that only read it back.
 func probeAuditRetention(t *testing.T, e *env) verdict {
-	if v := e.unrouted(t, "/admin/api/audit/retention", "/admin/api/audit/settings"); v != absent {
-		return v
+	policy := e.get(t, "/admin/api/audit/retention")
+	if policy.code == http.StatusNotFound || policy.code == http.StatusMethodNotAllowed || policy.servedTheShell() {
+		if configHasKey("audit_retention") || configHasKey("audit_retention_days") {
+			return partial
+		}
+		if configHasKey("audit_max_size") {
+			t.Logf("the only bound on the trail is the ring size (audit_max_size), which is a count, not a period")
+			return partial
+		}
+		return absent
 	}
-	if configHasKey("audit_retention") || configHasKey("audit_retention_days") {
+	if policy.code != http.StatusOK {
+		t.Logf("the retention policy answered %d: %s", policy.code, policy.text())
 		return partial
 	}
-	if configHasKey("audit_max_size") {
-		t.Logf("the only bound on the trail is the ring size (audit_max_size), which is a count, not a period")
+	if _, ok := policy.json(t)["retention_days"]; !ok {
+		t.Logf("the policy does not say how long the trail is kept: %s", policy.text())
 		return partial
 	}
-	return absent
+
+	// One entry inside the window and one well outside it.
+	fresh := e.createNote(t, map[string]any{"title": "retention-fresh", "status": "retain"})
+	stale := insertStaleAuditEntry(t, e, 400*24*time.Hour)
+
+	set := e.do(t, http.MethodPut, "/admin/api/audit/retention", map[string]any{"retention_days": 30})
+	if set.code != http.StatusOK {
+		t.Logf("declaring a 30-day window answered %d: %s", set.code, set.text())
+		return partial
+	}
+
+	after := e.get(t, "/admin/api/audit?page_size=200")
+	if after.code != http.StatusOK {
+		t.Logf("the trail answered %d after the window was declared: %s", after.code, after.text())
+		return partial
+	}
+	body := after.raw()
+	if strings.Contains(body, stale) {
+		t.Logf("an entry older than the declared window is still in the trail (%s): retention is declared and not applied", stale)
+		return partial
+	}
+	if !strings.Contains(body, fresh) {
+		t.Logf("the window dropped an entry INSIDE it (Note %s): retention is not a window", fresh)
+		return partial
+	}
+	return present
+}
+
+// insertStaleAuditEntry writes one audit row straight into the table the
+// panel keeps its trail in, dated age ago, and returns the record id that
+// identifies it. It reaches past the product on purpose: no API can write an
+// entry in the past, and without one there is no way to ask whether a
+// retention window is applied or merely stored.
+func insertStaleAuditEntry(t *testing.T, e *env, age time.Duration) string {
+	t.Helper()
+	recordID := fmt.Sprintf("adminbench-stale-%d", time.Now().UnixNano())
+	when := time.Now().UTC().Add(-age).Format(time.RFC3339Nano)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err := e.db().ExecContext(ctx,
+		`INSERT INTO nucleus_admin_audit (user_id, username, action, model_name, record_id, ip, user_agent, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"adminbench", "adminbench", "create", "Note", recordID, "127.0.0.1", "adminbench", when); err != nil {
+		t.Fatalf("write a stale audit entry: %v", err)
+	}
+	return recordID
 }

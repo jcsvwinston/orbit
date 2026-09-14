@@ -38,17 +38,17 @@ A control that cannot be probed does not belong in the bench.
 
 ## The result
 
-**37 of 59 controls present. 8 partial. 14 absent.**
+**41 of 59 controls present. 7 partial. 11 absent.**
 
 | family | present | partial | absent |
 |---|---|---|---|
-| data studio | 9 | 4 | 4 |
+| data studio | 10 | 4 | 3 |
 | permissions | 9 | 0 | 0 |
-| audit | 4 | 1 | 2 |
+| audit | 7 | 0 | 0 |
 | operations | 10 | 3 | 4 |
 | customization | 3 | 0 | 4 |
 | interface | 2 | 0 | 0 |
-| **total** | **37** | **8** | **14** |
+| **total** | **41** | **7** | **11** |
 
 ## What the shape of it says
 
@@ -79,9 +79,13 @@ The panel **browses and operates well, and administers poorly**.
   the field probe reads the value back after the refusal (a 403 that wrote
   the row anyway would be worse than no permission at all), and the hint
   probe checks each hint against the answer the panel actually gives.
-- The audit trail is a process-lifetime buffer. It covers every mutating
-  surface and records both sides of an edit, and a second process on the same
-  database sees none of it.
+- The audit trail is no longer a process-lifetime buffer: it is a table the
+  panel owns, with a retention window an operator can declare, a CSV export
+  that carries the filters the screen was showing, and the history of one
+  record read from the same trail (`AUD-05`, `AUD-06`, `AUD-07`, `DS-16`).
+  The probes measure the part a status code cannot show — a SECOND
+  application on the same database reads what the first recorded, and an
+  entry dated outside the declared window is gone while one inside it stays.
 
 ## Four defects the bench found, none of them a missing capability
 

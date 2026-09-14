@@ -167,6 +167,11 @@ export interface AuditLog {
   modelName: string
   recordId: string
   ip: string
+  // Both sides of the change, as the trail recorded them (already redacted
+  // by the backend). The listing does not need them; the record history is
+  // nothing without them.
+  oldValue?: { [key: string]: unknown } | null
+  newValue?: { [key: string]: unknown } | null
 }
 
 export interface AuditLogPage {
@@ -177,6 +182,21 @@ export interface AuditLogPage {
   page: number
   pageSize: number
   totalPages: number
+  // Whether this trail survives the process — said by the backend rather
+  // than discovered by a restart — and how far back it is kept.
+  persistent?: boolean
+  retentionDays?: number
+}
+
+// The retention policy of the trail: how long it is kept, where, and what a
+// restart comes back to (the value the application configured).
+export interface AuditRetention {
+  enabled: boolean
+  retentionDays: number
+  configuredRetentionDays: number
+  store: string
+  persistent: boolean
+  maxEntries: number
 }
 
 export interface AuditLogQuery {

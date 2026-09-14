@@ -32,7 +32,7 @@ no separate asset deployment, no out-of-process sidecar, no database of its own.
 | **Session viewer** | List and revoke active server-side sessions. |
 | **Access control (RBAC)** | Inspect and manage the Casbin policies and roles backing the app's authorizer. |
 | **System metrics** | Runtime and resource consumption — CPU, memory, goroutines, database pool. |
-| **Audit log** | An in-memory ring of admin actions. |
+| **Audit log** | A durable trail of admin actions, with retention, export and per-record history. |
 | **Overview & Health** | Dashboard and health at a glance. |
 
 The UI ships **embedded in the binary** (`go:embed`), version-pinned to the

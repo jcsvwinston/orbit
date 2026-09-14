@@ -288,18 +288,70 @@ database connection pool.
 
 ## Audit log
 
-An in-memory ring of admin actions, sized by `audit_max_size` (default 10,000
-entries). It is **not** persisted: it lives in one process, a restart or
-deploy clears it, and in a multi-replica deployment each replica keeps its
-own ring. Treat it as a live operational view, not a compliance store.
+A trail of admin actions, kept **in the database** the panel already uses: a
+table it creates and owns (`nucleus_admin_audit`). It survives a restart or a
+deploy, every replica writes to and reads from the same trail, and the answer
+to "what happened before the incident" does not begin when the process did.
 
-If you need a durable audit trail, write it at the data layer: applications
-on the Quark ORM can enable its transactional `quark_audit` log
-(`EnableAuditLog`), which survives restarts and is written in the same
-transaction as the change. The panel's ring complements it — it also covers
-panel-only actions (logins, session terminations, tenant switches recorded as
-`tenant.override` with the requested tenant as `record_id`) that never touch
-a model.
+| `audit_store` | What you get |
+|---|---|
+| `database` (default when the application has a database) | the durable trail described here |
+| `memory` | the process-lifetime ring — bounded by `audit_max_size`, cleared by a restart, private to each replica |
+
+An application with no database handle gets the ring either way, and so does
+one whose table cannot be created: the panel logs a warning and keeps working
+rather than refusing to start.
+
+The listing (`GET /api/audit`) says which of the two it is serving
+(`persistent`), so an empty page is never mistaken for "nothing happened".
+
+### Retention
+
+`audit_retention_days` drops entries older than that many days — a **period**,
+which is what a compliance window is. (`audit_max_size` is a count of entries
+and bounds the in-memory ring only.) Zero keeps entries until somebody clears
+the log. The window is applied when the panel comes up and at most hourly
+afterwards, on the writing path — there is no background sweeper to start,
+stop or leak.
+
+An operator can read the policy and change the window in effect from the
+panel:
+
+```
+GET /api/audit/retention     → {"retention_days": 30, "configured_retention_days": 90, "store": "database", …}
+PUT /api/audit/retention     {"retention_days": 30}
+```
+
+A change made this way applies immediately and is audited
+(`audit.retention.set`); it does **not** rewrite the application's
+configuration, so a restart comes back to `configured_retention_days`, which
+the payload carries for exactly that reason.
+
+### Export
+
+`GET /api/audit?format=csv` streams the trail as a CSV file, carrying the same
+filters as the listing — what you export is what you were reading. The export
+is itself recorded (`audit.export`, with the filters and the number of
+entries): who took a copy of the log is the kind of thing the log is for.
+
+### The history of one record
+
+`GET /api/models/{model}/{id}/history` is the same trail read by record: what
+this row said before, and who changed it. It is gated by the record's own
+permission (`retrieve`), not by `audit_view` — and the row scope and field
+permissions of that grant apply, so a history never shows a row the operator
+cannot open or a field they may not read.
+
+It goes back as far as the trail does, which the payload states
+(`persistent`, `retention_days`) so a short history is read as a retention
+window rather than as a quiet one.
+
+If you want the trail written in the same transaction as the change itself,
+that belongs at the data layer: applications on the Quark ORM can enable its
+transactional `quark_audit` log (`EnableAuditLog`). The panel's trail
+complements it — it also covers panel-only actions (logins, session
+terminations, tenant switches recorded as `tenant.override` with the requested
+tenant as `record_id`) that never touch a model.
 
 ### What is recorded
 
@@ -312,6 +364,7 @@ performed it. The `action` names the operation:
 | Access control | `rbac.policy.add`, `rbac.policy.remove`, `rbac.role.assign`, `rbac.role.remove` |
 | Feature flags and jobs | `flag.create`, `flag.set`, `flag.delete`, `jobs.queue.<action>` |
 | Operations | `migration.apply`, `cache.flush`, `live.exclude.add`, `live.exclude.remove`, `audit.clear` (the one entry that survives the clear) |
+| The trail itself | `audit.export` (a CSV copy was taken, with the filters and the count), `audit.retention.set` (the window in effect changed, with the old and new values) |
 | Data management | `export.create`, `fixtures.dumpdata`, `import.upload`, `import.validate`, `import.execute`, `fixtures.loaddata` — exports are recorded whether they completed or failed |
 | Sessions | `login`, `login.failed`, `login.locked`, `logout`, `session.terminate` |
 | Tenant scope | `tenant.override` (an accepted `?tenant=` switch, with the requested tenant as `record_id`; a refused switch leaves no entry) |
