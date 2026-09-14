@@ -107,6 +107,16 @@ func (s *auditStore) add(entry AuditEntry) {
 	}
 }
 
+// auditDefaultPageSize and auditMaxPageSize are the page a caller gets when
+// it asks for none and the largest one it can ask for. The cap is named
+// rather than written at each allocation so that every place that sizes a
+// buffer from a client-supplied page size can be seen to honour the same
+// bound — including the export, which reads page after page.
+const (
+	auditDefaultPageSize = 50
+	auditMaxPageSize     = 200
+)
+
 // normalizeAuditPage applies the defaults and the cap that both list and
 // the HTTP handler use, so the page the response echoes is the page served.
 func normalizeAuditPage(page, pageSize int) (int, int) {
@@ -114,10 +124,10 @@ func normalizeAuditPage(page, pageSize int) (int, int) {
 		page = 1
 	}
 	if pageSize <= 0 {
-		pageSize = 50
+		pageSize = auditDefaultPageSize
 	}
-	if pageSize > 200 {
-		pageSize = 200
+	if pageSize > auditMaxPageSize {
+		pageSize = auditMaxPageSize
 	}
 	return page, pageSize
 }
@@ -134,7 +144,10 @@ func (s *auditStore) list(opts auditQueryOpts) []AuditEntry {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	out := make([]AuditEntry, 0, min(pageSize, len(s.entries)))
+	// The capacity is bounded by the cap as well as by the ring: pageSize
+	// comes from the request, and normalizeAuditPage has already capped it —
+	// saying so here keeps the bound where the allocation is.
+	out := make([]AuditEntry, 0, min(min(pageSize, auditMaxPageSize), len(s.entries)))
 	for i := len(s.entries) - 1; i >= 0 && len(out) < pageSize; i-- {
 		e := &s.entries[i]
 		if !e.matches(opts) {
@@ -634,7 +647,12 @@ func (p *Panel) handleListAuditLog(c *router.Context) error {
 
 // auditExportPageSize is how many entries one export page reads at a time.
 // The export streams: a compliance window can be larger than memory.
-const auditExportPageSize = 500
+//
+// It is the LIST cap and not a number of its own: list() normalizes the page
+// size it is given, so an export that asked for more got a short page back
+// and read it as "that was the last one" — the copy stopped at the cap and
+// said nothing. TestAuditSQL_ExportStreamsPastOnePage holds it down.
+const auditExportPageSize = auditMaxPageSize
 
 // writeAuditCSV streams the filtered trail as a CSV file. It is recorded in
 // the trail itself — who took a copy of the log is exactly the kind of thing

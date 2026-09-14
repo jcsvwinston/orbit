@@ -279,6 +279,37 @@ func TestAuditSQL_ExportCarriesTheEntriesAndIsAudited(t *testing.T) {
 	}
 }
 
+// The export streams: a trail larger than one page comes out whole. The first
+// version of it asked for pages of 500 while the listing caps at 200, so it
+// read the short page back as the last one and stopped at the cap — silently,
+// which is the worst way for an export to be wrong.
+func TestAuditSQL_ExportStreamsPastOnePage(t *testing.T) {
+	_, sqlDB, srv := auditPanel(t, auditDBPath(t), nil)
+
+	const entries = auditMaxPageSize + 25
+	for i := 0; i < entries; i++ {
+		if _, err := sqlDB.Exec(
+			`INSERT INTO nucleus_admin_audit (user_id, username, action, model_name, record_id, ip, user_agent, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			"u", "u", "create", "OwnedNote", fmt.Sprintf("row-%d", i), "127.0.0.1", "test",
+			time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+			t.Fatalf("seed entry %d: %v", i, err)
+		}
+	}
+
+	body := getText(t, srv.URL+"/api/audit?format=csv")
+	rows, err := csv.NewReader(strings.NewReader(body)).ReadAll()
+	if err != nil {
+		t.Fatalf("csv: %v", err)
+	}
+	if len(rows)-1 < entries {
+		t.Fatalf("the export carries %d entries of %d: it stopped at a page boundary", len(rows)-1, entries)
+	}
+	if !strings.Contains(body, "row-0") || !strings.Contains(body, fmt.Sprintf("row-%d", entries-1)) {
+		t.Error("the export is missing the first or the last entry")
+	}
+}
+
 // The export honours the filters the listing was looking at: what you export
 // is what you were reading.
 func TestAuditSQL_ExportHonoursFilters(t *testing.T) {

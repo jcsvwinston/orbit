@@ -295,7 +295,8 @@ func (s *sqlAuditStore) list(opts auditQueryOpts) []AuditEntry {
 	}
 	defer func() { _ = rows.Close() }()
 
-	out := make([]AuditEntry, 0, pageSize)
+	// normalizeAuditPage has capped pageSize; the allocation says so too.
+	out := make([]AuditEntry, 0, min(pageSize, auditMaxPageSize))
 	for rows.Next() {
 		entry, err := scanAuditRow(rows)
 		if err != nil {
