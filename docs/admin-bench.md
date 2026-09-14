@@ -38,17 +38,17 @@ A control that cannot be probed does not belong in the bench.
 
 ## The result
 
-**44 of 59 controls present. 5 partial. 10 absent.**
+**45 of 59 controls present. 5 partial. 9 absent.**
 
 | family | present | partial | absent |
 |---|---|---|---|
-| data studio | 13 | 2 | 2 |
+| data studio | 14 | 2 | 1 |
 | permissions | 9 | 0 | 0 |
 | audit | 7 | 0 | 0 |
 | operations | 10 | 3 | 4 |
 | customization | 3 | 0 | 4 |
 | interface | 2 | 0 | 0 |
-| **total** | **44** | **5** | **10** |
+| **total** | **45** | **5** | **9** |
 
 ## What the shape of it says
 

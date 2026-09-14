@@ -197,6 +197,34 @@ accounts, which is the default one (backed by `nucleus_admin_users`). An
 application that authenticates its operators elsewhere gets `501` on these
 routes rather than a second, competing account store.
 
+### Saved views
+
+The filter set an operator returns to every morning used to live in the URL
+and nowhere else. A saved view stores a name, the model and the query string
+the grid was showing:
+
+```
+GET    /api/views?model=Invoice
+POST   /api/views      {"model":"Invoice","name":"Unpaid over 90 days","query":"status=unpaid&order_by=due_date+asc"}
+PUT    /api/views/{id}
+DELETE /api/views/{id}
+```
+
+The query is stored as **text** and is not parsed against today's schema: a
+view is a shortcut to a URL, so one that stops making sense fails on the list
+endpoint with that endpoint's message rather than being silently dropped.
+
+A view belongs to whoever saved it. `is_shared` makes it visible to everyone;
+editing and removing stay with its owner (a superuser may tidy up any). There
+is no permission of its own — creating a view needs the **list** permission of
+the model it points at, and a view of a model an operator cannot list is not
+shown to them, because the row would disclose both the model and what somebody
+filters it by. Every change is audited (`view.create`, `view.update`,
+`view.delete`).
+
+Views need a database handle to live in; a panel without one answers `501`
+rather than failing later.
+
 ### Forms that hold a relation, a document and a file
 
 A form needs three things a table of scalars does not.
@@ -430,6 +458,7 @@ performed it. The `action` names the operation:
 | Operations | `migration.apply`, `cache.flush`, `live.exclude.add`, `live.exclude.remove`, `audit.clear` (the one entry that survives the clear) |
 | The trail itself | `audit.export` (a CSV copy was taken, with the filters and the count), `audit.retention.set` (the window in effect changed, with the old and new values) |
 | Files | `field.upload` (a file was stored for a model's field, with the key it was stored under) |
+| Saved views | `view.create`, `view.update`, `view.delete` (with the name, the query and whether it is shared) |
 | Data management | `export.create`, `fixtures.dumpdata`, `import.upload`, `import.validate`, `import.execute`, `fixtures.loaddata` — exports are recorded whether they completed or failed |
 | Sessions | `login`, `login.failed`, `login.locked`, `logout`, `session.terminate` |
 | Tenant scope | `tenant.override` (an accepted `?tenant=` switch, with the requested tenant as `record_id`; a refused switch leaves no entry) |

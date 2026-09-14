@@ -263,6 +263,16 @@ func NewPanel(src datasource.DataSource, logger *slog.Logger, cfg PanelConfig) *
 	if cfg.AuditEnabled {
 		p.audit = p.buildAuditSink()
 	}
+	// Saved views live in the panel's own table, created the same way the
+	// audit trail's is. A panel with no database handle simply has none, and
+	// the routes say so rather than failing later.
+	if store := p.savedViewsStore(); store != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		if err := store.ensureSchema(ctx); err != nil && logger != nil {
+			logger.Warn("orbit: saved views are unavailable (schema not created)", "error", err)
+		}
+		cancel()
+	}
 
 	return p
 }
@@ -615,6 +625,12 @@ func (p *Panel) mountAPIRoutes(m *router.Mux) {
 	// Audit log endpoints
 	m.Get("/api/audit", p.handleListAuditLog)
 	m.Post("/api/audit/clear", p.handleClearAuditLog)
+	// Saved views: the filter set an operator returns to (saved_views.go).
+	m.Get("/api/views", p.handleListSavedViews)
+	m.Post("/api/views", p.handleCreateSavedView)
+	m.Put("/api/views/{id}", p.handleUpdateSavedView)
+	m.Delete("/api/views/{id}", p.handleDeleteSavedView)
+
 	m.Get("/api/audit/retention", p.handleAuditRetention)
 	m.Put("/api/audit/retention", p.handleSetAuditRetention)
 

@@ -1,7 +1,7 @@
 import type {
   Session, SessionsResponse, Record as AppRecord, AuditLogPage, AuditLogQuery, RBACPolicy, RBACPoliciesResponse,
   HealthCheck, LiveRequest, LiveQuery, LiveFeedEntry, ModelsResponse, ModelSchema, PaginatedResult, SystemSnapshot,
-  Operator, OperatorsResponse, AuditRetention,
+  Operator, OperatorsResponse, AuditRetention, SavedView,
 } from '@/types'
 import { buildAdminPath } from '@/config'
 
@@ -361,6 +361,27 @@ export function auditExportURL(query: AuditLogQuery = {}): string {
   if (query.action) searchParams.set('action', query.action)
   searchParams.set('page_size', String(query.page_size ?? 200))
   return buildAdminPath(`/api/audit?${searchParams}`)
+}
+
+// ── Saved views ──
+
+export async function getSavedViews(model: string): Promise<SavedView[]> {
+  const response = await fetchAPI<{ views?: SavedView[] }>(
+    `/api/views?model=${encodeURIComponent(model)}`)
+  return response.views ?? []
+}
+
+export async function createSavedView(view: {
+  model: string
+  name: string
+  query: string
+  is_shared?: boolean
+}): Promise<SavedView> {
+  return fetchAPI<SavedView>('/api/views', { method: 'POST', body: JSON.stringify(view) })
+}
+
+export async function deleteSavedView(id: string): Promise<void> {
+  await fetchAPI(`/api/views/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
 // ── Relations and uploads (what a form needs) ──

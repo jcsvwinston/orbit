@@ -90,6 +90,18 @@ export interface SchemaField {
   can_edit?: boolean
 }
 
+// A stored query: a name, the model it belongs to and the query string the
+// grid was showing. The panel does not parse it — a view is a shortcut to a
+// URL, and one that stops making sense fails where any query would.
+export interface SavedView {
+  id: string
+  owner: string
+  model: string
+  name: string
+  query: string
+  is_shared: boolean
+}
+
 // One child collection a form may edit in place: the model, the key a payload
 // names the collection by, and the column that points back at the parent.
 export interface InlineSpec {
