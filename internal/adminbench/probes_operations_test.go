@@ -41,34 +41,30 @@ func probeSessionList(t *testing.T, e *env) verdict {
 // probeSessionDevice is the criterion A5 moved here: the operator looking at
 // the list has to be able to tell "that one is my phone" from "that one is
 // not me".
+//
+// It reads ITS OWN operator's row, after that operator has made one request
+// through the panel. Two things the first version of this probe got wrong,
+// both of the "the probe measures the bench" family: the panel records the
+// device of a session on requests that go THROUGH the panel, and a sign-in is
+// the framework's login page, so an operator who only signed in has no
+// device yet; and the rows the list holds depend on which probes ran before
+// this one, so a verdict read over all of them changed with the -run filter.
 func probeSessionDevice(t *testing.T, e *env) verdict {
-	e.operatorNamed(t, "ops-sessions")
-	r := e.get(t, "/admin/api/sessions")
-	if r.code != http.StatusOK {
+	op := e.operatorNamed(t, "ops-sessions")
+	e.asOperator(t, op, http.MethodGet, "/admin/api/health", nil)
+	row := e.sessionRowOf(t, op)
+	if row == nil {
+		t.Logf("the operator's session is not in the list the panel serves")
 		return absent
 	}
-	rows, _ := r.json(t)["sessions"].([]any)
-	device, ip := 0, 0
-	for _, row := range rows {
-		entry, ok := row.(map[string]any)
-		if !ok {
-			continue
-		}
-		for _, key := range []string{"user_agent", "device", "client", "browser", "platform"} {
-			if text, _ := entry[key].(string); strings.TrimSpace(text) != "" {
-				device++
-				break
-			}
-		}
-		if text, _ := entry["remote_ip"].(string); strings.TrimSpace(text) != "" {
-			ip++
-		}
-	}
-	t.Logf("%d session rows: %d name a device, %d carry an address", len(rows), device, ip)
+	device, _ := row["device"].(string)
+	agent, _ := row["user_agent"].(string)
+	ip, _ := row["remote_ip"].(string)
+	t.Logf("the operator's row: device %q, user_agent %q, remote_ip %q", device, agent, ip)
 	switch {
-	case device > 0:
+	case strings.TrimSpace(device) != "" || strings.TrimSpace(agent) != "":
 		return present
-	case ip > 0:
+	case strings.TrimSpace(ip) != "":
 		return partial
 	default:
 		return absent
@@ -112,14 +108,56 @@ func probeSessionRevoke(t *testing.T, e *env) verdict {
 }
 
 // probeSessionRevokeAll asks for the button an incident needs: every session
-// of one account, gone. The framework grew RevokeWhere in the previous arc;
-// this measures whether the panel spends it.
+// of one account, gone. It measures by effect — the same account signed in
+// from two clients, both locked out after one call, the superuser who made
+// the call still signed in — and then the rule the operation carries: a
+// request that revokes its own account's sessions keeps the one it was made
+// with, or "sign out everywhere else" would sign the operator out of the
+// screen they are using.
 func probeSessionRevokeAll(t *testing.T, e *env) verdict {
 	op := e.operatorNamed(t, "ops-revoke-all")
-	return e.unrouted(t,
-		"/admin/api/sessions/revoke-all",
-		"/admin/api/users/"+op.id+"/sessions",
-		"/admin/api/sessions/user/"+op.username)
+	phone := e.signIn(t, op.username, limitedPassword)
+	devices := map[string]*http.Client{"laptop": op.client, "phone": phone}
+	for name, client := range devices {
+		if r := e.request(t, client, http.MethodGet, "/admin/api/health", nil); r.code == http.StatusUnauthorized {
+			t.Logf("the %s was not signed in to begin with", name)
+			return absent
+		}
+	}
+
+	r := e.do(t, http.MethodPost, "/admin/api/sessions/revoke-all", map[string]any{"user": op.username})
+	if r.code == http.StatusNotFound || r.code == http.StatusMethodNotAllowed || r.servedTheShell() {
+		t.Logf("no revoke-all surface: %d (%s)", r.code, r.ctype)
+		return absent
+	}
+	if r.code >= 400 {
+		t.Logf("revoke-all answered %d: %s", r.code, r.text())
+		return partial
+	}
+	reported, _ := r.json(t)["revoked"].(float64)
+	lockedOut := 0
+	for _, client := range devices {
+		if e.request(t, client, http.MethodGet, "/admin/api/models", nil).code == http.StatusUnauthorized {
+			lockedOut++
+		}
+	}
+	caller := e.get(t, "/admin/api/health")
+	t.Logf("revoke-all reported %d revoked; %d of %d devices locked out; the caller answered %d afterwards",
+		int(reported), lockedOut, len(devices), caller.code)
+	if lockedOut < len(devices) || caller.code != http.StatusOK {
+		return partial
+	}
+
+	own := e.do(t, http.MethodPost, "/admin/api/sessions/revoke-all", map[string]any{"user": "admin"})
+	if own.code >= 400 {
+		t.Logf("revoking the caller's own account answered %d: %s", own.code, own.text())
+		return partial
+	}
+	if e.get(t, "/admin/api/health").code != http.StatusOK {
+		t.Logf("revoking the caller's own account signed the caller out: %s", own.text())
+		return partial
+	}
+	return present
 }
 
 // probeLiveFeed reads the live request feed — the capability no competitor in
@@ -378,29 +416,38 @@ func probeAsyncExport(t *testing.T, e *env) verdict {
 }
 
 // probeSessionOwner asks the question an operator asks before revoking:
-// whose session is this. The row has a field for it.
+// whose session is this. The row has a field for it. The verdict is read
+// on the probe's OWN operator's row — it has to carry that operator's
+// username, not just something — and every other row has to name somebody
+// too, or the viewer would still be blind for part of the list.
 func probeSessionOwner(t *testing.T, e *env) verdict {
-	e.operatorNamed(t, "ops-owner")
+	op := e.operatorNamed(t, "ops-owner")
+	e.asOperator(t, op, http.MethodGet, "/admin/api/health", nil)
 	r := e.get(t, "/admin/api/sessions")
 	if r.code != http.StatusOK {
 		return absent
 	}
 	rows, _ := r.json(t)["sessions"].([]any)
-	named := 0
+	handle := sessionHandleOf(t, e, op)
+	named, ownNamed := 0, false
 	for _, row := range rows {
 		entry, ok := row.(map[string]any)
 		if !ok {
 			continue
 		}
-		if user, _ := entry["user"].(string); strings.TrimSpace(user) != "" {
+		user, _ := entry["user"].(string)
+		if strings.TrimSpace(user) != "" {
 			named++
 		}
+		if id, _ := entry["id"].(string); id == handle {
+			ownNamed = user == op.username
+		}
 	}
-	t.Logf("%d of %d session rows name their operator", named, len(rows))
+	t.Logf("%d of %d session rows name their operator; the probe's own row names it: %v", named, len(rows), ownNamed)
 	switch {
-	case len(rows) > 0 && named == len(rows):
+	case ownNamed && named == len(rows):
 		return present
-	case named > 0:
+	case ownNamed || named > 0:
 		return partial
 	default:
 		return absent

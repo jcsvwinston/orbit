@@ -241,6 +241,9 @@ interface RawSessionRow {
   id: string
   token_short?: string
   user?: string
+  user_agent?: string
+  device?: string
+  current?: boolean
   first_seen_at?: string
   last_seen_at?: string
   expires_at?: string
@@ -266,6 +269,9 @@ export async function getSessions(): Promise<SessionsResponse> {
     id: row.id,
     tokenShort: row.token_short ?? '',
     user: row.user ?? '',
+    userAgent: row.user_agent ?? '',
+    device: row.device ?? '',
+    current: row.current ?? false,
     remoteIp: row.remote_ip ?? '',
     host: row.host ?? '',
     pod: row.pod ?? '',
@@ -286,6 +292,27 @@ export async function getSessions(): Promise<SessionsResponse> {
 
 export async function deleteSession(sessionId: string): Promise<void> {
   await fetchAPI(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' })
+}
+
+export interface RevokeUserSessionsResult {
+  user: string
+  revoked: number
+  keptCurrent: boolean
+}
+
+// revokeUserSessions ends every session of one user — the `user` a row
+// shows. The backend keeps the session the request is made with, so revoking
+// your own account signs out every OTHER device.
+export async function revokeUserSessions(user: string): Promise<RevokeUserSessionsResult> {
+  const response = await fetchAPI<{ user?: string; revoked?: number; kept_current?: boolean }>(
+    '/api/sessions/revoke-all',
+    { method: 'POST', body: JSON.stringify({ user }) },
+  )
+  return {
+    user: response.user ?? user,
+    revoked: response.revoked ?? 0,
+    keptCurrent: response.kept_current ?? false,
+  }
 }
 
 // ── Audit ──

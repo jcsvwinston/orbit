@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/table'
 import * as api from '@/services/api'
 import type { Session, SessionsResponse } from '@/types'
-import { Users, Trash, RefreshCw, Loader2 } from 'lucide-react'
+import { Users, Trash, RefreshCw, Loader2, UserX } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
 
 function formatTime(value: string): string {
@@ -40,6 +40,10 @@ export default function InfraManagerPage() {
   const [error, setError] = useState<unknown>(null)
   const [pendingTerminate, setPendingTerminate] = useState<Session | null>(null)
   const [terminating, setTerminating] = useState(false)
+  // The user whose every session is about to be ended — the string the row
+  // shows, which is what the backend matches on.
+  const [pendingRevokeAll, setPendingRevokeAll] = useState<string | null>(null)
+  const [revokingAll, setRevokingAll] = useState(false)
   const { toast } = useToast()
 
   const fetchSessions = useCallback(async () => {
@@ -77,6 +81,32 @@ export default function InfraManagerPage() {
       })
     } finally {
       setTerminating(false)
+    }
+  }
+
+  const confirmRevokeAll = async () => {
+    if (!pendingRevokeAll) return
+    setRevokingAll(true)
+    try {
+      const result = await api.revokeUserSessions(pendingRevokeAll)
+      toast({
+        title: `Revoked ${result.revoked} session${result.revoked === 1 ? '' : 's'} of ${result.user}`,
+        description: result.keptCurrent
+          ? 'Your own session was kept: the request that revokes never revokes itself.'
+          : result.revoked === 0
+            ? 'That user had no open session.'
+            : 'Every device signed in as that user has been signed out.',
+      })
+      setPendingRevokeAll(null)
+      fetchSessions()
+    } catch (err) {
+      toast({
+        variant: 'destructive',
+        title: 'Failed to revoke sessions',
+        description: api.errorMessage(err),
+      })
+    } finally {
+      setRevokingAll(false)
     }
   }
 
@@ -134,6 +164,7 @@ export default function InfraManagerPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>User</TableHead>
+                    <TableHead>Device</TableHead>
                     <TableHead>Session</TableHead>
                     <TableHead>IP Address</TableHead>
                     <TableHead className="hidden lg:table-cell">Origin</TableHead>
@@ -145,8 +176,18 @@ export default function InfraManagerPage() {
                 </TableHeader>
                 <TableBody>
                   {sessions.map((session) => (
-                    <TableRow key={session.id}>
-                      <TableCell className="font-medium">{session.user || '—'}</TableCell>
+                    <TableRow key={session.id} data-testid="session-row">
+                      <TableCell className="font-medium">
+                        {session.user || '—'}
+                        {session.current && (
+                          <Badge variant="secondary" className="ml-2" data-testid="session-current">
+                            you
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-sm" title={session.userAgent || undefined} data-testid="session-device">
+                        {session.device || session.userAgent || '—'}
+                      </TableCell>
                       <TableCell className="font-mono text-xs">{session.tokenShort || session.id}</TableCell>
                       <TableCell>
                         {session.remoteIp ? <Badge variant="outline">{session.remoteIp}</Badge> : '—'}
@@ -155,7 +196,18 @@ export default function InfraManagerPage() {
                       <TableCell className="text-sm">{formatTime(session.firstSeenAt)}</TableCell>
                       <TableCell className="text-sm">{formatTime(session.lastSeenAt)}</TableCell>
                       <TableCell className="hidden lg:table-cell text-sm">{formatTime(session.expiresAt)}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-right whitespace-nowrap">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mr-2"
+                          aria-label={`Revoke all sessions of ${session.user || 'this user'}`}
+                          disabled={!session.user}
+                          title={session.user ? `Sign out every device signed in as ${session.user}` : 'This session names no user to match on'}
+                          onClick={() => setPendingRevokeAll(session.user)}
+                        >
+                          <UserX className="h-4 w-4" />
+                        </Button>
                         <Button
                           variant="destructive"
                           size="sm"
@@ -173,6 +225,29 @@ export default function InfraManagerPage() {
           )}
         </CardContent>
       </Card>
+
+      {pendingRevokeAll && (
+        <Dialog open={true} onOpenChange={(val: boolean) => !val && !revokingAll && setPendingRevokeAll(null)}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Revoke all sessions</DialogTitle>
+              <DialogDescription>
+                Sign out every device signed in as <span className="font-medium">{pendingRevokeAll}</span>?
+                If that is you, the session of this browser is kept: the request that revokes never revokes itself.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setPendingRevokeAll(null)} disabled={revokingAll}>
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={confirmRevokeAll} disabled={revokingAll} data-testid="confirm-revoke-all">
+                {revokingAll ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Revoke all
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {pendingTerminate && (
         <Dialog open={true} onOpenChange={(val: boolean) => !val && !terminating && setPendingTerminate(null)}>

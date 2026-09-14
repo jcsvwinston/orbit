@@ -132,6 +132,34 @@ func sessionHandleOf(t *testing.T, e *env, op *operator) string {
 	return ""
 }
 
+// sessionRowOf returns that operator's row of the session list, or nil when
+// the panel does not list it. A probe that reads its own row measures the
+// product; one that reads whichever rows the shared application holds
+// measures what ran before it.
+func (e *env) sessionRowOf(t *testing.T, op *operator) map[string]any {
+	t.Helper()
+	handle := sessionHandleOf(t, e, op)
+	if handle == "" {
+		return nil
+	}
+	r := e.get(t, "/admin/api/sessions")
+	if r.code != http.StatusOK {
+		t.Logf("GET /admin/api/sessions answered %d: %s", r.code, r.text())
+		return nil
+	}
+	rows, _ := r.json(t)["sessions"].([]any)
+	for _, row := range rows {
+		entry, ok := row.(map[string]any)
+		if !ok {
+			continue
+		}
+		if id, _ := entry["id"].(string); id == handle {
+			return entry
+		}
+	}
+	return nil
+}
+
 // requestAs issues one request against an application other than the shared
 // one, for the probes that need their own posture.
 func requestAs(t *testing.T, client *http.Client, srv *nucleustest.Server, method, path string, payload any) response {

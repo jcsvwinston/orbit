@@ -583,6 +583,7 @@ func (p *Panel) mountAPIRoutes(m *router.Mux) {
 	m.Post("/api/logout", p.handleLogout)
 	m.Get("/api/sessions", p.handleListSessions)
 	m.Delete("/api/sessions/{token}", p.handleTerminateSession)
+	m.Post("/api/sessions/revoke-all", p.handleRevokeUserSessions)
 	m.Get("/api/live/snapshot", p.handleLiveSnapshot)
 	m.Get("/api/live/excludes", p.handleListLiveExcludePatterns)
 	m.Post("/api/live/excludes", p.handleAddLiveExcludePattern)
@@ -887,6 +888,11 @@ func (p *Panel) touchAdminSession(r *http.Request) {
 	p.config.Session.Put(ctx, auth.SessionMetaLastSeenAtKey, now)
 	if ip := auth.ClientIPFromRequest(r); ip != "" {
 		p.config.Session.Put(ctx, auth.SessionMetaRemoteIPKey, ip)
+	}
+	// The device, under the framework's own key so a row reads the same
+	// whichever middleware wrote it last.
+	if ua := sanitizeUserAgent(r.UserAgent()); ua != "" {
+		p.config.Session.Put(ctx, auth.SessionMetaUserAgentKey, ua)
 	}
 
 	if pod := strings.TrimSpace(p.config.SessionRuntime.Pod); pod != "" {

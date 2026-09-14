@@ -1,10 +1,16 @@
 // One row of GET /api/sessions — only what the backend actually serializes
-// (sessionRow in internal/admin/sessions.go). The panel has no user
-// directory endpoint, so there is no user_id / user_agent to show.
+// (sessionRow in internal/admin/sessions.go). `user` is the operator the
+// panel signed in (or the identity key an application stores) and is the
+// same string POST /api/sessions/revoke-all matches on; `device` is the
+// short label the backend derives from the user agent it recorded; `current`
+// marks the session this browser is using.
 export interface Session {
   id: string
   tokenShort: string
   user: string
+  userAgent: string
+  device: string
+  current: boolean
   remoteIp: string
   host: string
   pod: string
