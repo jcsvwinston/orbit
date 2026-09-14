@@ -211,7 +211,40 @@ tracing.
 
 ## Session viewer
 
-List active server-side sessions and revoke them individually.
+List active server-side sessions, see whose each one is and from what device,
+and revoke one — or every session of one account at once.
+
+| What you do | Route |
+|---|---|
+| List sessions | `GET /admin/api/sessions` |
+| End one session | `DELETE /admin/api/sessions/{id}` |
+| End every session of one user | `POST /admin/api/sessions/revoke-all` with `{"user": "<name>"}` |
+
+A row carries `user` (the operator the panel signed in, or the identity key
+the application stores in its own sessions), `device` (a short label such as
+`Firefox on Linux` derived from the user agent the panel recorded, with the
+raw `user_agent` beside it), `remote_ip`, the node that served it, and
+`current: true` on the session the listing request was made with, so the
+viewer can say "this is you" instead of asking the operator to match a token
+prefix. The row never carries the session token itself: `id` is a one-way
+handle the terminate endpoint resolves server-side.
+
+**Revoke-all matches on the name the row shows.** The `user` you pass is the
+same string the list serves, so what you read is exactly what the call acts
+on. The session the request is made with is always kept: revoking your own
+account signs out every *other* device, and a request that revoked itself
+would leave the screen with nobody behind it. The answer says how many
+sessions were ended and whether yours was among the matches and kept
+(`{"user": "ana", "revoked": 2, "kept_current": true}`); a user with no
+open session is an honest `revoked: 0`, not an error. Both routes need the
+`terminate_sessions` action and both are audited — the bulk one as
+`session.revoke_all` with the user as the record and the count in the entry,
+whether or not the call completed.
+
+The device column depends on the panel seeing a request from that session:
+the panel stamps the user agent on every request that goes through it, under
+the same key the framework's own session middleware uses, so a session that
+signed in and has not touched the panel yet shows no device until it does.
 
 ## Operators
 
@@ -513,7 +546,7 @@ performed it. The `action` names the operation:
 | Files | `field.upload` (a file was stored for a model's field, with the key it was stored under) |
 | Saved views | `view.create`, `view.update`, `view.delete` (with the name, the query and whether it is shared) |
 | Data management | `export.create`, `fixtures.dumpdata`, `import.upload`, `import.validate`, `import.execute`, `fixtures.loaddata` — exports are recorded whether they completed or failed |
-| Sessions | `login`, `login.failed`, `login.locked`, `logout`, `session.terminate` |
+| Sessions | `login`, `login.failed`, `login.locked`, `logout`, `session.terminate`, `session.revoke_all` (the user as the record, with how many sessions were ended and whether the caller's own was kept) |
 | Tenant scope | `tenant.override` (an accepted `?tenant=` switch, with the requested tenant as `record_id`; a refused switch leaves no entry) |
 
 `old_value` and `new_value` are redacted before they are stored, because the

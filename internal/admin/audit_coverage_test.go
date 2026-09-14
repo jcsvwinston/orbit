@@ -342,6 +342,32 @@ func auditProbes() map[string][]auditProbe {
 			wantAction: "session.terminate",
 			wantRecord: true,
 		}},
+		"POST /api/sessions/revoke-all": {{
+			name: "session.revoke_all",
+			setup: func(t *testing.T, env *auditProbeEnv) {
+				deadline := time.Now().Add(time.Hour)
+				payload, err := env.sm.SCS().Codec.Encode(deadline, map[string]interface{}{adminSessionUsernameKey: "walk-user"})
+				if err != nil {
+					t.Fatalf("encode session: %v", err)
+				}
+				if err := env.sm.SCS().Store.Commit("walk-revoke-all-token-1234567890", payload, deadline); err != nil {
+					t.Fatalf("seed session: %v", err)
+				}
+			},
+			path:       literalPath("/api/sessions/revoke-all"),
+			body:       literalBody(`{"user":"walk-user"}`),
+			wantAction: "session.revoke_all",
+			wantNew:    true,
+			wantRecord: true,
+			check: func(t *testing.T, _ *auditProbeEnv, e AuditEntry) {
+				if e.RecordID != "walk-user" {
+					t.Errorf("session.revoke_all record_id = %q, want the user", e.RecordID)
+				}
+				if fmt.Sprint(e.NewValue["revoked"]) != "1" {
+					t.Errorf("session.revoke_all new_value = %v, want revoked 1", e.NewValue)
+				}
+			},
+		}},
 		"POST /api/live/excludes": {{
 			name:       "live.exclude.add",
 			path:       literalPath("/api/live/excludes"),

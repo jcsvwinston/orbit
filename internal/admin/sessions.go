@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -56,9 +58,23 @@ type sessionOverviewResponse struct {
 // all actions), so serving the full token here handed every admin the means
 // to replay every other admin's session.
 type sessionRow struct {
-	ID          string `json:"id"`
-	TokenShort  string `json:"token_short"`
-	User        string `json:"user,omitempty"`
+	ID         string `json:"id"`
+	TokenShort string `json:"token_short"`
+	// User is whose session this is: the operator the panel's own
+	// authentication signed in, or the identity key an application stores.
+	// It is the same string the revoke-all endpoint matches on, so what an
+	// operator reads in the row is exactly what "revoke every session of
+	// this user" acts on.
+	User string `json:"user,omitempty"`
+	// UserAgent is the raw (sanitized, capped) agent the session was last
+	// seen from; Device is the short label derived from it — the column
+	// that lets an operator tell "that Firefox on Windows is not me".
+	UserAgent string `json:"user_agent,omitempty"`
+	Device    string `json:"device,omitempty"`
+	// Current marks the session the request that listed them was made
+	// with, so the viewer can say "this device" instead of making the
+	// operator match token prefixes.
+	Current     bool   `json:"current,omitempty"`
 	FirstSeenAt string `json:"first_seen_at,omitempty"`
 	LastSeenAt  string `json:"last_seen_at,omitempty"`
 	ExpiresAt   string `json:"expires_at,omitempty"`
@@ -170,6 +186,7 @@ func (p *Panel) handleListSessions(c *router.Context) error {
 		return c.JSON(http.StatusOK, resp)
 	}
 
+	current := p.currentSessionToken(r.Context())
 	rows := make([]sessionRow, 0, len(rawSessions))
 	for token, payload := range rawSessions {
 		deadline, values, err := p.config.Session.SCS().Codec.Decode(payload)
@@ -178,6 +195,7 @@ func (p *Panel) handleListSessions(c *router.Context) error {
 		}
 
 		row := buildSessionRow(token, deadline, values, now)
+		row.Current = current != "" && token == current
 		rows = append(rows, row)
 	}
 
@@ -240,6 +258,7 @@ func buildSessionRow(token string, deadline time.Time, values map[string]interfa
 		token:      token,
 		TokenShort: shortenToken(token),
 		User:       detectSessionUser(values),
+		UserAgent:  valueAsString(values, auth.SessionMetaUserAgentKey),
 		ExpiresAt:  formatIfSet(expiresAt),
 		Pod:        valueAsString(values, auth.SessionMetaPodKey),
 		Host:       valueAsString(values, auth.SessionMetaHostKey),
@@ -252,6 +271,7 @@ func buildSessionRow(token string, deadline time.Time, values map[string]interfa
 	if row.Pod != "" && strings.EqualFold(row.Pod, row.Host) {
 		row.Pod = ""
 	}
+	row.Device = describeDevice(row.UserAgent)
 
 	if !firstSeen.IsZero() {
 		row.FirstSeenAt = firstSeen.Format(time.RFC3339)
@@ -471,8 +491,16 @@ func valueAsString(values map[string]interface{}, key string) string {
 	}
 }
 
+// detectSessionUser names whose session a payload is. The panel's own
+// authentication provider stores the operator under its private keys, and
+// those come first: a panel that reads only the generic keys an application
+// might use lists its own operators as nobody — which is what the viewer did
+// until A6, so every revocation from it was done blind (OR-46).
 func detectSessionUser(values map[string]interface{}) string {
 	candidates := []string{
+		adminSessionUsernameKey,
+		adminSessionEmailKey,
+		adminSessionUserIDKey,
 		"user_email",
 		"email",
 		"username",
@@ -517,4 +545,174 @@ func classifyRuntime(identity auth.SessionRuntimeIdentity) string {
 		return "kubernetes"
 	}
 	return "standalone"
+}
+
+// currentSessionToken returns the token of the session the request was made
+// with, or "" when the session middleware did not run for this request (a
+// panel wired without it, as some tests do) or the session is not committed
+// yet. It is what lets a list mark "this one is you" and what a bulk
+// revocation keeps: the request that revokes never revokes itself.
+func (p *Panel) currentSessionToken(ctx context.Context) string {
+	if p == nil || p.config.Session == nil || !sessionContextReady(p.config.Session, ctx) {
+		return ""
+	}
+	return strings.TrimSpace(p.config.Session.Token(ctx))
+}
+
+// maxStoredUserAgent mirrors the framework's cap: a user agent is
+// attacker-controlled text that lands in a session payload, an operator's
+// screen and possibly a log line, so it is truncated rather than trusted.
+const maxStoredUserAgent = 256
+
+// sanitizeUserAgent applies the same rules the framework's session runtime
+// middleware applies before storing an agent: control characters out,
+// length capped. The panel records it itself because its activity
+// middleware refreshes the session on every panel request and the
+// framework's only every thirty seconds — a device list fed by the
+// framework alone would name the device of a session that just signed in
+// and nothing about one that has been open all morning.
+func sanitizeUserAgent(raw string) string {
+	cleaned := strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, strings.TrimSpace(raw))
+	if len(cleaned) > maxStoredUserAgent {
+		cleaned = cleaned[:maxStoredUserAgent]
+	}
+	return cleaned
+}
+
+// describeDevice turns a user agent into the short label a session row
+// shows: the browser and the platform, which is what an operator compares
+// against the devices they know they hold. It is deliberately a small
+// classifier — the common browsers, the common platforms, and the first
+// product token for everything else (a script announces itself as
+// "Go-http-client" or "curl", and that IS the useful answer). The raw
+// agent travels next to it for the cases the label cannot settle.
+func describeDevice(userAgent string) string {
+	ua := strings.TrimSpace(userAgent)
+	if ua == "" {
+		return ""
+	}
+	lower := strings.ToLower(ua)
+
+	browser := ""
+	switch {
+	case strings.Contains(lower, "edg/") || strings.Contains(lower, "edge/"):
+		browser = "Edge"
+	case strings.Contains(lower, "opr/") || strings.Contains(lower, "opera"):
+		browser = "Opera"
+	case strings.Contains(lower, "firefox/") || strings.Contains(lower, "fxios/"):
+		browser = "Firefox"
+	case strings.Contains(lower, "crios/"):
+		browser = "Chrome"
+	case strings.Contains(lower, "chrome/") || strings.Contains(lower, "chromium/"):
+		browser = "Chrome"
+	case strings.Contains(lower, "safari/") && strings.Contains(lower, "version/"):
+		browser = "Safari"
+	}
+
+	platform := ""
+	switch {
+	case strings.Contains(lower, "iphone") || strings.Contains(lower, "ipad") || strings.Contains(lower, "ipod"):
+		platform = "iOS"
+	case strings.Contains(lower, "android"):
+		platform = "Android"
+	case strings.Contains(lower, "windows"):
+		platform = "Windows"
+	case strings.Contains(lower, "cros "):
+		platform = "ChromeOS"
+	case strings.Contains(lower, "macintosh") || strings.Contains(lower, "mac os x"):
+		platform = "macOS"
+	case strings.Contains(lower, "linux"):
+		platform = "Linux"
+	}
+
+	if browser == "" {
+		// Not a browser the classifier knows: the first product token
+		// (the part before "/" or the first space) is the honest name —
+		// "Go-http-client", "curl", "PostmanRuntime".
+		token := ua
+		if i := strings.IndexAny(token, "/ ("); i > 0 {
+			token = token[:i]
+		}
+		browser = strings.TrimSpace(token)
+	}
+	switch {
+	case browser != "" && platform != "":
+		return browser + " on " + platform
+	case browser != "":
+		return browser
+	default:
+		return platform
+	}
+}
+
+// handleRevokeUserSessions ends every session of one user — the button an
+// incident needs, backed by the framework's RevokeWhere. The user is the
+// same string the session list shows in its `user` column, so the operator
+// acts on exactly what they read. The session the request is made with is
+// kept even when it matches: a request that revoked itself would sign the
+// operator out mid-action, and "sign out everywhere else" is the operation
+// people actually mean. The response says how many were ended and whether
+// the caller's own was among the matches and kept.
+func (p *Panel) handleRevokeUserSessions(c *router.Context) error {
+	r := c.Request
+	if err := p.authorizeAction(c, "*", "terminate_sessions"); err != nil {
+		return err
+	}
+	if p.config.Session == nil {
+		return gferrors.BadRequest("session manager is not configured in admin panel")
+	}
+
+	var req struct {
+		User string `json:"user"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		return gferrors.BadRequest("invalid JSON")
+	}
+	user := strings.TrimSpace(req.User)
+	if user == "" {
+		return gferrors.BadRequest("user is required")
+	}
+
+	current := p.currentSessionToken(r.Context())
+	keptCurrent := false
+	revoked, err := p.config.Session.RevokeWhere(r.Context(), func(info auth.SessionInfo) bool {
+		if detectSessionUser(info.Values) != user {
+			return false
+		}
+		if current != "" && info.Token == current {
+			keptCurrent = true
+			return false
+		}
+		return true
+	})
+	if errors.Is(err, auth.ErrSessionStoreNotIterable) {
+		return gferrors.BadRequest("session store does not support listing active sessions")
+	}
+
+	// Audited whether it completed or not: a partial revocation is exactly
+	// the outcome an operator retrying needs to see in the trail. The
+	// record is the user, never a token.
+	p.recordAuditEntry(r, AuditEntry{
+		Action:   "session.revoke_all",
+		RecordID: user,
+		NewValue: map[string]any{
+			"revoked":      revoked,
+			"kept_current": keptCurrent,
+			"completed":    err == nil,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("admin.RevokeUserSessions: %w", err)
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"user":         user,
+		"revoked":      revoked,
+		"kept_current": keptCurrent,
+	})
 }

@@ -38,17 +38,17 @@ A control that cannot be probed does not belong in the bench.
 
 ## The result
 
-**48 of 59 controls present. 3 partial. 8 absent.**
+**51 of 59 controls present. 2 partial. 6 absent.**
 
 | family | present | partial | absent |
 |---|---|---|---|
 | data studio | 16 | 0 | 1 |
 | permissions | 9 | 0 | 0 |
 | audit | 7 | 0 | 0 |
-| operations | 11 | 3 | 3 |
+| operations | 14 | 2 | 1 |
 | customization | 3 | 0 | 4 |
 | interface | 2 | 0 | 0 |
-| **total** | **48** | **3** | **8** |
+| **total** | **51** | **2** | **6** |
 
 ## What the shape of it says
 
@@ -90,8 +90,8 @@ The panel **browses and operates well, and administers poorly**.
 ## Four defects the bench found, none of them a missing capability
 
 These are not gaps in the product's plan; they are things that do not work,
-and a probe that boots the real application is what found them. Two are fixed
-and their controls have moved; two are still open.
+and a probe that boots the real application is what found them. Three are
+fixed and their controls have moved; one is still open.
 
 1. **FIXED — the live websocket panicked in any mounted panel.**
    `/admin/api/live/ws` answered 500: the framework's session middleware wraps
@@ -107,9 +107,12 @@ and their controls have moved; two are still open.
    gained an exact count over the same `WHERE` the page uses, and the list
    endpoint asks for it: one extra count per page request, paid by the screen
    that draws a pager and not by the exports that walk every page.
-3. **A session row never says whose it is.** The row carries a `user` field
-   and the panel leaves it empty, so revoking a session from the viewer is
-   done blind.
+3. **FIXED — a session row never said whose it was.** The row carried a
+   `user` field and the panel filled it from the identity keys an
+   application might store, never from the keys its OWN authentication
+   provider writes, so every operator it signed in was listed as nobody and
+   revoking from the viewer was done blind. The panel's own keys come first
+   now; `OPS-16` reads its operator's name on its own row.
 4. **The migrations view fails on an application that has none.** No
    migrations directory answers 500 rather than an empty list.
 
@@ -179,6 +182,15 @@ recorded here because the next person to add a probe will hit the same edges.
   for an application whose trail is a buffer in memory — and it did so only
   on CI, where the ids happened to line up. Probes now look for THE entry
   (action, model, record id), not for a substring.
+- **A verdict read over the whole list changes with the `-run` filter.**
+  `OPS-02` counted how many rows of the shared session list carried an
+  address, and recorded `partial` in the full run because earlier probes had
+  driven the superuser's session through the panel; run on its own it read
+  `absent`. Same list, different history. It is the shared-application trap
+  again, one family over: a session probe reads ITS operator's row, after
+  that operator has made one request through the panel — the panel stamps a
+  session on requests that go through it, and the store sees the stamp once
+  that response is committed, so a sign-in alone leaves nothing to read.
 
 ## A list you can ask a question of, after the arc's fifth session
 
@@ -209,3 +221,39 @@ Four decisions the probes pin, each of them a way a filter can lie:
   operator form too**, and an excluded field is answered as if the column did
   not exist. The operator path is a second door to the same room, and the fuzz
   corpus walks it.
+
+## Whose session, from what, after the arc's sixth session
+
+The session viewer used to list rows an operator could end and could not
+read: no name on any of them and no device, so "that one is not me" was a
+guess over a token prefix. A row now says whose it is (`OPS-16`), from what
+(`OPS-02` — the browser and the platform, with the raw agent beside them),
+and which one is the operator's own, and every session of one account can be
+ended in one call (`OPS-04`).
+
+Three decisions the probes pin:
+
+- **The name in the row is the name the revocation matches on.** `user` is
+  the operator the panel's own authentication signed in, or the identity key
+  an application stores, and `POST /admin/api/sessions/revoke-all` takes
+  that same string. What an operator reads is exactly what "revoke every
+  session of this user" acts on; a second identifier the row did not show
+  would be a second thing to be wrong about.
+- **The request that revokes never revokes itself.** Revoking your own
+  account keeps the session of the browser you are doing it from and ends
+  every other device, which is what "sign out everywhere else" means; a call
+  that signed the operator out mid-action would leave a screen with no one
+  behind it. The answer says how many were ended and whether the caller's
+  own was among the matches and kept, and the audit entry records the same,
+  whether the call completed or not.
+- **The panel records the device itself, under the framework's key.** The
+  framework stamps a session's agent at most every thirty seconds; the panel
+  refreshes a session on every panel request, so a viewer fed by the
+  framework alone would name the device of a session that just signed in and
+  nothing about one that has been open all morning. Both write the same key,
+  so a row reads the same whichever wrote it last.
+
+The probes measure by effect: the same account signed in from two clients,
+both locked out after one call, the superuser who made it still signed in
+afterwards — and then that same superuser revoking their own account and
+still being signed in.

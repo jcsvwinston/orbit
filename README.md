@@ -29,7 +29,7 @@ no separate asset deployment, no out-of-process sidecar, no database of its own.
 |--------|--------------|
 | **Data Studio** | Browse, create, edit, and delete records for every model in the app's registry — tenant-aware, with import/export. |
 | **Live runtime inspector** | Real-time feed of incoming HTTP requests and executed SQL across the whole app (sourced from the framework's observability event bus), with optional cross-node aggregation. |
-| **Session viewer** | List and revoke active server-side sessions. |
+| **Session viewer** | List active server-side sessions — whose, from what device, which one is you — and revoke one or every session of an account. |
 | **Access control (RBAC)** | Inspect and manage the Casbin policies and roles backing the app's authorizer. |
 | **System metrics** | Runtime and resource consumption — CPU, memory, goroutines, database pool. |
 | **Audit log** | A durable trail of admin actions, with retention, export and per-record history. |
