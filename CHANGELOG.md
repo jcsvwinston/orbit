@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.10.0](https://github.com/jcsvwinston/orbit/compare/v1.9.6...v1.10.0) (2026-09-14)
+
+
+### Added
+
+* **admin:** a form resolves the relation, edits the children and takes a file ([#474](https://github.com/jcsvwinston/orbit/issues/474)) ([3294f91](https://github.com/jcsvwinston/orbit/commit/3294f91e5b386d0c2e489f0ce7f6ed4e6de9a0f9))
+* **admin:** a list answers a question with an operator in it, and a total ([#482](https://github.com/jcsvwinston/orbit/issues/482)) ([a3a4681](https://github.com/jcsvwinston/orbit/commit/a3a46819c2627b163daa85c8c3c5fccfb1c2386a))
+* **admin:** a session row names its operator and device, and one call revokes every session of an account ([#483](https://github.com/jcsvwinston/orbit/issues/483)) ([75d3248](https://github.com/jcsvwinston/orbit/commit/75d3248ecc92984d4457de960e875605d3921e0d))
+* **admin:** operators are created, graduated and revoked from the panel ([#471](https://github.com/jcsvwinston/orbit/issues/471)) ([d33b6a5](https://github.com/jcsvwinston/orbit/commit/d33b6a5e006053964bede37128759c77dc99e70d))
+* **admin:** permissions reach the field and the row, and a screen is told what it may do ([#472](https://github.com/jcsvwinston/orbit/issues/472)) ([774520b](https://github.com/jcsvwinston/orbit/commit/774520b004471797e53cb742357ccf2b6c669365))
+* **admin:** the audit trail is kept in the database, with retention, export and per-record history ([#473](https://github.com/jcsvwinston/orbit/issues/473)) ([c82d98c](https://github.com/jcsvwinston/orbit/commit/c82d98cbd4bfb777a1081426b5778889751bc32e))
+* **admin:** the filter set an operator returns to, saved ([#475](https://github.com/jcsvwinston/orbit/issues/475)) ([fe59ba9](https://github.com/jcsvwinston/orbit/commit/fe59ba95aec5024173ecf2f064a2101fb04e35d6))
+
+
+### Fixed
+
+* **adminbench:** AUD-05 looked for a record id anywhere in the payload ([#469](https://github.com/jcsvwinston/orbit/issues/469)) ([5681f8a](https://github.com/jcsvwinston/orbit/commit/5681f8a5a6f032bc49dd495650c59ee606381c5a))
+
 ## [1.9.6](https://github.com/jcsvwinston/orbit/compare/v1.9.5...v1.9.6) (2026-09-12)
 
 
