@@ -17,8 +17,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -540,6 +542,25 @@ func auditProbes() map[string][]auditProbe {
 				}
 			},
 		}},
+		"POST /api/models/{name}/upload": {{
+			name: "field.upload",
+			run: func(t *testing.T, env *auditProbeEnv) auditProbeResult {
+				before := newestAuditID(env.panel)
+				resp := multipartFieldUpload(t, env.srv.URL, "AdminUser", "avatar.png", "image/png")
+				defer func() { _ = resp.Body.Close() }()
+				return auditProbeResult{status: resp.StatusCode, panel: env.panel, beforeID: before}
+			},
+			wantAction: "field.upload",
+			wantNew:    true,
+			wantRecord: true,
+			check: func(t *testing.T, env *auditProbeEnv, e AuditEntry) {
+				// The entry names the stored object, which is the only way to
+				// tie a file in the bucket back to who put it there.
+				if key, _ := e.NewValue["key"].(string); !strings.Contains(key, "admin/uploads/") {
+					t.Errorf("field.upload new_value = %v, want the storage key", e.NewValue)
+				}
+			},
+		}},
 		"PUT /api/audit/retention": {{
 			name:       "audit.retention.set",
 			path:       literalPath("/api/audit/retention"),
@@ -874,4 +895,31 @@ func TestBoundAuditValues_TruncatesLongStrings(t *testing.T) {
 	if got["short"] != "x" || got["n"] != 3 {
 		t.Fatalf("short values altered: %v", got)
 	}
+}
+
+// multipartFieldUpload posts one file to a model's field-upload route.
+func multipartFieldUpload(t *testing.T, baseURL, model, filename, contentType string) *http.Response {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	header := make(textproto.MIMEHeader)
+	header.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename=%q`, filename))
+	header.Set("Content-Type", contentType)
+	part, err := mw.CreatePart(header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = part.Write([]byte("not really a png, but bytes are bytes"))
+	_ = mw.Close()
+
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/api/models/"+model+"/upload", &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
 }

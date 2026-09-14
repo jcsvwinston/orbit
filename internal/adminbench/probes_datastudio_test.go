@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"strings"
 	"testing"
 )
@@ -259,15 +260,43 @@ func probeRelationLookup(t *testing.T, e *env) verdict {
 	if !marked {
 		t.Logf("the schema marks no field of Comment as a foreign key, note_id included")
 	}
+
+	// A candidate that exists, with a name a person would recognise: what
+	// the lookup has to come back with is THIS row, not a 200.
+	author := e.do(t, http.MethodPost, "/admin/api/models/Author", map[string]any{"name": "Ursula Lookup"})
+	if author.code != http.StatusCreated {
+		t.Fatalf("create Author answered %d: %s", author.code, author.text())
+	}
+	authorID := recordID(t, author.json(t))
+
 	for _, path := range []string{
-		"/admin/api/models/Comment/fields/note_id/options",
-		"/admin/api/models/Note/lookup?q=",
-		"/admin/api/models/Note/options",
+		"/admin/api/models/Comment/fields/author_id/options",
+		"/admin/api/models/Author/options",
 	} {
-		if r := e.get(t, path); r.code == http.StatusOK && !r.servedTheShell() {
-			t.Logf("%s answers 200: a lookup endpoint exists", path)
+		r := e.get(t, path)
+		if r.code != http.StatusOK || r.servedTheShell() {
+			continue
+		}
+		// The endpoint answers; now ask whether it answers with something a
+		// form can render — the id to store and the label to show.
+		options, _ := r.json(t)["options"].([]any)
+		for _, raw := range options {
+			option, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			if fmt.Sprint(option["value"]) != authorID {
+				continue
+			}
+			if label := fmt.Sprint(option["label"]); label != "Ursula Lookup" {
+				t.Logf("%s returns the candidate with %q as its label, not a name a person reads", path, label)
+				return partial
+			}
 			return present
 		}
+		t.Logf("%s answers 200 but the candidate (Author %s) is not among its %d options: %s",
+			path, authorID, len(options), r.text())
+		return partial
 	}
 	if marked {
 		t.Logf("the schema marks the key (is_fk) but no endpoint resolves what it points at")
@@ -317,18 +346,73 @@ func probeFieldTypes(t *testing.T, e *env) verdict {
 		}
 	}
 	scalars := strings.Contains(body, `"html_type":"text"`) && strings.Contains(body, `"html_type":"number"`)
-	upload := e.do(t, http.MethodPost, "/admin/api/models/Note/upload", map[string]any{})
-	uploadRouted := upload.code != http.StatusNotFound &&
-		upload.code != http.StatusMethodNotAllowed && !upload.servedTheShell()
-	t.Logf("rich widgets in schema: %d; field upload route answers %d (routed: %v)", rich, upload.code, uploadRouted)
-	switch {
-	case rich > 0 && uploadRouted:
-		return present
-	case scalars:
-		return partial
-	default:
+	if rich == 0 {
+		t.Logf("the schema publishes no widget a scalar input cannot be: %s", r.text())
+		if scalars {
+			return partial
+		}
 		return absent
 	}
+
+	// A widget for a file is only half of it: the file has to have somewhere
+	// to go. The probe uploads one and then asks whether the panel answered
+	// with a key a form could write into the record.
+	key, status := uploadFieldFile(t, e, "Note", "cover", "cover.png", "image/png")
+	if key == "" {
+		t.Logf("rich widgets in schema: %d, but the field upload answered %d with no key", rich, status)
+		if scalars {
+			return partial
+		}
+		return absent
+	}
+	// And a field that is NOT a file is refused: an upload route that takes
+	// anything is a way to fill a text column with a storage key nobody
+	// declared.
+	if _, status := uploadFieldFile(t, e, "Note", "title", "title.png", "image/png"); status < 400 {
+		t.Logf("uploading into a scalar field answered %d: the route does not check the widget", status)
+		return partial
+	}
+	t.Logf("rich widgets in schema: %d; an upload for Note.cover stored %s", rich, key)
+	return present
+}
+
+// uploadFieldFile posts one file to a model's field-upload route and returns
+// the stored key (empty when the panel refused) and the status.
+func uploadFieldFile(t *testing.T, e *env, model, field, filename, contentType string) (string, int) {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	header := make(textproto.MIMEHeader)
+	header.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename=%q`, filename))
+	header.Set("Content-Type", contentType)
+	part, err := mw.CreatePart(header)
+	if err != nil {
+		t.Fatalf("multipart: %v", err)
+	}
+	_, _ = part.Write([]byte("bytes of a file"))
+	if err := mw.WriteField("field", field); err != nil {
+		t.Fatalf("multipart field: %v", err)
+	}
+	_ = mw.Close()
+
+	req, err := http.NewRequest(http.MethodPost,
+		e.server().URL("/admin/api/models/"+model+"/upload"), &buf)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	resp, err := e.operator(t).Do(req)
+	if err != nil {
+		t.Fatalf("upload: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 400 {
+		return "", resp.StatusCode
+	}
+	var payload map[string]any
+	decodeInto(t, resp.Body, &payload)
+	key, _ := payload["key"].(string)
+	return key, resp.StatusCode
 }
 
 // probeExport downloads the table an operator selected.

@@ -41,6 +41,12 @@ type Note struct {
 	Body   string `json:"body"`
 	Status string `json:"status" admin:"list,filter"`
 	Views  int    `json:"views" admin:"list"`
+	// Cover and Meta are the fields a scalar form cannot hold: a file and a
+	// document. Both are columns of text — what they MEAN is the
+	// application's claim, declared through orbit.Config.FieldWidgets below,
+	// which is exactly how an author says it.
+	Cover string `json:"cover"`
+	Meta  string `json:"meta"`
 }
 
 // Author exists only so a foreign key does: Note has no relation, and a bench
@@ -144,6 +150,13 @@ func (e *env) server() *nucleustest.Server {
 					// itself to, and the panel refuses it rather than
 					// widening it.
 					RowOwnerFields: map[string]string{"Article": "owner"},
+					// What a form should render for the fields whose type
+					// cannot say: rich text, a file, a document.
+					FieldWidgets: map[string]string{
+						"Note.Body":  "richtext",
+						"Note.Cover": "image",
+						"Note.Meta":  "json",
+					},
 				}),
 			},
 		})

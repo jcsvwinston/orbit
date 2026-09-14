@@ -419,7 +419,10 @@ func (p *Panel) handleGetSchema(c *router.Context) error {
 		fields = append(fields, fieldInfo{
 			fieldCapabilities: fieldCaps,
 			Name:              f.Name, Column: f.Column, Label: f.Label,
-			Type: f.GoType, HTMLType: f.HTMLType,
+			// The widget is what a FORM needs, which is not always what the
+			// column type says: a JSON document, a file or rich text are
+			// edited with something a text input cannot be.
+			Type: f.GoType, HTMLType: p.fieldWidget(mi.Name, f),
 			IsPK: f.IsPK, IsRequired: f.IsRequired, IsReadOnly: f.IsReadOnly,
 			IsList: f.IsList, IsSearch: f.IsSearch, IsFilter: f.IsFilter,
 			IsExcluded: f.IsExcluded, IsForeignKey: f.IsForeignKey,
@@ -439,11 +442,14 @@ func (p *Panel) handleGetSchema(c *router.Context) error {
 		"fields":       fields,
 		"foreign_keys": mi.ForeignKeys,
 		"tenant_field": tenantField,
-		"permissions":  caps.Permissions,
-		"row_scope":    caps.RowScope,
-		"can_create":   caps.CanCreate,
-		"can_update":   caps.CanUpdate,
-		"can_delete":   caps.CanDelete,
+		// The children a form may edit in place, with the key a payload
+		// names each collection by (see internal/admin/inlines.go).
+		"inlines":     p.inlinesFor(mi),
+		"permissions": caps.Permissions,
+		"row_scope":   caps.RowScope,
+		"can_create":  caps.CanCreate,
+		"can_update":  caps.CanUpdate,
+		"can_delete":  caps.CanDelete,
 	})
 }
 
@@ -711,6 +717,15 @@ func (p *Panel) handleCreateRecord(c *router.Context) error {
 		return err
 	}
 
+	// The children of a nested payload are taken out before the parent is
+	// written: handed to the backend they would be an unknown key, which is
+	// how a nested payload used to disappear without a word.
+	inlineSpecs := p.inlinesFor(mi)
+	inlinePayloads := takeInlinePayloads(data, inlineSpecs)
+	if err := p.authorizeInlines(c, inlinePayloads, inlineSpecs); err != nil {
+		return err
+	}
+
 	created, err := st.Create(r.Context(), datasource.Record(data))
 	if err != nil {
 		return err
@@ -722,9 +737,17 @@ func (p *Panel) handleCreateRecord(c *router.Context) error {
 		RecordID:  auditRecordID(mi, created),
 		NewValue:  auditValues(mi, created),
 	})
+	inlineResults, err := p.writeInlines(c, mi, auditRecordID(mi, created), inlinePayloads, inlineSpecs, databaseAlias)
+	if err != nil {
+		return err
+	}
+
 	// The trail records what was written; the answer only shows back what
 	// this operator may read.
 	fieldRules.mask(mi, created)
+	if len(inlineResults) > 0 {
+		return c.JSON(http.StatusCreated, map[string]any{"record": created, "inlines": inlineResults})
+	}
 
 	return c.JSON(http.StatusCreated, created)
 }
@@ -752,6 +775,11 @@ func (p *Panel) handleUpdateRecord(c *router.Context) error {
 		return gferrors.BadRequest("invalid JSON")
 	}
 	if err := p.requestFieldRules(r, mi).guardPayload(mi, updates, fieldActionUpdate); err != nil {
+		return err
+	}
+	inlineSpecs := p.inlinesFor(mi)
+	inlinePayloads := takeInlinePayloads(updates, inlineSpecs)
+	if err := p.authorizeInlines(c, inlinePayloads, inlineSpecs); err != nil {
 		return err
 	}
 
@@ -790,21 +818,42 @@ func (p *Panel) handleUpdateRecord(c *router.Context) error {
 			return err
 		}
 	}
-	// The row before and after the change go into the audit entry. A
-	// failed read leaves that side nil but never turns a valid write into
-	// an error: the update is the operation, the snapshot is its record.
-	before := auditRecordSnapshot(r, st, idStr)
-	if err := st.Update(r.Context(), idStr, datasource.Record(updates)); err != nil {
+	// Editing only the children is a real edit: a form that changed a line
+	// and nothing on the parent sends exactly this. The parent's own write
+	// is skipped — and so is its audit entry, because it did not happen —
+	// but the row still has to exist, or the children would be filed under
+	// a parent that is not there.
+	if len(updates) == 0 && len(inlinePayloads) > 0 {
+		if _, err := st.Get(r.Context(), idStr); err != nil {
+			return err
+		}
+	} else {
+		// The row before and after the change go into the audit entry. A
+		// failed read leaves that side nil but never turns a valid write into
+		// an error: the update is the operation, the snapshot is its record.
+		before := auditRecordSnapshot(r, st, idStr)
+		if err := st.Update(r.Context(), idStr, datasource.Record(updates)); err != nil {
+			return err
+		}
+		after := auditRecordSnapshot(r, st, idStr)
+		p.recordAuditEntry(r, AuditEntry{
+			Action:    "update",
+			ModelName: mi.Name,
+			RecordID:  idStr,
+			OldValue:  auditValues(mi, before),
+			NewValue:  auditValues(mi, after),
+		})
+	}
+
+	inlineResults, err := p.writeInlines(c, mi, idStr, inlinePayloads, inlineSpecs, databaseAlias)
+	if err != nil {
 		return err
 	}
-	after := auditRecordSnapshot(r, st, idStr)
-	p.recordAuditEntry(r, AuditEntry{
-		Action:    "update",
-		ModelName: mi.Name,
-		RecordID:  idStr,
-		OldValue:  auditValues(mi, before),
-		NewValue:  auditValues(mi, after),
-	})
+	if len(inlineResults) > 0 {
+		return c.JSON(http.StatusOK, map[string]interface{}{
+			"updated": true, "id": idStr, "inlines": inlineResults,
+		})
+	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{"updated": true, "id": idStr})
 }

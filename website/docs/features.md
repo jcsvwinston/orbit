@@ -197,6 +197,70 @@ accounts, which is the default one (backed by `nucleus_admin_users`). An
 application that authenticates its operators elsewhere gets `501` on these
 routes rather than a second, competing account store.
 
+### Forms that hold a relation, a document and a file
+
+A form needs three things a table of scalars does not.
+
+**What a foreign key points at.** The schema marks the key (`is_fk`), and two
+endpoints resolve it:
+
+```
+GET /api/models/{model}/options?q=&limit=            the candidates of a model
+GET /api/models/{model}/fields/{field}/options       the candidates a field may point at
+```
+
+Each option carries the `value` a record stores and a `label` a person reads
+(the model's first searchable text field, then its first listed one). The
+permission is the **target's**: resolving what an Author id means is reading
+Authors, so an operator who may edit the record and not browse the target gets
+a `403` and a form that falls back to the raw id — the panel does not widen a
+grant to render a nicer widget. Search, tenant confinement and row scope apply
+exactly as they do to a list.
+
+**Children, edited with the parent.** A model whose foreign key names another
+appears in the parent's schema as an inline, and the parent's own payload
+carries the children:
+
+```json
+{ "title": "Kind of Blue",
+  "tracks": [ { "title": "So What" },
+              { "id": 12, "title": "Blue in Green" },
+              { "id": 13, "_delete": true } ] }
+```
+
+A row with an id is an edit, one without is an insert, and a row that should
+go **says so** — absence never deletes, because a form that loaded two of five
+lines would otherwise remove the three it never showed. The key pointing at
+the parent is stamped by the panel, so a child cannot be filed under another
+record. Writing children needs the **child model's** own permissions, and they
+are checked before the parent is written.
+
+This is deliberately **not transactional**: the panel's data contract writes
+one row at a time, so the parent is saved first and each child reported on its
+own in the response (`inlines`). A form that needs all-or-nothing needs a
+transactional data source underneath it, and saying so is better than implying
+otherwise.
+
+**Documents, rich text and files.** The schema's widget vocabulary was scalar;
+it now also names `json`, `richtext`, `file` and `image`. A JSON document is
+inferred from the column type; the other two are claims about intent that no
+type carries, so the application declares them:
+
+```yaml
+modules:
+  orbit:
+    field_widgets:
+      Album.Notes: richtext
+      Album.cover: image
+```
+
+A file field holds a storage **key**, and `POST /api/models/{model}/upload`
+(multipart, `file` plus an optional `field`) produces one: the bytes go to the
+application's own storage and the answer carries the key the form writes into
+the record. The route refuses a field that does not hold a file, caps an
+upload at 32 MB, keeps only the base name of what the client called it, and is
+audited (`field.upload`).
+
 ## Access control (RBAC)
 
 Inspect and manage the Casbin policies and roles that back the application's
@@ -365,6 +429,7 @@ performed it. The `action` names the operation:
 | Feature flags and jobs | `flag.create`, `flag.set`, `flag.delete`, `jobs.queue.<action>` |
 | Operations | `migration.apply`, `cache.flush`, `live.exclude.add`, `live.exclude.remove`, `audit.clear` (the one entry that survives the clear) |
 | The trail itself | `audit.export` (a CSV copy was taken, with the filters and the count), `audit.retention.set` (the window in effect changed, with the old and new values) |
+| Files | `field.upload` (a file was stored for a model's field, with the key it was stored under) |
 | Data management | `export.create`, `fixtures.dumpdata`, `import.upload`, `import.validate`, `import.execute`, `fixtures.loaddata` — exports are recorded whether they completed or failed |
 | Sessions | `login`, `login.failed`, `login.locked`, `logout`, `session.terminate` |
 | Tenant scope | `tenant.override` (an accepted `?tenant=` switch, with the requested tenant as `record_id`; a refused switch leaves no entry) |

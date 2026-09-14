@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
@@ -7,6 +7,10 @@ import type { SchemaField, ModelSchema, Record as AppRecord } from '@/types'
 import { errorMessage } from '@/services/api'
 import { fieldToInput, inputToPayload, isJsonField, readField } from '../lib/fieldValues'
 import { isFieldEditable } from '../lib/capabilities'
+import RelationSelect from './RelationSelect'
+import FileField from './FileField'
+import InlineEditor, { type InlineRow } from './InlineEditor'
+import { inlinePayload } from '../lib/inlinePayload'
 import { Loader2 } from 'lucide-react'
 
 interface Props {
@@ -51,6 +55,7 @@ function FieldInput({
   value,
   json,
   invalid,
+  modelName,
   onChange,
 }: {
   field: SchemaField
@@ -58,10 +63,56 @@ function FieldInput({
   value: string
   json: boolean
   invalid: boolean
+  modelName: string
   onChange: (val: string) => void
 }) {
   const htmlType = field.html_type || 'text'
   const errorId = invalid ? `${id}-error` : undefined
+
+  // A foreign key is picked, not typed: the lookup says what it may point at.
+  if (field.is_fk) {
+    return (
+      <RelationSelect
+        id={id}
+        modelName={modelName}
+        field={field.name}
+        value={value}
+        inputClass={inputClass}
+        onChange={onChange}
+      />
+    )
+  }
+
+  // A file field holds a storage key, which the upload produces.
+  if (htmlType === 'file' || htmlType === 'image') {
+    return (
+      <FileField
+        id={id}
+        modelName={modelName}
+        field={field.name}
+        value={value}
+        image={htmlType === 'image'}
+        inputClass={inputClass}
+        onChange={onChange}
+      />
+    )
+  }
+
+  // Rich text is HTML the application means as HTML. The panel edits it as
+  // markup rather than shipping an editor: a WYSIWYG that rewrites what it
+  // does not understand is worse than a textarea that does not.
+  if (htmlType === 'richtext') {
+    return (
+      <textarea
+        id={id}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        rows={8}
+        spellCheck
+        className={`${inputClass} resize-y min-h-[160px]`}
+      />
+    )
+  }
 
   if (field.choices && field.choices.length > 0) {
     return (
@@ -144,6 +195,9 @@ export default function RecordForm({ open, onClose, schema, record, onSave }: Pr
   const fields = editableFields(schema, isEdit)
   const readonlyFields = displayFields(schema)
   const [formData, setFormData] = useState<{ [column: string]: string }>({})
+  // The children each inline collection is holding, keyed by the name a
+  // payload calls the collection ("tracks").
+  const [inlineRows, setInlineRows] = useState<{ [key: string]: InlineRow[] }>({})
   const [jsonColumns, setJsonColumns] = useState<Set<string>>(new Set())
   const [fieldErrors, setFieldErrors] = useState<{ [column: string]: string }>({})
   const [saving, setSaving] = useState(false)
@@ -159,9 +213,14 @@ export default function RecordForm({ open, onClose, schema, record, onSave }: Pr
     }
     setFormData(data)
     setJsonColumns(json)
+    setInlineRows({})
     setFieldErrors({})
     setError(null)
   }, [open, record, schema])
+
+  const handleInlineChange = useCallback((key: string, rows: InlineRow[]) => {
+    setInlineRows((prev) => ({ ...prev, [key]: rows }))
+  }, [])
 
   const updateField = (column: string, value: string) => {
     setFormData((prev) => ({ ...prev, [column]: value }))
@@ -194,6 +253,14 @@ export default function RecordForm({ open, onClose, schema, record, onSave }: Pr
       setFieldErrors(errors)
       setError('Fix the highlighted fields before saving.')
       return
+    }
+
+    // The children travel with the parent, in the shape the backend takes:
+    // a row with an id is an edit, one without is an insert, and one marked
+    // deleted says so explicitly — never by being left out.
+    for (const [key, rows] of Object.entries(inlineRows)) {
+      if (rows.length === 0) continue
+      payload[key] = inlinePayload(rows)
     }
 
     setSaving(true)
@@ -250,6 +317,7 @@ export default function RecordForm({ open, onClose, schema, record, onSave }: Pr
                   value={formData[f.column] ?? ''}
                   json={json}
                   invalid={Boolean(fieldError)}
+                  modelName={schema.name}
                   onChange={(val) => updateField(f.column, val)}
                 />
                 {fieldError && (
@@ -258,6 +326,18 @@ export default function RecordForm({ open, onClose, schema, record, onSave }: Pr
               </div>
             )
           })}
+
+          {/* The children, edited where the record is. On a create there is
+              no parent id yet, so the rows start empty and are written right
+              after the parent. */}
+          {(schema.inlines ?? []).map((spec) => (
+            <InlineEditor
+              key={spec.model}
+              spec={spec}
+              parentId={isEdit ? String(readField(record as AppRecord, { column: schema.primary_key, name: schema.primary_key } as SchemaField) ?? '') : null}
+              onChange={handleInlineChange}
+            />
+          ))}
 
           {error && (
             <div role="alert" className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-sm text-destructive">
