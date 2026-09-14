@@ -130,6 +130,26 @@ func (fr fieldRules) mask(mi datasource.ModelInfo, rec datasource.Record) dataso
 	return rec
 }
 
+// maskValues masks a plain value map — an audit entry's before/after side,
+// which is keyed by the same columns a record is. It returns a copy: the
+// entry it came from may be a shared one (the in-memory ring hands out
+// values, but a future store may not), and masking in place would edit the
+// trail itself.
+func (fr fieldRules) maskValues(mi datasource.ModelInfo, values map[string]any) map[string]any {
+	if !fr.enforced() || len(values) == 0 {
+		return values
+	}
+	out := make(map[string]any, len(values))
+	for key, v := range values {
+		col, f, ok := dsResolveField(mi, key)
+		if ok && !f.IsPK && !fr.readable(col) {
+			continue
+		}
+		out[key] = v
+	}
+	return out
+}
+
 // maskAll masks every record of a page in place.
 func (fr fieldRules) maskAll(mi datasource.ModelInfo, items []datasource.Record) {
 	if !fr.enforced() {

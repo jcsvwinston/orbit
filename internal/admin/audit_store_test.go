@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func fillAuditStore(s *auditStore, n int) {
+func fillAuditStore(s auditSink, n int) {
 	for i := 1; i <= n; i++ {
 		action := "create"
 		user := "u1"

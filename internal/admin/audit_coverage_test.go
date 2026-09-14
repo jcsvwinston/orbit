@@ -540,6 +540,24 @@ func auditProbes() map[string][]auditProbe {
 				}
 			},
 		}},
+		"PUT /api/audit/retention": {{
+			name:       "audit.retention.set",
+			path:       literalPath("/api/audit/retention"),
+			body:       literalBody(`{"retention_days":30}`),
+			wantAction: "audit.retention.set",
+			wantOld:    true,
+			wantNew:    true,
+			check: func(t *testing.T, env *auditProbeEnv, e AuditEntry) {
+				// The window is not just recorded, it is in effect: the
+				// entry says what it became and the panel agrees.
+				if days, _ := e.NewValue["retention_days"].(int); days != 30 {
+					t.Errorf("audit.retention.set new_value = %v, want retention_days 30", e.NewValue)
+				}
+				if got := env.panel.retentionDays(); got != 30 {
+					t.Errorf("the panel keeps a %d-day window after the call, want 30", got)
+				}
+			},
+		}},
 		"POST /api/migrations/apply": {{
 			name:       "migration.apply",
 			path:       literalPath("/api/migrations/apply"),

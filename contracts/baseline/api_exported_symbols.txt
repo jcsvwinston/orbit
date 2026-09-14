@@ -1,5 +1,7 @@
 github.com/jcsvwinston/orbit const:DefaultPrefix
 github.com/jcsvwinston/orbit field:Config.AuditMaxSize
+github.com/jcsvwinston/orbit field:Config.AuditRetentionDays
+github.com/jcsvwinston/orbit field:Config.AuditStore
 github.com/jcsvwinston/orbit field:Config.AuthDatabase
 github.com/jcsvwinston/orbit field:Config.BootstrapEmail
 github.com/jcsvwinston/orbit field:Config.BootstrapPassword

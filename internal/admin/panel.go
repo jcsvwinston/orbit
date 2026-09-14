@@ -128,6 +128,16 @@ type PanelConfig struct {
 	// Audit logging configuration
 	AuditEnabled bool // whether audit logging is enabled
 	AuditMaxSize int  // max audit entries in memory (default 10000)
+	// AuditStore selects where the trail is kept: "database" (the default
+	// when the panel has a database handle) writes a table the panel owns,
+	// so the trail survives the process and is shared by every replica;
+	// "memory" keeps the process-lifetime ring, which is what the panel had
+	// before and what a panel with no handle gets either way.
+	AuditStore string
+	// AuditRetentionDays drops entries older than that many days. Zero keeps
+	// them until somebody clears the log; the ring's own bound
+	// (AuditMaxSize) is a COUNT and answers a different question.
+	AuditRetentionDays int
 
 	// Migrations path
 	MigrationsPath string // path to migration files directory
@@ -182,8 +192,17 @@ type Panel struct {
 	// RBAC enforcer for fine-grained authorization
 	rbac *authz.Enforcer
 
-	// Audit log store
-	audit *auditStore
+	// Audit log store: the SQL trail when the panel has a database handle
+	// and the configuration asks for one, the in-memory ring otherwise.
+	audit auditSink
+	// auditRetention is the window in effect (days; 0 = keep until cleared),
+	// which the retention endpoint can change at runtime, and lastAuditPurge
+	// is what keeps the sweep to once per interval. Both are read and written
+	// from request goroutines.
+	auditRetentionMu sync.RWMutex
+	auditRetention   int
+	auditPurgeMu     sync.Mutex
+	lastAuditPurge   time.Time
 	// loginAuditBudget bounds the login entries one client IP can add to
 	// the ring per lockout window (auditLogin); the login route is the only
 	// unauthenticated writer of the store.
@@ -227,18 +246,58 @@ func NewPanel(src datasource.DataSource, logger *slog.Logger, cfg PanelConfig) *
 		liveNode:       resolvePanelLiveNodeID(cfg),
 		tenantFields:   make(map[string]string),
 		rbac:           cfg.RBACEnforcer,
-		audit: func() *auditStore {
-			if cfg.AuditEnabled {
-				return newAuditStore(cfg.AuditMaxSize)
-			}
-			return nil
-		}(),
+		audit:          nil, // built below: it needs the panel's database handle
+
 		loginAuditBudget: newLoginLimiter(),
 		store:            cfg.Store,
 		exportResults:    make(map[string]ExportResult),
 	}
+	p.auditRetention = cfg.AuditRetentionDays
+	if cfg.AuditEnabled {
+		p.audit = p.buildAuditSink()
+	}
 
 	return p
+}
+
+// buildAuditSink decides where the trail is written.
+//
+// The database is the default when the panel has a handle, because the answer
+// an incident needs — what happened before the restart — is the one the ring
+// could never give, and a trail that has to be switched on is a trail nobody
+// has when they need it. A panel with no handle, or one configured with
+// `audit_store: memory`, keeps the ring; a database whose table cannot be
+// created falls back to the ring with a warning rather than refusing to
+// mount, because an admin panel that will not start is worse than one whose
+// trail is not durable.
+func (p *Panel) buildAuditSink() auditSink {
+	ring := newAuditStore(p.config.AuditMaxSize)
+	if strings.EqualFold(strings.TrimSpace(p.config.AuditStore), auditStoreMemory) {
+		return ring
+	}
+	if p.db == nil {
+		return ring
+	}
+	sqlDB, err := p.db.SqlDB()
+	if err != nil || sqlDB == nil {
+		if p.logger != nil {
+			p.logger.Warn("orbit: audit trail stays in memory (no sql handle)", "error", err)
+		}
+		return ring
+	}
+	store := newSQLAuditStore(sqlDB, p.db.System(), p.logger)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := store.ensureSchema(ctx); err != nil {
+		if p.logger != nil {
+			p.logger.Warn("orbit: audit trail stays in memory (schema not available)", "error", err)
+		}
+		return ring
+	}
+	// Retention is applied at mount as well as on writes, so a deploy of an
+	// application that lowered the window does not wait for the next entry.
+	p.applyAuditRetention(store)
+	return store
 }
 
 // defaultDatabaseHandle returns the engine-aware handle for the default alias,
@@ -494,6 +553,9 @@ func (p *Panel) mountAPIRoutes(m *router.Mux) {
 	m.Delete("/api/models/{name}/{id}", p.handleDeleteRecord)
 	m.Post("/api/models/{name}/bulk", p.handleBulkAction)
 	m.Get("/api/models/{name}/export", p.handleExportCSV)
+	// The audit trail read by record: what this row said before, and who
+	// changed it (see handleRecordHistory).
+	m.Get("/api/models/{name}/{id}/history", p.handleRecordHistory)
 	m.Post("/api/logout", p.handleLogout)
 	m.Get("/api/sessions", p.handleListSessions)
 	m.Delete("/api/sessions/{token}", p.handleTerminateSession)
@@ -539,6 +601,8 @@ func (p *Panel) mountAPIRoutes(m *router.Mux) {
 	// Audit log endpoints
 	m.Get("/api/audit", p.handleListAuditLog)
 	m.Post("/api/audit/clear", p.handleClearAuditLog)
+	m.Get("/api/audit/retention", p.handleAuditRetention)
+	m.Put("/api/audit/retention", p.handleSetAuditRetention)
 
 	// Management endpoints
 	m.Get("/api/migrations", p.handleListMigrations)

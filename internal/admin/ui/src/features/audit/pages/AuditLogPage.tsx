@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/table'
 import * as api from '@/services/api'
 import type { AuditLogPage as AuditPage } from '@/types'
-import { FileText, RefreshCw, Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { FileText, RefreshCw, Loader2, ChevronLeft, ChevronRight, Download, Database, HardDrive } from 'lucide-react'
 
 const PAGE_SIZE = 50
 const FILTER_DEBOUNCE_MS = 300
@@ -90,6 +90,16 @@ export default function AuditLogPage() {
   const total = result?.total ?? 0
   const totalPages = result?.totalPages ?? 1
   const hasActiveFilter = Object.values(filters).some((v) => v.trim())
+  // Where this trail lives and how far back it goes. A panel that shows a
+  // trail without saying either lets an empty page read as "nothing
+  // happened" when it means "this process just started".
+  const persistent = result?.persistent === true
+  const retentionDays = result?.retentionDays ?? 0
+  const exportHref = api.auditExportURL({
+    user_id: filters.user_id.trim() || undefined,
+    model: filters.model.trim() || undefined,
+    action: filters.action.trim() || undefined,
+  })
 
   const updateFilter = (key: keyof Filters, value: string) => {
     setFilterInput((prev) => ({ ...prev, [key]: value }))
@@ -109,17 +119,47 @@ export default function AuditLogPage() {
               <FileText className="h-5 w-5" />
               Audit Trail
             </div>
-            <Button onClick={fetchLogs} disabled={loading} size="sm" aria-label="Refresh audit log">
-              {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4" />
-              )}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                onClick={() => window.open(exportHref, '_blank')}
+                aria-label="Export the audit trail as CSV"
+              >
+                <Download className="h-4 w-4" />
+                Export CSV
+              </Button>
+              <Button onClick={fetchLogs} disabled={loading} size="sm" aria-label="Refresh audit log">
+                {loading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
           </CardTitle>
-          <CardDescription>
-            {total} log entr{total === 1 ? 'y' : 'ies'}
-            {hasActiveFilter && ' (filtered)'}
+          <CardDescription className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span>
+              {total} log entr{total === 1 ? 'y' : 'ies'}
+              {hasActiveFilter && ' (filtered)'}
+            </span>
+            <span className="flex items-center gap-1 text-xs">
+              {persistent ? (
+                <>
+                  <Database className="h-3 w-3" />
+                  kept in the database
+                  {retentionDays > 0
+                    ? ` for ${retentionDays} day${retentionDays === 1 ? '' : 's'}`
+                    : ' until cleared'}
+                </>
+              ) : (
+                <>
+                  <HardDrive className="h-3 w-3" />
+                  in memory only — this trail starts when the process does
+                </>
+              )}
+            </span>
           </CardDescription>
           <div className="flex flex-wrap items-end gap-3 pt-2">
             <div className="space-y-1">

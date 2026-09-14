@@ -119,8 +119,21 @@ type Config struct {
 	// MigrationsPath is the directory the migrations view reads (default "migrations").
 	MigrationsPath string `yaml:"migrations_path" koanf:"migrations_path"`
 	// AuditMaxSize caps the in-memory audit log ring buffer; zero or negative
-	// means the default of 10000 entries.
+	// means the default of 10000 entries. It bounds the MEMORY store only: a
+	// trail kept in the database is bounded by AuditRetentionDays.
 	AuditMaxSize int `yaml:"audit_max_size" koanf:"audit_max_size"`
+
+	// AuditStore selects where the audit trail is kept: "database" (the
+	// default when the application has a database) writes a table the panel
+	// owns and creates, so the trail survives restarts and is shared by every
+	// replica; "memory" keeps the process-lifetime ring instead.
+	AuditStore string `yaml:"audit_store" koanf:"audit_store"`
+
+	// AuditRetentionDays drops trail entries older than that many days,
+	// applied at mount and at most hourly afterwards. Zero keeps them until
+	// somebody clears the log. It is a PERIOD, which is what a compliance
+	// window is; AuditMaxSize is a count and answers a different question.
+	AuditRetentionDays int `yaml:"audit_retention_days" koanf:"audit_retention_days"`
 
 	// Live view / cluster telemetry.
 
@@ -355,6 +368,8 @@ func (m *module) start(ctx context.Context) error {
 		MultiTenantIDs:        m.cfg.MultiTenantIDs,
 		RowOwnerFields:        m.cfg.RowOwnerFields,
 		RowOwnerSubject:       m.cfg.RowOwnerSubject,
+		AuditStore:            m.cfg.AuditStore,
+		AuditRetentionDays:    m.cfg.AuditRetentionDays,
 		TenantResolver:        resolvedTenant,
 
 		AuditEnabled:   true,
