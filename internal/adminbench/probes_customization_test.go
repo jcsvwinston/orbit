@@ -46,8 +46,15 @@ func probeBranding(t *testing.T, e *env) verdict {
 
 // probeDashboardWidgets asks for the landing screen an admin product opens
 // on: the counters and charts a team chooses.
+//
+// It used to match "widget" anywhere in a config key, and `field_widgets` —
+// which says how a FIELD is edited and has nothing to do with a landing
+// screen — moved this control from absent to partial on nothing but a
+// substring. A probe that matches the NAMES of the mount surface is measuring
+// names; this one asks for keys that name the dashboard itself, and for the
+// routes such a dashboard would have.
 func probeDashboardWidgets(t *testing.T, e *env) verdict {
-	if keys := configKeysMatching("dashboard", "widget", "card"); len(keys) > 0 {
+	if keys := configKeysMatching("dashboard", "homepage", "landing"); len(keys) > 0 {
 		t.Logf("dashboard keys on the mount surface: %v", keys)
 		return partial
 	}

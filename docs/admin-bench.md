@@ -38,17 +38,17 @@ A control that cannot be probed does not belong in the bench.
 
 ## The result
 
-**41 of 59 controls present. 7 partial. 11 absent.**
+**44 of 59 controls present. 5 partial. 10 absent.**
 
 | family | present | partial | absent |
 |---|---|---|---|
-| data studio | 10 | 4 | 3 |
+| data studio | 13 | 2 | 2 |
 | permissions | 9 | 0 | 0 |
 | audit | 7 | 0 | 0 |
 | operations | 10 | 3 | 4 |
 | customization | 3 | 0 | 4 |
 | interface | 2 | 0 | 0 |
-| **total** | **41** | **7** | **11** |
+| **total** | **44** | **5** | **10** |
 
 ## What the shape of it says
 
@@ -116,6 +116,18 @@ and a probe that boots the real application is what found them.
 - **The fleet plane.** A separate product surface with its own agent, server
   and protocol. It is measured where it lives.
 
+## A form, after the arc's fourth session
+
+Everything an operator does to *data* now includes the part a table of scalars
+cannot do: a foreign key is picked from what it may point at (`DS-10`), the
+children of a record are edited with it (`DS-11`), and a document, a file or
+rich text have something to be edited with (`DS-12`). Two things worth
+retaining about how those are drawn: the lookup is the TARGET model's
+permission, so it never widens a grant to render a nicer widget; and the
+children are written without a transaction, each reported on its own, because
+the data contract writes one row at a time and pretending otherwise would be
+the rollback it cannot do.
+
 ## What the bench got wrong about itself
 
 Four of the first run's readings were the bench measuring itself, and they are
@@ -137,6 +149,12 @@ recorded here because the next person to add a probe will hit the same edges.
   `NoteID` field and no relation declaration, so nothing marked it as a key —
   and the probe read that as "the panel has no relation metadata". It was
   measuring the model the bench wrote.
+- **A config key is not a capability.** `CUST-03` ("dashboards and widgets an
+  application declares") matched the substring "widget" in the names of the
+  mount surface, so adding `field_widgets` — which says how a FIELD is edited
+  and has nothing to do with a landing screen — moved that control from absent
+  to partial on nothing at all. A probe that reads the NAMES of a config is
+  measuring names.
 - **A record id is a short number, and `Contains` finds it anywhere.** AUD-05
   asked whether the id of a record written before a restart appeared in the
   restarted process's audit payload. It does: in that process's own login

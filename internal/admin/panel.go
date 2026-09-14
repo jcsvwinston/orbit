@@ -125,6 +125,13 @@ type PanelConfig struct {
 	RowOwnerFields  map[string]string
 	RowOwnerSubject string
 
+	// FieldWidgets declares how a field is edited when its type cannot say:
+	// "Model.Field" (or "Model.column") to one of json, richtext, file or
+	// image. A JSON document is inferred from the type and needs no entry;
+	// "this string is HTML" and "this string is a storage key" are claims
+	// about intent that no type carries, so they are declared here.
+	FieldWidgets map[string]string
+
 	// Audit logging configuration
 	AuditEnabled bool // whether audit logging is enabled
 	AuditMaxSize int  // max audit entries in memory (default 10000)
@@ -553,6 +560,13 @@ func (p *Panel) mountAPIRoutes(m *router.Mux) {
 	m.Delete("/api/models/{name}/{id}", p.handleDeleteRecord)
 	m.Post("/api/models/{name}/bulk", p.handleBulkAction)
 	m.Get("/api/models/{name}/export", p.handleExportCSV)
+	// Relations, as a form needs them: what this model — or this field —
+	// may point at (see internal/admin/relations.go).
+	m.Get("/api/models/{name}/options", p.handleModelOptions)
+	m.Get("/api/models/{name}/fields/{field}/options", p.handleFieldOptions)
+	// One file for one field: the bytes go to the application's storage and
+	// the form writes back the key (see internal/admin/field_widgets.go).
+	m.Post("/api/models/{name}/upload", p.handleFieldUpload)
 	// The audit trail read by record: what this row said before, and who
 	// changed it (see handleRecordHistory).
 	m.Get("/api/models/{name}/{id}/history", p.handleRecordHistory)

@@ -114,6 +114,16 @@ type Config struct {
 	RowOwnerFields  map[string]string `yaml:"row_owner_fields" koanf:"row_owner_fields"`
 	RowOwnerSubject string            `yaml:"row_owner_subject" koanf:"row_owner_subject"`
 
+	// FieldWidgets declares how a field is edited when its type cannot say
+	// it: "Model.Field" (or "Model.column") to one of json, richtext, file
+	// or image. A JSON document is inferred from the type and needs no
+	// entry; "this string is HTML" and "this string is a storage key" are
+	// claims about intent that no column type carries, so the application
+	// makes them here. A file field gets an upload route
+	// (POST /api/models/{model}/upload) that stores the bytes in the
+	// application's own storage and answers with the key the form writes.
+	FieldWidgets map[string]string `yaml:"field_widgets" koanf:"field_widgets"`
+
 	// Environment is a label shown in the UI (e.g. "production"). Optional.
 	Environment string `yaml:"environment" koanf:"environment"`
 	// MigrationsPath is the directory the migrations view reads (default "migrations").
@@ -368,6 +378,7 @@ func (m *module) start(ctx context.Context) error {
 		MultiTenantIDs:        m.cfg.MultiTenantIDs,
 		RowOwnerFields:        m.cfg.RowOwnerFields,
 		RowOwnerSubject:       m.cfg.RowOwnerSubject,
+		FieldWidgets:          m.cfg.FieldWidgets,
 		AuditStore:            m.cfg.AuditStore,
 		AuditRetentionDays:    m.cfg.AuditRetentionDays,
 		TenantResolver:        resolvedTenant,

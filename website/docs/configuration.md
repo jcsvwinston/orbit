@@ -48,6 +48,7 @@ relay.
 | `multitenant_ids` | []string | — | Known tenant IDs for the selector UI. |
 | `row_owner_fields` | map[string]string | — | Which column of each model says WHICH OPERATOR a row belongs to, keyed by model name, with `"*"` as the default for every model carrying the same column. It is what makes an `admin:<Model>#own` policy enforceable (see [Access control](./features.md#per-row-permissions)); a `#own` grant on a model with no entry here is refused with a 403, never widened to every row. |
 | `row_owner_subject` | string | `username` | Which name of the operator the owner column holds: `username` or `id`. |
+| `field_widgets` | map[string]string | — | How a field is edited when its type cannot say: `Model.Field` (or `Model.column`) to one of `json`, `richtext`, `file`, `image`. A JSON document is inferred from the type and needs no entry. A `file`/`image` field gets an upload route that stores the bytes in the application's storage and answers with the key the form writes (see [Features](./features.md#forms-that-hold-a-relation-a-document-and-a-file)). |
 
 ## The live feed
 

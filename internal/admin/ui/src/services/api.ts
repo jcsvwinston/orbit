@@ -92,10 +92,14 @@ function redirectToLogin(): never {
 async function fetchAPI<T = unknown>(path: string, options?: RequestInit): Promise<T> {
   const url = buildAdminPath(path)
 
+  // A multipart body must carry the boundary the browser generates, so the
+  // JSON content type is set for every request EXCEPT the ones sending a
+  // FormData: overriding it there produces a body the server cannot parse.
+  const isFormData = typeof FormData !== 'undefined' && options?.body instanceof FormData
   const response = await fetch(url, {
     ...options,
     headers: {
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...options?.headers,
     },
     credentials: 'same-origin',
@@ -357,6 +361,56 @@ export function auditExportURL(query: AuditLogQuery = {}): string {
   if (query.action) searchParams.set('action', query.action)
   searchParams.set('page_size', String(query.page_size ?? 200))
   return buildAdminPath(`/api/audit?${searchParams}`)
+}
+
+// ── Relations and uploads (what a form needs) ──
+
+export interface RelationOption {
+  value: string
+  label: string
+}
+
+export interface RelationOptions {
+  model: string
+  options: RelationOption[]
+  truncated: boolean
+}
+
+// getFieldOptions resolves what a foreign key may point at. It is the TARGET
+// model's read permission, so a 403 here means "you may edit this record and
+// not browse what it points at" — the form falls back to a plain id input.
+export async function getFieldOptions(model: string, field: string, q = ''): Promise<RelationOptions> {
+  const search = new URLSearchParams()
+  if (q) search.set('q', q)
+  const response = await fetchAPI<{
+    model?: string
+    options?: RelationOption[]
+    truncated?: boolean
+  }>(`/api/models/${encodeURIComponent(model)}/fields/${encodeURIComponent(field)}/options?${search}`)
+  return {
+    model: response.model ?? '',
+    options: response.options ?? [],
+    truncated: response.truncated ?? false,
+  }
+}
+
+export interface UploadedFile {
+  key: string
+  name: string
+  size: number
+}
+
+// uploadFieldFile puts one file in the application's storage and answers with
+// the key the form writes into the field.
+export async function uploadFieldFile(model: string, field: string, file: File): Promise<UploadedFile> {
+  const body = new FormData()
+  body.append('file', file)
+  if (field) body.append('field', field)
+  const response = await fetchAPI<{ key?: string; name?: string; size?: number }>(
+    `/api/models/${encodeURIComponent(model)}/upload`,
+    { method: 'POST', body },
+  )
+  return { key: response.key ?? '', name: response.name ?? file.name, size: response.size ?? file.size }
 }
 
 export async function getAuditRetention(): Promise<AuditRetention> {

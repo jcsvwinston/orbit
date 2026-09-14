@@ -13,6 +13,7 @@ github.com/jcsvwinston/orbit field:Config.ClusterRedisURL
 github.com/jcsvwinston/orbit field:Config.ClusterToken
 github.com/jcsvwinston/orbit field:Config.DataSource
 github.com/jcsvwinston/orbit field:Config.Environment
+github.com/jcsvwinston/orbit field:Config.FieldWidgets
 github.com/jcsvwinston/orbit field:Config.LiveExcludePatterns
 github.com/jcsvwinston/orbit field:Config.MigrationsPath
 github.com/jcsvwinston/orbit field:Config.MultiTenantDefault

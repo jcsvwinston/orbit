@@ -80,7 +80,11 @@ func (p *Panel) csrfContentTypeMiddleware(next http.Handler) http.Handler {
 		case ct == "application/json" || strings.HasSuffix(ct, "+json"):
 			allowed = true
 		case ct == "multipart/form-data":
-			allowed = strings.HasSuffix(r.URL.Path, "/api/imports")
+			// The two routes that take a file: the import upload and a
+			// field upload (…/api/models/{model}/upload). Everything else
+			// stays closed to a content type a cross-site form can send.
+			allowed = strings.HasSuffix(r.URL.Path, "/api/imports") ||
+				isFieldUploadPath(r.URL.Path)
 		case ct == "":
 			allowed = r.ContentLength <= 0
 		}
@@ -93,6 +97,24 @@ func (p *Panel) csrfContentTypeMiddleware(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// isFieldUploadPath reports whether path is a model's field-upload route:
+// <prefix>/api/models/{model}/upload, with exactly one segment where the
+// model name goes. It is matched on shape rather than with a suffix check so
+// that a path ending in "/upload" somewhere else does not inherit the
+// exemption.
+func isFieldUploadPath(path string) bool {
+	rest, ok := strings.CutSuffix(path, "/upload")
+	if !ok {
+		return false
+	}
+	idx := strings.LastIndex(rest, "/api/models/")
+	if idx < 0 {
+		return false
+	}
+	model := rest[idx+len("/api/models/"):]
+	return model != "" && !strings.Contains(model, "/")
 }
 
 const (

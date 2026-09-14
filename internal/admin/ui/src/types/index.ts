@@ -54,6 +54,7 @@ export interface ModelSummary extends CapabilityHints {
 }
 
 export interface ModelSchema extends CapabilityHints {
+  inlines?: InlineSpec[]
   name: string
   plural: string
   table: string
@@ -87,6 +88,16 @@ export interface SchemaField {
   // can_edit is false for one they may see and not write.
   can_read?: boolean
   can_edit?: boolean
+}
+
+// One child collection a form may edit in place: the model, the key a payload
+// names the collection by, and the column that points back at the parent.
+export interface InlineSpec {
+  model: string
+  field: string
+  column: string
+  key: string
+  label: string
 }
 
 export interface FieldChoice {
