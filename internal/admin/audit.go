@@ -144,17 +144,15 @@ func (s *auditStore) list(opts auditQueryOpts) []AuditEntry {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// The capacity is bounded by the cap as well as by the ring. pageSize
-	// comes from the request and normalizeAuditPage has already capped it;
-	// the bound is repeated here, as an explicit guard rather than a min(),
-	// so that it is checkable where the allocation happens — by a reader and
-	// by the scanner, which does not follow the builtin.
-	capacity := pageSize
+	// The capacity is a hint, so it is taken from what this store HOLDS and
+	// capped by the page cap — never from the page size the request asked
+	// for. Sizing a buffer from client input is worth avoiding even when the
+	// value is bounded three functions earlier: the bound is easy to move,
+	// the allocation is not easy to notice, and append grows the slice for
+	// free when the hint is short.
+	capacity := len(s.entries)
 	if capacity > auditMaxPageSize {
 		capacity = auditMaxPageSize
-	}
-	if n := len(s.entries); n < capacity {
-		capacity = n
 	}
 	out := make([]AuditEntry, 0, capacity)
 	for i := len(s.entries) - 1; i >= 0 && len(out) < pageSize; i-- {
