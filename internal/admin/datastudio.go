@@ -77,11 +77,24 @@ func dsResolveField(mi datasource.ModelInfo, key string) (column string, field d
 	return "", datasource.FieldInfo{}, false
 }
 
-// dsCollectFilters extracts exact-match filters from a query string, skipping
-// the reserved pagination/selection params, and validates each against the
-// model's filterable fields.
-func dsCollectFilters(mi datasource.ModelInfo, values url.Values) (map[string]string, error) {
+// filterOpSeparator is what divides a field from its operator in the query
+// string: ?views__gt=100. Two underscores rather than one because a column
+// named created_at is ordinary and a column named views__gt is not; the split
+// is on the LAST pair and only when the tail is an operator this build knows,
+// so a field whose own name contains them is still resolved whole.
+const filterOpSeparator = "__"
+
+// dsCollectFilters extracts filters from a query string, skipping the reserved
+// pagination/selection params, and validates each against the model's
+// filterable fields.
+//
+// It returns both halves of the query contract: the exact-match map that has
+// always been there, and the operator filters (?views__gt=100). They are
+// separate because datasource.Query keeps Filters as it was — a frozen shape
+// third parties implement against — and gains Where alongside it (QADR-0010).
+func dsCollectFilters(mi datasource.ModelInfo, values url.Values) (map[string]string, []datasource.Filter, error) {
 	filters := make(map[string]string)
+	var where []datasource.Filter
 	for key, vals := range values {
 		switch key {
 		// "tenant" is the explicit scope override consumed by
@@ -95,16 +108,130 @@ func dsCollectFilters(mi datasource.ModelInfo, values url.Values) (map[string]st
 			continue
 		}
 		raw := strings.TrimSpace(vals[0])
-		if raw == "" {
+		field, op, hasOp := dsSplitFilterKey(mi, key)
+		if !hasOp {
+			if raw == "" {
+				continue
+			}
+			col, normalized, err := dsNormalizeFilter(mi, key, raw)
+			if err != nil {
+				return nil, nil, err
+			}
+			filters[col] = normalized
 			continue
 		}
-		col, normalized, err := dsNormalizeFilter(mi, key, raw)
+		// An empty value is dropped for equality (an unfilled filter box), but
+		// NOT for an operator: ?tags__in= is a caller asking for the empty set
+		// and ?name__eq= for the empty string, and answering every row to
+		// either would look like a result.
+		f, err := dsOperatorFilter(mi, field, op, raw)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		filters[col] = normalized
+		where = append(where, f)
 	}
-	return filters, nil
+	return filters, where, nil
+}
+
+// dsSplitFilterKey separates "views__gt" into its field and its operator. The
+// whole key wins when it names a field of the model, so a column that really is
+// called views__gt keeps working; otherwise the tail after the last separator
+// has to parse as an operator, and a key like ?views__nope= is reported as the
+// unknown field it looks like rather than filtered as equality.
+func dsSplitFilterKey(mi datasource.ModelInfo, key string) (field string, op datasource.FilterOp, ok bool) {
+	if _, _, found := dsResolveField(mi, key); found {
+		return "", "", false
+	}
+	idx := strings.LastIndex(key, filterOpSeparator)
+	if idx <= 0 {
+		return "", "", false
+	}
+	parsed, known := datasource.ParseFilterOp(key[idx+len(filterOpSeparator):])
+	if !known {
+		return "", "", false
+	}
+	return key[:idx], parsed, true
+}
+
+// dsOperatorFilter validates one ?field__op=value against the model and
+// normalizes its value the way the exact-match path does.
+func dsOperatorFilter(mi datasource.ModelInfo, field string, op datasource.FilterOp, raw string) (datasource.Filter, error) {
+	switch op {
+	case datasource.OpIn, datasource.OpNotIn:
+		col, values, err := dsNormalizeFilterSet(mi, field, raw)
+		if err != nil {
+			return datasource.Filter{}, err
+		}
+		return datasource.Filter{Column: col, Op: op, Values: values}, nil
+	case datasource.OpIsNull:
+		// The value says which way round the question is asked, so it is a
+		// boolean regardless of the column's own type.
+		if err := dsFilterable(mi, field); err != nil {
+			return datasource.Filter{}, err
+		}
+		col, _, _ := dsResolveField(mi, field)
+		switch strings.ToLower(raw) {
+		case "1", "true", "yes", "on", "":
+			return datasource.Filter{Column: col, Op: op, Value: "true"}, nil
+		case "0", "false", "no", "off":
+			return datasource.Filter{Column: col, Op: op, Value: "false"}, nil
+		default:
+			return datasource.Filter{}, gferrors.BadRequest(fmt.Sprintf("invalid boolean value %q for filter %q", raw, field))
+		}
+	case datasource.OpContains, datasource.OpStartsWith, datasource.OpEndsWith:
+		// A pattern operator compares text, so the column's own type does not
+		// normalize the value — "contains 1" on a bool is a question about
+		// characters, and coercing it to "1" would answer a different one.
+		if err := dsFilterable(mi, field); err != nil {
+			return datasource.Filter{}, err
+		}
+		col, _, _ := dsResolveField(mi, field)
+		return datasource.Filter{Column: col, Op: op, Value: raw}, nil
+	default:
+		col, normalized, err := dsNormalizeFilter(mi, field, raw)
+		if err != nil {
+			return datasource.Filter{}, err
+		}
+		return datasource.Filter{Column: col, Op: op, Value: normalized}, nil
+	}
+}
+
+// dsNormalizeFilterSet validates a comma-separated set for in / not_in. An
+// empty string is an empty set, which is a question with an answer (no rows),
+// not an absent filter.
+func dsNormalizeFilterSet(mi datasource.ModelInfo, field, raw string) (string, []string, error) {
+	if err := dsFilterable(mi, field); err != nil {
+		return "", nil, err
+	}
+	col, _, _ := dsResolveField(mi, field)
+	if strings.TrimSpace(raw) == "" {
+		return col, []string{}, nil
+	}
+	parts := strings.Split(raw, ",")
+	values := make([]string, 0, len(parts))
+	for _, part := range parts {
+		_, normalized, err := dsNormalizeFilter(mi, field, strings.TrimSpace(part))
+		if err != nil {
+			return "", nil, err
+		}
+		values = append(values, normalized)
+	}
+	return col, values, nil
+}
+
+// dsFilterable runs the three refusals dsNormalizeFilter runs, for the
+// operators that do not go through it: unknown field, excluded field (answered
+// as if the column did not exist, so the panel is not an oracle over a hidden
+// value), and a field the model does not offer as a filter.
+func dsFilterable(mi datasource.ModelInfo, key string) error {
+	_, field, found := dsResolveField(mi, key)
+	if !found || field.IsExcluded {
+		return gferrors.BadRequest(fmt.Sprintf("invalid filter field %q", key))
+	}
+	if !field.IsFilter {
+		return gferrors.BadRequest(fmt.Sprintf("filter is not enabled for %q", key))
+	}
+	return nil
 }
 
 func dsNormalizeFilter(mi datasource.ModelInfo, key, value string) (column, normalized string, err error) {

@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -128,33 +129,113 @@ func probePagination(t *testing.T, e *env) verdict {
 	}
 }
 
-// probeFilterOperators asks for a range. Exact equality is the only operator
-// the query contract has (datasource.Query.Filters is column→value), so this
-// probe measures what an operator gets when they need "views greater than".
+// probeFilterOperators asks for a range, a substring, a set and a null, and
+// checks that each ANSWER is narrower than the unfiltered list. Accepting the
+// form is not the measurement: a filter that parses and then matches every row
+// is worse than one that is rejected, because it looks like a result.
 func probeFilterOperators(t *testing.T, e *env) verdict {
-	e.createNote(t, map[string]any{"title": "cheap", "status": "published", "views": 1})
-	e.createNote(t, map[string]any{"title": "popular", "status": "published", "views": 500})
+	// Every case is scoped to a status only these three rows carry: the bench
+	// shares one application across probes, so a query that asked the whole
+	// table would be answered by whatever ran first. Scoping also puts the two
+	// halves of the contract in the same request — an exact-match Filter and an
+	// operator Where — which is the composition an operator actually types.
+	const scope = "operator-probe"
+	e.createNote(t, map[string]any{"title": "cheap", "status": scope, "views": 1})
+	e.createNote(t, map[string]any{"title": "popular", "status": scope, "views": 500})
+	e.createNote(t, map[string]any{"title": "hidden", "status": scope, "views": 50})
 
-	exact := e.get(t, "/admin/api/models/Note?status=published")
+	exact := e.get(t, "/admin/api/models/Note?status="+scope)
 	if exact.code != http.StatusOK {
 		t.Logf("exact-match filter answered %d: %s", exact.code, exact.text())
 		return absent
 	}
-	for _, form := range []string{
-		"/admin/api/models/Note?views__gt=100",
-		"/admin/api/models/Note?views%5Bgt%5D=100",
-		"/admin/api/models/Note?filter=views>100",
-		"/admin/api/models/Note?title__contains=pop",
-	} {
-		r := e.get(t, form)
-		if r.code == http.StatusOK {
-			items, _ := r.json(t)["items"].([]any)
-			t.Logf("%s answered 200 with %d items — an operator form exists", form, len(items))
-			return partial
+
+	// Each case names the titles the query must return, in any order.
+	cases := []struct {
+		query string
+		want  []string
+	}{
+		{"views__gt=100", []string{"popular"}},
+		{"views__gte=50&views__lte=500", []string{"popular", "hidden"}},
+		{"title__contains=opula", []string{"popular"}},
+		{"title__startswith=che", []string{"cheap"}},
+		{"title__endswith=den", []string{"hidden"}},
+		{"title__in=cheap,hidden", []string{"cheap", "hidden"}},
+		{"title__not_in=cheap", []string{"popular", "hidden"}},
+		{"views__ne=50", []string{"cheap", "popular"}},
+		{"views__isnull=false", []string{"cheap", "popular", "hidden"}},
+		{"title__in=", nil},
+		// A wildcard in the VALUE is data, not a pattern. Without an explicit
+		// ESCAPE this would match every row and look like a filter for the
+		// per-cent sign — the same class of lie as a dropped filter.
+		{"title__contains=%25", nil},
+		{"title__contains=_", nil},
+	}
+
+	accepted, correct := 0, 0
+	for _, c := range cases {
+		r := e.get(t, "/admin/api/models/Note?status="+scope+"&"+c.query)
+		if r.code != http.StatusOK {
+			t.Logf("?%s answered %d: %s", c.query, r.code, r.text())
+			continue
+		}
+		accepted++
+		got := noteTitles(t, r)
+		if sameSet(got, c.want) {
+			correct++
+			continue
+		}
+		t.Logf("?%s returned %v, want %v", c.query, got, c.want)
+	}
+
+	// A filter nobody can express is not silently equality: an operator this
+	// build does not know has to be refused, or ?views__nope=1 would list
+	// every row while reading as a filter.
+	if bogus := e.get(t, "/admin/api/models/Note?status="+scope+"&views__nope=1"); bogus.code == http.StatusOK {
+		t.Logf("an unknown operator was accepted and answered 200: the form is not validated")
+		return partial
+	}
+
+	t.Logf("%d of %d operator forms accepted, %d filtered correctly", accepted, len(cases), correct)
+	switch {
+	case correct == len(cases):
+		return present
+	case accepted == 0:
+		return absent
+	default:
+		return partial
+	}
+}
+
+// noteTitles pulls the title of every row in a list response.
+func noteTitles(t *testing.T, r response) []string {
+	t.Helper()
+	items, _ := r.json(t)["items"].([]any)
+	out := make([]string, 0, len(items))
+	for _, it := range items {
+		row, _ := it.(map[string]any)
+		if title, ok := row["title"].(string); ok {
+			out = append(out, title)
 		}
 	}
-	t.Logf("every operator form is rejected; equality is the whole filter language")
-	return partial
+	return out
+}
+
+// sameSet compares two title lists ignoring order.
+func sameSet(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	g := append([]string(nil), got...)
+	w := append([]string(nil), want...)
+	sort.Strings(g)
+	sort.Strings(w)
+	for i := range g {
+		if g[i] != w[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // probeSearch types into the search box.

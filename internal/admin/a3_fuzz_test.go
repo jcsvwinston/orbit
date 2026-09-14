@@ -148,6 +148,16 @@ func FuzzDataStudioQuery(f *testing.F) {
 		"page=-3&page_size=abc",                   // lenient pagination
 		"search=" + strings.Repeat("x", 300),      // over the 256-character bound
 		"order_by=+%2C+%2C+&db=main&database=alt", // empty clauses and reserved keys
+		"age__gt=18",                              // the operator form
+		"age__gte=18&age__lte=65",                 // a range, both ends
+		"name__contains=%25",                      // a wildcard inside a pattern operator
+		"secret_token__contains=x",                // the hidden column, through the operator path
+		"password_hash__startswith=%24argon",      // the excluded one, likewise
+		"level__in=1%2C2%2C3",                     // a set
+		"level__in=",                              // the empty set, which is a question
+		"is_active__isnull=true",                  // a null check
+		"age__nope=1",                             // an operator nobody knows
+		"visits__gt=1",                            // a listable column that is NOT filterable
 	} {
 		f.Add(seed)
 	}
@@ -196,8 +206,22 @@ func FuzzDataStudioQuery(f *testing.F) {
 			}
 		}
 
-		filters, err := dsCollectFilters(mi, values)
+		filters, where, err := dsCollectFilters(mi, values)
 		if err == nil {
+			// The operator half has to keep the same promise as the exact-match
+			// half: ?secret__contains=a is the same oracle over a hidden column
+			// that ?secret=a is, and it reaches a different code path.
+			for _, f := range where {
+				if hidden[strings.ToLower(f.Column)] {
+					t.Fatalf("operator filter on %q, a column %s never shows (query %q)", f.Column, mi.Name, rawQuery)
+				}
+				if !allowed[f.Column] {
+					t.Fatalf("operator filter column %q is not a visible column of %s (query %q)", f.Column, mi.Name, rawQuery)
+				}
+				if _, known := datasource.ParseFilterOp(string(f.Op)); !known {
+					t.Fatalf("operator %q is outside the closed set (query %q)", f.Op, rawQuery)
+				}
+			}
 			for col, val := range filters {
 				if hidden[strings.ToLower(col)] {
 					t.Fatalf("filter on %q, a column %s never shows (query %q)", col, mi.Name, rawQuery)

@@ -30,11 +30,13 @@ var _ datasource.RecordStore = (*store)(nil)
 // Item order and JSON shape are preserved via entityToRecord (ADR-001 O3).
 func (s *store) List(ctx context.Context, q datasource.Query) (datasource.Page, error) {
 	res, err := s.crud.FindAll(ctx, model.QueryOpts{
-		Page:     q.Page,
-		PageSize: q.PageSize,
-		Search:   q.Search,
-		Filters:  q.Filters,
-		OrderBy:  q.OrderBy,
+		Page:       q.Page,
+		PageSize:   q.PageSize,
+		Search:     q.Search,
+		Filters:    q.Filters,
+		OrderBy:    q.OrderBy,
+		Where:      toModelFilters(q.Where),
+		ExactTotal: q.ExactTotal,
 	})
 	if err != nil {
 		return datasource.Page{}, err
@@ -53,6 +55,35 @@ func (s *store) List(ctx context.Context, q datasource.Query) (datasource.Page, 
 		IsEstimated: res.IsEstimated,
 		HasMore:     res.HasMore,
 	}, nil
+}
+
+// HonoursFilterOperators says this store applies Query.Where: the framework's
+// model layer gained the same twelve operators, and toModelFilters hands them
+// over one for one.
+func (s *store) HonoursFilterOperators() bool { return true }
+
+var _ datasource.OperatorFilterSource = (*store)(nil)
+
+// toModelFilters maps the neutral operator filters onto the framework's. The
+// two sets are deliberately the same twelve: the panel validated the column
+// and the operator already, and a mapping that had to translate would be a
+// place for the two vocabularies to drift apart. An operator this build does
+// not know cannot arrive here — ParseFilterOp refused it at the boundary — so
+// there is no silent fallback to equality to write.
+func toModelFilters(in []datasource.Filter) []model.Filter {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]model.Filter, 0, len(in))
+	for _, f := range in {
+		out = append(out, model.Filter{
+			Column: f.Column,
+			Op:     model.FilterOp(f.Op),
+			Value:  f.Value,
+			Values: f.Values,
+		})
+	}
+	return out
 }
 
 // entitiesToRecords converts the interface{}-wrapped slice FindAll returns into
