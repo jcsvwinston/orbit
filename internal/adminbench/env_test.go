@@ -37,10 +37,16 @@ const bootstrapPassword = "adminbench-bootstrap-password"
 type Note struct {
 	model.BaseModel
 
-	Title  string `db:"required" json:"title" validate:"required" admin:"list,search"`
+	// Title and Views are filterable so the bench can ask a question with an
+	// operator in it — a substring, a range, a set. A model that offers only
+	// one filterable column measures the panel's filter language through a
+	// keyhole: every operator but equality would be refused for the field, not
+	// for the operator, and the probe would read a capability where there was
+	// only a tag.
+	Title  string `db:"required" json:"title" validate:"required" admin:"list,search,filter"`
 	Body   string `json:"body"`
 	Status string `json:"status" admin:"list,filter"`
-	Views  int    `json:"views" admin:"list"`
+	Views  int    `json:"views" admin:"list,filter"`
 	// Cover and Meta are the fields a scalar form cannot hold: a file and a
 	// document. Both are columns of text — what they MEAN is the
 	// application's claim, declared through orbit.Config.FieldWidgets below,

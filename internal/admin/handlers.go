@@ -569,7 +569,7 @@ func (p *Panel) handleListRecords(c *router.Context) error {
 		return err
 	}
 
-	filters, err := dsCollectFilters(mi, r.URL.Query())
+	filters, where, err := dsCollectFilters(mi, r.URL.Query())
 	if err != nil {
 		return err
 	}
@@ -591,6 +591,14 @@ func (p *Panel) handleListRecords(c *router.Context) error {
 		filters[rowScope.Column()] = rowScope.Owner
 	}
 
+	// A data source that predates Query.Where ignores it, and a list that
+	// ignores a filter answers every row while looking filtered. Ask before
+	// sending, and refuse the request rather than answering a different
+	// question from the one that was asked.
+	if len(where) > 0 && !datasource.HonoursFilterOperators(st) {
+		return gferrors.BadRequest(fmt.Sprintf("this data source does not support filter operators, so %q cannot be answered: use an exact-match filter (?field=value), or a data source that implements datasource.OperatorFilterSource", r.URL.RawQuery))
+	}
+
 	if !pageSet {
 		page = 0
 	}
@@ -600,7 +608,13 @@ func (p *Panel) handleListRecords(c *router.Context) error {
 
 	result, err := st.List(r.Context(), datasource.Query{
 		Page: page, PageSize: pageSize, Search: search,
-		Filters: filters, OrderBy: orderBy,
+		Filters: filters, Where: where, OrderBy: orderBy,
+		// The grid draws a pager, and a pager needs a number it can divide:
+		// without this the envelope answered total -1 on any filtered list and
+		// the UI fell back to "load more". It is one extra count per page
+		// request, paid here and not by the callers that walk every page
+		// (exports, imports, fixtures, relation lookups), which do not ask.
+		ExactTotal: true,
 	})
 	if err != nil {
 		return err

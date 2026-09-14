@@ -110,6 +110,74 @@ type Query struct {
 	Search   string
 	Filters  map[string]string
 	OrderBy  string
+
+	// Where holds the filters that need an operator — a range, a prefix, a
+	// set, a null check. Filters keeps its meaning (column → value, equality)
+	// and the two are ANDed, so a data source that has never read this field
+	// answers exactly what it answered before. It is a new field rather than a
+	// richer Filters because Query is frozen (QADR-0010): the shape third
+	// parties implement against does not change under them.
+	Where []Filter
+
+	// ExactTotal asks for a real count of the matching rows. A data source
+	// that cannot count cheaply answers Page.Total -1 with IsEstimated true,
+	// which no pager can divide into pages; one that counts always (see
+	// quarkdatasource) can ignore this. It is the caller's choice because
+	// counting is a second query: a grid with a pager asks for it, an export
+	// walking every page does not.
+	ExactTotal bool
+}
+
+// FilterOp is the comparison a Filter applies. The set is closed on purpose:
+// the panel turns a query string into one of these and nothing else, so a data
+// source never has to interpret an operator it was handed.
+type FilterOp string
+
+const (
+	OpEqual        FilterOp = "eq"
+	OpNotEqual     FilterOp = "ne"
+	OpGreater      FilterOp = "gt"
+	OpGreaterEqual FilterOp = "gte"
+	OpLess         FilterOp = "lt"
+	OpLessEqual    FilterOp = "lte"
+	OpContains     FilterOp = "contains"
+	OpStartsWith   FilterOp = "startswith"
+	OpEndsWith     FilterOp = "endswith"
+	OpIn           FilterOp = "in"
+	OpNotIn        FilterOp = "not_in"
+	OpIsNull       FilterOp = "isnull"
+)
+
+// Filter is one comparison against one column. Value carries the text form for
+// every operator that takes a single one — including isnull, where it is
+// "true" or "false" — and Values carries the set for in and not_in.
+//
+// Two rules a data source must keep, because getting either wrong turns a
+// filter into a lie: the pattern operators (contains, startswith, endswith)
+// match the text LITERALLY, so a value holding % or _ matches those characters
+// and nothing more; and an in with no values matches NOTHING, rather than
+// being dropped — a filter that quietly means "no filter" answers every row
+// and looks like a result.
+type Filter struct {
+	Column string
+	Op     FilterOp
+	Value  string
+	Values []string
+}
+
+// ParseFilterOp maps the text form of an operator to a FilterOp, reporting
+// whether it is one this contract knows. An unknown operator is refused by the
+// caller rather than treated as equality.
+func ParseFilterOp(raw string) (FilterOp, bool) {
+	for _, op := range []FilterOp{
+		OpEqual, OpNotEqual, OpGreater, OpGreaterEqual, OpLess, OpLessEqual,
+		OpContains, OpStartsWith, OpEndsWith, OpIn, OpNotIn, OpIsNull,
+	} {
+		if equalFold(raw, string(op)) {
+			return op, true
+		}
+	}
+	return "", false
 }
 
 // Page is a slice of records plus pagination metadata. Its JSON shape is frozen
@@ -143,6 +211,32 @@ type RecordStore interface {
 	Delete(ctx context.Context, id string) error
 	Count(ctx context.Context) (CountResult, error)
 	TableExists(ctx context.Context) bool
+}
+
+// OperatorFilterSource is a RecordStore that applies Query.Where. It is a
+// separate, optional interface because Where arrived AFTER the contract froze,
+// so every data source written before it compiles unchanged and ignores the
+// field — and a list that ignores a filter answers every row while looking
+// like it filtered, which is the worst thing this contract can do.
+//
+// The panel therefore asks before it sends: a store that does not implement
+// this, or that answers false, gets no operator filters and the request is
+// REFUSED rather than answered unfiltered. Implement it (returning true) when
+// your store honours every operator in the closed set; return false to decline
+// on a backend where you cannot.
+//
+// ExactTotal needs no such promise, because a store that ignores it already
+// says so in the envelope it returns: Total -1 with IsEstimated true is the
+// answer "I did not count", which no caller can mistake for a count.
+type OperatorFilterSource interface {
+	RecordStore
+	HonoursFilterOperators() bool
+}
+
+// HonoursFilterOperators reports whether store applies Query.Where.
+func HonoursFilterOperators(store RecordStore) bool {
+	src, ok := store.(OperatorFilterSource)
+	return ok && src.HonoursFilterOperators()
 }
 
 // DataSource is what NewPanel takes. Store resolves the RecordStore for a model

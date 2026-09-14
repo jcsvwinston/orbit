@@ -80,6 +80,47 @@ differently (Nucleus lower-cases both sides;
 Quark escapes `%` and `_` in the text per engine), so do not expect identical
 results across them.
 
+**Filters that carry an operator.** A filter used to mean one thing — this
+column equals this value — and the query string carries the comparison now:
+
+```
+GET /api/models/Invoice?status=unpaid&total__gt=1000&due_date__lte=2026-06-30
+GET /api/models/Article?title__contains=hammer&archived_at__isnull=true
+GET /api/models/Order?status__in=open,paused&customer__startswith=ACME
+```
+
+The operator goes after the field, separated by two underscores. The twelve are
+`eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `contains`, `startswith`, `endswith`,
+`in`, `not_in` and `isnull`; `in` and `not_in` take a comma-separated list, and
+`isnull` a boolean. A plain `?field=value` still means equality, and the two
+forms are ANDed, so `?status=open&views__gt=100` is one query.
+
+Three things to know before you rely on it:
+
+- **An operator this panel does not know is refused**, not read as equality. A
+  filter that is quietly dropped answers every row and looks like a result.
+- **A wildcard in the value is data.** `?title__contains=50%25` looks for the
+  per-cent sign. On PostgreSQL, MySQL and SQL Server it is escaped; on an
+  engine whose `LIKE` has no escape character (SQLite, Oracle) the Quark-backed
+  data source refuses the query instead of answering it wrongly.
+- **An empty `in` matches nothing.** `?status__in=` is a question with an
+  answer, not an absent filter.
+
+A field the model does not offer as a filter is refused through the operator
+form exactly as it is through the plain one, and an excluded field is answered
+as if the column did not exist — see below.
+
+The grid's own filter row still sends equality; the operator forms are typed
+into the URL, and a [saved view](#saved-views) keeps one — which is what a
+query an operator returns to every morning usually is.
+
+**A total the pager can divide.** A filtered list used to answer `total: -1`
+with `is_estimated: true`, which no pager can turn into a page count. The list
+endpoint now asks the data source for a real count over the same filters the
+page uses, so `total` and `total_pages` describe the query you sent. It costs
+one extra count per page request — paid by the screen that draws a pager, and
+not by the exports, imports and fixtures that walk every page without one.
+
 **What the grid refuses.** A column the panel does not show is not a sort key
 and not a filter. `?order_by=` and the filter parameters resolve only against
 the fields the panel would render, so a request naming an excluded field —
@@ -108,6 +149,18 @@ model registry as the default backend. Applications built on the
 models instead: add the opt-in
 [`quarkdatasource`](https://github.com/jcsvwinston/orbit/tree/main/quarkdatasource)
 module and set `orbit.Config.DataSource`.
+
+`datasource.Query` is a frozen shape, so the operator filters and the exact
+count arrived as new fields beside the old ones rather than as a richer
+`Filters`: `Where []Filter` and `ExactTotal bool`. A data source written before
+them keeps compiling and keeps answering what it answered, which is the point
+of adding rather than changing — but a list it serves will then ignore an
+operator filter the panel sent, so a third-party implementation should read
+both. Two rules it has to keep, because each is a way to answer more rows than
+were asked for while looking like a filter: a pattern operator matches its
+value LITERALLY (a `%` in the text is a per-cent sign), and an `in` with no
+values matches nothing rather than being dropped. `ExactTotal` may be ignored
+by a source that always counts exactly, which is what `quarkdatasource` does.
 
 ## Live runtime inspector
 
