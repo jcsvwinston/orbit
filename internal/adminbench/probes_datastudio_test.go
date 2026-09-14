@@ -565,9 +565,54 @@ func probeRecordHistory(t *testing.T, e *env) verdict {
 	return partial
 }
 
-// probeSavedViews asks for the filter set an operator uses every morning.
+// probeSavedViews asks for the filter set an operator uses every morning: it
+// saves one, reads it back, and checks that what comes back is the query the
+// grid was showing — a name with no query is a bookmark to nothing.
 func probeSavedViews(t *testing.T, e *env) verdict {
-	// Only paths the record route cannot claim: /api/models/Note/<anything>
-	// matches the get-one-record pattern and answers 400 for a non-numeric id.
-	return e.unrouted(t, "/admin/api/views", "/admin/api/saved-searches")
+	const (
+		name  = "Bench view"
+		query = "status=open&order_by=title+asc"
+	)
+	created := e.do(t, http.MethodPost, "/admin/api/views", map[string]any{
+		"model": "Note", "name": name, "query": query,
+	})
+	if created.code == http.StatusNotFound || created.code == http.StatusMethodNotAllowed ||
+		created.code == http.StatusNotImplemented || created.servedTheShell() {
+		return e.unrouted(t, "/admin/api/views", "/admin/api/saved-searches")
+	}
+	if created.code != http.StatusCreated {
+		t.Logf("saving a view answered %d: %s", created.code, created.text())
+		return partial
+	}
+	id, _ := created.json(t)["id"].(string)
+
+	list := e.get(t, "/admin/api/views?model=Note")
+	if list.code != http.StatusOK {
+		t.Logf("listing views answered %d: %s", list.code, list.text())
+		return partial
+	}
+	views, _ := list.json(t)["views"].([]any)
+	for _, raw := range views {
+		view, ok := raw.(map[string]any)
+		if !ok || view["id"] != id {
+			continue
+		}
+		if fmt.Sprint(view["name"]) != name {
+			t.Logf("the stored view came back as %q", view["name"])
+			return partial
+		}
+		if fmt.Sprint(view["query"]) != query {
+			t.Logf("the view lost the query it was saved with: %q", view["query"])
+			return partial
+		}
+		// And it can be removed again: a list that only grows is not a
+		// place an operator will keep their views.
+		if del := e.do(t, http.MethodDelete, "/admin/api/views/"+id, nil); del.code != http.StatusOK {
+			t.Logf("deleting the view answered %d: %s", del.code, del.text())
+			return partial
+		}
+		return present
+	}
+	t.Logf("the saved view (%s) is not in the list of %d: %s", id, len(views), list.text())
+	return partial
 }

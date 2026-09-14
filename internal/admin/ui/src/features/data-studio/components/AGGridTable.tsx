@@ -11,7 +11,7 @@ import { ErrorState } from '@/components/ui/error-state'
 import { useToast } from '@/components/ui/use-toast'
 import { useTheme } from '@/stores/themeStore'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
-import type { ModelSchema, Record as AppRecord } from '@/types'
+import type { ModelSchema, Record as AppRecord, SavedView } from '@/types'
 import * as api from '@/services/api'
 import RecordForm from './RecordForm'
 import RecordHistoryDialog from './RecordHistoryDialog'
@@ -22,8 +22,9 @@ import { BATCH_SIZE_OPTIONS, DEFAULT_PAGE_SIZE, FILTER_DEBOUNCE_MS } from '../li
 import { primaryKeyColumn, recordId, toApiId, type RecordId } from '../lib/recordIds'
 import { isSearchable } from '../lib/searchable'
 import { screenCapabilities } from '../lib/capabilities'
+import { gridQueryFromString, gridQueryToString } from '../lib/savedViews'
 import {
-  Search, Plus, Pencil, Trash2, Loader2, History,
+  Search, Plus, Pencil, Trash2, Loader2, History, Bookmark,
   Download, Upload, X, Filter, ChevronDown,
 } from 'lucide-react'
 
@@ -60,6 +61,11 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
   const [deleting, setDeleting] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [confirmBulk, setConfirmBulk] = useState(false)
+
+  // Saved views: the filter set this operator returns to.
+  const [savedViews, setSavedViews] = useState<SavedView[]>([])
+  const [viewName, setViewName] = useState('')
+  const [savingView, setSavingView] = useState(false)
 
   // Export/Import state
   const [showExportImport, setShowExportImport] = useState(false)
@@ -271,6 +277,57 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
     }
   }
 
+  const reloadViews = useCallback(async () => {
+    try {
+      setSavedViews(await api.getSavedViews(modelName))
+    } catch {
+      // A panel with no database handle has no views; the control simply
+      // does not appear, which is better than an error on every model.
+      setSavedViews([])
+    }
+  }, [modelName])
+
+  useEffect(() => { void reloadViews() }, [reloadViews])
+
+  const applyView = (view: SavedView) => {
+    const query = gridQueryFromString(view.query)
+    setSearch(query.search)
+    setSearchInput(query.search)
+    setFilterInput(query.filters)
+    setActiveFilters(query.filters)
+    setOrderBy(query.orderBy)
+    if (query.pageSize) setPageSize(query.pageSize)
+  }
+
+  const saveCurrentView = async () => {
+    const name = viewName.trim()
+    if (!name) return
+    setSavingView(true)
+    try {
+      await api.createSavedView({
+        model: modelName,
+        name,
+        query: gridQueryToString({ search, filters: activeFilters, orderBy, pageSize }),
+      })
+      setViewName('')
+      await reloadViews()
+      toast({ title: 'View saved', description: name })
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Could not save the view', description: api.errorMessage(err) })
+    } finally {
+      setSavingView(false)
+    }
+  }
+
+  const removeView = async (view: SavedView) => {
+    try {
+      await api.deleteSavedView(view.id)
+      await reloadViews()
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Could not remove the view', description: api.errorMessage(err) })
+    }
+  }
+
   const handleExport = async () => {
     setIsExporting(true)
     try {
@@ -350,6 +407,47 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
           </Button>
         )}
       </div>
+
+      {/* Saved views: pick one, or keep the filters you are looking at. */}
+      {(savedViews.length > 0 || showFilters) && (
+        <div className="flex flex-wrap items-center gap-2 py-2 border-b">
+          <Bookmark className="h-3.5 w-3.5 text-muted-foreground" />
+          {savedViews.map((view) => (
+            <span key={view.id} className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs">
+              <button type="button" onClick={() => applyView(view)} className="hover:underline">
+                {view.name}
+              </button>
+              <button
+                type="button"
+                onClick={() => void removeView(view)}
+                className="ml-1 text-muted-foreground hover:text-destructive"
+                aria-label={`Remove the view ${view.name}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+          <div className="flex items-center gap-1">
+            <Input
+              value={viewName}
+              onChange={(e) => setViewName(e.target.value)}
+              placeholder="Save this view as…"
+              className="h-7 w-44 text-xs"
+              aria-label="Name for the current view"
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              disabled={!viewName.trim() || savingView}
+              onClick={() => void saveCurrentView()}
+            >
+              {savingView ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Save'}
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Filter bar */}
       {showFilters && filterFields.length > 0 && (

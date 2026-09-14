@@ -61,7 +61,7 @@ func controls() []control {
 			want: present, note: "the audit trail read by record: it goes back as far as the trail does, which is now the retention window and not the process",
 			probe: probeRecordHistory},
 		{id: "DS-17", family: "data-studio", title: "saved views an operator returns to",
-			want: absent, note: "filters live in the URL only", probe: probeSavedViews},
+			want: present, probe: probeSavedViews},
 
 		// ---- permissions -------------------------------------------------
 		{id: "PERM-01", family: "permissions", title: "permissions per model and action",

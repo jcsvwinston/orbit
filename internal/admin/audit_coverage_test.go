@@ -56,6 +56,25 @@ type auditProbeEnv struct {
 	store *keyedStore
 	sm    *auth.SessionManager
 	vars  map[string]string
+	// savedViewID is the view a probe created in its setup, so the route it
+	// drives has one to edit or remove.
+	savedViewID string
+}
+
+// createSavedViewForProbe stores one view and returns its id.
+func createSavedViewForProbe(t *testing.T, env *auditProbeEnv, name string) string {
+	t.Helper()
+	resp, status := doJSON(t, http.MethodPost, env.srv.URL+"/api/views", map[string]any{
+		"model": "AdminUser", "name": name, "query": "status=open",
+	})
+	if status != http.StatusCreated {
+		t.Fatalf("create saved view: status %d body=%s", status, mustJSON(resp))
+	}
+	id, _ := resp["id"].(string)
+	if id == "" {
+		t.Fatalf("the created view has no id: %s", mustJSON(resp))
+	}
+	return id
 }
 
 func newAuditProbeEnv(t *testing.T) *auditProbeEnv {
@@ -541,6 +560,37 @@ func auditProbes() map[string][]auditProbe {
 					t.Errorf("audit.clear new_value = %v, want the number of entries dropped", e.NewValue)
 				}
 			},
+		}},
+		"POST /api/views": {{
+			name:       "view.create",
+			path:       literalPath("/api/views"),
+			body:       literalBody(`{"model":"AdminUser","name":"Recent","query":"order_by=created_at+desc"}`),
+			wantAction: "view.create",
+			wantNew:    true,
+			wantRecord: true,
+		}},
+		"PUT /api/views/{id}": {{
+			name: "view.update",
+			setup: func(t *testing.T, env *auditProbeEnv) {
+				env.savedViewID = createSavedViewForProbe(t, env, "Before")
+			},
+			path:       func(env *auditProbeEnv) string { return "/api/views/" + env.savedViewID },
+			body:       literalBody(`{"name":"After","query":"status=open"}`),
+			wantAction: "view.update",
+			wantOld:    true,
+			wantNew:    true,
+			wantRecord: true,
+		}},
+		"DELETE /api/views/{id}": {{
+			name: "view.delete",
+			setup: func(t *testing.T, env *auditProbeEnv) {
+				env.savedViewID = createSavedViewForProbe(t, env, "Doomed")
+			},
+			path:       func(env *auditProbeEnv) string { return "/api/views/" + env.savedViewID },
+			body:       literalBody(`{}`),
+			wantAction: "view.delete",
+			wantOld:    true,
+			wantRecord: true,
 		}},
 		"POST /api/models/{name}/upload": {{
 			name: "field.upload",
