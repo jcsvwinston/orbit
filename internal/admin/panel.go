@@ -23,7 +23,9 @@ import (
 	"github.com/jcsvwinston/nucleus/pkg/authz"
 	"github.com/jcsvwinston/nucleus/pkg/db"
 	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
+	"github.com/jcsvwinston/nucleus/pkg/mail"
 	"github.com/jcsvwinston/nucleus/pkg/model"
+	"github.com/jcsvwinston/nucleus/pkg/outbox"
 	"github.com/jcsvwinston/nucleus/pkg/router"
 	"github.com/jcsvwinston/nucleus/pkg/signals"
 	"github.com/jcsvwinston/nucleus/pkg/storage"
@@ -59,11 +61,15 @@ type AdminAuth interface {
 
 // PanelConfig configures the admin panel.
 type PanelConfig struct {
-	Prefix              string // URL prefix (default "/admin")
-	Title               string // Site title shown in the UI
-	Environment         string
-	OTLPEndpoint        string          // optional OTLP endpoint configured by the host app
-	RedisURL            string          // optional Redis URL for background jobs runtime snapshot
+	Prefix       string // URL prefix (default "/admin")
+	Title        string // Site title shown in the UI
+	Environment  string
+	OTLPEndpoint string // optional OTLP endpoint configured by the host app
+	RedisURL     string // optional Redis URL for background jobs runtime snapshot
+	// Cache is the cache the application declared, or nil. See the Cache
+	// interface in runtime_cache.go: nothing in the framework owns an
+	// application's cache, so the panel can only show the one it is handed.
+	Cache               Cache
 	TaskInspector       tasks.Inspector // optional configured queue inspector
 	LiveExcludePatterns []string        // optional path patterns excluded from live HTTP capture
 	LiveClusterEnabled  bool            // when true, publish/subscribe live telemetry through Redis
@@ -79,10 +85,16 @@ type PanelConfig struct {
 	MailDriver          string
 	MailFrom            string
 	SMTPHost            string
-	Auth                AdminAuth
-	Session             *auth.SessionManager // optional session manager for admin telemetry
-	SessionStore        string               // configured session store label (memory|sql|redis)
-	SessionRuntime      auth.SessionRuntimeIdentity
+	// Mailer and Outbox are the DELIVERY half of the email view (OR-50):
+	// the sender it asks whether it can deliver, and the queue mail waits
+	// in. Both come from the framework runtime and both may be nil — an
+	// application can run without either.
+	Mailer         mail.Sender
+	Outbox         *outbox.ManagedOutbox
+	Auth           AdminAuth
+	Session        *auth.SessionManager // optional session manager for admin telemetry
+	SessionStore   string               // configured session store label (memory|sql|redis)
+	SessionRuntime auth.SessionRuntimeIdentity
 
 	// Multi-tenant configuration. When enabled, Data Studio is confined to
 	// the tenant of each request — list, get, create, update, delete, bulk,
@@ -656,7 +668,14 @@ func (p *Panel) mountAPIRoutes(m *router.Mux) {
 	// as ?key= (the {id}/download form can't carry it in the path). The
 	// SPA uses this route.
 	m.Get("/api/exports/download", p.handleExportDownload)
-	m.Get("/api/exports/{id}", p.handleExportStatus)
+	// The id of an export is its storage key, which contains a slash
+	// ("_tmp/export_<stamp>.csv"), so a single-segment {id} never matched
+	// the ids the panel itself hands out: polling an export by id fell
+	// through to the SPA fallback and came back as HTML. {id...} takes the
+	// rest of the path; the download route below stays more specific and
+	// keeps winning. Found when the fallback stopped covering /api/
+	// (OR-48) — until then the bench read that HTML as a working status.
+	m.Get("/api/exports/{id...}", p.handleExportStatus)
 	m.Get("/api/exports/{id}/download", p.handleExportDownload)
 	m.Post("/api/imports", p.handleImportUpload)
 	m.Post("/api/import/validate", p.handleImportValidate)
@@ -665,6 +684,79 @@ func (p *Panel) mountAPIRoutes(m *router.Mux) {
 	// Fixtures (Django-style dumpdata/loaddata)
 	m.Post("/api/fixtures/dumpdata", p.handleDumpdata)
 	m.Post("/api/fixtures/loaddata", p.handleLoaddata)
+
+	// OR-48: everything above is the API surface; anything else under
+	// /api/ is not an endpoint, and must not be answered by the SPA
+	// fallback further down. Registered LAST so the route map below sees
+	// the real routes and not this one.
+	p.mountAPINotFound(m)
+}
+
+// apiNotFoundPattern is the catch-all that closes the API prefix. It is a
+// named constant because the audit-coverage guard exempts it by name: it is
+// registered for every method yet mutates nothing.
+const apiNotFoundPattern = "/api/{path...}"
+
+// mountAPINotFound closes the API prefix with a catch-all that answers JSON.
+//
+// Without it the single-page fallback catches every unrouted path under the
+// panel prefix, so `GET /admin/api/nope` came back as 200 text/html — a
+// client asking for an endpoint that does not exist got a web page and no
+// way to tell the difference (OR-48).
+//
+// The catch-all keeps the distinction the fallback destroyed in the other
+// direction too. A bare catch-all would swallow the mux's own 405: with
+// `POST /api/{path...}` registered, a POST to a GET-only endpoint matches
+// the wildcard and answers 404, which claims the endpoint does not exist
+// when it does (measured against net/http's precedence rules, not assumed).
+// So the handler first asks the route map — every /api/ pattern the panel
+// just registered, method-free — whether SOME method serves this path, and
+// answers 405 when one does.
+func (p *Panel) mountAPINotFound(m *router.Mux) {
+	routes := http.NewServeMux()
+	seen := map[string]bool{}
+	_ = m.Walk(func(_ string, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
+		if strings.HasPrefix(route, "/api/") && !seen[route] {
+			seen[route] = true
+			routes.Handle(route, http.NotFoundHandler())
+		}
+		return nil
+	})
+
+	handler := func(c *router.Context) error {
+		path := apiRequestPath(c.Request, p.config.Prefix)
+		probe := c.Request.Clone(c.Request.Context())
+		probe.URL = &url.URL{Path: path}
+		probe.Method = http.MethodGet
+		if _, pattern := routes.Handler(probe); pattern != "" {
+			return &gferrors.DomainError{
+				Code:       "METHOD_NOT_ALLOWED",
+				Message:    fmt.Sprintf("%s is not allowed on %s", c.Request.Method, path),
+				StatusCode: http.StatusMethodNotAllowed,
+			}
+		}
+		return &gferrors.DomainError{
+			Code:       "NOT_FOUND",
+			Message:    fmt.Sprintf("no admin API endpoint at %s", path),
+			StatusCode: http.StatusNotFound,
+		}
+	}
+
+	for _, mount := range []func(string, ...router.Handler){m.Get, m.Post, m.Put, m.Patch, m.Delete} {
+		mount(apiNotFoundPattern, handler)
+	}
+}
+
+// apiRequestPath returns the request path as the panel's own router sees it:
+// rooted at the panel, with the mount prefix removed when it is still there.
+func apiRequestPath(r *http.Request, prefix string) string {
+	path := r.URL.Path
+	if mount := strings.TrimSuffix(NormalizePrefix(prefix), "/"); mount != "" && mount != "/" {
+		if trimmed := strings.TrimPrefix(path, mount); trimmed != path && strings.HasPrefix(trimmed, "/") {
+			path = trimmed
+		}
+	}
+	return path
 }
 
 // warnAdminAuthDisabled logs a prominent warning that the admin panel is

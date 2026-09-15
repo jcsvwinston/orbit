@@ -170,6 +170,17 @@ type Config struct {
 	// the UI; it supports a {trace_id} placeholder.
 	TraceURLTemplate string `yaml:"trace_url_template" koanf:"trace_url_template"`
 
+	// Cache is the cache this application wants the panel to show and be
+	// able to empty. Nil — the default — means the panel says there is no
+	// cache here rather than offering a button that refuses.
+	//
+	// Nothing in the framework owns an application's cache (pkg/cache is a
+	// library an application builds with, not a service the app wires), so
+	// there is nothing for the panel to discover: the application is the
+	// only thing that can say which cache the operator is looking at.
+	// Go-only wiring; not bindable from YAML.
+	Cache Cache `yaml:"-" koanf:"-"`
+
 	// DataSource overrides the source Data Studio browses and edits (ADR-001).
 	// Nil means the default: a Nucleus-backed adapter over the application's
 	// model registry and database handles. Set it to browse another backend —
@@ -179,6 +190,18 @@ type Config struct {
 	// registry, which a custom source does not necessarily have).
 	DataSource datasource.DataSource `yaml:"-" koanf:"-"`
 }
+
+// Cache is what an application implements to give the panel a cache it can
+// inspect and empty (OR-49): a name for the view, a count of entries, and a
+// flush. It is an ALIAS of the panel's own interface, so an implementation
+// satisfies both without the application naming an internal package.
+//
+// The panel never reads or writes entries through it. Counting and emptying
+// is the whole of what an operator does to a cache from a screen, and a
+// contract that could also read entries would put cached values — session
+// data, rendered fragments, whatever the application caches — behind a panel
+// permission that was never meant to cover them.
+type Cache = admin.Cache
 
 // module holds the runtime-bound state captured in OnStart.
 type module struct {
@@ -382,6 +405,14 @@ func (m *module) start(ctx context.Context) error {
 		AuditStore:            m.cfg.AuditStore,
 		AuditRetentionDays:    m.cfg.AuditRetentionDays,
 		TenantResolver:        resolvedTenant,
+
+		Cache: m.cfg.Cache,
+
+		// The delivery half of the email view (OR-50). Both are taken from
+		// the runtime rather than declared in Config: the framework owns
+		// the sender and the outbox, so the panel does not need telling.
+		Mailer: rt.Mailer(),
+		Outbox: rt.Outbox(),
 
 		AuditEnabled:   true,
 		AuditMaxSize:   m.cfg.AuditMaxSize,
