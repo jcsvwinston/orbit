@@ -99,15 +99,24 @@ func (p *Panel) handleCacheStats(c *router.Context) error {
 		return err
 	}
 
-	snapshot := inspectRedisRuntime(r.Context(), p.config.RedisURL)
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"enabled":    snapshot.Enabled,
-		"redis_url":  snapshot.RedisURL,
-		"status":     snapshot.Status,
-		"message":    snapshot.Message,
-		"latency_ms": snapshot.LatencyMS,
-		"key_count":  snapshot.KeyCount,
-	})
+	snapshot := inspectCacheRuntime(r.Context(), p.config.Cache, p.config.RedisURL)
+	payload := map[string]interface{}{
+		"enabled":       snapshot.Enabled,
+		"kind":          snapshot.Kind,
+		"name":          snapshot.Name,
+		"status":        snapshot.Status,
+		"message":       snapshot.Message,
+		"can_flush":     snapshot.CanFlush,
+		"entries":       snapshot.Entries,
+		"entries_known": snapshot.EntriesKnown,
+		"redis_url":     snapshot.RedisURL,
+		"latency_ms":    snapshot.LatencyMS,
+		// key_count is what this view answered before a cache could be
+		// anything but Redis. Kept as an alias of entries so a client
+		// written against the old payload keeps working.
+		"key_count": snapshot.Entries,
+	}
+	return c.JSON(http.StatusOK, payload)
 }
 
 func (p *Panel) handleFlushCache(c *router.Context) error {
@@ -116,33 +125,47 @@ func (p *Panel) handleFlushCache(c *router.Context) error {
 		return err
 	}
 
-	result, err := flushRedisRuntime(r.Context(), p.config.RedisURL)
+	result, err := flushCacheRuntime(r.Context(), p.config.Cache, p.config.RedisURL)
 	if err != nil {
 		return gferrors.BadRequest(err.Error())
 	}
 
-	// The Redis URL is stored with its password masked: the audit log is
-	// readable by anyone with audit_view.
+	// Emptying a cache is a destructive act on live traffic, so it is
+	// audited whichever cache it hit. A Redis URL is recorded with its
+	// password masked: the trail is readable by anyone with audit_view.
+	entry := map[string]any{
+		"kind":          result.Kind,
+		"name":          result.Name,
+		"removed":       result.Removed,
+		"removed_known": result.RemovedKnown,
+	}
+	if result.Kind == "redis" {
+		entry["redis_url"] = redactURLCredentials(p.config.RedisURL)
+	}
 	p.recordAuditEntry(r, AuditEntry{
 		Action:    "cache.flush",
 		ModelName: "cache",
-		NewValue: map[string]any{
-			"redis_url":        redactURLCredentials(result.RedisURL),
-			"status":           result.Status,
-			"key_count_before": result.KeyCountBefore,
-			"key_count_after":  result.KeyCountAfter,
-		},
+		NewValue:  entry,
 	})
 
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"flushed":          true,
-		"redis_url":        result.RedisURL,
-		"status":           result.Status,
-		"message":          result.Message,
-		"latency_ms":       result.LatencyMS,
-		"key_count_before": result.KeyCountBefore,
-		"key_count_after":  result.KeyCountAfter,
-	})
+	payload := map[string]interface{}{
+		"flushed":       result.Flushed,
+		"kind":          result.Kind,
+		"name":          result.Name,
+		"message":       result.Message,
+		"removed":       result.Removed,
+		"removed_known": result.RemovedKnown,
+	}
+	if result.Kind == "redis" {
+		// The shape this endpoint has always answered, kept beside the
+		// new one so a client written against it keeps working.
+		payload["redis_url"] = result.RedisURL
+		payload["status"] = result.Status
+		payload["latency_ms"] = result.LatencyMS
+		payload["key_count_before"] = result.KeyCountBefore
+		payload["key_count_after"] = result.KeyCountAfter
+	}
+	return c.JSON(http.StatusOK, payload)
 }
 
 // File storage browser API handlers
@@ -238,6 +261,6 @@ func (p *Panel) handleEmailStats(c *router.Context) error {
 		return err
 	}
 
-	snapshot := inspectEmailRuntime(p.config)
+	snapshot := inspectEmailRuntime(c.Request.Context(), p.config)
 	return c.JSON(http.StatusOK, snapshot)
 }

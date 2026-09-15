@@ -293,10 +293,27 @@ func probeMigrations(t *testing.T, e *env) verdict {
 func probeMigrationsMissingDirectory(t *testing.T, e *env) verdict {
 	r := e.get(t, "/admin/api/migrations")
 	t.Logf("an application with no migrations directory gets %d: %s", r.code, r.text())
-	if r.code == http.StatusOK {
-		return present
+	if r.code != http.StatusOK {
+		return absent
 	}
-	return absent
+	// A 200 is not the control: an empty list with no reason looks exactly
+	// like an application whose migrations are all applied. What degrading
+	// means here is that the view can say WHY it is empty, so the operator
+	// is not left comparing two identical screens.
+	body := r.json(t)
+	if total, ok := body["total"].(float64); !ok || total != 0 {
+		t.Logf("the view claims %v migrations with no directory to read them from", body["total"])
+		return partial
+	}
+	if available, ok := body["available"].(bool); !ok || available {
+		t.Logf("the view does not say the directory is missing: %s", r.text())
+		return partial
+	}
+	if message, _ := body["message"].(string); !strings.Contains(message, "migrations") {
+		t.Logf("the view is empty without saying why: %s", r.text())
+		return partial
+	}
+	return present
 }
 
 // probeFeatureFlags turns a flag on from the panel and reads it back.
@@ -321,16 +338,66 @@ func probeFeatureFlags(t *testing.T, e *env) verdict {
 	return present
 }
 
-// probeCache reads the cache stats and flushes.
+// probeCache inspects and empties the cache the application declared.
+//
+// It runs against the runtime application, not the default one, for the same
+// reason OPS-17's sibling probe runs against migrationsApp: a cache is
+// something an application HAS, and the default application has none. What
+// the default application gets is measured too — see the last block — because
+// "there is no cache here" must not be reported as a broken one.
+//
+// A 200 from the flush is not the control. The old probe accepted any
+// non-error answer, and a flush that emptied nothing would have passed it;
+// this one puts entries in, reads the count back through the panel, flushes,
+// and checks both the count and the cache itself.
 func probeCache(t *testing.T, e *env) verdict {
-	stats := e.get(t, "/admin/api/cache")
+	srv, client, cache := e.runtimeApp(t)
+	cache.put("adminbench:one", "1")
+	cache.put("adminbench:two", "2")
+
+	stats := requestAs(t, client, srv, http.MethodGet, "/admin/api/cache", nil)
 	if stats.code != http.StatusOK {
 		t.Logf("cache stats answered %d: %s", stats.code, stats.text())
 		return absent
 	}
-	flush := e.do(t, http.MethodPost, "/admin/api/cache/flush", map[string]any{})
+	body := stats.json(t)
+	if entries, _ := body["entries"].(float64); entries != 2 {
+		t.Logf("the view counts %v entries where the cache holds 2: %s", body["entries"], stats.text())
+		return partial
+	}
+	if canFlush, _ := body["can_flush"].(bool); !canFlush {
+		t.Logf("the view does not offer the flush on a cache that has one: %s", stats.text())
+		return partial
+	}
+
+	flush := requestAs(t, client, srv, http.MethodPost, "/admin/api/cache/flush", map[string]any{})
 	if flush.code >= 400 {
 		t.Logf("flush answered %d: %s", flush.code, flush.text())
+		return partial
+	}
+	if removed, _ := flush.json(t)["removed"].(float64); removed != 2 {
+		t.Logf("the flush reports %v entries removed, not 2: %s", flush.json(t)["removed"], flush.text())
+		return partial
+	}
+	if count, _, _ := cache.CacheEntries(t.Context()); count != 0 {
+		t.Logf("the cache still holds %d entries after the panel flushed it", count)
+		return partial
+	}
+
+	// The default application — no cache of any kind — must say so rather
+	// than offer a button that refuses (OR-49).
+	bare := e.get(t, "/admin/api/cache")
+	if bare.code != http.StatusOK {
+		t.Logf("an application with no cache gets %d from the view: %s", bare.code, bare.text())
+		return partial
+	}
+	bareBody := bare.json(t)
+	if canFlush, _ := bareBody["can_flush"].(bool); canFlush {
+		t.Logf("an application with no cache is still offered the flush: %s", bare.text())
+		return partial
+	}
+	if kind, _ := bareBody["kind"].(string); kind != "none" {
+		t.Logf("an application with no cache is reported as %q: %s", kind, bare.text())
 		return partial
 	}
 	return present
@@ -348,15 +415,65 @@ func probeStorageBrowse(t *testing.T, e *env) verdict {
 
 // probeEmailOutbox reads the mail side of the runtime — the arc before this
 // one gave the framework product email, so the panel has something to show.
+//
+// The first version of this probe looked for the WORDS "queue", "outbox" or
+// "sent" anywhere in the payload. That is not a measurement: a view that
+// merely names its outbox passes it, and one that reports a queue of the
+// wrong size passes it too. It now queues a message and asserts the view
+// counts it — against the runtime application, which is the one that has an
+// outbox for mail to wait in.
 func probeEmailOutbox(t *testing.T, e *env) verdict {
-	r := e.get(t, "/admin/api/email")
-	if r.code != http.StatusOK {
-		t.Logf("email answered %d: %s", r.code, r.text())
+	srv, client, _ := e.runtimeApp(t)
+
+	before := requestAs(t, client, srv, http.MethodGet, "/admin/api/email", nil)
+	if before.code != http.StatusOK {
+		t.Logf("email answered %d: %s", before.code, before.text())
 		return absent
 	}
-	body := strings.ToLower(r.text())
-	if !strings.Contains(body, "queue") && !strings.Contains(body, "outbox") && !strings.Contains(body, "sent") {
-		t.Logf("the email view carries no delivery state: %s", r.text())
+	delivery, ok := before.json(t)["delivery"].(map[string]any)
+	if !ok {
+		t.Logf("the email view carries no delivery state: %s", before.text())
+		return partial
+	}
+	if enabled, _ := delivery["enabled"].(bool); !enabled {
+		t.Logf("the view does not see the outbox this application runs: %s", before.text())
+		return partial
+	}
+	if health, ok := before.json(t)["health"].(map[string]any); !ok || health == nil {
+		t.Logf("the view says nothing about whether the sender answers: %s", before.text())
+		return partial
+	}
+	totalBefore, _ := delivery["total"].(float64)
+
+	// One message into the outbox, under the topic mail uses. No bridge is
+	// registered for it, so it has nowhere to be delivered.
+	e.queueMail(t, srv)
+
+	after := requestAs(t, client, srv, http.MethodGet, "/admin/api/email", nil)
+	if after.code != http.StatusOK {
+		t.Logf("email answered %d after queueing: %s", after.code, after.text())
+		return partial
+	}
+	afterDelivery, _ := after.json(t)["delivery"].(map[string]any)
+
+	// The assertion is on the TOTAL, not on the pending count. The
+	// dispatcher is running: between the two reads it may have leased the
+	// message, so "pending went up by one" is a race the probe would lose
+	// at random. A queued message raises the total whichever state it is
+	// sitting in, and the per-state counts are asserted below as a set.
+	totalAfter, _ := afterDelivery["total"].(float64)
+	if totalAfter <= totalBefore {
+		t.Logf("the outbox reads %v messages before and %v after one was queued: %s",
+			totalBefore, totalAfter, after.text())
+		return partial
+	}
+	queued, _ := afterDelivery["queued"].(float64)
+	processing, _ := afterDelivery["processing"].(float64)
+	failed, _ := afterDelivery["failed"].(float64)
+	delivered, _ := afterDelivery["delivered"].(float64)
+	if queued+processing+failed+delivered < 1 {
+		t.Logf("the view totals %v messages and accounts for none of them by state: %s",
+			totalAfter, after.text())
 		return partial
 	}
 	return present

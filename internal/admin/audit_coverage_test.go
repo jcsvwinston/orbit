@@ -800,6 +800,15 @@ func TestAuditCoverage_EveryMutatingRouteLeavesAnEntry(t *testing.T) {
 	err := env.panel.Handler().Walk(func(method, pattern string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
 		key := method + " " + pattern
 		walked[key] = true
+		// The API catch-all (OR-48) is registered for every method so a
+		// client gets JSON instead of the SPA's HTML, but it reaches no
+		// handler and writes nothing: its only answers are 404 and 405.
+		// It is the one non-GET route with nothing to audit, and it is
+		// named here rather than pattern-matched so a real handler can
+		// never arrive under the exemption by accident.
+		if pattern == apiNotFoundPattern {
+			return nil
+		}
 		if method != http.MethodGet {
 			mutating = append(mutating, route{method, pattern})
 		}

@@ -9,12 +9,15 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/jcsvwinston/nucleus/pkg/auth"
+	"github.com/jcsvwinston/nucleus/pkg/mail"
 	"github.com/jcsvwinston/nucleus/pkg/nucleus"
 	"github.com/jcsvwinston/nucleus/pkg/nucleustest"
+	"github.com/jcsvwinston/nucleus/pkg/outbox"
 
 	"github.com/jcsvwinston/orbit"
 )
@@ -143,4 +146,105 @@ func (e *env) migrationsApp(t *testing.T) (*nucleustest.Server, *http.Client) {
 	e.migrations = srv
 	e.migrationsClient = signInTo(t, srv, "admin", bootstrapPassword)
 	return e.migrations, e.migrationsClient
+}
+
+// benchCache is the cache the runtime application declares to the panel: a
+// small map with the three methods orbit.Cache asks for.
+//
+// It is written HERE, in the application, because that is where a cache
+// lives. Nothing in the framework owns one, so there is no cache for the
+// panel to discover and none for the bench to borrow — an application that
+// wants its cache on the panel says which one it is. Measuring the control
+// therefore needs an application that has a cache, the same way OPS-17 needs
+// one that has migrations.
+type benchCache struct {
+	mu      sync.Mutex
+	entries map[string]string
+}
+
+func newBenchCache() *benchCache { return &benchCache{entries: map[string]string{}} }
+
+func (c *benchCache) CacheName() string { return "adminbench in-process" }
+
+func (c *benchCache) CacheEntries(_ context.Context) (int64, bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return int64(len(c.entries)), true, nil
+}
+
+func (c *benchCache) FlushCache(_ context.Context) (int64, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	removed := int64(len(c.entries))
+	c.entries = map[string]string{}
+	return removed, nil
+}
+
+func (c *benchCache) put(key, value string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.entries[key] = value
+}
+
+// runtimeApp boots an application with the two runtime services the default
+// one does not have: a declared cache and a running outbox. Both are
+// mount-time, so they need their own application; both are things an author
+// writes, not wiring the bench reaches into the panel to perform.
+//
+// Each caller gets a FRESH application, bound to its own probe's lifetime.
+// Caching one across probes was tried and is wrong twice over: the server is
+// stopped when the probe that started it ends, so the next probe dials a
+// closed port — and a shared cache or queue would let one probe's flush
+// decide another probe's count, which is the mistake OPS-02 made with the
+// shared session list.
+func (e *env) runtimeApp(t *testing.T) (*nucleustest.Server, *http.Client, *benchCache) {
+	t.Helper()
+
+	cache := newBenchCache()
+	cfg := benchConfig(t)
+	cfg.Outbox.Enabled = true
+	// Mail is queued rather than sent: the bridge for the mail topic is
+	// deliberately absent, so a queued message stays pending and the view
+	// has a queue depth to report. MissingRouteIgnore keeps the dispatcher
+	// from failing it on the first pass — a failed message would measure
+	// the bench's own missing bridge, not the panel.
+	cfg.Outbox.MissingRoutePolicy = "ignore"
+
+	srv := nucleustest.StartApp(t, nucleus.App{
+		Config: cfg,
+		Modules: map[string]nucleus.ModuleSpec{
+			"content": contentModule(),
+			"orbit": orbit.Module(orbit.Config{
+				Prefix:            "/admin",
+				Title:             "Admin Bench (runtime)",
+				BootstrapUsername: "admin",
+				BootstrapEmail:    "admin@example.test",
+				BootstrapPassword: bootstrapPassword,
+				Cache:             cache,
+			}),
+		},
+	})
+	return srv, signInTo(t, srv, "admin", bootstrapPassword), cache
+}
+
+// queueMail puts one message in the application's outbox under the topic
+// mail uses, the way an application queues a transactional email. No bridge
+// is registered for that topic in the bench, so the message stays queued and
+// the email view has a real queue depth to report.
+func (e *env) queueMail(t *testing.T, srv *nucleustest.Server) {
+	t.Helper()
+	managed := srv.Runtime().Outbox()
+	if managed == nil {
+		t.Fatalf("the runtime application has no outbox: the probe cannot measure a queue that does not exist")
+	}
+	if _, err := managed.Enqueue(t.Context(), outbox.Entry{
+		Topic: mail.OutboxTopic,
+		Payload: mail.Message{
+			To:      []string{"someone@example.test"},
+			Subject: "adminbench queued message",
+			Body:    "queued by the admin bench",
+		},
+	}); err != nil {
+		t.Fatalf("queue mail: %v", err)
+	}
 }

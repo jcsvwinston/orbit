@@ -38,17 +38,21 @@ A control that cannot be probed does not belong in the bench.
 
 ## The result
 
-**51 of 59 controls present. 2 partial. 6 absent.**
+**54 of 59 controls present. 0 partial. 5 absent.**
 
 | family | present | partial | absent |
 |---|---|---|---|
 | data studio | 16 | 0 | 1 |
 | permissions | 9 | 0 | 0 |
 | audit | 7 | 0 | 0 |
-| operations | 14 | 2 | 1 |
+| operations | 17 | 0 | 0 |
 | customization | 3 | 0 | 4 |
 | interface | 2 | 0 | 0 |
-| **total** | **51** | **2** | **6** |
+| **total** | **54** | **0** | **5** |
+
+Operations is complete as of the arc's ninth session. What remains absent is
+four controls of customization (branding, dashboards, actions and extension
+points) and one of data studio.
 
 ## What the shape of it says
 
@@ -257,3 +261,70 @@ The probes measure by effect: the same account signed in from two clients,
 both locked out after one call, the superuser who made it still signed in
 afterwards — and then that same superuser revoking their own account and
 still being signed in.
+
+## The views that reported their configuration, after the arc's ninth session
+
+Three operations screens answered with how they were set up rather than with
+what was happening, and the API prefix answered with a web page. All four are
+closed, and operations is the first family to reach 59-scale completeness.
+
+- **The cache view now shows the cache the application has** (`OPS-11`). It
+  knew exactly one cache — a Redis URL in configuration — so every other
+  application was told "redis url is not configured", including the ones that
+  have no Redis and never asked for one. An application now declares its
+  cache through `orbit.Config.Cache`, and the view counts its entries and
+  empties it. An application with no cache is told there is none, and the
+  flush button is withheld rather than offered and refused.
+- **The email view now shows delivery** (`OPS-13`): whether the sender
+  answers when asked, and what is waiting in the outbox — queued, failed,
+  the oldest message still pending. Configuration is not delivery, and an
+  SMTP host can be spelled correctly and refuse every connection.
+- **The migrations view degrades** (`OPS-17`): an application with no
+  migrations directory gets an empty list and the reason, not the migrator's
+  error as a 500. A path that exists and is NOT a directory still fails,
+  because a misconfigured `migrations_path` read as "nothing to apply" would
+  stay hidden until a deploy needed the migrations that were never listed.
+- **`/api/*` answers JSON**: an endpoint that does not exist returns 404
+  JSON instead of the single-page app's HTML, and a path that exists for
+  another method still returns 405 rather than claiming to be missing.
+
+### What the bench got wrong about itself, the fifth and sixth times
+
+- **A probe that accepts any 200 measures the web server, not the panel.**
+  `OPS-15` — an export that runs as a job — was recorded `present` from the
+  first run. It was reading the single-page fallback: the id of an export is
+  its storage key, which contains a slash, so `GET /api/exports/{id}` never
+  matched the ids the panel itself hands out, and polling one fell through to
+  the SPA and came back as HTML with a 200. The probe asserted the status
+  code and stopped there. Closing the API prefix (above) turned that 200 into
+  a 404 and exposed a route that had never worked. The route takes the rest
+  of the path now, and the lesson generalises: on this panel, a 200 is not
+  evidence until something in the body is.
+- **Looking for a word in the payload is not a measurement.** The first
+  `OPS-13` probe searched the response for "queue", "outbox" or "sent". A
+  view that merely NAMES its outbox passes that, and so does one reporting a
+  queue of the wrong size. It now queues a message and asserts the view
+  counts it.
+- **An assertion about a queue must not race the dispatcher.** The probe
+  first asserted that the pending count went up by one. The dispatcher is
+  running: between the two reads it can lease the message, and the probe
+  would lose that race at random. It asserts the TOTAL, which a queued
+  message raises whichever state it is sitting in.
+- **A second application belongs to the probe that starts it.** Two probes
+  need an application the default one is not — one with a declared cache and
+  a running outbox — and caching it on the env was wrong twice: the server
+  is stopped when the probe that started it ends, so the next probe dials a
+  closed port, and a shared cache would let one probe's flush decide
+  another's count. Each caller gets a fresh one. (`migrationsApp` predates
+  this and is used by a single probe, which is why it never showed.)
+
+### A note the first measurement got wrong
+
+`OPS-11` was recorded with the note "an application whose cache is
+in-process, which is the default". There is no default: `pkg/cache` is a
+library an application builds with, and nothing in the framework wires a
+cache into an application at all — only the CLI's `createcachetable` uses the
+package. That is why the contract asks the application to declare its cache
+instead of the panel discovering one. The finding was right about the
+symptom and wrong about the cause, which is the same trap A4 and A5 recorded
+from the other side: a comment is not a measurement, and neither is a note.
