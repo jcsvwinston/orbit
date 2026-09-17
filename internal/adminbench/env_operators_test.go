@@ -203,11 +203,17 @@ func (e *env) runtimeApp(t *testing.T) (*nucleustest.Server, *http.Client, *benc
 	cache := newBenchCache()
 	cfg := benchConfig(t)
 	cfg.Outbox.Enabled = true
-	// Mail is queued rather than sent: the bridge for the mail topic is
-	// deliberately absent, so a queued message stays pending and the view
-	// has a queue depth to report. MissingRouteIgnore keeps the dispatcher
-	// from failing it on the first pass — a failed message would measure
-	// the bench's own missing bridge, not the panel.
+	// No bridge is registered for the mail topic, and "ignore" is what keeps
+	// the dispatcher from FAILING those messages — a failed message would
+	// measure the bench's own missing bridge, not the panel.
+	//
+	// What it does NOT do is leave the message pending: with this policy the
+	// dispatcher's pass marks it DELIVERED (pkg/outbox/dispatcher.go — the
+	// bridge step returns nil, so RunOnce records delivery). Measured, not
+	// read: a message reads queued=1 immediately and delivered=1 about two
+	// seconds later. That is why the probe asserts the outbox TOTAL, which
+	// a queued message raises whichever state it ends up in, and never the
+	// pending count, which the dispatcher empties while the probe watches.
 	cfg.Outbox.MissingRoutePolicy = "ignore"
 
 	srv := nucleustest.StartApp(t, nucleus.App{
@@ -229,8 +235,9 @@ func (e *env) runtimeApp(t *testing.T) (*nucleustest.Server, *http.Client, *benc
 
 // queueMail puts one message in the application's outbox under the topic
 // mail uses, the way an application queues a transactional email. No bridge
-// is registered for that topic in the bench, so the message stays queued and
-// the email view has a real queue depth to report.
+// is registered for that topic in the bench; see runtimeApp for what the
+// dispatcher then does with it (it delivers it, and that is why the probe
+// measures the total rather than the pending count).
 func (e *env) queueMail(t *testing.T, srv *nucleustest.Server) {
 	t.Helper()
 	managed := srv.Runtime().Outbox()

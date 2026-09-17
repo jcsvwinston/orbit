@@ -445,8 +445,7 @@ func probeEmailOutbox(t *testing.T, e *env) verdict {
 	}
 	totalBefore, _ := delivery["total"].(float64)
 
-	// One message into the outbox, under the topic mail uses. No bridge is
-	// registered for it, so it has nowhere to be delivered.
+	// One message into the outbox, under the topic mail uses.
 	e.queueMail(t, srv)
 
 	after := requestAs(t, client, srv, http.MethodGet, "/admin/api/email", nil)
