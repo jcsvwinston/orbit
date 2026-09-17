@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -365,11 +366,39 @@ func decodeInto(t *testing.T, r io.Reader, out any) {
 // run leaves nothing behind in the package directory (imports, exports and
 // fixtures all write through the local storage provider, which is relative to
 // the working directory by default).
+//
+// The database asks SQLite to WAIT for a busy lock instead of failing on it.
+// Without it, an application that starts an outbox fails to boot on a slow
+// machine: app.New starts the dispatcher and its first pass is immediate
+// (pkg/app/app.go, "the dispatcher's first pass is immediate"), while the
+// modules' OnStart is still running AutoMigrate against the same file. Two
+// legitimate writers, one SQLite file, and no busy timeout means the loser
+// gets SQLITE_BUSY at once rather than waiting its turn — which is how
+// OPS-13 turned the main branch red after passing every run locally and in
+// the PR. The wait is the fix, not a retry: the migration still has to
+// succeed, it is just allowed to queue behind the dispatcher's pass.
+//
+// This is the bench making SQLite usable by two writers. The underlying
+// race belongs to the framework (see NU-77 in the audit register): an
+// application that runs an outbox on SQLite has it too.
 func benchConfig(tb testing.TB) app.Config {
 	cfg := app.DefaultConfig()
 	cfg.Env = "development"
-	cfg.Databases = nucleustest.TempSQLite(tb)
+	cfg.Databases = benchSQLite(tb)
 	cfg.JWTSecret = strings.Repeat("adminbench-probe-secret", 2)
 	cfg.Storage.Local.Path = tb.TempDir()
 	return cfg
+}
+
+// benchSQLite is nucleustest.TempSQLite with a busy timeout attached. The
+// URL is passed to modernc.org/sqlite verbatim after the "sqlite://" prefix
+// is trimmed (nucleus pkg/db/instrument.go), so its _pragma parameters
+// arrive at the driver — verified by reading PRAGMA busy_timeout back from
+// an opened handle, not assumed.
+func benchSQLite(tb testing.TB) map[string]app.DatabaseConfig {
+	tb.Helper()
+	path := filepath.Join(tb.TempDir(), "adminbench.db")
+	return map[string]app.DatabaseConfig{
+		"default": {URL: "sqlite://" + path + "?_pragma=busy_timeout(10000)"},
+	}
 }
