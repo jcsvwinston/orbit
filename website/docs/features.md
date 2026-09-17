@@ -586,3 +586,90 @@ listing does not page into nothing. `POST /api/audit/clear` answers
 ## Overview & Health
 
 A dashboard summarizing the above, plus a health-at-a-glance view.
+
+## Runtime operations
+
+Three operations endpoints report what is happening, not how they were
+configured.
+
+### The cache, as the application has it
+
+Nothing in the framework owns an application's cache — `pkg/cache` is a
+library you build with, not a service the app wires — so the panel cannot
+discover one. An application that wants its cache on the panel declares it:
+
+```go
+orbit.Module(orbit.Config{
+    // ...
+    Cache: myCache, // implements orbit.Cache
+})
+```
+
+```go
+// orbit.Cache
+type Cache interface {
+    CacheName() string
+    CacheEntries(ctx context.Context) (count int64, known bool, err error)
+    FlushCache(ctx context.Context) (removed int64, err error)
+}
+```
+
+`GET /admin/api/cache` then reports that cache by name with its entry count,
+and `POST /admin/api/cache/flush` empties it and records an audit entry. A
+backend that cannot count answers `known=false`, and the view shows the cache
+without a count rather than a zero that would read as empty.
+
+The panel never reads or writes entries through this contract. Counting and
+emptying is the whole of what an operator does to a cache from a screen, and
+a contract that could also read entries would put cached values behind a
+panel permission that was never meant to cover them.
+
+Three postures, and the view says which one it is in:
+
+| `kind` | when | `can_flush` |
+|---|---|---|
+| `declared` | the application passed `Config.Cache` | yes |
+| `redis` | no declared cache, `redis_url` configured | when Redis answers |
+| `none` | neither | **no** |
+
+An application with no cache is told there is none. It used to be told
+"redis url is not configured", which reads as a setting somebody forgot to
+fill in; the flush button is now withheld rather than offered and refused.
+Declaring a cache takes precedence over `redis_url` — it is the
+application's own statement about what its cache is.
+
+### Mail delivery, not mail configuration
+
+`GET /admin/api/email` still reports the driver, the sender address and the
+provider, and adds the two things you look at when a message did not arrive:
+
+- **`health`** — the configured sender's own liveness check, when it has one.
+  An SMTP host can be spelled correctly in the config and refuse every
+  connection, so a driver that reports healthy is a different claim from a
+  driver that is configured. A driver that cannot be probed says so
+  (`checked: false` with a reason) rather than passing for healthy.
+- **`delivery`** — the outbox: queued, processing, delivered and failed, the
+  oldest message still pending and the last one delivered. An application
+  with no outbox gets `enabled: false` and the reason, instead of zeros that
+  would read as "nothing pending".
+
+`delivery.scope` is part of the payload because the counts are of the WHOLE
+outbox, every topic, and mail is one topic in it (`delivery.topic`, today
+`nucleus.mail`). An application that also queues webhooks would otherwise
+read "4 pending" on the email screen as four unsent emails.
+
+### Migrations with nothing to list
+
+An application that ships no migrations directory gets an empty list,
+`available: false` and the reason. It used to get a 500 with the migrator's
+error. A path that exists and is not a directory is still an error — a
+misconfigured `migrations_path` read as "nothing to apply" would stay hidden
+until a deploy needed the migrations that were never listed.
+
+### `/api/*` answers JSON
+
+An unrouted path under the panel's API prefix returns 404 JSON. It used to
+reach the single-page fallback, so a client asking for an endpoint that does
+not exist got `200 text/html` and no way to tell the difference between "no
+such endpoint" and "here is a web page". A path that IS served under another
+method still returns 405, which is a different statement from 404.

@@ -20,6 +20,26 @@ func (p *Panel) handleListMigrations(c *router.Context) error {
 	}
 
 	migrationsPath := p.migrationsPath()
+	absent, err := migrationsDirState(migrationsPath)
+	if err != nil {
+		return gferrors.BadRequest(err.Error())
+	}
+	if absent {
+		// OR-47: "there is nowhere to look" is not "looking failed". An
+		// application that ships no migrations directory — the default —
+		// gets the empty list and the reason, not the migrator's error as
+		// a 500. The view can then say so instead of showing a failure.
+		return c.JSON(http.StatusOK, map[string]interface{}{
+			"enabled":    true,
+			"available":  false,
+			"path":       migrationsPath,
+			"mode":       p.migrationMode(),
+			"migrations": []migrationStatusInfo{},
+			"total":      0,
+			"message":    fmt.Sprintf("no migrations directory at %s", migrationsPath),
+		})
+	}
+
 	statuses, err := p.getMigrationStatus(migrationsPath)
 	if err != nil {
 		return fmt.Errorf("failed to list migrations: %w", err)
@@ -27,6 +47,7 @@ func (p *Panel) handleListMigrations(c *router.Context) error {
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"enabled":    true,
+		"available":  true,
 		"path":       migrationsPath,
 		"mode":       p.migrationMode(),
 		"migrations": statuses,
@@ -53,6 +74,15 @@ func (p *Panel) handleApplyMigrations(c *router.Context) error {
 	}
 
 	migrationsPath := p.migrationsPath()
+	// Same distinction as the list (OR-47): nothing to apply is a refusal
+	// the operator can read, not a 500 from deep inside the migrator.
+	switch absent, dirErr := migrationsDirState(migrationsPath); {
+	case dirErr != nil:
+		return gferrors.BadRequest(dirErr.Error())
+	case absent:
+		return gferrors.BadRequest(fmt.Sprintf("no migrations directory at %s", migrationsPath))
+	}
+
 	before, err := p.getMigrationStatus(migrationsPath)
 	if err != nil {
 		return fmt.Errorf("failed to get migration status: %w", err)
@@ -104,6 +134,30 @@ func (p *Panel) handleApplyMigrations(c *router.Context) error {
 		"mode":            "runtime",
 		"migrations":      after,
 	})
+}
+
+// migrationsDirState reports which of the three cases the configured path is
+// in, asked BEFORE the migrator so they stay apart (OR-47):
+//
+//   - absent: nothing to look at. The list degrades to empty with a reason,
+//     because that is the default application and not a failure.
+//   - present and usable: the migrator answers as it always did.
+//   - present and NOT a directory: a misconfigured path, which is "looking
+//     failed" and must not read as "there is nothing to apply" — a silent
+//     empty list would hide a typo in migrations_path until a deploy needs
+//     the migrations that were never listed.
+func migrationsDirState(migrationsPath string) (absent bool, err error) {
+	info, statErr := os.Stat(migrationsPath)
+	switch {
+	case os.IsNotExist(statErr):
+		return true, nil
+	case statErr != nil:
+		return false, statErr
+	case !info.IsDir():
+		return false, fmt.Errorf("migrations path %s is not a directory", migrationsPath)
+	default:
+		return false, nil
+	}
 }
 
 func (p *Panel) migrationsPath() string {

@@ -6,6 +6,7 @@ github.com/jcsvwinston/orbit field:Config.AuthDatabase
 github.com/jcsvwinston/orbit field:Config.BootstrapEmail
 github.com/jcsvwinston/orbit field:Config.BootstrapPassword
 github.com/jcsvwinston/orbit field:Config.BootstrapUsername
+github.com/jcsvwinston/orbit field:Config.Cache
 github.com/jcsvwinston/orbit field:Config.ClusterChannel
 github.com/jcsvwinston/orbit field:Config.ClusterEnabled
 github.com/jcsvwinston/orbit field:Config.ClusterNodeID
@@ -25,6 +26,7 @@ github.com/jcsvwinston/orbit field:Config.RowOwnerSubject
 github.com/jcsvwinston/orbit field:Config.Title
 github.com/jcsvwinston/orbit field:Config.TraceURLTemplate
 github.com/jcsvwinston/orbit func:Module
+github.com/jcsvwinston/orbit type:Cache
 github.com/jcsvwinston/orbit type:Config
 github.com/jcsvwinston/orbit/datasource const:OpContains
 github.com/jcsvwinston/orbit/datasource const:OpEndsWith
