@@ -17,6 +17,78 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.10.0 — 2026-09-18
+
+The release where the panel becomes the admin of the product, not a viewer
+with a CRUD on top. Everything below is additive: no configuration, policy or
+call that worked against v1.9.x behaves differently.
+
+**Operators are people you manage from the panel.** An account can be
+created, given roles, re-credentialled, deactivated and deleted from the
+Operators screen — until now it existed only in the database and in
+`nucleus createuser` on a server. Deactivating is not deleting: the account
+and its audit trail stay, and the operator stops being one on their next
+request. Two refusals live in the API rather than in the screen, because the
+screen is not the only client: you cannot deactivate, delete or demote your
+own account, and nobody can do it to the last active superuser.
+
+**Permissions reach the field and the row.** A policy's object can now name a
+field (`admin:Post.title`) or carry the `#own` qualifier (`admin:Post#own`),
+so "an editor may change the title but not the price" and "an author may edit
+their own posts" are things a policy can say. The payloads a screen loads
+carry the operator's verbs with them, so a UI disables what it may not do
+instead of discovering it by being refused.
+
+**The audit trail is a table, with retention, export and per-record history.**
+It used to be a ring buffer that went with the process. It is now kept in the
+database by default, with a retention window you can change while the
+application runs, a CSV export that carries the filters the screen was
+showing, and the history of one record read from the same trail.
+
+**Forms hold a relation, its children and a file.** A foreign key is picked
+from what it may point at, the children of a record are edited with it, and a
+JSON document, rich text or a file have something to be edited with.
+
+**Lists answer a question with an operator in it.** `?views__gt=100`,
+`?title__contains=hammer`, `?status__in=open,paused`, `?archived_at__isnull=true`
+— twelve operators, with a total a pager can divide, and the filter set an
+operator returns to can be saved.
+
+**Sessions say whose they are.** A row names its operator and the device it
+was opened from, marks the one you are reading it in, and one call ends every
+session of an account — keeping the caller's own, because "sign out
+everywhere else" is what that is for.
+
+**The operations views report state, not configuration.** The cache view
+shows the cache the application declared (`Config.Cache`) and withholds the
+flush button where there is nothing to empty; the email view reports
+delivery — the sender's own health check, and what is queued, failed or
+oldest in the outbox; the migrations view degrades to an empty list with a
+reason instead of a 500. And `/api/*` answers JSON: an endpoint that does not
+exist returns 404 rather than the single-page app's HTML.
+
+**An application adds its own verbs and its own screens.**
+`Config.Actions` declares an action for one of your models — the "publish
+these three" every admin grows — authorized as its own RBAC verb and confined
+to the rows that operator may touch. `Config.Pages` mounts a screen of your
+own inside the panel: under its prefix, behind its session, gated by its RBAC
+and listed in its navigation.
+
+**And it wears your clothes.** `Config.Branding` gives it your logo, favicon
+and accent colour, on every page including the login screen;
+`Config.Widgets` puts your own numbers on its overview; `Config.Locale` and
+`Config.Messages` make its chrome speak another language — Spanish ships with
+it, and you can add one it does not know.
+
+The panel is measured rather than described: `internal/adminbench` is 59
+controls, each one a probe that boots an application and asks the panel's own
+HTTP surface, and `internal/adminbench/browser` is the half that needs a
+browser — contrast, focus, keyboard reach. Both run in CI. The numbers are in
+[the bench's page](https://github.com/jcsvwinston/orbit/blob/main/docs/admin-bench.md).
+
+Fleet and bridge tags cut alongside: see the
+[GitHub release](https://github.com/jcsvwinston/orbit/releases/tag/v1.10.0).
+
 ## v1.9.6 — 2026-09-12
 
 An alignment release with no product change: every module now requires
