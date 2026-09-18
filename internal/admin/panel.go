@@ -144,6 +144,14 @@ type PanelConfig struct {
 	// about intent that no type carries, so they are declared here.
 	FieldWidgets map[string]string
 
+	// Actions and Pages are what an application adds to the panel that the
+	// panel cannot discover: a verb for one of its own models
+	// (actions_custom.go) and a screen of its own (pages_custom.go). Both
+	// are validated before the panel serves — a typo in either is a button
+	// or a link that would otherwise just never appear.
+	Actions []ModelAction
+	Pages   []Page
+
 	// Audit logging configuration
 	AuditEnabled bool // whether audit logging is enabled
 	AuditMaxSize int  // max audit entries in memory (default 10000)
@@ -208,6 +216,13 @@ type Panel struct {
 	tenantFieldsMu sync.RWMutex
 	tenantFields   map[string]string
 
+	// modelActions is the compiled table of application-defined actions,
+	// keyed by model and verb, and pages the screens an application added.
+	// Both are built once at construction: the declarations cannot change
+	// while the panel runs, so nothing reads them under a lock.
+	modelActions map[actionKey]ModelAction
+	pages        []Page
+
 	// RBAC enforcer for fine-grained authorization
 	rbac *authz.Enforcer
 
@@ -271,6 +286,25 @@ func NewPanel(src datasource.DataSource, logger *slog.Logger, cfg PanelConfig) *
 		store:            cfg.Store,
 		exportResults:    make(map[string]ExportResult),
 	}
+	// The module validates both before mounting and refuses to start on a
+	// bad declaration (orbit.Module). A panel wired by hand gets the same
+	// check here, and keeps serving without the offending declarations
+	// rather than panicking a request later.
+	if table, err := validateModelActions(cfg.Actions, modelResolver(src)); err != nil {
+		if logger != nil {
+			logger.Error("orbit: application actions ignored", "error", err)
+		}
+	} else {
+		p.modelActions = table
+	}
+	if pages, err := validatePages(cfg.Pages); err != nil {
+		if logger != nil {
+			logger.Error("orbit: application pages ignored", "error", err)
+		}
+	} else {
+		p.pages = pages
+	}
+
 	p.auditRetention = cfg.AuditRetentionDays
 	if cfg.AuditEnabled {
 		p.audit = p.buildAuditSink()
@@ -542,6 +576,11 @@ func (p *Panel) mountRoutes(r *router.Mux) {
 				spa.Use(p.tenantContextMiddleware)
 				spa.Use(p.sessionActivityMiddleware)
 				spa.Use(p.panelTrafficMiddleware)
+				// An application's own screens share the SPA's stack and
+				// its group: they are pages of the panel, authenticated at
+				// the same edge, and their patterns are more specific than
+				// the fallback below, so a page wins over it.
+				p.mountPageRoutes(spa)
 				spa.Get("/{path...}", p.handleSPA(uiContent))
 			})
 		})
@@ -558,6 +597,7 @@ func (p *Panel) mountRoutes(r *router.Mux) {
 	r.Use(p.sessionActivityMiddleware)
 	r.Use(p.panelTrafficMiddleware)
 	p.mountAPIRoutes(r)
+	p.mountPageRoutes(r)
 	r.Get("/{path...}", p.handleSPA(uiContent))
 }
 
@@ -653,6 +693,9 @@ func (p *Panel) mountAPIRoutes(m *router.Mux) {
 	m.Get("/api/health", p.handleHealthCheck)
 	m.Get("/api/jobs", p.handleListJobQueues)
 	m.Get("/api/sites", p.handleListSites)
+	// The screens an application added, as the navigation needs them
+	// (pages_custom.go).
+	m.Get("/api/ui/extensions", p.handleListUIExtensions)
 
 	// P2 features
 	m.Get("/api/deployment", p.handleDeploymentInfo)

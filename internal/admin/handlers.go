@@ -432,7 +432,7 @@ func (p *Panel) handleGetSchema(c *router.Context) error {
 	}
 
 	tenantField := p.resolveTenantField(mi.Name)
-	return c.JSON(http.StatusOK, map[string]interface{}{
+	payload := map[string]interface{}{
 		"name":         mi.Name,
 		"plural":       mi.Plural,
 		"table":        mi.Table,
@@ -450,7 +450,15 @@ func (p *Panel) handleGetSchema(c *router.Context) error {
 		"can_create":  caps.CanCreate,
 		"can_update":  caps.CanUpdate,
 		"can_delete":  caps.CanDelete,
-	})
+	}
+	// The actions this application declared for the model, filtered to the
+	// ones this operator may run (actions_custom.go). The key is absent
+	// when there are none: a payload that says "actions": null makes every
+	// client tell two kinds of nothing apart.
+	if actions := p.actionDescriptorsFor(r, mi); len(actions) > 0 {
+		payload["actions"] = actions
+	}
+	return c.JSON(http.StatusOK, payload)
 }
 
 // handleUpdateFieldMeta updates field metadata properties at runtime (like Django ModelAdmin).
@@ -1077,7 +1085,9 @@ func (p *Panel) handleBulkAction(c *router.Context) error {
 		})
 
 	default:
-		return gferrors.BadRequest("unknown action: " + req.Action)
+		// Not one of the panel's verbs: either an action this application
+		// declared for the model, or the same bad request as before.
+		return p.runModelAction(c, mi, action, ids, databaseAlias)
 	}
 }
 

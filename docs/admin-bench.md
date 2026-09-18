@@ -38,21 +38,21 @@ A control that cannot be probed does not belong in the bench.
 
 ## The result
 
-**54 of 59 controls present. 0 partial. 5 absent.**
+**56 of 59 controls present. 0 partial. 3 absent.**
 
 | family | present | partial | absent |
 |---|---|---|---|
-| data studio | 16 | 0 | 1 |
+| data studio | 17 | 0 | 0 |
 | permissions | 9 | 0 | 0 |
 | audit | 7 | 0 | 0 |
 | operations | 17 | 0 | 0 |
-| customization | 3 | 0 | 4 |
+| customization | 4 | 0 | 3 |
 | interface | 2 | 0 | 0 |
-| **total** | **54** | **0** | **5** |
+| **total** | **56** | **0** | **3** |
 
-Operations is complete as of the arc's ninth session. What remains absent is
-four controls of customization (branding, dashboards, actions and extension
-points) and one of data studio.
+Operations and data studio are complete as of the arc's seventh session. What
+remains absent is three controls of customization: branding, declarable
+dashboards, and the panel speaking another language.
 
 ## What the shape of it says
 
@@ -262,6 +262,58 @@ both locked out after one call, the superuser who made it still signed in
 afterwards — and then that same superuser revoking their own account and
 still being signed in.
 
+## What an application adds to the panel, after the arc's seventh session
+
+The panel's verbs are the ones every table has, and its screens are the ones
+every application has. A product always grows at least one of each that is
+only its own, and until this session the only extension point was
+`DataSource` — which replaces the backend and leaves the interface alone. Two
+contracts close that (`DS-09`, `CUST-04`):
+
+- **An action of the application's own, on one of its models.**
+  `orbit.Config.Actions` declares a verb ("publish"), the label on the button
+  and the function that runs it; the grid draws it beside Delete, and the
+  panel supplies everything an application should not have to rebuild.
+- **A screen of the application's own.** `orbit.Config.Pages` mounts an
+  ordinary `http.Handler` under the panel's prefix, behind its session, gated
+  by its RBAC and listed in its navigation. The panel puts the operator on
+  the request context; the application writes the page.
+
+Four decisions the probes pin:
+
+- **The verb IS the permission.** An action named `publish` is authorized as
+  `publish` on `admin:<Model>`, and an `admin:<Model>#own` grant confines it
+  exactly as it confines a delete: the ids the application's function
+  receives are the ones this operator may touch, and the rest come back as
+  per-id failures. That confinement is the whole reason an action runs
+  through the panel instead of being an endpoint of the application's own —
+  one that bypassed it would be the way around every row policy the panel
+  enforces. A selection that is refused whole never reaches the function at
+  all, because an action told "no ids" would be indistinguishable from one
+  invoked over the entire table.
+- **A declaration the panel cannot honour refuses to start.** An unknown
+  model, a duplicate verb, one of the panel's own verbs, a page with no
+  handler or an id with a slash in it: each of these would otherwise be a
+  control that silently never appears. They are checked when the module
+  mounts.
+- **A page is a link, not a frame.** The panel sends `X-Frame-Options: DENY`
+  and `frame-ancestors 'none'` on every response, so a screen embedded in the
+  SPA would be blocked by the browser while every Go test still read a 200 —
+  and relaxing that header for the whole panel to embed one screen trades a
+  clickjacking defence for a layout. The same hardening applies to the page's
+  own response, so its scripts come from files rather than inline `<script>`.
+- **An action an operator may not run is not offered.** The schema carries
+  only the actions they hold, so the grid draws no button for the others; the
+  permission hints still carry the verb as `false`, exactly like every record
+  verb they do not hold.
+
+Both probes measure by effect. `DS-09` runs the action and reads the row back
+changed — a 200 from the bulk endpoint only says the verb was routed, and this
+bench has already recorded one control as present on the strength of a 200
+that meant nothing (`OPS-15`, below). `CUST-04` asks for the three things that
+make a screen part of the panel: the navigation lists it, it is served under
+the panel's prefix, and it knows which operator is reading it.
+
 ## The views that reported their configuration, after the arc's ninth session
 
 Three operations screens answered with how they were set up rather than with
@@ -317,6 +369,16 @@ closed, and operations is the first family to reach 59-scale completeness.
   closed port, and a shared cache would let one probe's flush decide
   another's count. Each caller gets a fresh one. (`migrationsApp` predates
   this and is used by a single probe, which is why it never showed.)
+
+### What the bench got wrong about itself, the seventh time
+
+- **A method-less route beside a GET-only catch-all does not start.** The
+  application pages were first registered for every method with `Handle`,
+  which Go's `ServeMux` reads as ambiguous against the SPA fallback's `GET
+  /{path...}` — and refuses to build the router, so the whole application
+  failed to boot. The failure was loud and immediate, which is the good case:
+  the methods are spelled out now. Worth remembering when adding any route
+  next to that fallback.
 
 ### A note the first measurement got wrong
 

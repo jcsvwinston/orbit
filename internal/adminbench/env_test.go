@@ -106,6 +106,10 @@ func contentModule() nucleus.ModuleSpec {
 		Name:   "content",
 		Models: []any{Note{}, Author{}, Comment{}, Credential{}, Article{}},
 		OnStart: func(_ context.Context, rt nucleus.Runtime, _ struct{}) error {
+			// The application's own action writes through the application's
+			// own handle (env_extensions_test.go): the panel hands it the
+			// selected ids, not a database.
+			benchExtensions.captureRuntime(rt)
 			return rt.AutoMigrate(Note{}, Author{}, Comment{}, Credential{}, Article{})
 		},
 	}.Build()
@@ -146,25 +150,13 @@ func (e *env) server() *nucleustest.Server {
 			Config: cfg,
 			Modules: map[string]nucleus.ModuleSpec{
 				"content": contentModule(),
-				"orbit": orbit.Module(orbit.Config{
-					Prefix:            "/admin",
-					Title:             "Admin Bench",
-					BootstrapUsername: "admin",
-					BootstrapEmail:    "admin@example.test",
-					BootstrapPassword: bootstrapPassword,
-					// The application says which column owns a row; without
-					// it an admin:Article#own grant has nothing to confine
-					// itself to, and the panel refuses it rather than
-					// widening it.
-					RowOwnerFields: map[string]string{"Article": "owner"},
-					// What a form should render for the fields whose type
-					// cannot say: rich text, a file, a document.
-					FieldWidgets: map[string]string{
-						"Note.Body":  "richtext",
-						"Note.Cover": "image",
-						"Note.Meta":  "json",
-					},
-				}),
+				// The mounted panel, as the application configures it: the
+				// row-owner column an admin:Article#own grant needs, the
+				// widgets for the fields whose type cannot say what they
+				// are, and what this application adds to the panel — its
+				// own verb on Note and its own screen
+				// (env_extensions_test.go).
+				"orbit": orbit.Module(benchOrbitConfig()),
 			},
 		})
 	})

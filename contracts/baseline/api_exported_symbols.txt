@@ -1,4 +1,5 @@
 github.com/jcsvwinston/orbit const:DefaultPrefix
+github.com/jcsvwinston/orbit field:Config.Actions
 github.com/jcsvwinston/orbit field:Config.AuditMaxSize
 github.com/jcsvwinston/orbit field:Config.AuditRetentionDays
 github.com/jcsvwinston/orbit field:Config.AuditStore
@@ -20,14 +21,21 @@ github.com/jcsvwinston/orbit field:Config.MigrationsPath
 github.com/jcsvwinston/orbit field:Config.MultiTenantDefault
 github.com/jcsvwinston/orbit field:Config.MultiTenantEnabled
 github.com/jcsvwinston/orbit field:Config.MultiTenantIDs
+github.com/jcsvwinston/orbit field:Config.Pages
 github.com/jcsvwinston/orbit field:Config.Prefix
 github.com/jcsvwinston/orbit field:Config.RowOwnerFields
 github.com/jcsvwinston/orbit field:Config.RowOwnerSubject
 github.com/jcsvwinston/orbit field:Config.Title
 github.com/jcsvwinston/orbit field:Config.TraceURLTemplate
 github.com/jcsvwinston/orbit func:Module
+github.com/jcsvwinston/orbit func:OperatorFromContext
+github.com/jcsvwinston/orbit type:ActionRequest
+github.com/jcsvwinston/orbit type:ActionResult
 github.com/jcsvwinston/orbit type:Cache
 github.com/jcsvwinston/orbit type:Config
+github.com/jcsvwinston/orbit type:ModelAction
+github.com/jcsvwinston/orbit type:Operator
+github.com/jcsvwinston/orbit type:Page
 github.com/jcsvwinston/orbit/datasource const:OpContains
 github.com/jcsvwinston/orbit/datasource const:OpEndsWith
 github.com/jcsvwinston/orbit/datasource const:OpEqual

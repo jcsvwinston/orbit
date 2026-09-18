@@ -61,15 +61,41 @@ func probeDashboardWidgets(t *testing.T, e *env) verdict {
 	return e.unrouted(t, "/admin/api/dashboard", "/admin/api/widgets")
 }
 
-// probeUIExtension asks whether an application can put its own screen, panel
-// or button into the UI.
+// probeUIExtension asks whether an application can put its own screen into
+// the panel — not whether the mount surface has a key called "plugin".
+//
+// Three things make it a screen OF THE PANEL rather than a URL the
+// application also serves: the navigation lists it, it is served under the
+// panel's prefix, and it knows which operator is reading it because the
+// panel authenticated them. The probe asks for all three, and refuses the
+// SPA shell as an answer: this bench has already been fooled once by a 200
+// that was the fallback's HTML (OPS-15).
 func probeUIExtension(t *testing.T, e *env) verdict {
-	keys := configKeysMatching("hook", "plugin", "extension", "page", "nav", "menu")
-	if len(keys) > 0 {
-		t.Logf("extension keys on the mount surface: %v", keys)
+	nav := e.get(t, "/admin/api/ui/extensions")
+	if nav.code != http.StatusOK || nav.servedTheShell() {
+		t.Logf("the panel lists no application screens (%d %s)", nav.code, nav.ctype)
+		return absent
+	}
+	url, ok := pageURLFor(nav.json(t), "reports")
+	if !ok {
+		t.Logf("the declared page is not in the navigation: %s", nav.text())
+		return absent
+	}
+
+	page := e.get(t, url)
+	if page.code != http.StatusOK {
+		t.Logf("the declared page answered %d: %s", page.code, page.text())
+		return absent
+	}
+	if !strings.Contains(page.raw(), reportsMarker) {
+		t.Logf("%s served something that is not the application's page: %s", url, page.text())
+		return absent
+	}
+	if !strings.Contains(page.raw(), "operator=admin") {
+		t.Logf("the page runs, but the panel does not tell it who is reading: %s", page.text())
 		return partial
 	}
-	return absent
+	return present
 }
 
 // probeI18n asks whether the panel can speak anything but English.
