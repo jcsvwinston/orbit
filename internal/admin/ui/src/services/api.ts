@@ -263,6 +263,27 @@ export async function runModelAction(
   })
 }
 
+export interface DashboardWidget {
+  id: string
+  title: string
+  description?: string
+  link?: string
+  value?: string
+  detail?: string
+  items?: Array<{ label: string; value?: string; link?: string }>
+  // error is the widget's own failure. The card is still drawn saying it
+  // could not be read: dropping it would report a broken query as "nothing
+  // to see".
+  error?: string
+}
+
+// getDashboardWidgets loads the cards this application declared for the
+// overview. Only the ones this operator may see come back.
+export async function getDashboardWidgets(): Promise<DashboardWidget[]> {
+  const response = await fetchAPI<{ widgets?: DashboardWidget[] }>('/api/ui/dashboard')
+  return response.widgets ?? []
+}
+
 export interface UIExtensionPage {
   id: string
   title: string

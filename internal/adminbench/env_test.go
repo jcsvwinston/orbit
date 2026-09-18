@@ -106,10 +106,6 @@ func contentModule() nucleus.ModuleSpec {
 		Name:   "content",
 		Models: []any{Note{}, Author{}, Comment{}, Credential{}, Article{}},
 		OnStart: func(_ context.Context, rt nucleus.Runtime, _ struct{}) error {
-			// The application's own action writes through the application's
-			// own handle (env_extensions_test.go): the panel hands it the
-			// selected ids, not a database.
-			benchExtensions.captureRuntime(rt)
 			return rt.AutoMigrate(Note{}, Author{}, Comment{}, Credential{}, Article{})
 		},
 	}.Build()
@@ -150,6 +146,15 @@ func (e *env) server() *nucleustest.Server {
 			Config: cfg,
 			Modules: map[string]nucleus.ModuleSpec{
 				"content": contentModule(),
+				// The module that lends the shared application's database
+				// handle to what this application declares — its action and
+				// its widget (env_extensions_test.go). It is mounted HERE
+				// and nowhere else: a probe that boots a second application
+				// would otherwise hand its own, shorter-lived handle to the
+				// shared one's widgets, and the card would read "database is
+				// closed" once that probe finished. Same shape as the
+				// lesson S9 wrote down about caching a second application.
+				"benchext": extensionsModule(),
 				// The mounted panel, as the application configures it: the
 				// row-owner column an admin:Article#own grant needs, the
 				// widgets for the fields whose type cannot say what they

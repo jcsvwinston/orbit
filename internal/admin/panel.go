@@ -152,6 +152,16 @@ type PanelConfig struct {
 	Actions []ModelAction
 	Pages   []Page
 
+	// Branding, Widgets, Locale and Messages are how an application wears
+	// its own clothes: the logo and colour on every page (branding.go), the
+	// cards its overview opens on (dashboard.go), and the language the
+	// chrome speaks (i18n.go). Branding and Locale are plain values and
+	// bind from configuration; the widgets carry functions and do not.
+	Branding Branding
+	Widgets  []Widget
+	Locale   string
+	Messages map[string]map[string]string
+
 	// Audit logging configuration
 	AuditEnabled bool // whether audit logging is enabled
 	AuditMaxSize int  // max audit entries in memory (default 10000)
@@ -222,6 +232,10 @@ type Panel struct {
 	// while the panel runs, so nothing reads them under a lock.
 	modelActions map[actionKey]ModelAction
 	pages        []Page
+	widgets      []Widget
+	branding     Branding
+	locale       string
+	messages     map[string]map[string]string
 
 	// RBAC enforcer for fine-grained authorization
 	rbac *authz.Enforcer
@@ -303,6 +317,35 @@ func NewPanel(src datasource.DataSource, logger *slog.Logger, cfg PanelConfig) *
 		}
 	} else {
 		p.pages = pages
+	}
+	if widgets, err := validateWidgets(cfg.Widgets); err != nil {
+		if logger != nil {
+			logger.Error("orbit: dashboard widgets ignored", "error", err)
+		}
+	} else {
+		p.widgets = widgets
+	}
+	if branding, err := validateBranding(cfg.Branding); err != nil {
+		if logger != nil {
+			logger.Error("orbit: branding ignored", "error", err)
+		}
+	} else {
+		p.branding = branding
+	}
+	p.locale = defaultLocale
+	if locale, err := validateLocale(cfg.Locale); err != nil {
+		if logger != nil {
+			logger.Error("orbit: locale ignored", "error", err)
+		}
+	} else {
+		p.locale = locale
+	}
+	if messages, err := validateMessages(cfg.Messages); err != nil {
+		if logger != nil {
+			logger.Error("orbit: application messages ignored", "error", err)
+		}
+	} else {
+		p.messages = messages
 	}
 
 	p.auditRetention = cfg.AuditRetentionDays
@@ -528,6 +571,13 @@ func (p *Panel) mountRoutes(r *router.Mux) {
 	}
 	r.Get("/favicon.svg", router.FromHandler(fileServer))
 
+	// The chrome's phrases, next to the built assets and for the same
+	// reason: the login screen renders before there is a session, and a
+	// sign-in page in the wrong language is the first thing an operator
+	// would see. The payload is the panel's own wording — the same strings
+	// the bundle already ships — and carries no application data.
+	r.Get("/ui/messages.json", p.handleUIMessages)
+
 	// API routes and SPA fallback.
 	//
 	// When an admin auth provider is configured — every framework-wired
@@ -694,8 +744,10 @@ func (p *Panel) mountAPIRoutes(m *router.Mux) {
 	m.Get("/api/jobs", p.handleListJobQueues)
 	m.Get("/api/sites", p.handleListSites)
 	// The screens an application added, as the navigation needs them
-	// (pages_custom.go).
+	// (pages_custom.go), and the cards its overview opens on
+	// (dashboard.go).
 	m.Get("/api/ui/extensions", p.handleListUIExtensions)
+	m.Get("/api/ui/dashboard", p.handleDashboardWidgets)
 
 	// P2 features
 	m.Get("/api/deployment", p.handleDeploymentInfo)
@@ -862,6 +914,8 @@ func (p *Panel) handleSPA(fsys fs.FS) router.Handler {
 
 		content = injectAdminPrefix(content, NormalizePrefix(p.config.Prefix))
 		content = injectAdminTitle(content, p.config.Title)
+		content = injectBranding(content, p.branding)
+		content = injectLocale(content, p.locale)
 
 		http.ServeContent(w, r, "index.html", time.Time{}, bytes.NewReader(content))
 		return nil

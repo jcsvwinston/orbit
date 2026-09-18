@@ -199,6 +199,28 @@ type Config struct {
 	// from YAML.
 	Pages []Page `yaml:"-" koanf:"-"`
 
+	// Branding is how the panel wears the application's clothes: the logo
+	// on the sidebar and the login screen, the icon in the browser tab and
+	// the accent colour. Empty fields keep Orbit's own. Unlike Actions and
+	// Pages it is plain configuration, so it binds from nucleus.yml too.
+	Branding Branding `yaml:"branding" koanf:"branding"`
+
+	// Widgets are the cards this application puts on the panel's overview:
+	// its own numbers, which the panel cannot discover. Go-only wiring;
+	// each widget carries the function that reads its value.
+	Widgets []Widget `yaml:"-" koanf:"-"`
+
+	// Locale is the language the panel's own chrome opens in ("es",
+	// "pt-BR"). It covers the panel's words — navigation, buttons, empty
+	// states — and never the application's data: a model called Invoice is
+	// called Invoice in every language. Empty means English.
+	Locale string `yaml:"locale" koanf:"locale"`
+
+	// Messages adds to or overrides the chrome's phrases, by locale and
+	// key, including for a language the panel does not ship. A phrase
+	// nobody translated reads in English rather than as its key.
+	Messages map[string]map[string]string `yaml:"messages" koanf:"messages"`
+
 	// DataSource overrides the source Data Studio browses and edits (ADR-001).
 	// Nil means the default: a Nucleus-backed adapter over the application's
 	// model registry and database handles. Set it to browse another backend —
@@ -256,6 +278,23 @@ type Page = admin.Page
 
 // Operator is who is looking at an application Page.
 type Operator = admin.Operator
+
+// Branding is the logo, favicon and accent colour an application gives the
+// panel (CUST-02). Every field is optional.
+type Branding = admin.Branding
+
+// Widget is one card an application puts on the panel's overview (CUST-03):
+// a title and the function that reads the value. The panel supplies the
+// screen, the authorization (admin:dashboard), a timeout, and a card that
+// says it could not be read rather than a screen that drops it.
+type Widget = admin.Widget
+
+// WidgetValue is what a Widget shows: a headline value, a smaller detail
+// line, or a short list of rows.
+type WidgetValue = admin.WidgetValue
+
+// WidgetItem is one row of a list widget.
+type WidgetItem = admin.WidgetItem
 
 // OperatorFromContext returns the panel operator a Page request was
 // authenticated as.
@@ -443,6 +482,15 @@ func (m *module) start(ctx context.Context) error {
 	if err := admin.ValidatePages(m.cfg.Pages); err != nil {
 		return fmt.Errorf("orbit: %w", err)
 	}
+	if err := admin.ValidateWidgets(m.cfg.Widgets); err != nil {
+		return fmt.Errorf("orbit: %w", err)
+	}
+	if err := admin.ValidateBranding(m.cfg.Branding); err != nil {
+		return fmt.Errorf("orbit: %w", err)
+	}
+	if err := admin.ValidateLocaleConfig(m.cfg.Locale, m.cfg.Messages); err != nil {
+		return fmt.Errorf("orbit: %w", err)
+	}
 
 	m.panel = admin.NewPanel(src, rt.Logger(), admin.PanelConfig{
 		Prefix:          m.cfg.Prefix,
@@ -462,7 +510,7 @@ func (m *module) start(ctx context.Context) error {
 		// renders before any authenticated API call can serve it.
 		// WithSystem names the auth database's dialect so the per-request
 		// user lookup is a bounded query with the right placeholders.
-		Auth:         admin.NewDatabaseAdminAuth(authSQL, rt.Session(), m.cfg.Prefix).WithAuthChain(rt.AuthChain()).WithTitle(m.cfg.Title).WithSystem(authSystem),
+		Auth:         admin.NewDatabaseAdminAuth(authSQL, rt.Session(), m.cfg.Prefix).WithAuthChain(rt.AuthChain()).WithTitle(m.cfg.Title).WithBranding(m.cfg.Branding).WithLocale(m.cfg.Locale).WithSystem(authSystem),
 		Session:      rt.Session(),
 		RBACEnforcer: rt.Authorizer(),
 		Store:        rt.Storage(),
@@ -481,9 +529,14 @@ func (m *module) start(ctx context.Context) error {
 		Cache: m.cfg.Cache,
 
 		// What this application adds to the panel: its own verbs on its
-		// own models, and its own screens.
-		Actions: m.cfg.Actions,
-		Pages:   m.cfg.Pages,
+		// own models, its own screens, its own clothes and its own
+		// language.
+		Actions:  m.cfg.Actions,
+		Pages:    m.cfg.Pages,
+		Branding: m.cfg.Branding,
+		Widgets:  m.cfg.Widgets,
+		Locale:   m.cfg.Locale,
+		Messages: m.cfg.Messages,
 
 		// The delivery half of the email view (OR-50). Both are taken from
 		// the runtime rather than declared in Config: the framework owns
