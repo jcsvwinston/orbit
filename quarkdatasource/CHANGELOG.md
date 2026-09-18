@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.1](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v1.9.0...quarkdatasource/v1.9.1) (2026-09-18)
+
+
+### Fixed
+
+* **quarkdatasource:** the store answers operator filters instead of refusing them ([#490](https://github.com/jcsvwinston/orbit/issues/490)) ([74271bd](https://github.com/jcsvwinston/orbit/commit/74271bd422cc65c8215f537287c2214094fd074d))
+
 ## [1.9.0](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v1.8.25...quarkdatasource/v1.9.0) (2026-09-18)
 
 
