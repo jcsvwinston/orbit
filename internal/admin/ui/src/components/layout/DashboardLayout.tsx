@@ -1,8 +1,10 @@
-import { Suspense, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { useAuth } from '@/stores/authStore'
 import { useTheme } from '@/stores/themeStore'
 import { getAdminTitle } from '@/config'
+import * as api from '@/services/api'
+import type { UIExtensionPage } from '@/services/api'
 import { RouteFallback } from '@/components/ui/route-fallback'
 import { RouteErrorBoundary } from '@/components/layout/route-error-boundary'
 import {
@@ -22,6 +24,7 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
 } from 'lucide-react'
 
 const navItems = [
@@ -42,6 +45,29 @@ export default function DashboardLayout() {
   const { theme, toggleTheme } = useTheme()
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  // The screens this application added to the panel, if any. They are
+  // ordinary links and not SPA routes: the page is served by the
+  // application, under the panel's prefix and its session, and the panel
+  // refuses to be framed — so it is navigated to, not embedded.
+  const [extensions, setExtensions] = useState<UIExtensionPage[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    api
+      .getUIExtensions()
+      .then((pages) => {
+        if (!cancelled) setExtensions(pages)
+      })
+      .catch(() => {
+        // An application with no screens of its own is the common case,
+        // and a panel whose extension list fails to load still works:
+        // the section simply does not appear.
+        if (!cancelled) setExtensions([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const handleLogout = async () => {
     await logout()
@@ -129,6 +155,20 @@ export default function DashboardLayout() {
                   </li>
                 )
               })}
+              {extensions.map((page) => (
+                <li key={page.id}>
+                  <a
+                    href={page.url}
+                    aria-label={sidebarOpen ? undefined : page.title}
+                    title={sidebarOpen ? page.description : page.title}
+                    className="flex items-center gap-3 px-3 py-2 rounded-md transition-colors hover:bg-accent"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    <ExternalLink className="h-5 w-5 shrink-0" />
+                    {sidebarOpen && <span className="truncate">{page.title}</span>}
+                  </a>
+                </li>
+              ))}
             </ul>
           </nav>
 

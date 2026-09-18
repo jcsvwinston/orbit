@@ -181,6 +181,24 @@ type Config struct {
 	// Go-only wiring; not bindable from YAML.
 	Cache Cache `yaml:"-" koanf:"-"`
 
+	// Actions are the verbs this application defines for its own models —
+	// "publish these three drafts", "retry these payments" — which the
+	// panel draws on the model's grid and runs under the same
+	// authorization, tenant and row confinement as its own bulk verbs.
+	// Nothing here can be discovered: the panel cannot know that a column
+	// called status makes "publish" meaningful, so the application names
+	// the verb and supplies the function. Go-only wiring; not bindable
+	// from YAML. A declaration the panel cannot honour — an unknown model,
+	// a duplicate verb, one of the panel's own — refuses to start.
+	Actions []ModelAction `yaml:"-" koanf:"-"`
+
+	// Pages are screens of this application's own, mounted inside the
+	// panel: under its prefix, behind its session, gated by its RBAC and
+	// listed in its navigation. The application writes the handler; the
+	// panel supplies everything around it. Go-only wiring; not bindable
+	// from YAML.
+	Pages []Page `yaml:"-" koanf:"-"`
+
 	// DataSource overrides the source Data Studio browses and edits (ADR-001).
 	// Nil means the default: a Nucleus-backed adapter over the application's
 	// model registry and database handles. Set it to browse another backend —
@@ -202,6 +220,48 @@ type Config struct {
 // data, rendered fragments, whatever the application caches — behind a panel
 // permission that was never meant to cover them.
 type Cache = admin.Cache
+
+// ModelAction is an action an application defines for one of its own models
+// (DS-09): the verb on the wire and in the RBAC policy, the label on the
+// button, and the function that runs it over the rows an operator selected.
+// It is an ALIAS of the panel's own type, so an application declares one
+// without naming an internal package.
+//
+// The ids the function receives are already confined to what that operator
+// may touch. That is the reason the action runs through the panel instead of
+// being an endpoint of the application's own: it inherits the row and tenant
+// policies the panel enforces, and the audit entry, rather than being the
+// way around them.
+type ModelAction = admin.ModelAction
+
+// ActionRequest is what a ModelAction is told about the call: the model, the
+// selected ids, the operator, the tenant in force and the database alias the
+// grid was reading.
+type ActionRequest = admin.ActionRequest
+
+// ActionResult is what a ModelAction reports back — a message for the
+// operator, how many rows it changed, and anything else the screen should
+// get. Every field is optional.
+type ActionResult = admin.ActionResult
+
+// Page is a screen of the application's own, mounted inside the panel
+// (CUST-04). The handler is ordinary net/http; the panel authenticates the
+// request, authorizes it against admin:page:<id>, puts the operator on the
+// context (OperatorFromContext) and lists the page in the navigation.
+//
+// It is a link, not a frame: the panel refuses to be framed
+// (X-Frame-Options: DENY), and its Content-Security-Policy applies to the
+// page too — so a page's scripts come from files, not from inline <script>.
+type Page = admin.Page
+
+// Operator is who is looking at an application Page.
+type Operator = admin.Operator
+
+// OperatorFromContext returns the panel operator a Page request was
+// authenticated as.
+func OperatorFromContext(ctx context.Context) (Operator, bool) {
+	return admin.OperatorFromContext(ctx)
+}
 
 // module holds the runtime-bound state captured in OnStart.
 type module struct {
@@ -372,6 +432,18 @@ func (m *module) start(ctx context.Context) error {
 		})
 	}
 
+	// What the application declared, checked against what this application
+	// has, before anything is served. A verb on a model that does not
+	// exist, a duplicate one, a page with no handler: each of them is a
+	// control that would otherwise never appear, with nothing anywhere
+	// saying why. The panel refuses to mount instead.
+	if err := admin.ValidateActions(src, m.cfg.Actions); err != nil {
+		return fmt.Errorf("orbit: %w", err)
+	}
+	if err := admin.ValidatePages(m.cfg.Pages); err != nil {
+		return fmt.Errorf("orbit: %w", err)
+	}
+
 	m.panel = admin.NewPanel(src, rt.Logger(), admin.PanelConfig{
 		Prefix:          m.cfg.Prefix,
 		Title:           m.cfg.Title,
@@ -407,6 +479,11 @@ func (m *module) start(ctx context.Context) error {
 		TenantResolver:        resolvedTenant,
 
 		Cache: m.cfg.Cache,
+
+		// What this application adds to the panel: its own verbs on its
+		// own models, and its own screens.
+		Actions: m.cfg.Actions,
+		Pages:   m.cfg.Pages,
 
 		// The delivery half of the email view (OR-50). Both are taken from
 		// the runtime rather than declared in Config: the framework owns

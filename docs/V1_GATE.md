@@ -55,7 +55,8 @@ carries the freeze note.
 
 **Closure (slice 1):** `contracts/freeze_test.go` pins `orbit` (root) +
 `orbit/datasource` against `contracts/baseline/api_exported_symbols.txt`
-(100 symbols; both directions fail — removals AND unreviewed additions);
+(100 symbols at closure; the baseline file is the live count, and both
+directions fail — removals AND unreviewed additions);
 deliberate changes rebaseline via `ORBIT_UPDATE_CONTRACT_BASELINE=1`. The
 suite's `orbit-lockstep` lane covers `./orbit/...`, so the guard runs on
 every quantum push/PR (orbit has no PR CI of its own — verified locally

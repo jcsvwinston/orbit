@@ -673,3 +673,107 @@ reach the single-page fallback, so a client asking for an endpoint that does
 not exist got `200 text/html` and no way to tell the difference between "no
 such endpoint" and "here is a web page". A path that IS served under another
 method still returns 405, which is a different statement from 404.
+
+## What your application adds to the panel
+
+The panel's verbs are the ones every table has, and its screens are the ones
+every application has. Two contracts let an application add the ones that are
+only its own, without forking the panel. Both are Go-only wiring: they carry
+functions, so there is nothing for `nucleus.yml` to bind.
+
+### An action of your own, on your own model
+
+```go
+orbit.Module(orbit.Config{
+    // ...
+    Actions: []orbit.ModelAction{{
+        Name:        "publish",           // the verb, and the RBAC action
+        Model:       "Post",
+        Label:       "Publish",
+        Confirm:     "Publish the selected posts?",
+        Destructive: true,
+        Run: func(ctx context.Context, req orbit.ActionRequest) (orbit.ActionResult, error) {
+            n, err := publishPosts(ctx, req.IDs)   // your code, your database
+            if err != nil {
+                return orbit.ActionResult{}, err
+            }
+            return orbit.ActionResult{
+                Message:  fmt.Sprintf("%d post(s) published", n),
+                Affected: n,
+            }, nil
+        },
+    }},
+})
+```
+
+The grid draws the button next to Delete and Export once rows are selected,
+asks the `Confirm` question when there is one, and shows the `Message` your
+function returned. On the wire it is the bulk endpoint the selection already
+uses: `POST /admin/api/models/Post/bulk` with `{"action":"publish","ids":[…]}`.
+
+What the panel supplies around your function:
+
+- **Authorization.** The verb IS the permission: `p, editors, admin:Post,
+  publish`. An operator without it gets a 403 and your function is never
+  called, and the action is not offered in the schema a screen renders from.
+- **Confinement.** The ids you receive are the ones this operator may touch.
+  A grant of `admin:Post#own` confines an action exactly as it confines a
+  delete, and a multi-tenant panel confines it to the request's tenant; rows
+  outside come back to the client as per-id failures. A selection that is
+  refused whole never reaches your function — it answers `ran: false` — so
+  "no ids" always means the same thing as `AllowEmptySelection`.
+- **The audit entry**, recorded as `action.<name>` with the model, the ids
+  and what you reported, whether your function succeeded or returned an
+  error. An action that failed halfway still touched rows, and only the trail
+  can tell that from one that never started.
+- **The operator's name**, in `req.Actor`, so your own log line names the
+  same person the trail does.
+
+An error you return reaches the operator as the reason ("publish needs a
+publication date"), because this is a console and a generic failure is worth
+less there.
+
+Set `AllowEmptySelection: true` for an action whose subject is the table
+rather than a selection ("rebuild the index"); its button is then always
+there. `Destructive: true` marks it dangerous in the UI and makes it refuse a
+read-only model, which is what read-only means.
+
+A declaration the panel cannot honour stops the application at startup: an
+unknown model, a duplicate verb, one of the panel's own verbs (`delete`,
+`export`, `create`, `update`, …) or a missing `Run`. Each of those would
+otherwise be a button that silently never appears.
+
+### A screen of your own
+
+```go
+orbit.Module(orbit.Config{
+    // ...
+    Pages: []orbit.Page{{
+        ID:      "reconciliation",       // served at /admin/x/reconciliation/
+        Title:   "Reconciliation",
+        Handler: myReportHandler,        // an ordinary http.Handler
+    }},
+})
+```
+
+The page is listed in the panel's navigation (`GET /admin/api/ui/extensions`)
+and served under the panel's prefix, behind the panel's session. Your handler
+sees its own root — `/` is the page, `/monthly` is a sub-path of it — so it
+builds links without knowing where the panel is mounted, and it can read who
+is looking at it:
+
+```go
+operator, ok := orbit.OperatorFromContext(r.Context())
+```
+
+Authorization is `view` on `admin:page:<id>`, in its own namespace so a grant
+about a model can never open a screen. A page an operator may not open is not
+in their navigation at all: a link that refuses is a worse answer than no
+link.
+
+A page is a **link, not a frame**. The panel sends `X-Frame-Options: DENY` and
+`frame-ancestors 'none'` on every response, so a screen embedded in the
+single-page app would be blocked by the browser — and relaxing that header for
+the whole panel to embed one screen would trade a clickjacking defence for a
+layout. The panel's `Content-Security-Policy` applies to your page too, so its
+scripts come from files rather than inline `<script>`.

@@ -61,6 +61,9 @@ export interface ModelSummary extends CapabilityHints {
 
 export interface ModelSchema extends CapabilityHints {
   inlines?: InlineSpec[]
+  // Actions this application declared for the model, already filtered to
+  // the ones this operator may run: the key is absent when there are none.
+  actions?: ModelActionSpec[]
   name: string
   plural: string
   table: string
@@ -70,6 +73,20 @@ export interface ModelSchema extends CapabilityHints {
   fields: SchemaField[]
   foreign_keys: ForeignKeyInfo[]
   tenant_field: string
+}
+
+// ModelActionSpec is a verb an application added to one of its models: the
+// grid draws a button for it and posts the name back to the bulk endpoint.
+export interface ModelActionSpec {
+  name: string
+  label: string
+  description?: string
+  // confirm, when present, is the question to ask before running.
+  confirm?: string
+  destructive: boolean
+  // requires_selection is false for the actions whose subject is the table
+  // rather than a selection.
+  requires_selection: boolean
 }
 
 export interface SchemaField {

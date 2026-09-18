@@ -66,10 +66,30 @@ func (p *Panel) capabilitiesFor(r *http.Request, mi datasource.ModelInfo) modelC
 // capabilitiesForUser is capabilitiesFor with the operator already resolved,
 // so the model list — which asks the same question once per model —
 // authenticates once instead of once per row.
+// verbsFor lists every action verb that can be held on a model: the record
+// actions the panel enforces, then the ones this application declared.
+func (p *Panel) verbsFor(model string) []string {
+	declared := p.actionsForModel(model)
+	if len(declared) == 0 {
+		return recordActions
+	}
+	verbs := make([]string, 0, len(recordActions)+len(declared))
+	verbs = append(verbs, recordActions...)
+	for _, action := range declared {
+		verbs = append(verbs, action.Name)
+	}
+	return verbs
+}
+
 func (p *Panel) capabilitiesForUser(user *auth.User, mi datasource.ModelInfo) modelCapabilities {
-	caps := modelCapabilities{Permissions: make(map[string]bool, len(recordActions))}
+	// The verbs of a model are the panel's own plus whatever actions this
+	// application declared for it: an application verb is authorized like
+	// any other, so it belongs in the same hint map — that is what lets a
+	// grid know whether to draw the button at all.
+	verbs := p.verbsFor(mi.Name)
+	caps := modelCapabilities{Permissions: make(map[string]bool, len(verbs))}
 	grantAll := func() modelCapabilities {
-		for _, action := range recordActions {
+		for _, action := range verbs {
 			caps.Permissions[action] = true
 		}
 		caps.CanCreate, caps.CanUpdate, caps.CanDelete = true, true, true
@@ -79,7 +99,7 @@ func (p *Panel) capabilitiesForUser(user *auth.User, mi datasource.ModelInfo) mo
 		return grantAll()
 	}
 	if user == nil {
-		for _, action := range recordActions {
+		for _, action := range verbs {
 			caps.Permissions[action] = false
 		}
 		return caps
@@ -88,7 +108,7 @@ func (p *Panel) capabilitiesForUser(user *auth.User, mi datasource.ModelInfo) mo
 		return grantAll()
 	}
 	if p.rbac == nil {
-		for _, action := range recordActions {
+		for _, action := range verbs {
 			caps.Permissions[action] = p.config.Auth.Authorize(user, mi.Name, action)
 		}
 		caps.fill()
@@ -97,7 +117,7 @@ func (p *Panel) capabilitiesForUser(user *auth.User, mi datasource.ModelInfo) mo
 
 	subjects := subjectsOf(user)
 	resource := "admin:" + mi.Name
-	for _, action := range recordActions {
+	for _, action := range verbs {
 		full := p.rbacCan(subjects, resource, action)
 		own := !full && p.rbacCan(subjects, resource+ownScopeSuffix, action)
 		caps.Permissions[action] = full || own

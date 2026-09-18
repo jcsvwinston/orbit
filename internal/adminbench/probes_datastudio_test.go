@@ -309,24 +309,55 @@ func probeBulkActions(t *testing.T, e *env) verdict {
 }
 
 // probeCustomActions asks for an action this application defined — the
-// "publish these three" button every admin product has. The panel's bulk verb
-// list is closed (delete/export), and nothing in the mount surface registers
-// one, so the probe asks for a named action and reads the refusal.
+// "publish these three" button every admin product has.
+//
+// It measures the EFFECT and not the acceptance: a 200 from the bulk
+// endpoint says the panel routed the verb, and this bench has already
+// recorded one control as present on the strength of a 200 that meant
+// nothing (OPS-15, read off the SPA's HTML fallback). So the probe checks
+// three things the row itself can answer: the schema offers the action to
+// this operator, the call reports what it changed, and the note comes back
+// published.
 func probeCustomActions(t *testing.T, e *env) verdict {
 	id := e.createNote(t, map[string]any{"title": "custom-action", "status": "draft"})
+
+	schema := e.get(t, "/admin/api/models/Note/schema")
+	if !strings.Contains(schema.raw(), `"name":"publish"`) {
+		t.Logf("the schema offers no publish action: %s", schema.text())
+		return absent
+	}
+
 	r := e.do(t, http.MethodPost, "/admin/api/models/Note/bulk",
 		map[string]any{"action": "publish", "ids": []string{id}})
-	if r.code < 400 {
-		t.Logf("an application-defined action was accepted: %s", r.text())
-		return present
+	if r.code >= 400 {
+		t.Logf("the declared action was refused (%d): %s", r.code, r.text())
+		return absent
 	}
-	schema := e.get(t, "/admin/api/models/Note/schema")
-	if strings.Contains(schema.raw(), `"actions"`) {
-		t.Logf("the schema advertises actions: %s", schema.text())
+	payload := r.json(t)
+	if affected, _ := payload["affected"].(float64); affected < 1 {
+		t.Logf("the action reports nothing changed: %v", payload)
 		return partial
 	}
-	t.Logf("bulk rejects an application verb (%d) and the schema advertises none", r.code)
-	return absent
+
+	after := e.get(t, "/admin/api/models/Note/"+id)
+	if after.code != http.StatusOK {
+		t.Logf("reading the row back answered %d: %s", after.code, after.text())
+		return partial
+	}
+	if !strings.Contains(after.raw(), `"status":"published"`) {
+		t.Logf("the action was accepted but the row did not change: %s", after.text())
+		return partial
+	}
+
+	// The panel tells the action who is running it and over what: an
+	// action that cannot name the operator cannot write its own log line,
+	// and one that is not told the model cannot be shared between two.
+	call, calls := benchExtensions.lastRequest()
+	if calls == 0 || call.Actor == "" || call.Model != "Note" {
+		t.Logf("the action ran but was told little about the call: %+v", call)
+		return partial
+	}
+	return present
 }
 
 // probeRelationLookup follows a foreign key the way a form does: the field is

@@ -235,6 +235,51 @@ export async function bulkDelete(name: string, ids: Array<string | number>): Pro
   })
 }
 
+// ── Application actions and screens ──
+
+export interface ModelActionResult {
+  action: string
+  ran: boolean
+  requested: number
+  affected: number
+  failed: number
+  message?: string
+  errors?: Array<{ id: string; error: string }>
+  data?: Record<string, unknown>
+}
+
+// runModelAction posts a verb an application declared for its own model.
+// It rides the same endpoint as the built-in bulk verbs — the selection is
+// the same selection — and the backend confines the ids to what this
+// operator may touch before the application's own code sees them.
+export async function runModelAction(
+  name: string,
+  action: string,
+  ids: Array<string | number>,
+): Promise<ModelActionResult> {
+  return fetchAPI(`/api/models/${encodeURIComponent(name)}/bulk`, {
+    method: 'POST',
+    body: JSON.stringify({ action, ids: ids.map(String) }),
+  })
+}
+
+export interface UIExtensionPage {
+  id: string
+  title: string
+  description?: string
+  icon?: string
+  // url is absolute from the site root: the panel builds it from its own
+  // prefix, so the SPA never has to know where it is mounted.
+  url: string
+}
+
+// getUIExtensions lists the screens this application added to the panel, as
+// the navigation needs them. Only the ones this operator may open come back.
+export async function getUIExtensions(): Promise<UIExtensionPage[]> {
+  const response = await fetchAPI<{ pages?: UIExtensionPage[] }>('/api/ui/extensions')
+  return response.pages ?? []
+}
+
 // ── Sessions ──
 
 interface RawSessionRow {

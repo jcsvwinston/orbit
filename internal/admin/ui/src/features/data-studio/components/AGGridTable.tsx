@@ -11,7 +11,7 @@ import { ErrorState } from '@/components/ui/error-state'
 import { useToast } from '@/components/ui/use-toast'
 import { useTheme } from '@/stores/themeStore'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
-import type { ModelSchema, Record as AppRecord, SavedView } from '@/types'
+import type { ModelSchema, ModelActionSpec, Record as AppRecord, SavedView } from '@/types'
 import * as api from '@/services/api'
 import RecordForm from './RecordForm'
 import RecordHistoryDialog from './RecordHistoryDialog'
@@ -25,7 +25,7 @@ import { screenCapabilities } from '../lib/capabilities'
 import { gridQueryFromString, gridQueryToString } from '../lib/savedViews'
 import {
   Search, Plus, Pencil, Trash2, Loader2, History, Bookmark,
-  Download, Upload, X, Filter, ChevronDown,
+  Download, Upload, X, Filter, ChevronDown, Play,
 } from 'lucide-react'
 
 interface Props {
@@ -41,6 +41,10 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
   const { theme } = useTheme()
   const [gridApi, setGridApi] = useState<GridApi | null>(null)
   const [selectedCount, setSelectedCount] = useState(0)
+  // The action an application declared and this operator asked for, while
+  // it is pending confirmation or running.
+  const [pendingAction, setPendingAction] = useState<ModelActionSpec | null>(null)
+  const [runningAction, setRunningAction] = useState(false)
 
   // Query state
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE)
@@ -277,6 +281,46 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
     }
   }
 
+  // Actions the application declared for this model. The schema only
+  // carries the ones this operator may run, so a button here is a button
+  // they hold — the enforcer is asked again on the call regardless.
+  const declaredActions: ModelActionSpec[] = schema.actions ?? []
+
+  const runAction = async (action: ModelActionSpec) => {
+    const selected = (gridApi?.getSelectedRows() ?? []) as AppRecord[]
+    const ids = selected.map((row) => recordId(row, pkColumn)).filter((id): id is RecordId => id !== null)
+    if (ids.length === 0 && action.requires_selection) return
+    setRunningAction(true)
+    try {
+      const result = await api.runModelAction(modelName, action.name, ids.map(toApiId))
+      // The application's own message is the one worth showing: it knows
+      // what it did, the panel only knows that it ran.
+      toast({
+        variant: result.failed > 0 || !result.ran ? 'destructive' : 'default',
+        title: result.message ?? `${action.label}: ${result.affected} record${result.affected === 1 ? '' : 's'}`,
+        description: result.failed > 0 ? `${result.failed} row${result.failed === 1 ? '' : 's'} were out of scope` : undefined,
+      })
+      setPendingAction(null)
+      gridApi?.deselectAll()
+      setSelectedCount(0)
+      reload()
+    } catch (err) {
+      toast({ variant: 'destructive', title: `${action.label} failed`, description: api.errorMessage(err) })
+    } finally {
+      setRunningAction(false)
+    }
+  }
+
+  // An action with a confirmation asks first; one without runs on the
+  // click. Both end in the same call.
+  const startAction = (action: ModelActionSpec) => {
+    if (action.confirm) {
+      setPendingAction(action)
+      return
+    }
+    void runAction(action)
+  }
+
   const reloadViews = useCallback(async () => {
     try {
       setSavedViews(await api.getSavedViews(modelName))
@@ -394,6 +438,27 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
             Delete {selectedCount}
           </Button>
         )}
+
+        {/* What this application added to the model. An action over a
+            selection only appears once there is one, the same way Delete
+            does; one whose subject is the table is always there. */}
+        {declaredActions
+          .filter((action) => selectedCount > 0 || !action.requires_selection)
+          .map((action) => (
+            <Button
+              key={action.name}
+              variant={action.destructive ? 'destructive' : 'outline'}
+              size="sm"
+              disabled={runningAction}
+              title={action.description}
+              onClick={() => startAction(action)}
+              className="gap-1.5"
+            >
+              <Play className="h-3.5 w-3.5" />
+              {action.label}
+              {action.requires_selection ? ` ${selectedCount}` : ''}
+            </Button>
+          ))}
 
         <Button variant="outline" size="sm" onClick={() => setShowExportImport(!showExportImport)} aria-expanded={showExportImport} className="gap-1.5">
           <Download className="h-3.5 w-3.5" />
@@ -667,6 +732,36 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
               <Button variant="destructive" onClick={confirmDelete} disabled={deleting}>
                 {deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Delete
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* An application action that asked to be confirmed */}
+      {pendingAction && (
+        <Dialog open={true} onOpenChange={(val: boolean) => !val && !runningAction && setPendingAction(null)}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>{pendingAction.label}</DialogTitle>
+              <DialogDescription>
+                {pendingAction.confirm}
+                {pendingAction.requires_selection
+                  ? ` ${selectedCount} record${selectedCount === 1 ? '' : 's'} selected.`
+                  : ''}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setPendingAction(null)} disabled={runningAction}>
+                Cancel
+              </Button>
+              <Button
+                variant={pendingAction.destructive ? 'destructive' : 'default'}
+                onClick={() => void runAction(pendingAction)}
+                disabled={runningAction}
+              >
+                {runningAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                {pendingAction.label}
               </Button>
             </DialogFooter>
           </DialogContent>
