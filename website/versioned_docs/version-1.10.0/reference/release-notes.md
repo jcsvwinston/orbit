@@ -6,7 +6,7 @@ description: What changed in each Orbit release, in plain terms.
 
 # Release notes
 
-The current release is **v1.9.6**. <!-- x-release-please-version -->
+The current release is **v1.10.0**. <!-- x-release-please-version -->
 
 Every heading below is a version of the **root module**
 (`github.com/jcsvwinston/orbit`) — the one an application mounts for the
@@ -17,7 +17,7 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
-## v1.9.6 — 2026-09-12
+## v1.10.0 — 2026-09-12
 
 An alignment release with no product change: every module now requires
 Nucleus v1.28.0 and Quark v1.14.0, the versions the suite certifies next, and
