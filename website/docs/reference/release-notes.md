@@ -17,6 +17,28 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.10.1 — 2026-09-18
+
+One fix, in the module that browses a Quark-managed application
+(`quarkdatasource v1.9.1`), and the release of the root that carries it.
+
+**Filters with operators work over a Quark source.** The panel asks a data
+source whether it applies `Query.Where` before it sends any, and refuses the
+request when the answer is no — because a source that ignored the field would
+answer every row while looking like it filtered. The Quark-backed source said
+no, so every range, substring, set and null filter over a Quark-managed model
+came back refused. It answers them now.
+
+Two refusals stay, because both alternatives are worse than an error: an
+operator the store cannot express is refused by name rather than falling back
+to equality, and a `contains`/`startswith`/`endswith` whose value carries `%`
+or `_` is refused on SQLite and Oracle, whose `LIKE` has no default escape
+character — there the wildcard would widen the match instead of matching
+itself. On the engines with a default escape, the value is escaped with it.
+
+The module could not be fixed before v1.10.0 existed: it builds against the
+root tag it pins, and the filter contract is published by that tag.
+
 ## v1.10.0 — 2026-09-18
 
 The release where the panel becomes the admin of the product, not a viewer
