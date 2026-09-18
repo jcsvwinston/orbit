@@ -6,6 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { ErrorState } from '@/components/ui/error-state'
 import * as api from '@/services/api'
 import type { ModelsResponse, SystemSnapshot } from '@/types'
+import type { DashboardWidget } from '@/services/api'
+import { useTranslate } from '@/stores/messagesStore'
 
 function formatTimestamp(value?: string): string {
   if (!value) return 'Not available'
@@ -25,6 +27,11 @@ export default function OverviewPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<unknown>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  // The cards this application declared (orbit.Config.Widgets). They load
+  // beside the panel's own numbers and never block them: an application
+  // whose widget is slow or broken still gets an overview.
+  const [widgets, setWidgets] = useState<DashboardWidget[]>([])
+  const t = useTranslate()
 
   useEffect(() => {
     let mounted = true
@@ -39,6 +46,12 @@ export default function OverviewPage() {
         if (!mounted) return
         setModelsResponse(modelsData)
         setSystem(systemData)
+        // Declared widgets are loaded after the panel's own data and never
+        // with it: a failure here leaves the overview standing, minus the
+        // application's cards.
+        api.getDashboardWidgets()
+          .then((cards) => { if (mounted) setWidgets(cards) })
+          .catch(() => { if (mounted) setWidgets([]) })
       } catch (err) {
         if (mounted) setError(err)
       } finally {
@@ -109,7 +122,7 @@ export default function OverviewPage() {
     <div className="space-y-6">
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-3xl font-bold">Overview</h1>
+          <h1 className="text-3xl font-bold">{t('nav.overview', 'Overview')}</h1>
           <Badge variant={statusVariant(system.enabled)}>Runtime snapshot</Badge>
           <Badge variant={statusVariant(system.jobs.enabled)}>Tasks</Badge>
           <Badge variant={statusVariant(system.outbox.enabled)}>Outbox</Badge>
@@ -134,6 +147,52 @@ export default function OverviewPage() {
           </Card>
         ))}
       </div>
+
+      {widgets.length > 0 && (
+        <div className="space-y-2">
+          <h2 className="text-lg font-semibold">{t('dashboard.widgets', 'Your application')}</h2>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {widgets.map((widget) => {
+              const body = (
+                <>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">{widget.title}</CardTitle>
+                    {widget.description && <CardDescription>{widget.description}</CardDescription>}
+                  </CardHeader>
+                  <CardContent>
+                    {widget.error ? (
+                      <p className="text-sm text-muted-foreground">
+                        {t('dashboard.unavailable', 'This card could not be read')}
+                      </p>
+                    ) : widget.items && widget.items.length > 0 ? (
+                      <ul className="space-y-1 text-sm">
+                        {widget.items.map((item, index) => (
+                          <li key={`${widget.id}-${index}`} className="flex items-center justify-between gap-3">
+                            <span className="truncate">{item.label}</span>
+                            {item.value && <span className="text-muted-foreground">{item.value}</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <>
+                        <div className="text-3xl font-semibold">{widget.value}</div>
+                        {widget.detail && <p className="mt-1 text-xs text-muted-foreground">{widget.detail}</p>}
+                      </>
+                    )}
+                  </CardContent>
+                </>
+              )
+              return widget.link ? (
+                <a key={widget.id} href={widget.link} className="block">
+                  <Card className="h-full transition-colors hover:border-primary">{body}</Card>
+                </a>
+              ) : (
+                <Card key={widget.id}>{body}</Card>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
         <Card>

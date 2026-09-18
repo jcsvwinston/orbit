@@ -4,6 +4,8 @@ import { useAuth } from '@/stores/authStore'
 import { useTheme } from '@/stores/themeStore'
 import { getAdminTitle } from '@/config'
 import * as api from '@/services/api'
+import { readBranding } from '@/lib/branding'
+import { useTranslate } from '@/stores/messagesStore'
 import type { UIExtensionPage } from '@/services/api'
 import { RouteFallback } from '@/components/ui/route-fallback'
 import { RouteErrorBoundary } from '@/components/layout/route-error-boundary'
@@ -27,16 +29,19 @@ import {
   ExternalLink,
 } from 'lucide-react'
 
+// The English label is written here and travels with the key: it is the last
+// fallback, so a catalogue that is missing a phrase reads as a sentence
+// rather than as `nav.audit` (src/stores/messagesStore.ts).
 const navItems = [
-  { icon: LayoutDashboard, label: 'Overview', path: '/' },
-  { icon: Database, label: 'Data Studio', path: '/data-studio' },
-  { icon: Activity, label: 'System Pulse', path: '/system' },
-  { icon: Network, label: 'Network Inspector', path: '/live' },
-  { icon: Users, label: 'Sessions', path: '/sessions' },
-  { icon: HeartPulse, label: 'Health', path: '/health' },
-  { icon: UserCog, label: 'Operators', path: '/operators' },
-  { icon: Shield, label: 'Access Control', path: '/rbac' },
-  { icon: FileText, label: 'Audit Log', path: '/audit' },
+  { icon: LayoutDashboard, key: 'nav.overview', label: 'Overview', path: '/' },
+  { icon: Database, key: 'nav.data_studio', label: 'Data Studio', path: '/data-studio' },
+  { icon: Activity, key: 'nav.system', label: 'System Pulse', path: '/system' },
+  { icon: Network, key: 'nav.live', label: 'Network Inspector', path: '/live' },
+  { icon: Users, key: 'nav.sessions', label: 'Sessions', path: '/sessions' },
+  { icon: HeartPulse, key: 'nav.health', label: 'Health', path: '/health' },
+  { icon: UserCog, key: 'nav.operators', label: 'Operators', path: '/operators' },
+  { icon: Shield, key: 'nav.rbac', label: 'Access Control', path: '/rbac' },
+  { icon: FileText, key: 'nav.audit', label: 'Audit Log', path: '/audit' },
 ]
 
 export default function DashboardLayout() {
@@ -50,6 +55,8 @@ export default function DashboardLayout() {
   // application, under the panel's prefix and its session, and the panel
   // refuses to be framed — so it is navigated to, not embedded.
   const [extensions, setExtensions] = useState<UIExtensionPage[]>([])
+  const t = useTranslate()
+  const branding = readBranding()
 
   useEffect(() => {
     let cancelled = false
@@ -80,7 +87,7 @@ export default function DashboardLayout() {
         <button
           type="button"
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          aria-label={mobileMenuOpen ? 'Close navigation' : 'Open navigation'}
+          aria-label={mobileMenuOpen ? t('nav.close', 'Close navigation') : t('nav.open', 'Open navigation')}
           aria-expanded={mobileMenuOpen}
           className="p-2 rounded-md hover:bg-accent"
         >
@@ -90,7 +97,7 @@ export default function DashboardLayout() {
         <button
           type="button"
           onClick={toggleTheme}
-          aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+          aria-label={theme === 'dark' ? t('theme.light', 'Switch to light theme') : t('theme.dark', 'Switch to dark theme')}
           className="p-2 rounded-md hover:bg-accent"
         >
           {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
@@ -114,12 +121,19 @@ export default function DashboardLayout() {
           {/* Logo */}
           <div className="p-4 border-b border-border flex items-center justify-between">
             {sidebarOpen && (
-              <h1 className="text-xl font-bold truncate">{getAdminTitle()}</h1>
+              // The application's logo replaces the wordmark when it declared
+              // one; the title stays as its alt text, so the panel is still
+              // named for anyone who cannot see the image.
+              branding.logo ? (
+                <img src={branding.logo} alt={getAdminTitle()} className="h-8 max-w-[10rem] object-contain" />
+              ) : (
+                <h1 className="text-xl font-bold truncate">{getAdminTitle()}</h1>
+              )
             )}
             <button
               type="button"
               onClick={() => setSidebarOpen(!sidebarOpen)}
-              aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+              aria-label={sidebarOpen ? t('nav.collapse', 'Collapse sidebar') : t('nav.expand', 'Expand sidebar')}
               aria-expanded={sidebarOpen}
               className="hidden lg:block p-1 rounded-md hover:bg-accent"
             >
@@ -132,17 +146,18 @@ export default function DashboardLayout() {
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 overflow-y-auto p-2" aria-label="Main navigation">
+          <nav className="flex-1 overflow-y-auto p-2" aria-label={t('nav.main', 'Main navigation')}>
             <ul className="space-y-1">
               {navItems.map((item) => {
                 const isActive = location.pathname === item.path
+                const label = t(item.key, item.label)
                 return (
                   <li key={item.path}>
                     <Link
                       to={item.path}
                       aria-current={isActive ? 'page' : undefined}
-                      aria-label={sidebarOpen ? undefined : item.label}
-                      title={sidebarOpen ? undefined : item.label}
+                      aria-label={sidebarOpen ? undefined : label}
+                      title={sidebarOpen ? undefined : label}
                       className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${isActive
                           ? 'bg-primary text-primary-foreground'
                           : 'hover:bg-accent'
@@ -150,7 +165,7 @@ export default function DashboardLayout() {
                       onClick={() => setMobileMenuOpen(false)}
                     >
                       <item.icon className="h-5 w-5 shrink-0" />
-                      {sidebarOpen && <span className="truncate">{item.label}</span>}
+                      {sidebarOpen && <span className="truncate">{label}</span>}
                     </Link>
                   </li>
                 )
@@ -179,14 +194,14 @@ export default function DashboardLayout() {
                 {/* The panel has no identity endpoint, so the SPA only knows
                     the session is accepted — it must not invent a name. */}
                 <div className="text-sm">
-                  <p className="font-medium truncate">Signed in</p>
-                  <p className="text-muted-foreground text-xs truncate">Admin session active</p>
+                  <p className="font-medium truncate">{t('session.signed_in', 'Signed in')}</p>
+                  <p className="text-muted-foreground text-xs truncate">{t('session.active', 'Admin session active')}</p>
                 </div>
                 <div className="flex gap-2">
                   <button
                     type="button"
                     onClick={toggleTheme}
-                    aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+                    aria-label={theme === 'dark' ? t('theme.light', 'Switch to light theme') : t('theme.dark', 'Switch to dark theme')}
                     className="flex-1 p-2 rounded-md border border-border hover:bg-accent"
                   >
                     {theme === 'dark' ? (
@@ -198,7 +213,7 @@ export default function DashboardLayout() {
                   <button
                     type="button"
                     onClick={handleLogout}
-                    aria-label="Sign out"
+                    aria-label={t('session.sign_out', 'Sign out')}
                     className="flex-1 p-2 rounded-md border border-border hover:bg-destructive/10 hover:text-destructive"
                   >
                     <LogOut className="h-4 w-4" />
@@ -210,7 +225,7 @@ export default function DashboardLayout() {
                 <button
                   type="button"
                   onClick={toggleTheme}
-                  aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+                  aria-label={theme === 'dark' ? t('theme.light', 'Switch to light theme') : t('theme.dark', 'Switch to dark theme')}
                   className="w-full p-2 rounded-md border border-border hover:bg-accent"
                 >
                   {theme === 'dark' ? (
@@ -222,7 +237,7 @@ export default function DashboardLayout() {
                 <button
                   type="button"
                   onClick={handleLogout}
-                  aria-label="Sign out"
+                  aria-label={t('session.sign_out', 'Sign out')}
                   className="w-full p-2 rounded-md border border-border hover:bg-destructive/10 hover:text-destructive"
                 >
                   <LogOut className="h-4 w-4" />

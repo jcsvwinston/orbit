@@ -777,3 +777,118 @@ single-page app would be blocked by the browser — and relaxing that header for
 the whole panel to embed one screen would trade a clickjacking defence for a
 layout. The panel's `Content-Security-Policy` applies to your page too, so its
 scripts come from files rather than inline `<script>`.
+
+## The panel in your product's clothes
+
+Three more things an application declares, so the panel it opens every day
+looks and reads like the product it belongs to. Branding and the locale are
+plain configuration and bind from `nucleus.yml`; the widgets carry functions,
+so they are wired in Go.
+
+### Branding
+
+```go
+orbit.Module(orbit.Config{
+    // ...
+    Branding: orbit.Branding{
+        LogoURL:      "/static/acme-logo.svg",     // or https://cdn.example/logo.svg
+        FaviconURL:   "/static/acme.ico",
+        PrimaryColor: "#0b5fff",
+    },
+})
+```
+
+```yaml
+modules:
+  orbit:
+    branding:
+      logo_url: /static/acme-logo.svg
+      primary_color: "#0b5fff"
+```
+
+The logo replaces the wordmark in the sidebar and appears on the **login
+screen** — the page an operator sees before they are anybody, and the one
+that says whose product this is. The colour lands in the custom property the
+stylesheet already reads, so it colours the buttons, the active navigation
+entry and the focus ring together.
+
+Two things the panel decides for you:
+
+- **The text drawn on your colour.** A brand colour is chosen to look like a
+  brand, not to contrast with white, so the panel computes the foreground from
+  its lightness. White on a pale yellow button is a contrast failure the panel
+  would otherwise have introduced on your behalf.
+- **What a URL may be.** An absolute `http(s)` URL or a path your application
+  already serves. A `javascript:` or `data:` URL would be script execution on
+  every page of the panel, granted by a line of YAML, so it is refused at
+  startup rather than escaped — and so is a "colour" that is not a hex colour.
+
+### The overview's cards
+
+```go
+orbit.Module(orbit.Config{
+    // ...
+    Widgets: []orbit.Widget{{
+        ID:          "pending-orders",
+        Title:       "Orders awaiting review",
+        Description: "Placed but not yet approved",
+        Link:        "/data-studio",
+        Permission:  "view",                    // on admin:dashboard
+        Load: func(ctx context.Context) (orbit.WidgetValue, error) {
+            n, err := countPendingOrders(ctx)
+            if err != nil {
+                return orbit.WidgetValue{}, err
+            }
+            return orbit.WidgetValue{
+                Value:  strconv.Itoa(n),
+                Detail: "oldest: 3 days",
+            }, nil
+        },
+    }},
+})
+```
+
+The cards appear on the panel's overview, above its own numbers. `Value` is a
+string because your application knows how to format its own numbers — a panel
+that formatted them would have to be told the currency, the locale and the
+precision to get them wrong in three ways. Fill `Items` instead for a short
+list rather than a single figure.
+
+What the panel does around your function:
+
+- **Authorization.** `Permission` is the RBAC action on `admin:dashboard`, so
+  "this role sees the finance numbers" is a policy and not a fork. A card an
+  operator may not see is not in their payload at all.
+- **A bound.** Each card gets three seconds and is loaded concurrently with
+  the others: the overview is a glance, and one slow report must not be what
+  makes it feel broken.
+- **Degradation.** A card that fails — or panics — is drawn saying it could
+  not be read. Dropping it would report a broken query as "nothing to see".
+
+### The language
+
+```go
+orbit.Module(orbit.Config{
+    // ...
+    Locale: "es",
+    Messages: map[string]map[string]string{
+        "es": {"nav.data_studio": "Catálogo"},
+    },
+})
+```
+
+The panel ships its own chrome in English and Spanish. `Locale` picks the one
+it opens in — it also sets the document's `lang`, which is what a screen
+reader pronounces the page with — and `Messages` adds to or overrides any
+phrase, including for a language the panel does not ship.
+
+The catalogues **merge** rather than replace: your override wins over the
+panel's translation, the panel's translation over its English, and a phrase
+nobody translated reads in English rather than as `nav.audit`. So a five-word
+correction is five words, and a new language is as complete as you make it.
+
+**Translation stops where your application begins.** The chrome is the
+panel's words — navigation, buttons, empty states. A model called `Invoice` is
+called Invoice in every language, a field label comes from your struct tags,
+and an error your code returns is your sentence. A panel that translated
+those would be translating your data.

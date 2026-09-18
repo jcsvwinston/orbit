@@ -7,6 +7,7 @@ github.com/jcsvwinston/orbit field:Config.AuthDatabase
 github.com/jcsvwinston/orbit field:Config.BootstrapEmail
 github.com/jcsvwinston/orbit field:Config.BootstrapPassword
 github.com/jcsvwinston/orbit field:Config.BootstrapUsername
+github.com/jcsvwinston/orbit field:Config.Branding
 github.com/jcsvwinston/orbit field:Config.Cache
 github.com/jcsvwinston/orbit field:Config.ClusterChannel
 github.com/jcsvwinston/orbit field:Config.ClusterEnabled
@@ -17,6 +18,8 @@ github.com/jcsvwinston/orbit field:Config.DataSource
 github.com/jcsvwinston/orbit field:Config.Environment
 github.com/jcsvwinston/orbit field:Config.FieldWidgets
 github.com/jcsvwinston/orbit field:Config.LiveExcludePatterns
+github.com/jcsvwinston/orbit field:Config.Locale
+github.com/jcsvwinston/orbit field:Config.Messages
 github.com/jcsvwinston/orbit field:Config.MigrationsPath
 github.com/jcsvwinston/orbit field:Config.MultiTenantDefault
 github.com/jcsvwinston/orbit field:Config.MultiTenantEnabled
@@ -27,15 +30,20 @@ github.com/jcsvwinston/orbit field:Config.RowOwnerFields
 github.com/jcsvwinston/orbit field:Config.RowOwnerSubject
 github.com/jcsvwinston/orbit field:Config.Title
 github.com/jcsvwinston/orbit field:Config.TraceURLTemplate
+github.com/jcsvwinston/orbit field:Config.Widgets
 github.com/jcsvwinston/orbit func:Module
 github.com/jcsvwinston/orbit func:OperatorFromContext
 github.com/jcsvwinston/orbit type:ActionRequest
 github.com/jcsvwinston/orbit type:ActionResult
+github.com/jcsvwinston/orbit type:Branding
 github.com/jcsvwinston/orbit type:Cache
 github.com/jcsvwinston/orbit type:Config
 github.com/jcsvwinston/orbit type:ModelAction
 github.com/jcsvwinston/orbit type:Operator
 github.com/jcsvwinston/orbit type:Page
+github.com/jcsvwinston/orbit type:Widget
+github.com/jcsvwinston/orbit type:WidgetItem
+github.com/jcsvwinston/orbit type:WidgetValue
 github.com/jcsvwinston/orbit/datasource const:OpContains
 github.com/jcsvwinston/orbit/datasource const:OpEndsWith
 github.com/jcsvwinston/orbit/datasource const:OpEqual

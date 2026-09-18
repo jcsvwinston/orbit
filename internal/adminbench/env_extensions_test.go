@@ -38,8 +38,21 @@ type extensions struct {
 // application does with its own dependencies.
 var benchExtensions = &extensions{}
 
-// captureRuntime records the handle the action writes through. It runs in
-// the content module's OnStart, before any request.
+// extensionsModule lends the application's database handle to the action and
+// the widget this application declares. It is mounted only on the shared
+// bench application (env_test.go).
+func extensionsModule() nucleus.ModuleSpec {
+	return nucleus.Module[struct{}]{
+		Name: "benchext",
+		OnStart: func(_ context.Context, rt nucleus.Runtime, _ struct{}) error {
+			benchExtensions.captureRuntime(rt)
+			return nil
+		},
+	}.Build()
+}
+
+// captureRuntime records the handle the action and the widget read through.
+// It runs before any request.
 func (x *extensions) captureRuntime(rt nucleus.Runtime) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
@@ -127,6 +140,61 @@ func reportsPage() orbit.Page {
 	}
 }
 
+// benchBranding is what a product team asks for on day one: our logo, our
+// colour, our icon in the tab.
+func benchBranding() orbit.Branding {
+	return orbit.Branding{
+		LogoURL:      "/static/bench-logo.svg",
+		FaviconURL:   "https://example.test/bench.ico",
+		PrimaryColor: "#0b5fff",
+	}
+}
+
+// benchWidgets are the application's own numbers on the panel's landing
+// screen: one card that counts something of the application's, and one that
+// fails, because a screen that drops a broken card reports a broken query as
+// "nothing to see".
+func benchWidgets() []orbit.Widget {
+	return []orbit.Widget{
+		{
+			ID:          "pending-notes",
+			Title:       "Pending notes",
+			Description: "Drafts nobody has published yet",
+			Link:        "/data-studio",
+			Load: func(ctx context.Context) (orbit.WidgetValue, error) {
+				handle := benchExtensions.handle()
+				if handle == nil {
+					return orbit.WidgetValue{}, fmt.Errorf("no database handle")
+				}
+				var count int
+				if err := handle.QueryRowContext(ctx,
+					"SELECT COUNT(*) FROM notes WHERE status <> 'published'").Scan(&count); err != nil {
+					return orbit.WidgetValue{}, err
+				}
+				return orbit.WidgetValue{
+					Value:  fmt.Sprintf("%d", count),
+					Detail: "since the bench started",
+				}, nil
+			},
+		},
+		{
+			ID:    "broken-card",
+			Title: "Broken card",
+			Load: func(context.Context) (orbit.WidgetValue, error) {
+				return orbit.WidgetValue{}, fmt.Errorf("this reading is unavailable")
+			},
+		},
+	}
+}
+
+// benchMessages is an application adding to the panel's own phrases — and
+// translating one of its own words, in a locale the panel ships.
+func benchMessages() map[string]map[string]string {
+	return map[string]map[string]string{
+		"es": {"dashboard.widgets": "Tu aplicación del banco"},
+	}
+}
+
 // benchOrbitConfig is the mounted panel's configuration, in one place so
 // every probe that boots its own application declares the same extension
 // points as the shared one.
@@ -143,8 +211,12 @@ func benchOrbitConfig() orbit.Config {
 			"Note.Cover": "image",
 			"Note.Meta":  "json",
 		},
-		Actions: []orbit.ModelAction{publishAction()},
-		Pages:   []orbit.Page{reportsPage()},
+		Actions:  []orbit.ModelAction{publishAction()},
+		Pages:    []orbit.Page{reportsPage()},
+		Branding: benchBranding(),
+		Widgets:  benchWidgets(),
+		Locale:   "es",
+		Messages: benchMessages(),
 	}
 }
 

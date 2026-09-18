@@ -55,6 +55,25 @@ type DatabaseAdminAuth struct {
 	// when empty or unrecognised they fall back to reading the whole table
 	// (no portable placeholder style exists). See WithSystem.
 	system string
+	// branding and locale are what the login page needs to look like the
+	// product it belongs to (branding.go, i18n.go). The login screen is
+	// served before there is a session, so it cannot ask an API for them:
+	// they travel with the provider that renders it.
+	branding Branding
+	locale   string
+}
+
+// WithBranding gives the login page the application's logo, colour and
+// favicon. Returns the receiver for chaining.
+func (a *DatabaseAdminAuth) WithBranding(b Branding) *DatabaseAdminAuth {
+	a.branding = b
+	return a
+}
+
+// WithLocale gives the login page the language the panel opens in.
+func (a *DatabaseAdminAuth) WithLocale(locale string) *DatabaseAdminAuth {
+	a.locale = strings.TrimSpace(locale)
+	return a
 }
 
 // WithTitle sets the heading the login page renders — the panel's configured
@@ -282,6 +301,8 @@ func (a *DatabaseAdminAuth) renderLoginPage(w http.ResponseWriter, status int, n
 		w.WriteHeader(status)
 		out := injectAdminPrefix(content, adminPrefix)
 		out = injectAdminTitle(out, a.loginTitle())
+		out = injectBranding(out, a.branding)
+		out = injectLocale(out, a.locale)
 		out = injectLoginMessage(out, errorMsg, infoMsg)
 		_, _ = w.Write(out)
 		return

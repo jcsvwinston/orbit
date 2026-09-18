@@ -2,6 +2,8 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.tsx'
 import { getAdminTitle } from './config'
+import { applyBranding } from './lib/branding'
+import { useMessages } from './stores/messagesStore'
 import { installPreloadErrorReload } from './lib/chunk-recovery'
 import './index.css'
 
@@ -9,6 +11,15 @@ import './index.css'
 // in the browser tab. The static <title> only covers a build served without
 // the backend injection.
 document.title = getAdminTitle();
+
+// The application's logo, colour and favicon, painted before React renders so
+// the first frame is already the product's (src/lib/branding.ts).
+applyBranding()
+
+// The chrome's phrases in the declared language. The fetch is not awaited:
+// an English panel renders immediately and re-renders translated when the
+// catalogue lands (src/stores/messagesStore.ts).
+void useMessages.getState().load();
 
 // Initialize theme before React renders (avoids CSP inline script issue)
 (function () {

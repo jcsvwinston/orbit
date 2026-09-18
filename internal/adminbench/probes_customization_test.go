@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"testing"
 
@@ -32,33 +33,120 @@ func probeTitle(t *testing.T, e *env) verdict {
 }
 
 // probeBranding asks for what a product team asks for on day one: our logo,
-// our colours. The mount surface is the whole of what an application can set,
-// so its key list is the measurement.
+// our colours, our icon in the tab.
+//
+// It used to read the NAMES of the mount surface and call a matching key a
+// capability — the trap this bench wrote down at CUST-03. So it measures the
+// page instead: the panel serves the declared logo, favicon and colour on
+// the document itself, which is what makes them available on the LOGIN
+// screen, before any API call could carry them.
 func probeBranding(t *testing.T, e *env) verdict {
-	keys := configKeysMatching("logo", "brand", "theme", "color", "colour", "favicon", "css")
-	if len(keys) > 0 {
-		t.Logf("branding keys on the mount surface: %v", keys)
+	page := e.get(t, "/admin/")
+	if page.code != http.StatusOK {
+		t.Logf("GET /admin/ answered %d", page.code)
+		return absent
+	}
+	declared := benchBranding()
+	missing := []string{}
+	for label, value := range map[string]string{
+		"logo":    declared.LogoURL,
+		"favicon": declared.FaviconURL,
+		"colour":  declared.PrimaryColor,
+	} {
+		if !strings.Contains(page.raw(), value) {
+			missing = append(missing, label)
+		}
+	}
+	if len(missing) == 3 {
+		t.Logf("the served page carries none of the declared branding: %s", page.text())
+		return absent
+	}
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		t.Logf("the served page carries only part of the declared branding (missing %v)", missing)
 		return partial
 	}
-	t.Logf("the mount surface carries no branding key beyond title")
-	return absent
+
+	// The login screen is where a logo matters most: it is the page an
+	// operator sees before they are anybody, and the one that tells them
+	// whose product this is.
+	login := e.get(t, "/admin/login")
+	if login.code != http.StatusOK || !strings.Contains(login.raw(), declared.LogoURL) {
+		t.Logf("the login page does not carry the declared logo (%d)", login.code)
+		return partial
+	}
+	return present
 }
 
 // probeDashboardWidgets asks for the landing screen an admin product opens
-// on: the counters and charts a team chooses.
+// on: the counters a team chooses.
 //
 // It used to match "widget" anywhere in a config key, and `field_widgets` —
 // which says how a FIELD is edited and has nothing to do with a landing
 // screen — moved this control from absent to partial on nothing but a
-// substring. A probe that matches the NAMES of the mount surface is measuring
-// names; this one asks for keys that name the dashboard itself, and for the
-// routes such a dashboard would have.
+// substring. This one declares two cards and reads what the panel answers:
+// the value the application computed, and the broken card reported as broken
+// rather than dropped.
 func probeDashboardWidgets(t *testing.T, e *env) verdict {
-	if keys := configKeysMatching("dashboard", "homepage", "landing"); len(keys) > 0 {
-		t.Logf("dashboard keys on the mount surface: %v", keys)
+	r := e.get(t, "/admin/api/ui/dashboard")
+	if r.code != http.StatusOK || r.servedTheShell() {
+		t.Logf("the panel has no dashboard endpoint (%d %s)", r.code, r.ctype)
+		return absent
+	}
+	cards, ok := r.json(t)["widgets"].([]any)
+	if !ok || len(cards) == 0 {
+		t.Logf("the dashboard carries no declared card: %s", r.text())
+		return absent
+	}
+
+	// The count has to be the application's own reading, not a number the
+	// panel could have produced: the probe writes a draft and asks for the
+	// card again.
+	before := widgetValue(t, cards, "pending-notes")
+	e.createNote(t, map[string]any{"title": "widget-probe", "status": "draft"})
+	after := widgetValue(t, e.get(t, "/admin/api/ui/dashboard").json(t)["widgets"].([]any), "pending-notes")
+	if before == "" || after == "" {
+		t.Logf("the declared card carries no value: %s", r.text())
 		return partial
 	}
-	return e.unrouted(t, "/admin/api/dashboard", "/admin/api/widgets")
+	if before == after {
+		t.Logf("the card did not move when the application's data did (%s -> %s)", before, after)
+		return partial
+	}
+
+	// A card that cannot be read says so. A screen that dropped it would
+	// report a broken query as "nothing to see".
+	if widgetError(t, cards, "broken-card") == "" {
+		t.Logf("a failing widget is not reported as failing: %s", r.text())
+		return partial
+	}
+	return present
+}
+
+// widgetValue reads one card's headline from the dashboard payload.
+func widgetValue(t *testing.T, cards []any, id string) string {
+	t.Helper()
+	for _, entry := range cards {
+		card, _ := entry.(map[string]any)
+		if card != nil && card["id"] == id {
+			value, _ := card["value"].(string)
+			return value
+		}
+	}
+	return ""
+}
+
+// widgetError reads one card's failure from the dashboard payload.
+func widgetError(t *testing.T, cards []any, id string) string {
+	t.Helper()
+	for _, entry := range cards {
+		card, _ := entry.(map[string]any)
+		if card != nil && card["id"] == id {
+			value, _ := card["error"].(string)
+			return value
+		}
+	}
+	return ""
 }
 
 // probeUIExtension asks whether an application can put its own screen into
@@ -98,19 +186,50 @@ func probeUIExtension(t *testing.T, e *env) verdict {
 	return present
 }
 
-// probeI18n asks whether the panel can speak anything but English.
+// probeI18n asks whether the panel can speak anything but English — which is
+// three things, and a language menu is none of them: the document has to
+// declare the language it is in (that is what a screen reader pronounces it
+// with), the chrome's phrases have to arrive translated, and an application
+// has to be able to add or override one.
 func probeI18n(t *testing.T, e *env) verdict {
-	if keys := configKeysMatching("locale", "lang", "i18n", "translation"); len(keys) > 0 {
-		t.Logf("language keys on the mount surface: %v", keys)
+	page := e.get(t, "/admin/")
+	if page.code != http.StatusOK {
+		t.Logf("GET /admin/ answered %d", page.code)
+		return absent
+	}
+	if !strings.Contains(page.raw(), `<html lang="es"`) {
+		t.Logf("the served document does not declare the configured language: %s", page.text())
+		return absent
+	}
+
+	catalogue := e.get(t, "/admin/ui/messages.json")
+	if catalogue.code != http.StatusOK || catalogue.servedTheShell() {
+		t.Logf("the panel serves no message catalogue (%d %s)", catalogue.code, catalogue.ctype)
+		return absent
+	}
+	payload := catalogue.json(t)
+	if payload["locale"] != "es" {
+		t.Logf("the catalogue is not in the configured language: %v", payload["locale"])
 		return partial
 	}
-	english := e.get(t, "/admin/")
-	spanish := e.do(t, http.MethodGet, "/admin/?lang=es", nil)
-	if english.text() != spanish.text() {
-		t.Logf("the page changes with ?lang=es: a language surface exists")
+	messages, _ := payload["messages"].(map[string]any)
+	if messages["nav.audit"] != "Auditoría" {
+		t.Logf("the panel's own phrases are not translated: %v", messages["nav.audit"])
 		return partial
 	}
-	return absent
+	// A phrase the panel ships in English and nobody translated still
+	// reads as a sentence: a catalogue that answered keys would be worse
+	// than English.
+	if text, _ := messages["nav.overview"].(string); text == "" || text == "nav.overview" {
+		t.Logf("an untranslated key does not fall back to English: %v", messages["nav.overview"])
+		return partial
+	}
+	// And the application's own override wins over the panel's phrase.
+	if messages["dashboard.widgets"] != "Tu aplicación del banco" {
+		t.Logf("the application's own phrase does not override the panel's: %v", messages["dashboard.widgets"])
+		return partial
+	}
+	return present
 }
 
 // memoryStore is the smallest RecordStore that works: enough for a probe to
@@ -264,9 +383,14 @@ func probeServesUI(t *testing.T, e *env) verdict {
 	if r.code != http.StatusOK {
 		return absent
 	}
-	body := r.text()
-	if !strings.Contains(body, "<div id=\"root\"") && !strings.Contains(body, "assets/") {
-		t.Logf("the page served is not a built SPA: %s", body)
+	// raw(), not text(): text() truncates for logs, and this assertion is a
+	// MEASUREMENT. The verdict flipped to partial the day the panel started
+	// injecting branding and locale meta tags — the head grew and pushed
+	// `<div id="root"` past the truncation, with nothing about the built
+	// interface having changed. It is the same trap this bench recorded in
+	// its first run, found again from the other side.
+	if !strings.Contains(r.raw(), "<div id=\"root\"") && !strings.Contains(r.raw(), "assets/") {
+		t.Logf("the page served is not a built SPA: %s", r.text())
 		return partial
 	}
 	return present

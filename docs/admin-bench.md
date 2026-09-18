@@ -38,7 +38,7 @@ A control that cannot be probed does not belong in the bench.
 
 ## The result
 
-**56 of 59 controls present. 0 partial. 3 absent.**
+**59 of 59 controls present. 0 partial. 0 absent.**
 
 | family | present | partial | absent |
 |---|---|---|---|
@@ -46,13 +46,15 @@ A control that cannot be probed does not belong in the bench.
 | permissions | 9 | 0 | 0 |
 | audit | 7 | 0 | 0 |
 | operations | 17 | 0 | 0 |
-| customization | 4 | 0 | 3 |
+| customization | 7 | 0 | 0 |
 | interface | 2 | 0 | 0 |
-| **total** | **56** | **0** | **3** |
+| **total** | **59** | **0** | **0** |
 
-Operations and data studio are complete as of the arc's seventh session. What
-remains absent is three controls of customization: branding, declarable
-dashboards, and the panel speaking another language.
+Every family is complete as of the arc's eighth session. The number is not
+the end of the work: what this bench measures is a list of controls somebody
+wrote down, and a control that is present is one whose probe exercised it —
+not one that is good. What it is for is that the next change to the panel
+cannot quietly take one of them away.
 
 ## What the shape of it says
 
@@ -125,6 +127,9 @@ fixed and their controls have moved; one is still open.
 - **The browser.** Contrast, focus order, keyboard reach, whether a toast can
   be dismissed: real, unmeasured here, and they need an instrument that runs
   in a browser. Asserting them from Go would be a claim, not a measurement.
+  That instrument is the arc's tenth session, and its verdict is recorded
+  beside this one rather than folded into it: a number that mixed what two
+  different instruments can see would be a number nobody could check.
 - **The fleet plane.** A separate product surface with its own agent, server
   and protocol. It is measured where it lives.
 
@@ -314,6 +319,54 @@ that meant nothing (`OPS-15`, below). `CUST-04` asks for the three things that
 make a screen part of the panel: the navigation lists it, it is served under
 the panel's prefix, and it knows which operator is reading it.
 
+## The panel wearing the product's clothes, after the arc's eighth session
+
+Three things a product needs and the panel could not be told (`CUST-02`,
+`CUST-03`, `CUST-05`):
+
+- **Branding** — `orbit.Config.Branding`: the logo on the sidebar and the
+  login screen, the icon in the browser tab, the accent colour. It travels on
+  the document as meta tags, the same channel as the prefix and the title,
+  which is what makes it available on the LOGIN page, before any API call
+  could carry it.
+- **The landing screen** — `orbit.Config.Widgets`: cards the application
+  declares, each with the function that reads its value. The panel supplies
+  the screen, the authorization (`admin:dashboard`), a three-second bound and
+  the degradation.
+- **The language** — `orbit.Config.Locale` and `Config.Messages`: the panel's
+  own chrome, in the languages it ships (English and Spanish) or in one an
+  application brings itself.
+
+Five decisions the probes pin:
+
+- **The branding values are validated, not escaped.** A `javascript:` logo
+  would be script execution on every page of the panel, granted by a line of
+  YAML — so the URL is either an absolute http(s) one or a same-site path,
+  and the colour is a hex colour or the application does not start. Escaping
+  would have made the injection inert in the document and left the value in
+  place for the next thing that read it.
+- **The brand colour decides the text drawn on it.** A colour is chosen to
+  look like a brand, not to contrast with white: the panel computes the
+  foreground from the lightness, because white on a pale yellow button is a
+  contrast failure the panel would have introduced on the application's
+  behalf.
+- **A widget that fails is drawn saying so.** A screen that dropped the card
+  would report a broken query as "nothing to see"; one that waited for it
+  would make the whole overview feel broken. Each card is bounded
+  independently, and a panic inside one is that card's error, not the
+  process's.
+- **A card is a reading of the application, so it is authorized.** The
+  per-widget permission on `admin:dashboard` is what lets "this role sees the
+  finance numbers" be a policy instead of a fork.
+- **Translation stops where the application begins.** The catalogue covers
+  the chrome — navigation, buttons, empty states — and never the data: a
+  model called Invoice is called Invoice in every language, a field label
+  comes from the application's struct tags, and an error the application
+  returns is its own sentence. The catalogues merge rather than replace, so a
+  phrase nobody translated reads in English rather than as `nav.audit`, and
+  an application can translate the panel into a language the panel does not
+  ship.
+
 ## The views that reported their configuration, after the arc's ninth session
 
 Three operations screens answered with how they were set up rather than with
@@ -369,6 +422,24 @@ closed, and operations is the first family to reach 59-scale completeness.
   closed port, and a shared cache would let one probe's flush decide
   another's count. Each caller gets a fresh one. (`migrationsApp` predates
   this and is used by a single probe, which is why it never showed.)
+
+### What the bench got wrong about itself, the eighth time
+
+- **A probe that reads a truncated body measures the truncation.** `UI-01`
+  ("the panel ships a built interface") asked whether the served page
+  contained `<div id="root"`, through the helper that shortens a body FOR
+  LOGS. The verdict flipped to `partial` the day the panel started injecting
+  branding and locale meta tags: the head grew, the marker moved past the cut,
+  and nothing about the built interface had changed. It is the same trap this
+  bench recorded in its first run — found again from the other side, two
+  hundred commits later.
+- **A shared handle belongs to the application that owns it.** The widget of
+  the bench's application reads through a database handle captured at
+  startup, and the module that captured it was mounted on every application
+  the bench boots — so a probe that started its own, shorter-lived one
+  overwrote it, and the shared application's card then read "database is
+  closed". The capture now lives in a module mounted only on the shared
+  application. Same shape as the second-application lesson `S9` wrote down.
 
 ### What the bench got wrong about itself, the seventh time
 
