@@ -398,6 +398,37 @@ jobs:
             exit 1
           fi
 
+  # The half of the admin bench a Go probe cannot measure: contrast, focus
+  # order, keyboard reach, whether a dialog can be dismissed. None of those
+  # exist until a browser has laid the page out, so this lane installs one.
+  # ORBIT_BENCH_BROWSER=required turns the local "skip when not installed"
+  # into a failure: a lane that went green because the instrument was missing
+  # would be the worst of both.
+  admin-browser-bench:
+    name: Admin bench (browser)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: internal/adminbench/browser/package-lock.json
+      - run: npm ci
+        working-directory: internal/adminbench/browser
+      - run: npx playwright install --with-deps chromium
+        working-directory: internal/adminbench/browser
+      - run: go test ./internal/adminbench/ -run 'TestBrowserBench' -count=1 -v
+        env:
+          ORBIT_BENCH_BROWSER: required
+      - name: the instrument's own report, when it failed
+        if: failure()
+        run: cat internal/adminbench/browser/results.json || true
+
   # ---------------------------------------------------------------------------
   # "CI Required Gate" is the ONE check name branch protection should require:
   # it is red unless every lane in this file succeeded, so the protection rule
@@ -422,6 +453,7 @@ jobs:
       - docs
       - ui
       - admin-ui
+      - admin-browser-bench
 
     steps:
       - name: Evaluate required CI results
@@ -440,6 +472,7 @@ jobs:
             docs ${{ needs.docs.result }}
             ui ${{ needs.ui.result }}
             admin-ui ${{ needs.admin-ui.result }}
+            admin-browser-bench ${{ needs.admin-browser-bench.result }}
         run: |
           set -euo pipefail
           failed=0

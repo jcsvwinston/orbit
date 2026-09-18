@@ -19,3 +19,10 @@ coverage*.txt
 # Editor / OS noise
 .DS_Store
 *.swp
+
+# The browser bench's own scratch (internal/adminbench/browser): its
+# dependencies, the JSON report the Go side reads, and Playwright's traces.
+# The specs, the config and the lockfile ARE committed.
+internal/adminbench/browser/results.json
+internal/adminbench/browser/test-results/
+internal/adminbench/browser/playwright-report/
