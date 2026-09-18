@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.1](https://github.com/jcsvwinston/orbit/compare/v1.10.0...v1.10.1) (2026-09-18)
+
+
+### Chore
+
+* **release:** document the Quark filter fix and cut the root alongside it ([#492](https://github.com/jcsvwinston/orbit/issues/492)) ([4ccfb26](https://github.com/jcsvwinston/orbit/commit/4ccfb265f682c2e2bc09f220609813ffc631f066))
+
 ## [1.10.0](https://github.com/jcsvwinston/orbit/compare/v1.9.6...v1.10.0) (2026-09-18)
 
 
