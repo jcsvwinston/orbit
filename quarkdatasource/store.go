@@ -89,6 +89,17 @@ func (s *store[T]) applyQuery(ctx context.Context, qb *quark.Query[T], q datasou
 		}
 		qb = qb.Where(col, "=", v)
 	}
+	// The operator filters (datasource.Query.Where). A store that ignored
+	// them would answer every row while looking like it filtered, which is
+	// why the contract asks first (HonoursFilterOperators) — so anything
+	// this cannot express has to be an ERROR here, never a dropped clause.
+	for _, f := range q.Where {
+		var err error
+		qb, err = s.applyOperatorFilter(ctx, qb, f)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if search := strings.TrimSpace(q.Search); search != "" {
 		// Nothing to look in: say so rather than answer every row, which
 		// reads as "no match" while showing everything.
@@ -112,6 +123,138 @@ func (s *store[T]) applyQuery(ctx context.Context, qb *quark.Query[T], q datasou
 	}
 	return qb, nil
 }
+
+// applyOperatorFilter translates one neutral operator filter onto the Quark
+// builder. Column names go through Quark's own SQLGuard inside the builder;
+// values are bound, never interpolated.
+func (s *store[T]) applyOperatorFilter(ctx context.Context, qb *quark.Query[T], f datasource.Filter) (*quark.Query[T], error) {
+	switch f.Op {
+	case datasource.OpEqual, datasource.OpNotEqual,
+		datasource.OpGreater, datasource.OpGreaterEqual,
+		datasource.OpLess, datasource.OpLessEqual:
+		v, err := s.coerceFilterValue(f.Column, f.Value)
+		if err != nil {
+			return nil, err
+		}
+		return qb.Where(f.Column, sqlComparison(f.Op), v), nil
+
+	case datasource.OpIsNull:
+		// The value is the question, not the operand: isnull=false asks for
+		// the rows that HAVE a value.
+		// Quark's builder takes these as operators with no operand
+		// (query_exec.go), which is what keeps the column quoted by its own
+		// guard instead of pasted into a fragment here.
+		if strings.EqualFold(strings.TrimSpace(f.Value), "false") {
+			return qb.Where(f.Column, "IS NOT NULL", nil), nil
+		}
+		return qb.Where(f.Column, "IS NULL", nil), nil
+
+	case datasource.OpIn, datasource.OpNotIn:
+		// An empty set matches NOTHING. Dropping the clause would answer
+		// every row and look like a result — the contract says so, and it
+		// is the one place a filter can silently become no filter.
+		values := make([]any, 0, len(f.Values))
+		for _, raw := range f.Values {
+			v, err := s.coerceFilterValue(f.Column, raw)
+			if err != nil {
+				return nil, err
+			}
+			values = append(values, v)
+		}
+		if len(values) == 0 {
+			// A comparison no row satisfies, expressed with a bound value
+			// rather than a literal fragment.
+			return qb.WhereExpr(quark.Cmp(quark.Lit(1), "=", quark.Lit(0))), nil
+		}
+		exprs := make([]quark.Expr, 0, len(values))
+		for _, v := range values {
+			exprs = append(exprs, quark.Lit(v))
+		}
+		if f.Op == datasource.OpNotIn {
+			return qb.WhereExpr(quark.NotIn(quark.Col(f.Column), exprs...)), nil
+		}
+		return qb.WhereExpr(quark.In(quark.Col(f.Column), exprs...)), nil
+
+	case datasource.OpContains, datasource.OpStartsWith, datasource.OpEndsWith:
+		return s.applyPatternFilter(ctx, qb, f)
+	}
+	// An operator this store cannot express is refused by name. Falling
+	// back to equality would answer a different question than the one asked.
+	return nil, gferrors.BadRequest(fmt.Sprintf("filter operator %q is not supported by this data source", f.Op))
+}
+
+// applyPatternFilter builds the LIKE for contains/startswith/endswith.
+//
+// The contract requires the value to match LITERALLY, and Quark's builder
+// cannot emit `LIKE … ESCAPE` (QK-25): on the engines whose LIKE has a
+// default escape character the text is escaped with it, and on SQLite and
+// Oracle — which have none — a value carrying % or _ is REFUSED. Answering it
+// would widen the match silently, which is the failure this whole contract
+// exists to prevent; refusing says which value and which engine.
+func (s *store[T]) applyPatternFilter(ctx context.Context, qb *quark.Query[T], f datasource.Filter) (*quark.Query[T], error) {
+	dialect := ""
+	if c, err := s.adapter.provider.GetClient(ctx); err == nil && c != nil {
+		dialect = c.Dialect().Name()
+	}
+	if !dialectEscapesLike(dialect) && strings.ContainsAny(f.Value, `%_`) {
+		return nil, gferrors.BadRequest(fmt.Sprintf(
+			"filter %s__%s=%q cannot be answered on %s: its LIKE has no default escape character, so the %% or _ in the value would widen the match instead of matching itself",
+			f.Column, f.Op, f.Value, dialectName(dialect)))
+	}
+	escaped := escapeLike(f.Value, dialect)
+	var pattern string
+	switch f.Op {
+	case datasource.OpStartsWith:
+		pattern = escaped + "%"
+	case datasource.OpEndsWith:
+		pattern = "%" + escaped
+	default:
+		pattern = "%" + escaped + "%"
+	}
+	return qb.WhereExpr(quark.Cmp(quark.Col(f.Column), "LIKE", quark.Lit(pattern))), nil
+}
+
+// sqlComparison maps a comparison operator to its SQL spelling.
+func sqlComparison(op datasource.FilterOp) string {
+	switch op {
+	case datasource.OpNotEqual:
+		return "!="
+	case datasource.OpGreater:
+		return ">"
+	case datasource.OpGreaterEqual:
+		return ">="
+	case datasource.OpLess:
+		return "<"
+	case datasource.OpLessEqual:
+		return "<="
+	}
+	return "="
+}
+
+// dialectEscapesLike reports whether the engine's LIKE has a default escape
+// character, which is what escapeLike relies on.
+func dialectEscapesLike(dialect string) bool {
+	switch dialect {
+	case "postgres", "postgresql", "pgx", "mysql", "mariadb", "mssql", "sqlserver":
+		return true
+	}
+	return false
+}
+
+// dialectName is the engine's name for an error message, for the case where
+// the provider could not be asked.
+func dialectName(dialect string) string {
+	if strings.TrimSpace(dialect) == "" {
+		return "this engine"
+	}
+	return dialect
+}
+
+// HonoursFilterOperators reports that this store applies Query.Where
+// (datasource.OperatorFilterSource). Before it did, the panel refused every
+// operator filter over a Quark-backed model rather than answer it unfiltered
+// — which was the right refusal, and this is the answer.
+func (s *store[T]) HonoursFilterOperators() bool { return true }
 
 // List runs a paginated query. Total is a real count over the same
 // filters (never an estimate), so IsEstimated is always false.

@@ -18,8 +18,8 @@ github.com/hashicorp/golang-lru/v2 v2.0.7 h1:a+bsQ5rvGLjzHuww6tVxozPZFVghXaHOwFs
 github.com/hashicorp/golang-lru/v2 v2.0.7/go.mod h1:QeFd9opnmA6QUJc5vARoKUSoFhyfM2/ZepoAG6RGpeM=
 github.com/jcsvwinston/nucleus v1.29.0 h1:bxudbY+1F6qqPP06LIXdyWg5Zm/sMD0kEVe9EWKOpKc=
 github.com/jcsvwinston/nucleus v1.29.0/go.mod h1:EsstUJmCRhn8kLPUGE9Cd9Soxr4zizRrukHGxONbDgE=
-github.com/jcsvwinston/orbit v1.9.1 h1:UNBO1hV5rxEtRCyJzD2+QamGsVBBFbqchMqu7CST1iw=
-github.com/jcsvwinston/orbit v1.9.1/go.mod h1:Y+O3ZwbEmcIFB0r05UTW3IcOU/6k5xyNEn/G6JxaHzc=
+github.com/jcsvwinston/orbit v1.10.0 h1:aWydwMlTFk+0DNWiCJCgUqlxUMAXBmj3WXvBMe8oGk4=
+github.com/jcsvwinston/orbit v1.10.0/go.mod h1:V8RWmXooaj/OHJ8kai0cr4aMez3E6kR46bUyu1TIJXM=
 github.com/jcsvwinston/quark v1.14.0 h1:CBE/aJO8F+2yGTC3Cwxhm3PTCrRY7GzfRnaOM9cBMvw=
 github.com/jcsvwinston/quark v1.14.0/go.mod h1:36Zkg7m2llmvZEdBE6bAF3MEa666gdtjs5quWSMMU+U=
 github.com/jcsvwinston/quark/drivers/sqlite v0.2.1 h1:98ZEvaOhJu2uGDBYVVdW9+uDQC6Im5s9FyiGjQKyC00=

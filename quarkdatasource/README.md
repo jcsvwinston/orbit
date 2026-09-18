@@ -67,6 +67,17 @@ searchable, labels are humanized field names.
 - **Update** uses `UpdateMap`, so zero values are written (unlike a
   full-entity save). **Delete** follows Quark's semantics: soft delete when the
   model has a `deleted_at` column, hard otherwise.
+- **Operator filters** (`Query.Where`: `gt`, `contains`, `in`, `isnull` and
+  the rest of the twelve) are applied, and the store says so through
+  `datasource.OperatorFilterSource` — which is what the panel asks before it
+  sends any, because a source that ignored them would answer every row while
+  looking like it filtered. Two refusals rather than a wrong answer: an
+  operator this store cannot express is refused by name instead of falling
+  back to equality, and a `contains`/`startswith`/`endswith` whose value holds
+  `%` or `_` is refused on SQLite and Oracle, whose `LIKE` has no default
+  escape character and whose builder emits no `ESCAPE` clause — there, the
+  wildcard would widen the match instead of matching itself. An `in` with no
+  values matches nothing, never everything.
 - **Totals are real counts** over the same filters (`IsEstimated` is always
   false).
 - **Tenancy**: pass a `*quark.TenantRouter` as the provider and every query
