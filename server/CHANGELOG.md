@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/jcsvwinston/orbit/compare/server/v0.11.6...server/v0.12.0) (2026-09-18)
+
+
+### Added
+
+* **admin:** a list answers a question with an operator in it, and a total ([#482](https://github.com/jcsvwinston/orbit/issues/482)) ([a3a4681](https://github.com/jcsvwinston/orbit/commit/a3a46819c2627b163daa85c8c3c5fccfb1c2386a))
+
 ## [0.11.6](https://github.com/jcsvwinston/orbit/compare/server/v0.11.5...server/v0.11.6) (2026-09-12)
 
 
