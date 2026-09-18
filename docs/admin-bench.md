@@ -124,14 +124,64 @@ fixed and their controls have moved; one is still open.
 
 ## What this bench does not measure, and why
 
-- **The browser.** Contrast, focus order, keyboard reach, whether a toast can
-  be dismissed: real, unmeasured here, and they need an instrument that runs
-  in a browser. Asserting them from Go would be a claim, not a measurement.
-  That instrument is the arc's tenth session, and its verdict is recorded
+- **The fleet plane** (below) — and, until the arc's tenth session, the
+  browser. That half now has its own instrument and its own numerator, kept
   beside this one rather than folded into it: a number that mixed what two
   different instruments can see would be a number nobody could check.
 - **The fleet plane.** A separate product surface with its own agent, server
   and protocol. It is measured where it lives.
+
+## The browser half, after the arc's tenth session
+
+Everything above is measured through HTTP. Contrast, focus order, keyboard
+reach and whether a dialog can be dismissed do not exist until a browser has
+laid the page out and computed its styles — asserting them from Go would be a
+claim, not a measurement.
+
+`internal/adminbench/browser` is that instrument: Playwright and axe-core,
+driven from `browserbench_test.go` so it measures THE SAME application the
+HTTP probes boot. Its verdicts are recorded in Go, next to theirs, and the
+suite goes red when one moves.
+
+```bash
+cd internal/adminbench/browser && npm ci && npx playwright install chromium
+go test ./internal/adminbench/ -run TestBrowserBench -v
+```
+
+**6 of 6 controls present**, plus the one that measures the instrument:
+
+| control | what it asks |
+|---|---|
+| **UIX-00** | the instrument bites: a planted violation is caught |
+| **UIX-01** | the login screen is legible: text meets contrast |
+| **UIX-02** | the panel is legible on the screens an operator opens |
+| **UIX-03** | every control says what it is: names, roles and labels |
+| **UIX-04** | the document says what it is: language, landmarks, one main heading |
+| **UIX-05** | the keyboard reaches the navigation, and the focus is visible |
+| **UIX-06** | a dialog can be opened and dismissed from the keyboard |
+
+Three things worth keeping about how it is built:
+
+- **UIX-00 measures the instrument, not the panel.** An accessibility engine
+  with a renamed rule reports zero violations, and every control below then
+  passes by measuring nothing — the same failure the umbrella's
+  guard-of-guards exists for. So the probe plants a button with no accessible
+  name and text at about 1.1:1, and fails if the engine does not catch both.
+  It was verified by breaking it: with a rule name that does not exist, UIX-00
+  goes red.
+- **It skips when the browser is not installed, and CI refuses to.** A
+  developer running `go test ./...` on a laptop should not be told their
+  change broke something because a browser is missing; a lane that went green
+  for that reason would be worse than no lane. `ORBIT_BENCH_BROWSER=required`
+  turns the skip into a failure, and the CI job sets it.
+- **The audit's claim was checked, not inherited.** The maturity audit of
+  2026-09-03 recorded "0 `aria-*` attributes and contrast of 1.9–2.3:1" for
+  this panel. Measured now, against the built interface: no contrast
+  violation on the login screen or on the overview, Data Studio and audit
+  screens, no unnamed control, a language on the document, one main landmark,
+  and a focus ring that is reachable by keyboard and visible when it lands.
+  Whatever was true in August is not true of this build — which is the whole
+  reason the number has to come from an instrument and not from a document.
 
 ## A form, after the arc's fourth session
 
