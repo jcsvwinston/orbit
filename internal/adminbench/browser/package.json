@@ -1,0 +1,14 @@
+{
+  "name": "orbit-admin-browser-bench",
+  "private": true,
+  "version": "0.0.0",
+  "description": "The half of the admin bench a Go probe cannot measure: what the panel does in a browser.",
+  "scripts": {
+    "bench": "playwright test --reporter=json"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.63.0",
+    "axe-core": "4.13.0"
+  }
+}
