@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.10.2](https://github.com/jcsvwinston/orbit/compare/v1.10.1...v1.10.2) (2026-09-19)
+
+
+### Fixed
+
+* **admin:** the queue view can see the queue (OR-53) ([#496](https://github.com/jcsvwinston/orbit/issues/496)) ([c019388](https://github.com/jcsvwinston/orbit/commit/c0193881cfac537da21a52095faef38e0eac40ec))
+* **deps:** align root, agent, server, quarkbridge, quarkdatasource to the set (nucleus v1.30.0, quark v1.14.0) ([#494](https://github.com/jcsvwinston/orbit/issues/494)) ([9861ed6](https://github.com/jcsvwinston/orbit/commit/9861ed67d7c90fef520976d0b2bd713b9b169949))
+
 ## [1.10.1](https://github.com/jcsvwinston/orbit/compare/v1.10.0...v1.10.1) (2026-09-18)
 
 
