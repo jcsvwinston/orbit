@@ -181,8 +181,14 @@ func (p *Panel) handleListJobQueues(c *router.Context) error {
 	if p.config.TaskInspector != nil {
 		snapshot = p.config.TaskInspector.InspectRuntime()
 	}
+	// `enabled` used to mean "a Redis URL is configured", which was the same
+	// thing as "there is a queue" only while every durable queue needed
+	// Redis. It no longer is: a queue on the application's own database has no
+	// Redis URL and works, and this view told its operator jobs were off. It
+	// means what it says now — the inspector answered — and the Redis URL
+	// stays alongside for whoever is reading a Redis deployment.
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"enabled":   p.config.RedisURL != "",
+		"enabled":   snapshot.Enabled,
 		"redis_url": p.config.RedisURL,
 		"snapshot":  snapshot,
 	})

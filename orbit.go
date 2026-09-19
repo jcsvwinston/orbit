@@ -33,6 +33,7 @@ import (
 	"github.com/jcsvwinston/nucleus/pkg/authz"
 	"github.com/jcsvwinston/nucleus/pkg/db"
 	"github.com/jcsvwinston/nucleus/pkg/nucleus"
+	"github.com/jcsvwinston/nucleus/pkg/tasks"
 )
 
 // DefaultPrefix is the URL path orbit mounts under when Config.Prefix is empty.
@@ -544,6 +545,15 @@ func (m *module) start(ctx context.Context) error {
 		Mailer: rt.Mailer(),
 		Outbox: rt.Outbox(),
 
+		// And the queue view, for the same reason (OR-53). A6 built the
+		// screen and nothing ever assigned an inspector, so it answered
+		// about a queue it could not see. The runtime hands one out through
+		// an OPTIONAL interface rather than a method on Runtime: Runtime is
+		// published, and growing it would break every implementation outside
+		// nucleus. A host that does not implement it leaves this nil, which
+		// is what the panel already expects.
+		TaskInspector: runtimeTaskInspector{rt: rt},
+
 		AuditEnabled:   true,
 		AuditMaxSize:   m.cfg.AuditMaxSize,
 		MigrationsPath: m.cfg.MigrationsPath,
@@ -615,6 +625,48 @@ func resolveAuthDB(alias string, defaultHandle *db.DB, handles map[string]*db.DB
 }
 
 // newModule builds the module state from the construction-time config.
+// runtimeTaskInspector asks the runtime for a queue inspector ON EVERY CALL,
+// rather than capturing one when the module starts.
+//
+// The order is why. Module OnStart hooks run before the framework builds the
+// jobs runtime, so at the moment this module is assembling its panel there is
+// no inspector to capture yet — and a value read then is nil for the life of
+// the process, which is the shape OR-53 had in the first place. Asking per
+// call costs a type assertion and is right whatever the boot order turns out
+// to be.
+//
+// When the application runs no jobs there is still no inspector, and the two
+// methods answer the way the panel's own nil check used to: a snapshot that
+// says it is not enabled, and an error the panel classifies as a 400 rather
+// than a 500 — it is a configuration answer, not a broken provider.
+type runtimeTaskInspector struct{ rt nucleus.Runtime }
+
+func (t runtimeTaskInspector) resolve() (tasks.Inspector, bool) {
+	if t.rt == nil {
+		return nil, false
+	}
+	return nucleus.TaskInspectorFrom(t.rt)
+}
+
+func (t runtimeTaskInspector) InspectRuntime() tasks.RuntimeSnapshot {
+	inspector, ok := t.resolve()
+	if !ok {
+		return tasks.RuntimeSnapshot{
+			Enabled: false,
+			Reason:  "this application declares no jobs, so it has no queue to inspect",
+		}
+	}
+	return inspector.InspectRuntime()
+}
+
+func (t runtimeTaskInspector) OperateQueue(queue, action string) (tasks.QueueActionResult, error) {
+	inspector, ok := t.resolve()
+	if !ok {
+		return tasks.QueueActionResult{}, fmt.Errorf("orbit: queue %q: this application declares no jobs, so there is no queue to %s — the request is unsupported here", queue, action)
+	}
+	return inspector.OperateQueue(queue, action)
+}
+
 func newModule(cfg Config) *module {
 	return &module{cfg: cfg}
 }
