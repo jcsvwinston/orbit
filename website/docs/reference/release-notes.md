@@ -17,6 +17,34 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.10.2 — 2026-09-19
+
+The queue view can see the queue, and the modules move to the set that
+publishes what it needs (`nucleus v1.30.0`).
+
+**The panel's job queues answer about a real queue (OR-53).** The screen was
+built in v1.10.0 and nothing ever handed the panel an inspector, so it reported
+on a queue it could not see: `enabled: false`, no queues, and every queue
+action refused with "task inspector is not configured (check redis_url)".
+
+Three things were in the way. The module never set the field. Setting it while
+the module starts would not have helped either — a module's `OnStart` runs
+before the framework builds its jobs runtime, so there is nothing to capture
+yet, and a value read then stays nil for the life of the process. The inspector
+is resolved **per call** now, through the optional interface nucleus exposes for
+it; a host that does not implement it leaves the view saying so, which is the
+honest answer rather than an empty screen.
+
+**And `enabled` means what it says.** It used to mean "a Redis URL is
+configured", which was the same thing as "there is a queue" only while every
+durable queue needed one. Nucleus v1.30.0 ships a queue that lives in the
+application's own database and needs no broker: that deployment works, and this
+view told its operator jobs were off. The Redis URL is still reported alongside,
+for whoever is reading a Redis deployment.
+
+Nothing about the panel's own contract changes: the endpoint, its shape and its
+permissions are the ones v1.10.0 published.
+
 ## v1.10.1 — 2026-09-18
 
 One fix, in the module that browses a Quark-managed application
