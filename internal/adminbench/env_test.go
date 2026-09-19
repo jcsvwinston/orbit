@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jcsvwinston/nucleus/pkg/app"
 	"github.com/jcsvwinston/nucleus/pkg/model"
@@ -105,6 +106,19 @@ func contentModule() nucleus.ModuleSpec {
 	return nucleus.Module[struct{}]{
 		Name:   "content",
 		Models: []any{Note{}, Author{}, Comment{}, Credential{}, Article{}},
+		// A declared job is what gives the application a queue runtime at
+		// all, and without one there is nothing for the panel's queue view to
+		// be a view OF. OPS-14 passed for the whole of A6 without this,
+		// because its probe only checked that the endpoint answered 200 —
+		// and it did, over a panel with no inspector, in an application with
+		// no queue. Every hour, so it never fires during a run: what is
+		// measured is that the queue exists and the panel can see it.
+		Jobs: func(r nucleus.JobRegistry, _ struct{}) {
+			_ = r.Register("bench.sweep", nucleus.JobSpec{
+				Every:   time.Hour,
+				Handler: func(context.Context) error { return nil },
+			})
+		},
 		OnStart: func(_ context.Context, rt nucleus.Runtime, _ struct{}) error {
 			return rt.AutoMigrate(Note{}, Author{}, Comment{}, Credential{}, Article{})
 		},

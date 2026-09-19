@@ -490,12 +490,33 @@ func probeJobQueues(t *testing.T, e *env) verdict {
 		t.Logf("pause answered %d: %s", act.code, act.text())
 		return partial
 	}
-	var payload map[string]any
-	if err := json.Unmarshal(list.body, &payload); err == nil {
-		if queues, ok := payload["queues"].([]any); ok && len(queues) == 0 {
-			t.Logf("the queue list is empty in an application with a job runtime: %s", list.text())
-			return partial
-		}
+	// This read used to ask for payload["queues"], and the answer has never
+	// had a top-level "queues" key — it is {enabled, redis_url, snapshot}. So
+	// the branch below was unreachable and the probe measured one thing: that
+	// the endpoint answers 200. It did, for the whole of A6, while the panel
+	// had no inspector at all and the view it draws was blind (OR-53). The
+	// verdict was right for the wrong reason, which no test catches.
+	var payload struct {
+		Enabled  bool `json:"enabled"`
+		Snapshot struct {
+			Enabled     bool `json:"enabled"`
+			TotalQueues int  `json:"total_queues"`
+			Queues      []struct {
+				Name string `json:"name"`
+			} `json:"queues"`
+		} `json:"snapshot"`
+	}
+	if err := json.Unmarshal(list.body, &payload); err != nil {
+		t.Logf("the jobs answer does not parse: %v: %s", err, list.text())
+		return partial
+	}
+	if !payload.Enabled || !payload.Snapshot.Enabled {
+		t.Logf("the panel reports jobs disabled in an application that runs them: %s", list.text())
+		return partial
+	}
+	if len(payload.Snapshot.Queues) == 0 {
+		t.Logf("the queue list is empty in an application with a job runtime: %s", list.text())
+		return partial
 	}
 	return present
 }
