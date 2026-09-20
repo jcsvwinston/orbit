@@ -26,3 +26,7 @@ coverage*.txt
 internal/adminbench/browser/results.json
 internal/adminbench/browser/test-results/
 internal/adminbench/browser/playwright-report/
+
+# The fleet bench table is regenerated from the cases (ORBIT_FLEET_BENCH_TABLE=1);
+# the published copy lives in docs/fleet-bench.md.
+internal/fleettest/fleetbench/bench-table.md
