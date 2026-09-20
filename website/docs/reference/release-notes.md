@@ -17,6 +17,15 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.10.3 — 2026-09-20
+
+An alignment release with no product change: every module now requires
+Nucleus v1.30.1 and Quark v1.15.0, the versions the suite certifies next, and
+`quarkdatasource` pins the root at v1.10.2. Nothing in the binaries or the
+panel behaves differently from v1.10.2.
+
+Fleet and bridge tags cut alongside: `quarkbridge/v1.9.2`, `quarkdatasource/v1.9.3`, `proto/v0.4.4`, `agent/v0.7.2`, `server/v0.12.2`.
+
 ## v1.10.2 — 2026-09-19
 
 The queue view can see the queue, and the modules move to the set that
