@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.0](https://github.com/jcsvwinston/orbit/compare/server/v0.12.2...server/v0.13.0) (2026-09-21)
+
+
+### Added
+
+* **fleet:** certificates rotate without a restart, on both sides (A9 S2) ([#505](https://github.com/jcsvwinston/orbit/issues/505)) ([646b6db](https://github.com/jcsvwinston/orbit/commit/646b6dbe3d013e5da848f14b1a36d6b30cf7a1d2))
+* **fleet:** the node identity is the certificate's, and the agent loads it from files (A9 S1) ([#501](https://github.com/jcsvwinston/orbit/issues/501)) ([4590eda](https://github.com/jcsvwinston/orbit/commit/4590eda300e4eb5a350d5fcf7695071fec035ce2))
+
 ## [0.12.2](https://github.com/jcsvwinston/orbit/compare/server/v0.12.1...server/v0.12.2) (2026-09-20)
 
 

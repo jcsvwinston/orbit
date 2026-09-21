@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.11.0](https://github.com/jcsvwinston/orbit/compare/v1.10.3...v1.11.0) (2026-09-21)
+
+
+### Added
+
+* **fleet:** ADR-012, the wire declares operator identity and filters, and lists carry an exact total (A9 S3, part 1) ([#506](https://github.com/jcsvwinston/orbit/issues/506)) ([d542622](https://github.com/jcsvwinston/orbit/commit/d542622a12df088c62467d8d4e5794746726d7d9))
+* **fleet:** certificates rotate without a restart, on both sides (A9 S2) ([#505](https://github.com/jcsvwinston/orbit/issues/505)) ([646b6db](https://github.com/jcsvwinston/orbit/commit/646b6dbe3d013e5da848f14b1a36d6b30cf7a1d2))
+* **fleet:** the node identity is the certificate's, and the agent loads it from files (A9 S1) ([#501](https://github.com/jcsvwinston/orbit/issues/501)) ([4590eda](https://github.com/jcsvwinston/orbit/commit/4590eda300e4eb5a350d5fcf7695071fec035ce2))
+
 ## [1.10.3](https://github.com/jcsvwinston/orbit/compare/v1.10.2...v1.10.3) (2026-09-20)
 
 
