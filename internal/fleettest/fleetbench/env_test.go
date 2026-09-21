@@ -12,6 +12,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"database/sql"
+	"encoding/pem"
 	"errors"
 	"io"
 	"log/slog"
@@ -818,6 +819,28 @@ func (ca *testCA) mutualTLS() *tls.Config {
 // clientTLS trusts the CA and verifies the server as 127.0.0.1.
 func (ca *testCA) clientTLS() *tls.Config {
 	return &tls.Config{RootCAs: ca.pool, ServerName: "127.0.0.1", MinVersion: tls.VersionTLS12}
+}
+
+// writePEM issues a client leaf for cn and writes the three PEM files a
+// deployment ships — the CA bundle, the certificate and its key — into dir,
+// for the controls that must configure an agent by file paths alone.
+func (ca *testCA) writePEM(t *testing.T, dir, cn string) (caFile, certFile, keyFile string) {
+	t.Helper()
+	leaf, _ := ca.issue(t, cn, x509.ExtKeyUsageClientAuth)
+	keyDER, err := x509.MarshalECPrivateKey(leaf.PrivateKey.(*ecdsa.PrivateKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, typ string, der []byte) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: typ, Bytes: der}), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	return write("ca.crt", "CERTIFICATE", ca.caCert.Raw),
+		write("agent.crt", "CERTIFICATE", leaf.Certificate[0]),
+		write("agent.key", "EC PRIVATE KEY", keyDER)
 }
 
 // clientTLSWithCert is clientTLS plus a client certificate for cn.

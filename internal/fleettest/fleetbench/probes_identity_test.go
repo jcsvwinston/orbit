@@ -7,6 +7,8 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"github.com/jcsvwinston/nucleus/pkg/app"
+	"github.com/jcsvwinston/nucleus/pkg/observability"
 	"io"
 	"net/http"
 	"reflect"
@@ -191,21 +193,51 @@ func probeRealAgentOverMTLS(t *testing.T, e *env) verdict {
 // (file paths) rather than handed over as a Go value.
 func probeAgentCertFromConfig(t *testing.T, e *env) verdict {
 	files := fieldsNamed(agent.ExtensionConfig{}, "koanf", certFileKnobs...)
-	if len(files) > 0 {
-		t.Logf("ExtensionConfig binds certificate files: %v", files)
-		return present
+	if len(files) == 0 {
+		tlsField, ok := reflect.TypeOf(agent.ExtensionConfig{}).FieldByName("TLS")
+		if !ok {
+			t.Log("ExtensionConfig has no TLS field at all")
+			return absent
+		}
+		if tlsField.Tag.Get("koanf") == "-" {
+			t.Logf("ExtensionConfig.TLS is %s with koanf:\"-\": only code can set it", tlsField.Type)
+			return absent
+		}
+		t.Logf("ExtensionConfig.TLS (%s) is bindable but no file fields exist", tlsField.Type)
+		return partial
 	}
-	tlsField, ok := reflect.TypeOf(agent.ExtensionConfig{}).FieldByName("TLS")
-	if !ok {
-		t.Log("ExtensionConfig has no TLS field at all")
-		return absent
+	t.Logf("ExtensionConfig binds certificate files: %v", files)
+
+	// A field is a name, not a surface. Write the PEM files a deployment
+	// ships, give the configuration nothing but their paths and no
+	// node_id, and boot a real agent through the extension — the path an
+	// application takes — against a server that requires a client
+	// certificate. The node the server lists must be the certificate's
+	// Common Name: the identity written once, in the certificate.
+	ca := newTestCA(t)
+	srv := e.startServer(t, server.Config{AgentTLS: ca.mutualTLS()})
+	caFile, certFile, keyFile := ca.writePEM(t, t.TempDir(), "fb-node-from-files")
+	ext := agent.NewExtension(agent.ExtensionConfig{
+		Endpoints:   []string{"https://" + srv.AgentAddr()},
+		TLSCertFile: certFile,
+		TLSKeyFile:  keyFile,
+		TLSCAFile:   caFile,
+	}, t.TempDir(), "fleetbench")
+	logger := discardLogger()
+	if err := ext.Attach(&app.App{Logger: logger, Observability: observability.NewBus(logger)}); err != nil {
+		t.Logf("the extension refused the file configuration: %v", err)
+		return partial
 	}
-	if tlsField.Tag.Get("koanf") == "-" {
-		t.Logf("ExtensionConfig.TLS is %s with koanf:\"-\": only code can set it", tlsField.Type)
-		return absent
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = ext.Shutdown(ctx)
+	})
+	if !waitRegistered(srv.Server, "fb-node-from-files", 5*time.Second) {
+		t.Log("the extension accepted the files but no node registered under the certificate's Common Name")
+		return partial
 	}
-	t.Logf("ExtensionConfig.TLS (%s) is bindable but no file fields exist", tlsField.Type)
-	return partial
+	return present
 }
 
 // IDENT-06: the node identity is bound to the certificate: an agent whose
@@ -214,29 +246,51 @@ func probeAgentCertFromConfig(t *testing.T, e *env) verdict {
 // proves the setup can register at all.
 func probeNodeIdentityBoundToCert(t *testing.T, e *env) verdict {
 	ca := newTestCA(t)
-	srv := e.startServer(t, server.Config{AgentTLS: ca.mutualTLS()})
-	endpoint := "https://" + srv.AgentAddr()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	e.startAgent(t, agent.Config{Endpoints: []string{endpoint}, TLS: ca.clientTLSWithCert(t, "node-a"), NodeIDOverride: "node-b"})
-	e.startAgent(t, agent.Config{Endpoints: []string{endpoint}, TLS: ca.clientTLSWithCert(t, "node-c"), NodeIDOverride: "node-c"})
-	if !waitRegistered(srv.Server, "node-c", 5*time.Second) {
-		t.Fatal("the control agent (certificate and node_id agree) did not register: cannot tell refusal from failure")
-	}
-	// Give the mismatched agent the same chance the control had.
-	pollUntil(2*time.Second, func() bool {
-		_, a := srv.State().Nodes.Lookup("node-a")
-		_, b := srv.State().Nodes.Lookup("node-b")
-		return a || b
-	})
-	if _, ok := srv.State().Nodes.Lookup("node-b"); ok {
-		t.Log("registered as node-b: the declared node_id won over the certificate's node-a")
+	// Fact 1 — the product's binding, on the wire. A server that binds
+	// identity to the certificate must refuse a certificate for node-a
+	// declaring node-b, and say so with PermissionDenied: the refusal is
+	// read from the stream, not inferred from a node that never appeared.
+	// A control agent whose name and certificate agree proves the setup
+	// registers at all.
+	bound, err := e.tryStartServer(t, server.Config{AgentTLS: ca.mutualTLS(), AgentIdentityFromCertificate: true})
+	if err != nil {
+		t.Logf("the server refused to start with identity binding: %v", err)
 		return absent
 	}
-	if _, ok := srv.State().Nodes.Lookup("node-a"); ok {
-		t.Log("registered as node-a: the certificate named the node")
-		return present
+	e.startAgent(t, agent.Config{Endpoints: []string{"https://" + bound.AgentAddr()}, TLS: ca.clientTLSWithCert(t, "node-c"), NodeIDOverride: "node-c"})
+	if !waitRegistered(bound.Server, "node-c", 5*time.Second) {
+		t.Fatal("the control agent (certificate and node_id agree) did not register: cannot tell refusal from failure")
 	}
-	t.Log("the mismatched agent was refused while the control registered")
+	stream, err := registerRaw(ctx, tlsH2Client(ca.clientTLSWithCert(t, "node-a")), "https://"+bound.AgentAddr(), "node-b")
+	if err == nil {
+		_, err = stream.Receive()
+	}
+	switch {
+	case err == nil:
+		t.Log("bound server served a certificate for node-a registered as node-b")
+		return absent
+	case connect.CodeOf(err) != connect.CodePermissionDenied:
+		t.Logf("bound server refused the mismatch with %v, not PermissionDenied: %v", connect.CodeOf(err), err)
+		return partial
+	}
+	if _, ok := bound.State().Nodes.Lookup("node-b"); ok {
+		t.Log("bound server refused the stream and yet lists node-b")
+		return absent
+	}
+
+	// Fact 2 — the default, recorded so the page says what it is. A
+	// server that only verifies the certificate registers the declared
+	// node_id: the binding is opt-in until the next major flips it.
+	plain := e.startServer(t, server.Config{AgentTLS: ca.mutualTLS()})
+	e.startAgent(t, agent.Config{Endpoints: []string{"https://" + plain.AgentAddr()}, TLS: ca.clientTLSWithCert(t, "node-a"), NodeIDOverride: "node-b"})
+	if !waitRegistered(plain.Server, "node-b", 5*time.Second) {
+		t.Log("the default server no longer registers a mismatched node_id: the note on the page is stale")
+		return partial
+	}
+	t.Log("default: registered as declared (WARN in the server log); bound: refused with PermissionDenied")
 	return present
 }
 

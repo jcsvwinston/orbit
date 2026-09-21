@@ -17,6 +17,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/jcsvwinston/orbit/server/auth"
 	"github.com/jcsvwinston/orbit/server/nodes"
 	"github.com/jcsvwinston/orbit/server/routing"
 
@@ -38,6 +39,12 @@ type State struct {
 	SendChanBuffer int
 	OnAgentSubMode func(*nodes.Entry, *routing.EventBus) // hook called whenever bus demand changes
 	HeartbeatGrace time.Duration                         // tolerance window for stale heartbeat reports
+
+	// BindIdentityToCertificate refuses a registration whose node_id is
+	// not the Common Name of the verified client certificate the stream
+	// arrived with (server.Config.AgentIdentityFromCertificate). When
+	// false a mismatch is registered as declared and logged as a WARN.
+	BindIdentityToCertificate bool
 }
 
 // AgentService implements adminv1connect.AgentServiceHandler.
@@ -69,12 +76,30 @@ func (s *AgentService) Stream(ctx context.Context, stream *connect.BidiStream[ad
 	if reg == nil || strings.TrimSpace(reg.GetNodeId()) == "" {
 		return connect.NewError(connect.CodeInvalidArgument, errors.New("admin agent: first frame must be a non-empty NodeRegistration"))
 	}
+	nodeID := strings.TrimSpace(reg.GetNodeId())
+
+	// The handshake may already have named this peer: a listener that
+	// verifies client certificates puts "agent:<CN>" on the context. A
+	// declared node_id that disagrees with it is either refused (the
+	// server binds identity to the certificate) or accepted with a WARN
+	// — never silently, so an operator can see which it was.
+	if cn, ok := certificateNode(ctx); ok && cn != nodeID {
+		if s.state.BindIdentityToCertificate {
+			s.state.Logger.Warn("admin agent refused: node_id does not match its client certificate",
+				"node_id", nodeID, "certificate_cn", cn)
+			return connect.NewError(connect.CodePermissionDenied, fmt.Errorf(
+				"admin agent: node_id %q does not match the client certificate's Common Name %q (this server binds node identity to the certificate)", nodeID, cn))
+		}
+		s.state.Logger.Warn("admin agent registered under a node_id that differs from its client certificate",
+			"node_id", nodeID, "certificate_cn", cn,
+			"hint", "set --agent-identity-from-cert to refuse such registrations")
+	}
 
 	streamCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	info := nodes.NodeInfo{
-		NodeID:           strings.TrimSpace(reg.GetNodeId()),
+		NodeID:           nodeID,
 		Version:          reg.GetVersion(),
 		Labels:           cloneLabels(reg.GetLabels()),
 		StartedAt:        startedAt(reg),
@@ -174,6 +199,18 @@ func (s *AgentService) runWriter(ctx context.Context, entry *nodes.Entry, stream
 			}
 		}
 	}
+}
+
+// certificateNode returns the node the verified client certificate names
+// — the Common Name auth.AgentMiddleware attached as "agent:<CN>" — and
+// false when the stream arrived without one (a token or h2c listener).
+func certificateNode(ctx context.Context) (string, bool) {
+	id := auth.IdentityFromContext(ctx)
+	if id.Role != "agent" || !strings.HasPrefix(id.Subject, "agent:") {
+		return "", false
+	}
+	cn := strings.TrimSpace(strings.TrimPrefix(id.Subject, "agent:"))
+	return cn, cn != ""
 }
 
 func cloneLabels(in map[string]string) map[string]string {

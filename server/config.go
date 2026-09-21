@@ -41,6 +41,21 @@ type Config struct {
 	// listener being on a private network).
 	AgentToken string
 
+	// AgentIdentityFromCertificate binds a node's identity to the client
+	// certificate it presented: a registration whose node_id differs from
+	// the verified certificate's Common Name is refused with
+	// PermissionDenied, so an agent holding a certificate for node-a
+	// cannot register as node-b. It requires AgentTLS to require and
+	// verify client certificates; Run refuses to start otherwise, because
+	// a binding to an identity nobody verified binds to nothing.
+	//
+	// Off by default: the server verifies the certificate and registers
+	// the node_id the agent declares, logging a WARN when the two
+	// disagree. Deployments whose certificates name something other than
+	// the node (one certificate shared by a fleet) keep working; the
+	// default flips in the next major.
+	AgentIdentityFromCertificate bool
+
 	// InsecureAgentListener overrides the fail-closed guard that refuses
 	// to start the agent listener on a non-loopback interface when it has
 	// no authentication (AgentToken == "" and AgentTLS does not require a

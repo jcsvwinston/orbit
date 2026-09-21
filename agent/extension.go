@@ -66,12 +66,31 @@ func (e *extension) Attach(a *app.App) error {
 		}
 	}
 
+	// The certificate files, when named, become the TLS configuration
+	// and — unless node_id is set — the node's name: the Common Name the
+	// server authenticates is the identity the agent registers under.
+	tlsCfg, err := e.adminCfg.TLSConfig()
+	if err != nil {
+		return fmt.Errorf("admin agent extension: %w", err)
+	}
+	nodeID := e.adminCfg.NodeIDOverride
+	if nodeID == "" {
+		nodeID, err = e.adminCfg.certificateNodeID()
+		if err != nil {
+			return fmt.Errorf("admin agent extension: %w", err)
+		}
+		if nodeID != "" && a.Logger != nil {
+			a.Logger.Info("admin agent node named after its client certificate",
+				"node_id", nodeID, "tls_cert_file", e.adminCfg.TLSCertFile)
+		}
+	}
+
 	ag, err := New(Config{
 		Endpoints:            e.adminCfg.Endpoints,
 		Token:                e.adminCfg.Token,
-		TLS:                  e.adminCfg.TLS,
+		TLS:                  tlsCfg,
 		StateDir:             e.stateDir,
-		NodeIDOverride:       e.adminCfg.NodeIDOverride,
+		NodeIDOverride:       nodeID,
 		Version:              e.version,
 		Labels:               e.adminCfg.Labels,
 		Bus:                  a.Observability,

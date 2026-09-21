@@ -74,6 +74,8 @@ func New(cfg Config) *Server {
 		Logger:         cfg.Logger,
 		SendChanBuffer: 64,
 		HeartbeatGrace: cfg.AgentInactivityTimeout,
+
+		BindIdentityToCertificate: cfg.AgentIdentityFromCertificate,
 	}
 
 	// A (re)connecting agent immediately receives the current aggregate
@@ -198,6 +200,10 @@ func (s *Server) Run(ctx context.Context) error {
 	warnExposed, err := s.cfg.agentListenerGuard()
 	if err != nil {
 		return err
+	}
+	if s.cfg.AgentIdentityFromCertificate && !tlsRequiresClientCert(s.cfg.AgentTLS) {
+		return errors.New("admin server: AgentIdentityFromCertificate (--agent-identity-from-cert) requires the agent listener to verify client certificates " +
+			"(--agent-client-ca with --agent-cert/--agent-key): without a verified certificate there is no identity to bind the node to")
 	}
 	if warnExposed {
 		s.logger.Warn("agent listener is exposed without authentication",

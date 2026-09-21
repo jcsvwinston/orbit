@@ -56,7 +56,9 @@ but authenticates nobody, so it does not count. The server therefore
 * set `--agent-token` (shared bearer) — the recommended minimum;
 * require client certificates: `--agent-client-ca` together with
   `--agent-cert`/`--agent-key` (mutual TLS — the handshake itself rejects
-  agents without a certificate signed by that CA); or
+  agents without a certificate signed by that CA; add
+  `--agent-identity-from-cert` to also refuse an agent whose `node_id` is
+  not its certificate's Common Name); or
 * bind `--agent-addr` to loopback (`127.0.0.1:9090`); or
 * pass `--insecure-agent-listener` (env
   `NUCLEUS_ADMIN_INSECURE_AGENT_LISTENER=1`) to override, **only** when a
