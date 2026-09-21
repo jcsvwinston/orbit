@@ -26,7 +26,7 @@ import (
 	"github.com/jcsvwinston/nucleus/pkg/observe"
 
 	"github.com/jcsvwinston/orbit/datasource"
-	dsnucleus "github.com/jcsvwinston/orbit/internal/datasource/nucleus"
+	dsnucleus "github.com/jcsvwinston/orbit/datasource/nucleus"
 )
 
 // Album is the parent, Track the child that points at it: the smallest pair

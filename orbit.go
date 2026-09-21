@@ -26,8 +26,8 @@ import (
 	"strings"
 
 	"github.com/jcsvwinston/orbit/datasource"
+	dsnucleus "github.com/jcsvwinston/orbit/datasource/nucleus"
 	"github.com/jcsvwinston/orbit/internal/admin"
-	dsnucleus "github.com/jcsvwinston/orbit/internal/datasource/nucleus"
 
 	"github.com/jcsvwinston/nucleus/pkg/app"
 	"github.com/jcsvwinston/nucleus/pkg/authz"

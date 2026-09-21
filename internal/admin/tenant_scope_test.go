@@ -32,7 +32,7 @@ import (
 	"github.com/jcsvwinston/nucleus/pkg/observe"
 
 	"github.com/jcsvwinston/orbit/datasource"
-	dsnucleus "github.com/jcsvwinston/orbit/internal/datasource/nucleus"
+	dsnucleus "github.com/jcsvwinston/orbit/datasource/nucleus"
 )
 
 // ScopedNote is a tenant-scoped model: nucleus detects tenant_id by

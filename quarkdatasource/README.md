@@ -3,14 +3,17 @@
 `github.com/jcsvwinston/orbit/quarkdatasource`
 
 An opt-in implementation of Orbit's [datasource contract](../datasource)
-(orbit ADR-001) over a [Quark](https://github.com/jcsvwinston/quark) ORM client,
+(`github.com/jcsvwinston/orbit/datasource`, a module of its own) over a
+[Quark](https://github.com/jcsvwinston/quark) ORM client,
 so **Data Studio browses and edits Quark-managed models**
 ([QADR-0006](https://github.com/jcsvwinston/quantum/blob/main/docs/adr/QADR-0006-integracion-quark-orbit.md),
 Caso 2).
 
 It is the second implementation of the contract — the one that proves the
 abstraction is not Nucleus-shaped. It lives in its own module so Quark never
-enters the orbit core's dependency graph.
+enters the orbit core's dependency graph, and it requires the contract
+module rather than the panel: a Quark data source pulls in neither the
+in-process panel nor its SPA.
 
 ## Usage
 

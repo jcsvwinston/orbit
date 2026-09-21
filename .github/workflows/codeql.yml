@@ -102,6 +102,7 @@ jobs:
         # gets extracted.
         #
         #   .                 the in-process panel and its internals
+        #   datasource        the Data Studio contract and its Nucleus adapter
         #   agent             the fleet agent
         #   server            the admin server, its auth and its routing
         #   quarkbridge       opt-in SQL ingest
@@ -122,7 +123,7 @@ jobs:
         # `go build` and not `go test -c`: test files are not extracted, so
         # the alerts are about shipped code rather than fixtures.
         run: |
-          for module in . agent server quarkbridge quarkdatasource; do
+          for module in . datasource agent server quarkbridge quarkdatasource; do
             echo "::group::go build ./... ($module)"
             (cd "$module" && go build ./...)
             echo "::endgroup::"

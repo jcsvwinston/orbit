@@ -17,15 +17,27 @@ go 1.26.6
 // contract (ADR-001): it depends on Quark and on the orbit root module (the
 // contract package), keeping Quark out of the core's dependency graph.
 //
+// datasource/ is the contract Data Studio speaks (ADR-001) and its Nucleus
+// adapter, in a module of its own since ADR-012 so the agent and any
+// alternative data source can require it without the panel. The root and
+// quarkdatasource require it BY TAG; until the cut that creates that tag,
+// the versioned replace below resolves the requirement from this tree
+// (listing the directory is not enough: the required version still enters
+// the module graph and Go asks the proxy for its go.mod). The cut that
+// publishes the tag removes the replace.
+//
 // internal/fleettest/ is a test-only module (ADR-006): the integration tests
 // that drive a real agent against the server live there so server/ does not
 // require agent/ by tag. Never published; only resolvable through this file.
 use (
 	./
 	./agent
+	./datasource
 	./internal/fleettest
 	./proto
 	./quarkbridge
 	./quarkdatasource
 	./server
 )
+
+replace github.com/jcsvwinston/orbit/datasource v1.0.0 => ./datasource

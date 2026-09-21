@@ -143,7 +143,7 @@ Studio — see
 for the three lines that populate it.
 
 Data Studio does not speak the framework's types directly. It reads and writes
-through a neutral data-source contract (`orbit/datasource`), with the Nucleus
+through a neutral data-source contract (`github.com/jcsvwinston/orbit/datasource`, a module of its own that neither the panel nor its SPA come with), with the Nucleus
 model registry as the default backend. Applications built on the
 [Quark](https://github.com/jcsvwinston/quark) ORM can point it at their Quark
 models instead: add the opt-in

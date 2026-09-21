@@ -23,7 +23,7 @@ import (
 	"github.com/jcsvwinston/nucleus/pkg/observe"
 	"github.com/jcsvwinston/nucleus/pkg/router"
 
-	dsnucleus "github.com/jcsvwinston/orbit/internal/datasource/nucleus"
+	dsnucleus "github.com/jcsvwinston/orbit/datasource/nucleus"
 )
 
 type AdminUser struct {

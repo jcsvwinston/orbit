@@ -61,14 +61,15 @@
   ],
   "packages": {
     ".": {
-        "release-type": "go",
+      "release-type": "go",
       "include-component-in-tag": false,
       "exclude-paths": [
         "quarkbridge",
         "quarkdatasource",
         "proto",
         "agent",
-        "server"
+        "server",
+        "datasource"
       ],
       "extra-files": [
         {
@@ -122,6 +123,13 @@
       "release-type": "go",
       "component": "server",
       "include-component-in-tag": true
+    },
+    "datasource": {
+      "package-name": "github.com/jcsvwinston/orbit/datasource",
+      "release-type": "go",
+      "component": "datasource",
+      "include-component-in-tag": true,
+      "initial-version": "1.0.0"
     }
   }
 }

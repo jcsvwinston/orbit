@@ -1,4 +1,4 @@
-# Dependabot keeps the six Go modules, the two SPAs and the workflow actions
+# Dependabot keeps the seven Go modules, the two SPAs and the workflow actions
 # current. Go updates are grouped per module so one PR carries a coherent
 # bump; Nucleus and Quark are excluded on purpose — those pins are certified
 # by the suite's release train (quantum/versions.yaml), not by a bot.
@@ -10,11 +10,28 @@ updates:
     groups:
       go-deps: { patterns: ["*"] }
     ignore:
-      # This directory is a Go WORKSPACE root: go.work lists seven modules,
+      # This directory is a Go WORKSPACE root: go.work lists eight modules,
       # so an update here rewrites every member's go.mod and go.sum, not just
       # this one's. That is how Dependabot came to propose raising
       # `github.com/jcsvwinston/orbit` inside quarkdatasource (#450) while
       # this list carried only `orbit/*`, which does not match the bare path.
+      - dependency-name: github.com/jcsvwinston/nucleus
+      - dependency-name: github.com/jcsvwinston/nucleus/*
+      - dependency-name: github.com/jcsvwinston/quark
+      - dependency-name: github.com/jcsvwinston/quark/*
+      - dependency-name: github.com/jcsvwinston/orbit
+      - dependency-name: github.com/jcsvwinston/orbit/*
+  # datasource/ is the Data Studio contract and its Nucleus adapter (ADR-012),
+  # a leaf the root, quarkdatasource and the agent pin by tag. Its only Go
+  # dependency is Nucleus, a suite floor the train raises; a bump in a
+  # sibling module must cut the module's tag in the same train (ADR-006).
+  - package-ecosystem: gomod
+    directory: /datasource
+    schedule: { interval: weekly, day: monday }
+    commit-message: { prefix: "fix(deps)" }
+    groups:
+      go-deps: { patterns: ["*"] }
+    ignore:
       - dependency-name: github.com/jcsvwinston/nucleus
       - dependency-name: github.com/jcsvwinston/nucleus/*
       - dependency-name: github.com/jcsvwinston/quark

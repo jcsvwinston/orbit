@@ -25,7 +25,7 @@ import (
 	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/observe"
 
-	dsnucleus "github.com/jcsvwinston/orbit/internal/datasource/nucleus"
+	dsnucleus "github.com/jcsvwinston/orbit/datasource/nucleus"
 )
 
 // auditPanel builds a panel whose trail is kept in the database at dbPath —
