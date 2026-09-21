@@ -43,9 +43,10 @@ func controlsUI() []control {
 			probe: probeBrowserInstrumentCoversFleet},
 		{id: "UI-08", family: "ui", title: "the fleet UI is told the operator's role: GetSelf says read-only for a viewer",
 			want: present, probe: probeUIKnowsRole},
-		{id: "UI-09", family: "ui", title: "the fleet UI has a tenant notion: a message on the wire carries one",
-			want: absent, note: "no message in admin.proto has a field with tenant in its name: neither the Control nor the " +
-				"Data Studio surface can say which tenant an operator or a row belongs to.",
+		{id: "UI-09", family: "ui", title: "the fleet UI has a tenant notion: a message on the wire carries one and the SPA sends or shows it",
+			want: partial, note: "the wire carries one since A9 S3 (OperatorIdentity.tenant on DataStudioRequest, server to agent), " +
+				"but nothing the fleet SPA sends (ui/src, outside src/gen) names a tenant and no screen shows which tenant an " +
+				"operator or a row belongs to: the Control surface still has no tenant field at all. S10 puts the tenant in the UI.",
 			probe: probeFleetTenantNotion},
 		{id: "UI-10", family: "ui", title: "the panel's initial load stays within its budget, and the budget is a test constant",
 			want: present, probe: probePanelBudgetEnforced},

@@ -57,7 +57,15 @@ the stream**, so the application's per-model RBAC and multi-tenant
 filtering do not run. The `Access control` screen does not change that: it
 is a read-only snapshot of each node's own policy, and it does not gate
 the operator's fleet-plane actions, which are audited rather than
-authorized per verb and object.
+authorized per verb and object. The protocol now *declares* where that
+identity will ride (`DataStudioRequest.operator`: subject, role, read-only,
+tenant) and where operator filters go (`ListRecordsRequest.where`), but the
+server does not fill the former and the agent does not read the latter yet
+— a declaration on the wire changes nothing until both ends act on it,
+which is the next step of the fleet's move onto the same data-access
+contract the in-process panel uses. What did change: every list the fleet
+serves carries an exact total, filtered or not, so the pager can say how
+many pages there are.
 
 Because of that, **Data Studio mutations are refused by default**. The
 gates, all server-side:

@@ -227,6 +227,11 @@ func (h *Handler) handleListRecords(ctx context.Context, resp *adminv1.DataStudi
 		OrderBy:  req.GetOrderBy(),
 		Filters:  req.GetFilters(),
 		Fields:   req.GetFields(),
+		// The fleet UI is a screen with a pager: it needs to know how many
+		// pages there are, filtered or not. The count is a second query;
+		// the model layer answered -1/estimated for every filtered list
+		// until asked.
+		ExactTotal: true,
 	}
 
 	result, err := c.FindAll(ctx, opts)

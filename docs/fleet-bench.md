@@ -60,17 +60,17 @@ place for a capability, not the capability.
 
 ## The result
 
-**20 of 50 controls present. 3 partial. 27 absent.**
+**21 of 50 controls present. 6 partial. 23 absent.**
 
 | family | present | partial | absent |
 |---|---|---|---|
 | identity | 10 | 0 | 0 |
-| datasource | 4 | 2 | 6 |
+| datasource | 5 | 4 | 3 |
 | retention | 1 | 0 | 6 |
 | alerts | 2 | 0 | 4 |
 | ha | 1 | 1 | 3 |
-| ui | 2 | 0 | 8 |
-| **total** | **20** | **3** | **27** |
+| ui | 2 | 1 | 7 |
+| **total** | **21** | **6** | **23** |
 
 ### alerts — 2 present · 0 partial · 4 absent
 
@@ -83,7 +83,7 @@ place for a capability, not the capability.
 | `ALR-05` | the agent publishes its own Prometheus collectors on its metrics listener | **present** | — |
 | `ALR-06` | a node that stops sending frames is listed as not connected within the inactivity timeout plus one janitor tick | **present** | — |
 
-### datasource — 4 present · 2 partial · 6 absent
+### datasource — 5 present · 4 partial · 3 absent
 
 | id | control | verdict | what is missing |
 |---|---|---|---|
@@ -91,14 +91,27 @@ place for a capability, not the capability.
 | `FDS-02` | a record survives create, read, update and delete through the fleet once its model is allowlisted | **present** | — |
 | `FDS-03` | mutations are refused by default; the allowlist opens a model; reads are never gated | **present** | — |
 | `FDS-04` | a viewer operator (read-only role) can read and cannot mutate | **present** | — |
-| `FDS-05` | the operator identity crosses the stream: the agent-side handler is told who is asking | **absent** | DataStudioRequest and every request body it wraps (proto/nucleus/admin/v1/admin.proto) carry no subject, operator or identity field, and a BeforeCreate hook on the model sees no framework identity (auth.ClaimsFromContext) when the fleet operator writes through it; the agent executes with its own database access and the server's resolved operator stays on the server (it reaches the audit ring, not the stream). |
+| `FDS-05` | the operator identity crosses the stream: the agent-side handler is told who is asking | **partial** | the wire declares it since A9 S3 (DataStudioRequest.operator, an OperatorIdentity with subject, role, read_only and tenant), but the server never fills it and the agent never reads it: a BeforeCreate hook on the model still sees no framework identity (auth.ClaimsFromContext) when the fleet operator writes through it. A declaration is not a surface; S4 makes the agent run under it and S5 makes the server send it. |
 | `FDS-06` | the application's per-model policy applies to the fleet operator: a denied model is refused | **absent** | an agent whose Authorizer denies every action on the model still answers ListRecords with rows: agent/datastudio builds a model.CRUD on the database handle and never consults the Authorizer (the Authorizer feeds the read-only RBAC snapshot the fleet UI displays, not enforcement). |
-| `FDS-07` | fleet reads are tenant-filtered when the model declares a tenant column | **absent** | a model with a declared tenant column answers every tenant's rows to an operator scoped to one: no surface carries the tenant — server.Config has no tenant header, no request message has a tenant field, and the agent-side handler runs with no tenant in its context (agent/datastudio, security model). |
-| `FDS-08` | filters with operators (contains, range, set, null) reach the agent | **partial** | ListRecordsRequest.filters is a map<string,string> the agent applies as column = value, so equality narrows the page; an operator spelling (Title__contains) is not a column, is dropped in silence and every row comes back. The typed operator filters the model layer accepts (QueryOpts.Where) have no field on the wire. |
-| `FDS-09` | pagination carries an exact total, filtered or not | **absent** | PaginatedRecords declares total and total_estimated, and every page answers total -1 with total_estimated true, filtered or not: the agent never asks the model layer for a count (QueryOpts.ExactTotal is not set in agent/datastudio), so no fleet pager can say how many pages there are. |
+| `FDS-07` | fleet reads are tenant-filtered when the model declares a tenant column | **partial** | a model with a declared tenant column answers every tenant's rows to an operator scoped to one. The wire declares where the tenant rides since A9 S3 (OperatorIdentity.tenant on DataStudioRequest), but server.Config has no tenant header to read it from, the server fills nothing, and the agent-side handler runs with no tenant in its context (agent/datastudio). S4 scopes the agent by the identity it receives; S5 makes the server send it. |
+| `FDS-08` | filters with operators (contains, range, set, null) reach the agent | **partial** | the wire declares them since A9 S3 (RecordFilter and ListRecordsRequest.where, the datasource contract's closed set of operators), and the server forwards the request verbatim, but the agent does not read the field yet: agent/go.mod pins proto by tag (ADR-006), so the mapping onto the model layer's Where lands in the PR that follows the proto/v0.5.0 cut. Until then a `where` filter is dropped and every row comes back. |
+| `FDS-09` | pagination carries an exact total, filtered or not | **present** | — |
 | `FDS-10` | the agent serves Data Studio through the datasource contract, so a contract implementation can be registered in the fleet | **absent** | agent/go.mod does not require the root module that owns the datasource package, and agent.Config has no field typed from it: the agent builds its own model.CRUD path (agent/datastudio) and a contract implementation such as quarkdatasource cannot be handed to it. |
 | `FDS-11` | a fleet mutation leaves an audit entry with operator, model, record and node, and says what changed | **partial** | ListAudit returns the entry attributed to actor, action, target (model and record id) and node; AuditEntry has no before/after values. Whether the entry survives the process is RET-04's measurement. |
 | `FDS-12` | the fleet-consumes-the-contract decision (docs/adrs/ADR-002) is recorded as implemented in the ADR and in the index | **absent** | the ADR's front matter says status: accepted and the index row in docs/adrs/README.md says "pendiente de implementar": the decision is taken and the work is open. |
+
+Three controls moved to **partial** in A9 `S3` for the same reason and none of
+them is closer to present than the note says: the wire now *declares* the
+operator identity (`DataStudioRequest.operator`, with a `tenant`) and the
+operator filters (`ListRecordsRequest.where`), and declaring is not doing.
+`FDS-05` and `FDS-07` wait for the server to fill the identity (`S5`) and the
+agent to run under it (`S4`); `FDS-08` waits for the agent to read `where`,
+which it cannot until `proto/v0.5.0` is cut, because `agent/go.mod` pins the
+protocol by tag (ADR-006). `UI-09` was made stricter on the way: a field in a
+descriptor is not a tenant notion in the UI, and neither is the word "tenant"
+inside a translated string — the SPA has to read or set the property. `FDS-09`
+is **present**: the agent asks the model layer for an exact count on every
+list, filtered or not.
 
 ### ha — 1 present · 1 partial · 3 absent
 
@@ -159,7 +172,7 @@ certificate serving, with one WARN. The CA bundles (`--agent-client-ca`,
 | `RET-06` | the fleet audit trail can be exported (CSV or JSON download) | **absent** | no route on the UI listener answers an export path (the single-page fallback catches them) and ManageService has only GetRbac and ListAudit; the panel's CSV export has no fleet counterpart. |
 | `RET-07` | the replay buffer is bounded, drops the oldest and exposes its size and counters | **present** | — |
 
-### ui — 2 present · 0 partial · 8 absent
+### ui — 2 present · 1 partial · 7 absent
 
 | id | control | verdict | what is missing |
 |---|---|---|---|
@@ -171,7 +184,7 @@ certificate serving, with one WARN. The CA bundles (`--agent-client-ca`,
 | `UI-06` | the fleet UI's generated stubs are connect-es 2 / protobuf-es 2, in the dependencies and in the generators | **absent** | ui/package.json pins @connectrpc/connect ^1.6.1, @connectrpc/connect-web ^1.7.0 and @bufbuild/protobuf ^1.10.0, and proto/buf.gen.yaml pins the generators bufbuild/es:v1.10.0 and connectrpc/es:v1.6.1. |
 | `UI-07` | the browser instrument covers the fleet UI: a Playwright spec navigates to a path outside /admin | **absent** | the only Playwright spec (internal/adminbench/browser/specs/panel.spec.ts) navigates to /admin paths only; nothing opens the fleet UI in a browser. |
 | `UI-08` | the fleet UI is told the operator's role: GetSelf says read-only for a viewer | **present** | — |
-| `UI-09` | the fleet UI has a tenant notion: a message on the wire carries one | **absent** | no message in admin.proto has a field with tenant in its name: neither the Control nor the Data Studio surface can say which tenant an operator or a row belongs to. |
+| `UI-09` | the fleet UI has a tenant notion: a message on the wire carries one and the SPA sends or shows it | **partial** | the wire carries one since A9 S3 (OperatorIdentity.tenant on DataStudioRequest, server to agent), but nothing the fleet SPA sends (ui/src, outside src/gen) names a tenant and no screen shows which tenant an operator or a row belongs to: the Control surface still has no tenant field at all. S10 puts the tenant in the UI. |
 | `UI-10` | the panel's initial load stays within its budget, and the budget is a test constant | **present** | — |
 
 ## What the shape of it says

@@ -20,6 +20,7 @@
 | [ADR-009](ADR-009-formularios-relacion-hijos-y-ficheros.md) | Un formulario resuelve la relación, edita los hijos y acepta un fichero — sin transacción y sin fingirla | Accepted (2026-09-14) | ADR-001 · ADR-007 |
 | [ADR-010](ADR-010-acciones-y-pantallas-de-la-aplicacion.md) | La aplicación añade sus verbos y sus pantallas al panel, por adición y bajo sus mismas reglas | Accepted (2026-09-18) | ADR-001 · ADR-004 · ADR-007 |
 | [ADR-011](ADR-011-la-ropa-del-producto.md) | El panel lleva la ropa del producto — marca, tarjetas propias e idioma, sin traducir los datos | Accepted (2026-09-18) | ADR-004 · ADR-010 |
+| [ADR-012](ADR-012-contrato-datasource-modulo-hoja.md) | El contrato `datasource` es un módulo hoja — la segunda arista que ADR-006 permite (la extracción se ejecuta en A9 `S4`) | Accepted (2026-09-21) | ADR-001 · ADR-002 · ADR-006 · quantum QADR-0002 · QADR-0010 |
 
 **ADR-002 está aceptado pero no implementado**: la D2 de la auditoría
 integral 2026-08-30 decidió (2026-08-31) que el Data Studio del plano fleet

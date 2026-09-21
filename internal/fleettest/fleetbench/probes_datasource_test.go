@@ -439,8 +439,9 @@ func probeTenantFilteredReads(t *testing.T, e *env) verdict {
 }
 
 // FDS-08: filters with operators over the wire. Equality is what the
-// map<string,string> carries; an operator spelling is what the contract's
-// filter language needs.
+// map<string,string> carries; an operator is what `where` carries since
+// A9 S3, and the agent applies it through the model layer's Where — or
+// refuses it, never drops it.
 func probeFilterOperatorsOverWire(t *testing.T, e *env) verdict {
 	ctx := ctxFor(t)
 	srv, _ := e.startPair(t)
@@ -455,31 +456,58 @@ func probeFilterOperatorsOverWire(t *testing.T, e *env) verdict {
 		t.Logf("equality filter returned %d rows, not 1: filters are ignored", n)
 		return absent
 	}
-	for _, key := range []string{"Title__contains", "title__contains"} {
-		op, err := listArticles(ctx, ds, map[string]string{key: "article 1"})
+
+	// The typed field, when the descriptor declares it.
+	if len(fieldsContaining(messageNamed(t, "ListRecordsRequest"), "where")) == 0 {
+		// The map is the only wire form: an operator spelling in it is not
+		// a column and is dropped, which is the partial the note records.
+		for _, key := range []string{"Title__contains", "title__contains"} {
+			op, err := listArticles(ctx, ds, map[string]string{key: "article 1"})
+			if err != nil {
+				t.Logf("operator spelling %q refused: %v", key, err)
+				continue
+			}
+			t.Logf("operator spelling %q returned %d rows: the operator was dropped", key, len(op.GetItems()))
+		}
+		return partial
+	}
+	listWhere := func(where ...*adminv1.RecordFilter) (*adminv1.PaginatedRecords, error) {
+		resp, err := ds.ListRecords(ctx, connect.NewRequest(&adminv1.ListRecordsRequest{
+			ModelName: "TestArticle", Page: 1, PageSize: 25, Where: where,
+		}))
 		if err != nil {
-			t.Logf("operator spelling %q refused: %v", key, err)
-			continue
+			return nil, err
 		}
-		if len(op.GetItems()) == 1 && unquote(op.GetItems()[0].GetValuesJson()["Title"]) == "seed article 1" {
-			return present
-		}
-		t.Logf("operator spelling %q returned %d rows: the operator was dropped", key, len(op.GetItems()))
+		return resp.Msg, nil
 	}
-	// The realistic way the wire grows an operator is a typed field beside
-	// `filters`. This probe cannot fill a field it does not know, so one
-	// that appears stops the measurement rather than letting the recorded
-	// verdict stand by accident.
-	var typed []string
-	for _, f := range fieldsContaining(messageNamed(t, "ListRecordsRequest"), "filter", "where", "operator", "condition") {
-		if f != "filters" {
-			typed = append(typed, f)
-		}
+	// contains narrows to the one row; a set keeps two; a null check on a
+	// column that is never null keeps none.
+	contains, err := listWhere(&adminv1.RecordFilter{Column: "Title", Op: "contains", Value: "article 1"})
+	if err != nil {
+		t.Logf("where contains refused: %v", err)
+		return partial
 	}
-	if len(typed) > 0 {
-		t.Fatalf("ListRecordsRequest grew %v: extend this probe to send an operator through it", typed)
+	if n := len(contains.GetItems()); n != 1 || unquote(contains.GetItems()[0].GetValuesJson()["Title"]) != "seed article 1" {
+		t.Logf("where contains returned %d rows, want the one article", n)
+		return partial
 	}
-	return partial
+	set, err := listWhere(&adminv1.RecordFilter{Column: "Title", Op: "in", Values: []string{"seed article 1", "seed article 2"}})
+	if err != nil || len(set.GetItems()) != 2 {
+		t.Logf("where in returned %d rows (%v), want 2", len(set.GetItems()), err)
+		return partial
+	}
+	null, err := listWhere(&adminv1.RecordFilter{Column: "Title", Op: "isnull", Value: "true"})
+	if err != nil || len(null.GetItems()) != 0 {
+		t.Logf("where isnull=true returned %d rows (%v), want 0", len(null.GetItems()), err)
+		return partial
+	}
+	// And the rule that makes a filter trustworthy: an operator the agent
+	// does not know is refused, not treated as "no filter".
+	if unknown, err := listWhere(&adminv1.RecordFilter{Column: "Title", Op: "like", Value: "%"}); err == nil {
+		t.Logf("an unknown operator was accepted and returned %d rows: a dropped filter looks like a result", len(unknown.GetItems()))
+		return partial
+	}
+	return present
 }
 
 // FDS-09: pagination carries an exact total, filtered or not.

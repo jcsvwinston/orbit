@@ -442,6 +442,25 @@ message GetSchemaRequest {
   string database_alias = 3;
 }
 
+// RecordFilter is one comparison against one column, the wire form of the
+// datasource contract's Filter (ADR-001): the operators are its closed set
+// and mean what they mean there — the pattern operators match the text
+// literally, and an `in` with no values matches nothing. The agent refuses
+// an operator it does not know rather than dropping the filter: a filter
+// quietly treated as "no filter" answers every row and looks like a result.
+message RecordFilter {
+  // Column (field key) the comparison applies to.
+  string column = 1;
+  // One of: eq, ne, gt, gte, lt, lte, contains, startswith, endswith, in,
+  // not_in, isnull. Case-insensitive.
+  string op = 2;
+  // The text form of the value for every single-valued operator; "true" or
+  // "false" for isnull.
+  string value = 3;
+  // The set for in and not_in.
+  repeated string values = 4;
+}
+
 message ListRecordsRequest {
   string node_id = 1;
   string model_name = 2;
@@ -451,8 +470,13 @@ message ListRecordsRequest {
   uint32 page_size = 11;
   string search = 12;
   string order_by = 13;
+  // Equality filters, column -> value. Kept for older callers; ANDed with
+  // `where`.
   map<string, string> filters = 14;
   repeated string fields = 15;
+  // Filters that need an operator (a range, a prefix, a set, a null
+  // check). ANDed with each other and with `filters`.
+  repeated RecordFilter where = 16;
 }
 
 message PaginatedRecords {
@@ -512,12 +536,31 @@ message BulkActionResponse {
   repeated string errors = 3;
 }
 
+// OperatorIdentity is who is asking, as the admin server's UI auth chain
+// resolved it (ADR-002): the subject and role the panel would see, whether
+// the operator is read-only, and the tenant the operation is scoped to.
+// The server fills it; an agent that receives one runs the operation under
+// that identity, so the application's per-model policy and tenant filter
+// apply to the fleet operator as they apply in-process. An agent that
+// receives none keeps the current behaviour (allowlist + read-only gate).
+message OperatorIdentity {
+  string subject = 1;
+  string email = 2;
+  string role = 3;
+  bool read_only = 4;
+  // Tenant the operation is scoped to; empty means no tenant scope.
+  string tenant = 5;
+}
+
 // DataStudioRequest is sent from server to agent over the bidi
 // AgentService.Stream multiplexed with events. Each request carries an
 // opaque request_id the agent echoes in its DataStudioResponse so the
 // server can correlate.
 message DataStudioRequest {
   string request_id = 1;
+  // The operator on whose behalf the request runs. Additive: unset from
+  // older servers.
+  OperatorIdentity operator = 2;
   oneof body {
     ListModelsRequest list_models = 10;
     GetSchemaRequest get_schema = 11;
