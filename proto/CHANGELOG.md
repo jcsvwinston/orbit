@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/jcsvwinston/orbit/compare/proto/v0.4.4...proto/v0.5.0) (2026-09-21)
+
+
+### Added
+
+* **fleet:** ADR-012, the wire declares operator identity and filters, and lists carry an exact total (A9 S3, part 1) ([#506](https://github.com/jcsvwinston/orbit/issues/506)) ([d542622](https://github.com/jcsvwinston/orbit/commit/d542622a12df088c62467d8d4e5794746726d7d9))
+
 ## [0.4.4](https://github.com/jcsvwinston/orbit/compare/proto/v0.4.3...proto/v0.4.4) (2026-09-05)
 
 
