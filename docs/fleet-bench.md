@@ -60,17 +60,17 @@ place for a capability, not the capability.
 
 ## The result
 
-**16 of 50 controls present. 5 partial. 29 absent.**
+**18 of 50 controls present. 5 partial. 27 absent.**
 
 | family | present | partial | absent |
 |---|---|---|---|
-| identity | 6 | 2 | 2 |
+| identity | 8 | 2 | 0 |
 | datasource | 4 | 2 | 6 |
 | retention | 1 | 0 | 6 |
 | alerts | 2 | 0 | 4 |
 | ha | 1 | 1 | 3 |
 | ui | 2 | 0 | 8 |
-| **total** | **16** | **5** | **29** |
+| **total** | **18** | **5** | **27** |
 
 ### alerts — 2 present · 0 partial · 4 absent
 
@@ -110,7 +110,7 @@ place for a capability, not the capability.
 | `HA-04` | agents are assigned across servers deterministically | **absent** | no shard, peer, cluster or assignment field in server.Config or agent.Config and nothing about it on the wire: an agent connects to the first endpoint in its list that answers /healthz. |
 | `HA-05` | a reconnect under the same node_id supersedes the previous stream: one node, no duplicates | **partial** | the registry keeps one entry: Registry.Add (server/nodes/registry.go) evicts the old entry and cancels its context, which stops the server's writer. The old stream itself is not ended: AgentService.Stream's reader loop (server/services/agent_service.go:106-117) blocks in stream.Receive() and only checks streamCtx.Err() after Receive returns an error, so the superseded peer sees no error and a frame it sends after the takeover is still published as the node — a UI subscriber receives it. The old stream lives until its peer closes it. |
 
-### identity — 6 present · 2 partial · 2 absent
+### identity — 8 present · 2 partial · 0 absent
 
 | id | control | verdict | what is missing |
 |---|---|---|---|
@@ -118,12 +118,23 @@ place for a capability, not the capability.
 | `IDENT-02` | with mutual TLS configured, a client without a certificate is refused at the handshake and a CA-signed one registers | **present** | — |
 | `IDENT-03` | an agent listener off loopback refuses to start with neither a token nor verified client certificates | **present** | — |
 | `IDENT-04` | a real agent connects over mutual TLS and registers; without a client certificate it never does | **present** | — |
-| `IDENT-05` | the agent's client certificate can be given by configuration (file paths) rather than as a Go value | **absent** | agent.ExtensionConfig has no certificate, key or CA file field; its TLS field is a *tls.Config tagged koanf:"-" (agent/extension_config.go), so a deployment has to build the value in code from its PEM files. |
-| `IDENT-06` | the node identity is bound to the certificate: a certificate for node-a declaring node_id node-b is refused or registered as node-a | **absent** | the server verifies the client certificate and then registers the node under the node_id the agent declares: an agent with a certificate for node-a and node_id node-b is listed as node-b. The certificate's subject reaches the request context (server/auth: Identity{Subject: "agent:<CN>"}) but AgentService.Stream never reads it (server/services/agent_service.go builds the NodeInfo from the registration frame alone). |
+| `IDENT-05` | the agent's client certificate can be given by configuration (file paths) rather than as a Go value | **present** | — |
+| `IDENT-06` | the node identity is bound to the certificate: a certificate for node-a declaring node_id node-b is refused or registered as node-a | **present** | — |
 | `IDENT-07` | the server's certificate rotates without a restart: a new handshake sees the new certificate | **partial** | only the generic Go path exists: a tls.Config whose GetCertificate answers from a source the caller swaps is honoured by the next handshake. The product offers nothing on top — server.Config takes a *tls.Config and the binary loads --agent-cert/--agent-key once at boot (server/cmd/admin-server/main.go); no reload flag, signal or file watch. |
-| `IDENT-08` | the agent presents a new client certificate on its next connection without a restart | **partial** | only the generic Go path exists: a tls.Config whose GetClientCertificate answers from a source the caller swaps is honoured when the agent reconnects (measured across a failover to a second server). The product offers nothing on top — agent.Config.TLS is a *tls.Config, ExtensionConfig cannot name the files, and nothing watches them. |
+| `IDENT-08` | the agent presents a new client certificate on its next connection without a restart | **partial** | only the generic Go path exists: a tls.Config whose GetClientCertificate answers from a source the caller swaps is honoured when the agent reconnects (measured across a failover to a second server). The product offers nothing on top — ExtensionConfig names the files (tls_cert_file, tls_key_file, tls_ca_file) and loads them ONCE at boot; nothing watches them and a reconnect presents the certificate the process started with. |
 | `IDENT-09` | a shared token authenticates an agent; a wrong token is refused with one rate-limited WARN naming the remote IP | **present** | — |
 | `IDENT-10` | /healthz answers without credentials on both listeners while the same listeners refuse an uncredentialled RPC | **present** | — |
+
+`IDENT-06` is **present** through an opt-in: `server.Config.AgentIdentityFromCertificate`
+(`--agent-identity-from-cert`) refuses a registration whose `node_id` is not the
+verified certificate's Common Name, and `Run` refuses to start with it on a
+listener that does not verify client certificates. The default still registers
+the declared `node_id` — with a WARN naming both — because deployments whose
+certificate names something other than the node (one certificate shared by a
+fleet) must keep working until the next major flips the default. The probe
+measures both regimes. `IDENT-05` boots a real agent through the extension from
+nothing but three file paths and no `node_id`; the node the server lists is the
+certificate's Common Name.
 
 ### retention — 1 present · 0 partial · 6 absent
 

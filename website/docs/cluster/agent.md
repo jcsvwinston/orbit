@@ -77,9 +77,30 @@ agent.NewExtension(agent.ExtensionConfig{
 }, cfg.StateDir, appVersion)
 ```
 
-`TLS` is not read from a config file; build it in code from the PEM files
-your deployment ships. The `/healthz` probe the agent sends before opening
-a stream uses the same configuration and carries no token.
+`TLS` itself cannot come from a config file, but the PEM files can: four
+fields name them, and the agent loads them on top of whatever `TLS` carries
+(nil included). Set them in code or, if your application unmarshals its own
+configuration into `ExtensionConfig`, through their `koanf` keys:
+
+```go
+agent.ExtensionConfig{
+    Endpoints:     []string{"https://admin.internal:9090"},
+    TLSCertFile:   "/etc/orbit/agent.crt", // client certificate (mutual TLS)
+    TLSKeyFile:    "/etc/orbit/agent.key", // both or neither
+    TLSCAFile:     "/etc/orbit/ca.crt",    // private CA that signed the server
+    TLSServerName: "",                     // when the endpoint host is not a name on the certificate
+}
+// koanf keys: tls_cert_file, tls_key_file, tls_ca_file, tls_server_name
+```
+
+`agent.ExtensionConfig.TLSConfig()` is the resolution the extension applies:
+the certificate file replaces `TLS.Certificates`, the CA bundle becomes
+`TLS.RootCAs`, the server name overrides the endpoint's host. A certificate
+without its key, a missing file or a CA bundle with no PEM certificate fail
+the boot with the field named. The files are read once, at boot: a
+certificate that changes on disk is presented after a restart, not before.
+The `/healthz` probe the agent sends before opening a stream uses the same
+configuration and carries no token.
 
 ## Node identity
 
@@ -89,6 +110,16 @@ the state directory is unavailable.
 
 This is the identity the agent registers under, and the value every fleet view
 keys on — the `Nodes` page, per-node stream filters, and the metrics cards.
+
+**With a client certificate from files and no `node_id`, the node is named
+after the certificate's Common Name.** The server authenticates that name at
+the handshake (`agent:<CN>`), so writing it once, in the certificate, is what
+lets a server that binds node identity to the certificate
+(`--agent-identity-from-cert`) accept the agent. An explicit `node_id` still
+wins — and is then what such a server compares with the certificate: if the
+two differ, the registration is refused with `PermissionDenied` and the
+server log names both. A server without that flag registers the declared
+`node_id` and logs a WARN when it differs from the certificate.
 Events shipped over the stream carry the same NodeID, so an event's `node_id`
 always matches a registered node. (The agent stamps it over the in-process
 bus's own node label, which is host-local and does not correlate with the fleet

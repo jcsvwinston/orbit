@@ -31,9 +31,30 @@ type ExtensionConfig struct {
 	// trust store. Set RootCAs for a server signed by a private CA and
 	// Certificates to present a client certificate when the admin
 	// server's agent listener requires one (--agent-client-ca). It is
-	// not bound from a config file (koanf:"-"): build it in code from
-	// the PEM files your deployment ships.
+	// not bound from a config file (koanf:"-"); the four TLS*File/Name
+	// fields below are, and are loaded on top of it (TLSConfig).
 	TLS *tls.Config `koanf:"-"`
+
+	// TLSCertFile and TLSKeyFile name the PEM files of the client
+	// certificate the agent presents when the admin server's agent
+	// listener requires one (--agent-client-ca). Set both or neither.
+	// When they are set and NodeIDOverride is empty, the node registers
+	// under the certificate's Common Name — the name the server
+	// authenticates — so the identity is written once, in the
+	// certificate, and a server that binds node identity to it
+	// (--agent-identity-from-cert) accepts the agent.
+	TLSCertFile string `koanf:"tls_cert_file"`
+	TLSKeyFile  string `koanf:"tls_key_file"`
+
+	// TLSCAFile names a PEM bundle of the CAs that sign the admin server's
+	// certificate, for a server under a private CA. Empty verifies the
+	// server against the system trust store (or TLS.RootCAs when set).
+	TLSCAFile string `koanf:"tls_ca_file"`
+
+	// TLSServerName is the name the server certificate is verified as,
+	// when the endpoint's host is not one of the certificate's names (an
+	// IP, a load balancer). Empty uses the endpoint's host.
+	TLSServerName string `koanf:"tls_server_name"`
 
 	// HeartbeatInterval defines the cadence of Heartbeat frames the agent
 	// sends to the server. Default 10s.

@@ -110,8 +110,10 @@ token works instead: start with `--ui-bearer` and send
 
 **Two listeners**, one for agents and one for UIs, each with its own auth
 chain: h2c by default, TLS when configured (mutual TLS on the agent
-listener with `--agent-client-ca`). `/healthz` is public on both,
-carved out of auth so load balancers can probe it.
+listener with `--agent-client-ca`, and `--agent-identity-from-cert` to make
+the certificate's Common Name the only `node_id` that agent may register
+under). `/healthz` is public on both, carved out of auth so load balancers
+can probe it.
 
 **Routing primitives** move frames between them:
 

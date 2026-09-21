@@ -165,10 +165,26 @@ Common Name becomes the agent's identity (`agent:<CN>`). Mutual TLS
 satisfies the fail-closed startup rule on its own; a certificate without
 `--agent-client-ca` does not, so pair it with `--agent-token`.
 
+Verifying the certificate says who holds it; it does not, by itself, decide
+which node that is. By default the server registers the `node_id` the agent
+declares and logs a WARN when it differs from the certificate's Common Name
+— an agent holding a certificate for `node-a` can still sit in the fleet as
+`node-b`. **`--agent-identity-from-cert`** (env
+`NUCLEUS_ADMIN_AGENT_IDENTITY_FROM_CERT=1`) binds the two: a registration
+whose `node_id` is not the verified Common Name is refused with
+`PermissionDenied`, and the server refuses to start with the flag on a
+listener that does not verify client certificates. The binding is opt-in
+because a fleet that shares one certificate across its agents would stop
+registering; issue one certificate per node, named after it, and turn the
+flag on. The default flips in the next major.
+
 Agents accept `https://` endpoints and use the system trust store by
-default. For a private CA, or to present a client certificate, set the
-`TLS` field of the agent's configuration (`agent.ExtensionConfig.TLS`, a
-`*tls.Config` built from your PEM files) — see the [agent page](../cluster/agent.md).
+default. For a private CA, or to present a client certificate, name the PEM
+files in the agent's configuration (`tls_cert_file`, `tls_key_file`,
+`tls_ca_file`) or set the `TLS` field in code — see the
+[agent page](../cluster/agent.md). An agent whose certificate comes from
+files and that sets no `node_id` registers as the certificate's Common
+Name, which is what the binding above compares against.
 
 ## The metrics listener
 
@@ -179,6 +195,8 @@ you would any metrics port.
 
 ## Hardening checklist
 
+- [ ] `--agent-identity-from-cert` set when agents authenticate by
+      certificate, with one certificate per node named after it.
 - [ ] `--agent-token` set (or mutual TLS via `--agent-client-ca`), and
       **not** passed on the command line in production — use
       `NUCLEUS_ADMIN_AGENT_TOKEN` from a root-only environment file.
