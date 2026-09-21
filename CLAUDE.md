@@ -42,7 +42,9 @@ core de Nucleus por su `ADR-019`; Nucleus ya no lleva código de admin.
   servidor y agente reales (o lee los descriptores del protocolo y el árbol)
   y un veredicto REGISTRADO que la sonda comprueba; cerrar un hueco pone la
   suite en rojo hasta actualizar el veredicto. La tabla publicada vive en
-  `docs/fleet-bench.md` y se regenera con `ORBIT_FLEET_BENCH_TABLE=1`.
+  `docs/fleet-bench.md`; `ORBIT_FLEET_BENCH_TABLE=1` escribe
+  `fleetbench/bench-table.md` (generado, sin commitear) y la página se
+  actualiza a mano desde él.
   Mismo patrón que `internal/adminbench/` (el banco del panel,
   `docs/admin-bench.md`).
 

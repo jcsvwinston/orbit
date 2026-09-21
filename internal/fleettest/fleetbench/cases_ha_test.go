@@ -25,6 +25,11 @@ func controlsHA() []control {
 				"on the wire: an agent connects to the first endpoint in its list that answers /healthz.",
 			probe: probeAgentSharding},
 		{id: "HA-05", family: "ha", title: "a reconnect under the same node_id supersedes the previous stream: one node, no duplicates",
-			want: present, probe: probeSameNodeIDSupersedes},
+			want: partial, note: "the registry keeps one entry: Registry.Add (server/nodes/registry.go) evicts the old entry and " +
+				"cancels its context, which stops the server's writer. The old stream itself is not ended: AgentService.Stream's " +
+				"reader loop (server/services/agent_service.go:106-117) blocks in stream.Receive() and only checks streamCtx.Err() " +
+				"after Receive returns an error, so the superseded peer sees no error and a frame it sends after the takeover is " +
+				"still published as the node — a UI subscriber receives it. The old stream lives until its peer closes it.",
+			probe: probeSameNodeIDSupersedes},
 	}
 }

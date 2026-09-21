@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
+
 	"github.com/jcsvwinston/orbit/agent"
 	server "github.com/jcsvwinston/orbit/server"
 )
@@ -132,24 +134,32 @@ func probeAgentListenerMTLS(t *testing.T, e *env) verdict {
 }
 
 // IDENT-03: an agent listener off loopback with no authentication refuses
-// to start; the same address with a token passes the guard (whatever the
-// bind then does).
+// to start — with no TLS and with a server-only certificate, which encrypts
+// but authenticates nobody — while a token or verified client certificates
+// pass the guard (whatever the bind then does).
 func probeAgentListenerFailsClosed(t *testing.T, e *env) verdict {
 	// 192.0.2.1 is documentation space (RFC 5737): no host has it, and the
 	// guard runs before any bind, so nothing is ever listened on.
 	const exposed = "192.0.2.1:0"
-	_, err := e.tryStartServer(t, server.Config{AgentAddr: exposed})
-	if err == nil {
-		t.Log("an unauthenticated agent listener started on a non-loopback address")
+	ca := newTestCA(t)
+	refused := func(cfg server.Config) bool {
+		_, err := e.tryStartServer(t, cfg)
+		return err != nil && strings.Contains(err.Error(), "refusing to start")
+	}
+	if !refused(server.Config{AgentAddr: exposed}) {
+		t.Log("an unauthenticated plaintext agent listener was not refused on a non-loopback address")
 		return absent
 	}
-	if !strings.Contains(err.Error(), "refusing to start") {
-		t.Logf("the listener failed for another reason than the guard: %v", err)
-		return absent
+	if !refused(server.Config{AgentAddr: exposed, AgentTLS: ca.serverTLS()}) {
+		t.Log("a server-only certificate (no client verification) was taken for authentication")
+		return partial
 	}
-	_, err = e.tryStartServer(t, server.Config{AgentAddr: exposed, AgentToken: "bench-token"})
-	if err != nil && strings.Contains(err.Error(), "refusing to start") {
-		t.Logf("the guard refuses an authenticated listener too: %v", err)
+	if refused(server.Config{AgentAddr: exposed, AgentToken: "bench-token"}) {
+		t.Log("the guard refuses a token-authenticated listener too")
+		return partial
+	}
+	if refused(server.Config{AgentAddr: exposed, AgentTLS: ca.mutualTLS()}) {
+		t.Log("the guard refuses a mutual-TLS listener too")
 		return partial
 	}
 	return present
@@ -297,9 +307,10 @@ func probeServerCertRotation(t *testing.T, e *env) verdict {
 		t.Logf("after the swap the handshake still saw %q: the certificate is fixed when the listener is built", got)
 		return absent
 	}
+	// A knob that appears is a name, not a measured rotation: the verdict
+	// stays partial until this probe rotates the files and handshakes again.
 	if knobs := fieldsNamed(server.Config{}, "", certFileKnobs...); len(knobs) > 0 {
 		t.Logf("server.Config offers %v: extend this probe to rotate the files and handshake again", knobs)
-		return present
 	}
 	return partial
 }
@@ -351,9 +362,10 @@ func probeAgentCertRotation(t *testing.T, e *env) verdict {
 	}
 	switch {
 	case recB.saw("agent-v2"):
+		// A knob that appears is a name, not a measured rotation: partial
+		// until this probe rotates the files instead of the callback.
 		if knobs := fieldsNamed(agent.ExtensionConfig{}, "koanf", certFileKnobs...); len(knobs) > 0 {
 			t.Logf("ExtensionConfig offers %v: extend this probe to rotate the files instead of the callback", knobs)
-			return present
 		}
 		return partial
 	case recB.saw("agent-v1"):
@@ -366,18 +378,35 @@ func probeAgentCertRotation(t *testing.T, e *env) verdict {
 }
 
 // IDENT-09: a shared token authenticates an agent; a wrong one is refused
-// with a rate-limited, operator-facing warning that names the caller.
+// with a rate-limited, operator-facing warning that names the caller. The
+// wrong token is presented three times by raw streams, so "exactly one
+// warning" is measured against a known number of refusals rather than
+// against however many times an agent happened to retry.
 func probeSharedTokenAuth(t *testing.T, e *env) verdict {
 	logs := &logBuffer{}
 	srv := e.startServer(t, server.Config{AgentToken: "right-token", Logger: logs.logger()})
 	endpoint := "http://" + srv.AgentAddr()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-	wrong := e.startAgent(t, agent.Config{Endpoints: []string{endpoint}, Token: "wrong-token", NodeIDOverride: "fb-wrong"})
-	if waitRegistered(srv.Server, "fb-wrong", 1500*time.Millisecond) {
-		t.Log("an agent with the wrong token registered")
+	for i := 0; i < 3; i++ {
+		stream, err := registerRaw(ctx, h2cClient(), endpoint, "fb-wrong", connect.WithInterceptors(bearer("wrong-token")))
+		if err == nil {
+			_, err = stream.Receive()
+		}
+		if err == nil {
+			t.Log("a stream with the wrong token was accepted")
+			return absent
+		}
+		if connect.CodeOf(err) != connect.CodeUnauthenticated {
+			t.Logf("refusal %d is not Unauthenticated: %v", i+1, err)
+			return partial
+		}
+	}
+	if _, ok := srv.State().Nodes.Lookup("fb-wrong"); ok {
+		t.Log("a node with the wrong token registered")
 		return absent
 	}
-	wrong.stop()
 	text := logs.String()
 	line := ""
 	for _, l := range strings.Split(text, "\n") {
@@ -395,7 +424,7 @@ func probeSharedTokenAuth(t *testing.T, e *env) verdict {
 		return partial
 	}
 	if n := strings.Count(text, "rejected agent request"); n != 1 {
-		t.Logf("the refusal was logged %d times inside one minute: not rate-limited", n)
+		t.Logf("three refusals inside one minute were logged %d times: not rate-limited", n)
 		return partial
 	}
 
@@ -432,8 +461,8 @@ func probeHealthzWithoutCredentials(t *testing.T, e *env) verdict {
 	case 1:
 		return partial
 	}
-	// Negative control: the exemption is an exemption only if the listener
-	// otherwise asks for credentials.
+	// Negative controls: the exemption is an exemption only if each
+	// listener otherwise asks for credentials.
 	resp, err := bareClient().Post(uiURL(srv.Server)+"/nucleus.admin.v1.ControlService/GetSelf", "application/json", strings.NewReader("{}"))
 	if err != nil {
 		t.Fatalf("POST GetSelf: %v", err)
@@ -441,6 +470,16 @@ func probeHealthzWithoutCredentials(t *testing.T, e *env) verdict {
 	_ = resp.Body.Close()
 	if resp.StatusCode == http.StatusOK {
 		t.Log("the UI listener answered GetSelf without any credential: /healthz is not an exemption, the listener is open")
+		return partial
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	stream, err := registerRaw(ctx, h2cClient(), "http://"+srv.AgentAddr(), "fb-untokened")
+	if err == nil {
+		_, err = stream.Receive()
+	}
+	if connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Logf("the agent listener took a stream without a token (err=%v): /healthz is not an exemption there", err)
 		return partial
 	}
 	return present

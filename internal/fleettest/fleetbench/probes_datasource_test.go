@@ -7,13 +7,16 @@ import (
 	"context"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
+	"github.com/jcsvwinston/nucleus/pkg/auth"
 	"github.com/jcsvwinston/nucleus/pkg/db"
+	"github.com/jcsvwinston/nucleus/pkg/model"
 
 	"github.com/jcsvwinston/orbit/agent"
 	adminv1 "github.com/jcsvwinston/orbit/proto/gen/go/nucleus/admin/v1"
@@ -266,27 +269,85 @@ func probeViewerCannotMutate(t *testing.T, e *env) verdict {
 	return present
 }
 
-// FDS-05: the operator identity crosses the stream. Measured on the
-// contract: does DataStudioRequest, or any request body it wraps, declare
-// a field for who is asking. A field that appears flips this probe to
-// partial — red against the recorded verdict — and the probe then has to
-// grow a check that the agent receives it filled.
-func probeIdentityCrossesStream(t *testing.T, e *env) verdict {
-	who := []string{"subject", "operator", "identity", "actor", "principal", "user", "caller"}
-	req := messageNamed(t, "DataStudioRequest")
-	found := fieldsContaining(req, who...)
-	fs := req.Fields()
-	for i := 0; i < fs.Len(); i++ {
-		f := fs.Get(i)
-		if f.Kind() != protoreflect.MessageKind {
-			continue
-		}
-		for _, n := range fieldsContaining(f.Message(), who...) {
-			found = append(found, string(f.Message().Name())+"."+n)
+// identityFieldName reports whether a protocol field is named for who is
+// asking: an exact name (user, user_id, subject, operator, identity, actor,
+// principal, caller) or a compound built on one of them. A bare substring
+// would take user_agent for an identity.
+func identityFieldName(name string) bool {
+	exact := map[string]bool{"user": true, "user_id": true, "subject": true, "operator": true, "identity": true,
+		"actor": true, "principal": true, "caller": true}
+	if exact[name] {
+		return true
+	}
+	for _, w := range []string{"subject", "operator", "identity", "actor", "principal"} {
+		if strings.HasPrefix(name, w+"_") || strings.HasSuffix(name, "_"+w) {
+			return true
 		}
 	}
-	if len(found) > 0 {
-		t.Logf("the wire declares %v: extend this probe to check the agent receives it filled", found)
+	return false
+}
+
+// FDS-05: the operator identity crosses the stream and reaches the code
+// the application runs on the agent. Two facts: the contract declares a
+// field for who is asking (DataStudioRequest or a request body it wraps),
+// and a lifecycle hook the application attached to its own model sees the
+// framework's identity in its context when the fleet operator writes
+// through it. The hook is on Create because the model layer has no read
+// hook; a mutation is also where the identity matters most.
+func probeIdentityCrossesStream(t *testing.T, e *env) verdict {
+	var declared []string
+	req := messageNamed(t, "DataStudioRequest")
+	collect := func(md protoreflect.MessageDescriptor, prefix string) {
+		fs := md.Fields()
+		for i := 0; i < fs.Len(); i++ {
+			if name := string(fs.Get(i).Name()); identityFieldName(name) {
+				declared = append(declared, prefix+name)
+			}
+		}
+	}
+	collect(req, "")
+	fs := req.Fields()
+	for i := 0; i < fs.Len(); i++ {
+		if f := fs.Get(i); f.Kind() == protoreflect.MessageKind {
+			collect(f.Message(), string(f.Message().Name())+".")
+		}
+	}
+
+	var seen atomic.Pointer[string]
+	d, reg := e.agentDBWith(t, false, model.ModelConfig{
+		BeforeCreate: func(hc model.HookContext, _ interface{}) error {
+			subject := ""
+			if claims, ok := auth.ClaimsFromContext(hc.Context); ok && claims != nil {
+				subject = claims.UserID
+				if subject == "" {
+					subject = claims.Username
+				}
+			}
+			seen.Store(&subject)
+			return nil
+		},
+	})
+	srv := e.startServer(t, server.Config{DataStudioAllowedModels: []string{"TestArticle"}})
+	ag := e.startAgent(t, agent.Config{
+		Endpoints: []string{"http://" + srv.AgentAddr()},
+		Registry:  reg,
+		Databases: map[string]*db.DB{"default": d},
+	})
+	if !waitRegistered(srv.Server, ag.NodeID(), 4*time.Second) {
+		t.Fatal("agent did not register")
+	}
+	if _, err := createArticle(ctxFor(t), e.dataStudio(srv.Server), "who wrote this"); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got := seen.Load()
+	if got == nil {
+		t.Fatal("the BeforeCreate hook never ran: the write did not go through the model layer")
+	}
+	t.Logf("wire identity fields: %v; identity seen by the agent-side hook: %q", declared, *got)
+	switch {
+	case len(declared) > 0 && *got == operatorName:
+		return present
+	case len(declared) > 0 || *got != "":
 		return partial
 	}
 	return absent
@@ -360,14 +421,18 @@ func probeTenantFilteredReads(t *testing.T, e *env) verdict {
 	for _, it := range items {
 		tenants[unquote(it.GetValuesJson()["TenantID"])]++
 	}
-	t.Logf("server.Config tenant knobs: %v; wire tenant fields: %v",
-		fieldsNamed(server.Config{}, "", "Tenant"), anyFieldContaining("tenant"))
+	knobs := fieldsNamed(server.Config{}, "", "Tenant")
+	wire := anyFieldContaining("tenant")
+	t.Logf("server.Config tenant knobs: %v; wire tenant fields: %v", knobs, wire)
 	switch {
-	case len(items) == 3:
-		t.Logf("every tenant's rows came back: %v", tenants)
-		return absent
 	case len(items) == 2 && tenants["a"] == 2:
 		return present
+	case len(items) == 3 && len(knobs) == 0 && len(wire) == 0:
+		t.Logf("every tenant's rows came back: %v", tenants)
+		return absent
+	case len(items) == 3:
+		t.Logf("every tenant's rows came back (%v) although a tenant surface exists: extend this probe to use it", tenants)
+		return partial
 	}
 	t.Logf("unexpected page: %d rows, tenants %v", len(items), tenants)
 	return partial
@@ -400,6 +465,19 @@ func probeFilterOperatorsOverWire(t *testing.T, e *env) verdict {
 			return present
 		}
 		t.Logf("operator spelling %q returned %d rows: the operator was dropped", key, len(op.GetItems()))
+	}
+	// The realistic way the wire grows an operator is a typed field beside
+	// `filters`. This probe cannot fill a field it does not know, so one
+	// that appears stops the measurement rather than letting the recorded
+	// verdict stand by accident.
+	var typed []string
+	for _, f := range fieldsContaining(messageNamed(t, "ListRecordsRequest"), "filter", "where", "operator", "condition") {
+		if f != "filters" {
+			typed = append(typed, f)
+		}
+	}
+	if len(typed) > 0 {
+		t.Fatalf("ListRecordsRequest grew %v: extend this probe to send an operator through it", typed)
 	}
 	return partial
 }
@@ -448,11 +526,7 @@ func probeAgentSpeaksDatasource(t *testing.T, e *env) verdict {
 	hasField := false
 	rt := reflect.TypeOf(agent.Config{})
 	for i := 0; i < rt.NumField(); i++ {
-		ty := rt.Field(i).Type
-		for ty.Kind() == reflect.Pointer || ty.Kind() == reflect.Slice || ty.Kind() == reflect.Map {
-			ty = ty.Elem()
-		}
-		if ty.PkgPath() == contractPkg {
+		if typeMentions(rt.Field(i).Type, contractPkg, 0) {
 			hasField = true
 		}
 	}
@@ -466,8 +540,39 @@ func probeAgentSpeaksDatasource(t *testing.T, e *env) verdict {
 	return absent
 }
 
-// FDS-11: a fleet mutation leaves an audit entry with operator, model,
-// record and node, and the entry carries what changed.
+// typeMentions reports whether ty is, or is built from, a type of pkg —
+// through pointers, slices, maps, channels and function signatures.
+func typeMentions(ty reflect.Type, pkg string, depth int) bool {
+	if ty == nil || depth > 4 {
+		return false
+	}
+	if ty.PkgPath() == pkg {
+		return true
+	}
+	switch ty.Kind() {
+	case reflect.Pointer, reflect.Slice, reflect.Array, reflect.Chan:
+		return typeMentions(ty.Elem(), pkg, depth+1)
+	case reflect.Map:
+		return typeMentions(ty.Key(), pkg, depth+1) || typeMentions(ty.Elem(), pkg, depth+1)
+	case reflect.Func:
+		for i := 0; i < ty.NumIn(); i++ {
+			if typeMentions(ty.In(i), pkg, depth+1) {
+				return true
+			}
+		}
+		for i := 0; i < ty.NumOut(); i++ {
+			if typeMentions(ty.Out(i), pkg, depth+1) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// FDS-11: a fleet mutation leaves an audit entry attributed to operator,
+// model, record and node, and the entry carries what changed. An entry
+// that is not attributed is no audit; one that is attributed but says
+// nothing about the values is half of one.
 func probeFleetAuditEntry(t *testing.T, e *env) verdict {
 	ctx := ctxFor(t)
 	srv, ag := e.startPair(t, "TestArticle")
@@ -482,22 +587,54 @@ func probeFleetAuditEntry(t *testing.T, e *env) verdict {
 	}
 	entries := resp.Msg.GetEntries()
 	if len(entries) == 0 {
+		t.Log("the mutation left no audit entry")
 		return absent
 	}
 	en := entries[0]
-	attributed := en.GetActor() == operatorName && en.GetAction() == "datastudio.create" &&
-		strings.Contains(en.GetTarget(), "TestArticle") && strings.Contains(en.GetTarget(), "#"+id) &&
-		en.GetNodeId() == ag.NodeID() && en.GetTime() != nil
-	if !attributed {
-		t.Logf("entry is incomplete: actor=%q action=%q target=%q node=%q", en.GetActor(), en.GetAction(), en.GetTarget(), en.GetNodeId())
+	var missing []string
+	if en.GetActor() != operatorName {
+		missing = append(missing, "actor="+en.GetActor())
+	}
+	if en.GetAction() != "datastudio.create" {
+		missing = append(missing, "action="+en.GetAction())
+	}
+	if !strings.Contains(en.GetTarget(), "TestArticle") {
+		missing = append(missing, "model (target="+en.GetTarget()+")")
+	}
+	if !strings.Contains(en.GetTarget(), "#"+id) {
+		missing = append(missing, "record id (target="+en.GetTarget()+")")
+	}
+	if en.GetNodeId() != ag.NodeID() {
+		missing = append(missing, "node="+en.GetNodeId())
+	}
+	if en.GetTime() == nil {
+		missing = append(missing, "time")
+	}
+	if len(missing) > 0 {
+		t.Logf("the entry is not attributed: %v", missing)
+		return absent
+	}
+	// What changed: a diff-like field, and for the mutation just made it
+	// must carry something — a declared field left empty is a declaration.
+	md := en.ProtoReflect().Descriptor()
+	var filled, empty []string
+	for _, name := range fieldsContaining(md, "before", "after", "old", "new", "diff", "previous", "values", "change") {
+		fd := md.Fields().ByName(protoreflect.Name(name))
+		if fd != nil && en.ProtoReflect().Has(fd) {
+			filled = append(filled, name)
+		} else {
+			empty = append(empty, name)
+		}
+	}
+	switch {
+	case len(filled) > 0:
+		return present
+	case len(empty) > 0:
+		t.Logf("AuditEntry declares %v but the entry for this create carries nothing in them", empty)
 		return partial
 	}
-	diff := fieldsContaining(messageNamed(t, "AuditEntry"), "before", "after", "old", "new", "diff", "previous", "values")
-	if len(diff) == 0 {
-		t.Log("AuditEntry has no before/after fields")
-		return partial
-	}
-	return present
+	t.Log("AuditEntry has no before/after fields")
+	return partial
 }
 
 // FDS-12: the direction the fleet's Data Studio is meant to take
@@ -519,7 +656,9 @@ func probeADR002RecordedImplemented(t *testing.T, e *env) verdict {
 	}
 	cell := ""
 	for _, line := range strings.Split(e.readFile(t, "docs/adrs/README.md"), "\n") {
-		if !strings.Contains(line, "ADR-002") || !strings.HasPrefix(strings.TrimSpace(line), "|") {
+		// The row whose FIRST cell links the ADR — another row may name
+		// ADR-002 in its "related" column.
+		if !strings.Contains(line, "[ADR-002](") || !strings.HasPrefix(strings.TrimSpace(line), "|") {
 			continue
 		}
 		cells := strings.Split(line, "|")

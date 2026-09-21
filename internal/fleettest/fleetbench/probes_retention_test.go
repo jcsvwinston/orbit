@@ -129,9 +129,10 @@ func probeOfflineEventsDelivered(t *testing.T, e *env) verdict {
 		t.Fatalf("the event before the outage did not arrive: %v", got)
 	}
 	cancel1()
-	// The outage: the old server is gone and the new one is not accepting
-	// the agent yet — the relay is closed for the duration, so the events
-	// below are emitted while the agent provably has no stream.
+	// The outage: the old server is stopped and its connections severed;
+	// the relay keeps forwarding to the dead target until restart repoints
+	// it, so any dial in between fails and the events below are emitted
+	// while the agent provably has no stream.
 	srv1.stop()
 	r.relay.dropConnections()
 	// The agent drops its bus subscription when the stream dies; wait for
@@ -198,9 +199,11 @@ func probeHostMetricsHistory(t *testing.T, e *env) verdict {
 		}
 	}
 	series := append(fieldsContaining(nodeInfo, "history", "samples", "series"), methodsContaining("History", "Series", "Metrics")...)
+	// A field or RPC that appears is a name, not a measured history: partial
+	// until this probe reads more than one sample through it.
 	if repeated || len(series) > 0 {
 		t.Logf("a history surface exists (repeated=%v, %v): extend this probe to read more than one sample", repeated, series)
-		return present
+		return partial
 	}
 	return absent
 }

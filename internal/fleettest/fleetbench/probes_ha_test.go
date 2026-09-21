@@ -98,44 +98,98 @@ func probeAgentSharding(t *testing.T, e *env) verdict {
 }
 
 // HA-05: a reconnect under the same node_id supersedes the previous
-// stream: one node, no duplicates.
+// stream. The registry is a map, so it cannot hold two entries for one
+// name; what the control asks is whether the OLD stream is actually ended
+// — its peer sees an error, and frames it still sends no longer reach a UI
+// subscriber as the node. A raw stream plays the old peer, because a real
+// agent that is evicted simply reconnects and evicts back, and the
+// question is what happens to the stream that lost, not how often the two
+// trade places.
 func probeSameNodeIDSupersedes(t *testing.T, e *env) verdict {
 	srv := e.startServer(t, server.Config{})
 	const node = "fb-twin"
-	e.startAgent(t, agent.Config{Endpoints: []string{"http://" + srv.AgentAddr()}, NodeIDOverride: node})
-	e.startAgent(t, agent.Config{Endpoints: []string{"http://" + srv.AgentAddr()}, NodeIDOverride: node})
-	if !waitRegistered(srv.Server, node, 4*time.Second) {
-		t.Fatal("neither agent registered")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	old, err := registerRaw(ctx, h2cClient(), "http://"+srv.AgentAddr(), node)
+	if err != nil {
+		t.Fatalf("raw registration: %v", err)
 	}
-	// Two agents claiming one name keep evicting each other; at every
-	// moment the registry must hold exactly one entry for the name.
-	deadline := time.Now().Add(600 * time.Millisecond)
-	for time.Now().Before(deadline) {
-		n := 0
-		for _, info := range srv.State().Nodes.List() {
-			if info.NodeID == node {
-				n++
+	defer func() { _ = old.CloseRequest() }()
+	if !waitRegistered(srv.Server, node, 3*time.Second) {
+		t.Fatal("the raw registration was not accepted")
+	}
+	oldEntry, _ := srv.State().Nodes.Lookup(node)
+
+	// The old peer's read loop: an ended stream reports an error here.
+	oldErr := make(chan error, 1)
+	go func() {
+		for {
+			if _, err := old.Receive(); err != nil {
+				oldErr <- err
+				return
 			}
 		}
-		if n != 1 {
-			t.Logf("the registry holds %d entries for %q", n, node)
-			return absent
+	}()
+
+	e.startAgent(t, agent.Config{Endpoints: []string{"http://" + srv.AgentAddr()}, NodeIDOverride: node})
+	if !pollUntil(4*time.Second, func() bool {
+		entry, ok := srv.State().Nodes.Lookup(node)
+		return ok && entry != oldEntry
+	}) {
+		t.Fatal("the real agent never took over the registry entry")
+	}
+	entries := 0
+	for _, info := range srv.State().Nodes.List() {
+		if info.NodeID == node {
+			entries++
 		}
-		time.Sleep(20 * time.Millisecond)
 	}
-	resp, err := e.control(srv.Server).ListNodes(ctxFor(t), connect.NewRequest(&adminv1.ListNodesRequest{}))
-	if err != nil {
-		t.Fatalf("ListNodes: %v", err)
+	if entries != 1 {
+		t.Logf("the registry holds %d entries for %q", entries, node)
+		return absent
 	}
-	listed := 0
-	for _, n := range resp.Msg.GetNodes() {
-		if n.GetNodeId() == node {
-			listed++
+
+	// (a) the superseded peer is told.
+	ended := false
+	select {
+	case err := <-oldErr:
+		t.Logf("the old stream ended: %v", err)
+		ended = true
+	case <-time.After(3 * time.Second):
+		t.Log("the old stream is still open 3s after it was superseded")
+	}
+
+	// (b) what the superseded peer still sends does not reach the UI: a
+	// live subscriber (opened and registered before the frame is sent) and
+	// the replay ring both stay clean.
+	uiCtx, uiCancel := context.WithCancel(context.Background())
+	defer uiCancel()
+	live, _ := subscribeHTTP(uiCtx, e.control(srv.Server), false)
+	if !pollUntil(3*time.Second, func() bool { return srv.State().EventBus.SubscriberCount() >= 1 }) {
+		t.Fatal("the UI subscription never registered on the bus")
+	}
+	leaked := false
+	if !ended {
+		ev := &adminv1.Event{NodeId: node, Body: &adminv1.Event_HttpRequest{HttpRequest: &adminv1.HttpRequestEvent{
+			Method: "GET", Path: "/superseded", Status: 200,
+		}}}
+		if err := old.Send(&adminv1.Frame{Body: &adminv1.Frame_Event{Event: ev}}); err != nil {
+			t.Logf("the old stream refused the frame: %v", err)
+		} else {
+			if got := collectPaths(live, 1, 1500*time.Millisecond); len(got) == 1 {
+				t.Logf("a frame sent on the superseded stream reached a UI subscriber: %v", got)
+				leaked = true
+			}
+			for _, r := range srv.State().Replay.Snapshot(nil, 0) {
+				if r.GetHttpRequest().GetPath() == "/superseded" {
+					t.Log("a frame sent on the superseded stream was pushed to the replay ring as the node")
+					leaked = true
+				}
+			}
 		}
 	}
-	if listed != 1 {
-		t.Logf("ListNodes shows %q %d times", node, listed)
-		return partial
+	if ended && !leaked {
+		return present
 	}
-	return present
+	return partial
 }

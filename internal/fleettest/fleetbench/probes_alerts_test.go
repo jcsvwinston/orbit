@@ -5,6 +5,7 @@ package fleetbench
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -65,7 +66,14 @@ func probeServerOwnMetrics(t *testing.T, e *env) verdict {
 	if !families["go_goroutines"] {
 		t.Fatalf("the scrape carries no runtime collectors either: %d families", len(families))
 	}
-	own := familiesWithPrefix(families, "orbit_", "admin_server_", "nucleus_admin_", "orbit_server_")
+	// Negative space, not an allowlist of names: whatever the runtime and
+	// the handler do not publish is the server's own.
+	var own []string
+	for f := range families {
+		if !strings.HasPrefix(f, "go_") && !strings.HasPrefix(f, "process_") && !strings.HasPrefix(f, "promhttp_") {
+			own = append(own, f)
+		}
+	}
 	if len(own) > 0 {
 		t.Logf("server collectors: %v", own)
 		return present

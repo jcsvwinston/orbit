@@ -23,8 +23,9 @@ func controlsDatasource() []control {
 			want: present, probe: probeViewerCannotMutate},
 		{id: "FDS-05", family: "datasource", title: "the operator identity crosses the stream: the agent-side handler is told who is asking",
 			want: absent, note: "DataStudioRequest and every request body it wraps (proto/nucleus/admin/v1/admin.proto) carry no " +
-				"subject, operator or identity field; the agent executes with its own database access and the server's " +
-				"resolved operator stays on the server (it reaches the audit ring, not the stream).",
+				"subject, operator or identity field, and a BeforeCreate hook on the model sees no framework identity " +
+				"(auth.ClaimsFromContext) when the fleet operator writes through it; the agent executes with its own database " +
+				"access and the server's resolved operator stays on the server (it reaches the audit ring, not the stream).",
 			probe: probeIdentityCrossesStream},
 		{id: "FDS-06", family: "datasource", title: "the application's per-model policy applies to the fleet operator: a denied model is refused",
 			want: absent, note: "an agent whose Authorizer denies every action on the model still answers ListRecords with rows: " +
@@ -52,8 +53,8 @@ func controlsDatasource() []control {
 				"implementation such as quarkdatasource cannot be handed to it.",
 			probe: probeAgentSpeaksDatasource},
 		{id: "FDS-11", family: "datasource", title: "a fleet mutation leaves an audit entry with operator, model, record and node, and says what changed",
-			want: partial, note: "ListAudit returns the entry with actor, action, target (model and record id) and node; " +
-				"AuditEntry has no before/after values, and the ring it comes from is in-memory (see RET-04).",
+			want: partial, note: "ListAudit returns the entry attributed to actor, action, target (model and record id) and node; " +
+				"AuditEntry has no before/after values. Whether the entry survives the process is RET-04's measurement.",
 			probe: probeFleetAuditEntry},
 		{id: "FDS-12", family: "datasource", title: "the fleet-consumes-the-contract decision (docs/adrs/ADR-002) is recorded as implemented in the ADR and in the index",
 			want: absent, note: "the ADR's front matter says status: accepted and the index row in docs/adrs/README.md says " +

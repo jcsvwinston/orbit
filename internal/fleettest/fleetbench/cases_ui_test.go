@@ -16,8 +16,9 @@ func controlsUI() []control {
 				"internal/admin/ui/package.json builds into internal/admin/ui/dist (embedded by internal/admin/ui_fallback.go).",
 			probe: probeOneFrontendProject},
 		{id: "UI-02", family: "ui", title: "the two planes share design tokens: one token source imported by both, or one project",
-			want: absent, note: "ui/src/index.css declares numbered --t0…--t47 custom properties and internal/admin/ui/src/index.css " +
-				"declares HSL shadcn-style ones; neither stylesheet nor tailwind config imports a file the other one does.",
+			want: absent, note: "ui/src/index.css declares numbered --t0…--t53 custom properties and internal/admin/ui/src/index.css " +
+				"declares HSL shadcn-style ones; neither stylesheet nor tailwind config imports a file the other one does, " +
+				"relative or through a package that resolves inside the repository.",
 			probe: probeSharedDesignTokens},
 		{id: "UI-03", family: "ui", title: "the fleet UI has automated tests: a runner, a test script and at least one spec",
 			want: absent, note: "ui/package.json has no test script and no test runner among its devDependencies, and no " +
@@ -28,15 +29,16 @@ func controlsUI() []control {
 				"server/ui/dist afterwards; the admin-ui job does exactly that for internal/admin/ui/dist.",
 			probe: probeFleetDistFreshnessGate},
 		{id: "UI-05", family: "ui", title: "a bundle-size budget covers the fleet UI (a test constant, a size-limit configuration or a CI step)",
-			want: absent, note: "server/ui has no test file, ui/package.json has no size-limit configuration or tooling, and no CI " +
-				"job in ui/ enforces a size; the only budget in the repository is the panel's (internal/admin/ui_embed_test.go).",
+			want: absent, note: "server/ui has no test file naming a byte budget (a constant like `<name>Budget = N * 1024`), " +
+				"ui/package.json has no size-limit configuration or tooling, and no CI job in ui/ enforces a size; the only " +
+				"budget in the repository is the panel's (internal/admin/ui_embed_test.go).",
 			probe: probeFleetBundleBudget},
 		{id: "UI-06", family: "ui", title: "the fleet UI's generated stubs are connect-es 2 / protobuf-es 2, in the dependencies and in the generators",
-			want: absent, note: "ui/package.json pins @connectrpc/connect ^1.6.1 and @bufbuild/protobuf ^1.10.0, and " +
-				"proto/buf.gen.yaml pins the generators bufbuild/es:v1.10.0 and connectrpc/es:v1.6.1.",
+			want: absent, note: "ui/package.json pins @connectrpc/connect ^1.6.1, @connectrpc/connect-web ^1.7.0 and " +
+				"@bufbuild/protobuf ^1.10.0, and proto/buf.gen.yaml pins the generators bufbuild/es:v1.10.0 and connectrpc/es:v1.6.1.",
 			probe: probeConnectES2},
-		{id: "UI-07", family: "ui", title: "the browser instrument covers the fleet UI: a spec visits a path outside /admin",
-			want: absent, note: "the only browser spec (internal/adminbench/browser/specs/panel.spec.ts) visits /admin paths only; " +
+		{id: "UI-07", family: "ui", title: "the browser instrument covers the fleet UI: a Playwright spec navigates to a path outside /admin",
+			want: absent, note: "the only Playwright spec (internal/adminbench/browser/specs/panel.spec.ts) navigates to /admin paths only; " +
 				"nothing opens the fleet UI in a browser.",
 			probe: probeBrowserInstrumentCoversFleet},
 		{id: "UI-08", family: "ui", title: "the fleet UI is told the operator's role: GetSelf says read-only for a viewer",

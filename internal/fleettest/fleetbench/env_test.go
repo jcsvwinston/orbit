@@ -72,19 +72,23 @@ func discardLogger() *slog.Logger {
 // that stops it.
 type runningServer struct {
 	*server.Server
+	tb     testing.TB
 	cancel context.CancelFunc
 	done   chan error
 	once   sync.Once
 }
 
 // stop shuts the server down and waits for Run to return. Idempotent, so a
-// probe that stops a server on purpose does not fight the cleanup.
+// probe that stops a server on purpose does not fight the cleanup. A Run
+// that does not return in time is logged, never swallowed: a server that
+// will not stop is a finding, not a timing.
 func (r *runningServer) stop() {
 	r.once.Do(func() {
 		r.cancel()
 		select {
 		case <-r.done:
 		case <-time.After(5 * time.Second):
+			r.tb.Logf("server on %s: Run did not return within 5s of cancellation", r.AgentAddr())
 		}
 	})
 }
@@ -119,7 +123,7 @@ func (e *env) tryStartServer(t *testing.T, cfg server.Config) (*runningServer, e
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- srv.Run(ctx) }()
-	rs := &runningServer{Server: srv, cancel: cancel, done: done}
+	rs := &runningServer{Server: srv, tb: t, cancel: cancel, done: done}
 
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
@@ -286,6 +290,7 @@ func freePort(t *testing.T) string {
 // stops it.
 type runningAgent struct {
 	*agent.Agent
+	tb     testing.TB
 	bus    *observability.Bus
 	cancel context.CancelFunc
 	done   chan error
@@ -298,6 +303,7 @@ func (r *runningAgent) stop() {
 		select {
 		case <-r.done:
 		case <-time.After(5 * time.Second):
+			r.tb.Logf("agent %s: Run did not return within 5s of cancellation", r.NodeID())
 		}
 	})
 }
@@ -330,7 +336,7 @@ func (e *env) startAgent(t *testing.T, cfg agent.Config) *runningAgent {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- ag.Run(ctx) }()
-	ra := &runningAgent{Agent: ag, bus: cfg.Bus, cancel: cancel, done: done}
+	ra := &runningAgent{Agent: ag, tb: t, bus: cfg.Bus, cancel: cancel, done: done}
 	t.Cleanup(ra.stop)
 	return ra
 }
@@ -439,6 +445,13 @@ func tenantArticleDDL(system string) (create, insert string) {
 // registry the agent registers with the server.
 func (e *env) agentDB(t *testing.T, withTenant bool) (*db.DB, *model.Registry) {
 	t.Helper()
+	return e.agentDBWith(t, withTenant, model.ModelConfig{})
+}
+
+// agentDBWith is agentDB with a model configuration for TestArticle — the
+// way an application attaches lifecycle hooks to its own model.
+func (e *env) agentDBWith(t *testing.T, withTenant bool, article model.ModelConfig) (*db.DB, *model.Registry) {
+	t.Helper()
 	logger := observe.NewLogger("error", "text")
 	d, err := db.New(db.Config{
 		Engine:          db.EngineSQL,
@@ -467,7 +480,7 @@ func (e *env) agentDB(t *testing.T, withTenant bool) (*db.DB, *model.Registry) {
 	}
 
 	reg := model.NewRegistry()
-	if err := reg.Register(&TestArticle{}); err != nil {
+	if err := reg.Register(&TestArticle{}, article); err != nil {
 		t.Fatalf("register TestArticle: %v", err)
 	}
 	if withTenant {
@@ -591,6 +604,29 @@ func tlsH2Client(cfg *tls.Config) *http.Client {
 	tr.TLSClientConfig = cfg
 	tr.ForceAttemptHTTP2 = true
 	return &http.Client{Transport: tr}
+}
+
+// bearer is a streaming-aware interceptor that presents a token the way the
+// agent's own client does, for the raw streams that measure refusals.
+type bearer string
+
+func (b bearer) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
+	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+		req.Header().Set("Authorization", "Bearer "+string(b))
+		return next(ctx, req)
+	}
+}
+
+func (b bearer) WrapStreamingClient(next connect.StreamingClientFunc) connect.StreamingClientFunc {
+	return func(ctx context.Context, spec connect.Spec) connect.StreamingClientConn {
+		conn := next(ctx, spec)
+		conn.RequestHeader().Set("Authorization", "Bearer "+string(b))
+		return conn
+	}
+}
+
+func (b bearer) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
+	return next
 }
 
 // registerRaw opens an AgentService stream with the given client, sends

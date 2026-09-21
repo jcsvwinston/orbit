@@ -28,7 +28,7 @@ func controlsAlerts() []control {
 			probe: probeServerOwnMetrics},
 		{id: "ALR-05", family: "alerts", title: "the agent publishes its own Prometheus collectors on its metrics listener",
 			want: present, probe: probeAgentOwnMetrics},
-		{id: "ALR-06", family: "alerts", title: "a node that stops sending frames is listed as not connected within the inactivity timeout",
+		{id: "ALR-06", family: "alerts", title: "a node that stops sending frames is listed as not connected within the inactivity timeout plus one janitor tick",
 			want: present, probe: probeStaleNodeMarked},
 	}
 }
