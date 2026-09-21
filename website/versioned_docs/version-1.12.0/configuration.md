@@ -1,0 +1,93 @@
+---
+title: Configuration
+sidebar_position: 4
+description: The modules.orbit.* configuration reference.
+---
+
+# Configuration
+
+`orbit.Config` is bound from the `modules.orbit.*` subtree of your `nucleus.yml`
+(or set directly in Go). **Every field is optional** — the zero value mounts a
+working panel under `/admin`.
+
+The tables below group the keys by what they affect. For a plain in-process
+panel, only the first four groups can ever matter, and most apps set just
+[Mounting](#mounting) and [the bootstrap user](#the-bootstrap-admin-user).
+The `cluster_*` keys belong to the **opt-in live-feed relay**: they are
+inert until `cluster_enabled` is true, and in particular **no Redis is
+required to run the panel** — `cluster_redis_url` is read only by the
+relay.
+
+## Mounting
+
+| Key (`modules.orbit.*`) | Type | Default | Description |
+|---|---|---|---|
+| `prefix` | string | `/admin` | URL path Orbit mounts under. |
+| `title` | string | `Orbit` | Heading shown in the UI: the login page, the sidebar, and the browser tab. |
+| `environment` | string | — | Label shown in the UI (e.g. `production`). |
+
+## The bootstrap admin user
+
+| Key (`modules.orbit.*`) | Type | Default | Description |
+|---|---|---|---|
+| `bootstrap_username` | string | — | Admin user created on first boot. |
+| `bootstrap_email` | string | — | Email for the bootstrap user. |
+| `bootstrap_password` | string | — | Password for the bootstrap user. Leave it empty to skip creating the user and provision the admin account another way, e.g. `nucleus createuser`. The `nucleus_admin_users` schema is created at mount either way, so `createuser` works without ever setting a bootstrap password. |
+| `auth_database` | string | app default | Database alias whose handle backs admin login and the bootstrap user — point it at a dedicated database to keep the admin user store away from application data. Only login and bootstrapping are redirected; the panel itself always reads through the application's default handle. |
+
+## Data and views
+
+| Key (`modules.orbit.*`) | Type | Default | Description |
+|---|---|---|---|
+| `migrations_path` | string | `migrations` | Directory the migrations view reads. |
+| `audit_store` | string | `database` | Where the audit trail is kept: `database` writes a table the panel creates and owns, so the trail survives restarts and is shared by every replica; `memory` keeps the process-lifetime ring instead. An application with no database handle gets the ring either way (see [Audit log](./features.md#audit-log)). |
+| `audit_retention_days` | int | `0` | Drop trail entries older than this many days — a period, which is what a compliance window is. Applied when the panel comes up and at most hourly afterwards; zero keeps entries until the log is cleared. An operator can change the window in effect from the panel, and a restart comes back to this value. |
+| `audit_max_size` | int | `10000` | In-memory audit-log ring size. It bounds the `memory` store only — a trail in the database is bounded by `audit_retention_days`, not by a count. |
+| `multitenant_enabled` | bool | `false` | Confine Data Studio to the tenant the host application resolves for the request — every operation, exports and their jobs included, not only the list (see [Features](./features.md#data-studio)); a request with no resolved tenant and no default is a 403. `?tenant=<id>` / `?tenant=all` are accepted only from a superuser or a subject granted the `tenant_switch` RBAC action, and audited as `tenant.override`. The host's resolution must not be client-controlled (a header the client sets) for the confinement to hold. |
+| `multitenant_default` | string | — | Tenant applied when the host resolves none; without it such a request is refused unless the operator may switch tenants. |
+| `multitenant_ids` | []string | — | Known tenant IDs for the selector UI. |
+| `row_owner_fields` | map[string]string | — | Which column of each model says WHICH OPERATOR a row belongs to, keyed by model name, with `"*"` as the default for every model carrying the same column. It is what makes an `admin:<Model>#own` policy enforceable (see [Access control](./features.md#per-row-permissions)); a `#own` grant on a model with no entry here is refused with a 403, never widened to every row. |
+| `row_owner_subject` | string | `username` | Which name of the operator the owner column holds: `username` or `id`. |
+| `field_widgets` | map[string]string | — | How a field is edited when its type cannot say: `Model.Field` (or `Model.column`) to one of `json`, `richtext`, `file`, `image`. A JSON document is inferred from the type and needs no entry. A `file`/`image` field gets an upload route that stores the bytes in the application's storage and answers with the key the form writes (see [Features](./features.md#forms-that-hold-a-relation-a-document-and-a-file)). |
+
+## The live feed
+
+| Key (`modules.orbit.*`) | Type | Default | Description |
+|---|---|---|---|
+| `live_exclude_patterns` | []string | — | Path patterns excluded from the live HTTP feed — use it to keep health checks and static assets out. |
+| `trace_url_template` | string | — | External trace-explorer URL template, to deep-link each entry (supports `{trace_id}`). |
+
+## The live-feed relay (the `cluster_*` keys)
+
+By default the live feed shows **this node's** traffic. Turn these keys on and
+the nodes of one application relay their live events to each other over Redis,
+so the panel on any node shows the whole set.
+
+| Key (`modules.orbit.*`) | Type | Default | Description |
+|---|---|---|---|
+| `cluster_enabled` | bool | `false` | Aggregate the live feed across nodes via a Redis relay. |
+| `cluster_redis_url` | string | — | Redis URL for the relay. |
+| `cluster_channel` | string | `nucleus:admin:live:v1` | Pub/sub channel for the relay. |
+| `cluster_node_id` | string | runtime id | Explicit node identifier in the relay. |
+| `cluster_token` | string | — | Shared secret to reject untrusted relay messages. |
+
+:::note These keys are not the fleet plane
+The `cluster_*` keys stay inside your application process: same panel, same
+binary, one shared feed. The standalone agent-and-server
+[fleet plane](./cluster/overview.md) is a different, heavier option — a
+dedicated observability server that application nodes stream to, with no
+Redis involved. Most applications need neither.
+:::
+
+## Example
+
+```yaml
+# nucleus.yml
+modules:
+  orbit:
+    prefix: /admin
+    title: Acme Admin
+    environment: production
+    bootstrap_username: admin
+    bootstrap_email: admin@acme.test
+```
