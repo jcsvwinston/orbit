@@ -220,6 +220,11 @@ func (h *Handler) handleListRecords(ctx context.Context, resp *adminv1.DataStudi
 		pageSize = 25
 	}
 
+	where, err := whereFromWire(req.GetWhere())
+	if err != nil {
+		resp.Error = err.Error()
+		return
+	}
 	opts := model.QueryOpts{
 		Page:     page,
 		PageSize: pageSize,
@@ -227,6 +232,7 @@ func (h *Handler) handleListRecords(ctx context.Context, resp *adminv1.DataStudi
 		OrderBy:  req.GetOrderBy(),
 		Filters:  req.GetFilters(),
 		Fields:   req.GetFields(),
+		Where:    where,
 		// The fleet UI is a screen with a pager: it needs to know how many
 		// pages there are, filtered or not. The count is a second query;
 		// the model layer answered -1/estimated for every filtered list

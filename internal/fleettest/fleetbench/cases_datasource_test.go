@@ -40,11 +40,7 @@ func controlsDatasource() []control {
 				"S5 makes the server send it.",
 			probe: probeTenantFilteredReads},
 		{id: "FDS-08", family: "datasource", title: "filters with operators (contains, range, set, null) reach the agent",
-			want: partial, note: "the wire declares them since A9 S3 (RecordFilter and ListRecordsRequest.where, the datasource " +
-				"contract's closed set of operators), and the server forwards the request verbatim, but the agent does not read " +
-				"the field yet: agent/go.mod pins proto by tag (ADR-006), so the mapping onto the model layer's Where lands in " +
-				"the PR that follows the proto/v0.5.0 cut. Until then a `where` filter is dropped and every row comes back.",
-			probe: probeFilterOperatorsOverWire},
+			want: present, probe: probeFilterOperatorsOverWire},
 		{id: "FDS-09", family: "datasource", title: "pagination carries an exact total, filtered or not",
 			want: present, probe: probePaginationExactTotal},
 		{id: "FDS-10", family: "datasource", title: "the agent serves Data Studio through the datasource contract, so a contract implementation can be registered in the fleet",
