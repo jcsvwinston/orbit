@@ -843,6 +843,28 @@ func (ca *testCA) writePEM(t *testing.T, dir, cn string) (caFile, certFile, keyF
 		write("agent.key", "EC PRIVATE KEY", keyDER)
 }
 
+// writeKeyPair writes leaf as PEM into certFile/keyFile and sets their
+// modification time to at, so a rotation written within one clock tick of
+// the previous pair is still a change a file stamp can see.
+func writeKeyPair(t *testing.T, certFile, keyFile string, leaf tls.Certificate, at time.Time) {
+	t.Helper()
+	keyDER, err := x509.MarshalECPrivateKey(leaf.PrivateKey.(*ecdsa.PrivateKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(certFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leaf.Certificate[0]}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyFile, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{certFile, keyFile} {
+		if err := os.Chtimes(f, at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 // clientTLSWithCert is clientTLS plus a client certificate for cn.
 func (ca *testCA) clientTLSWithCert(t *testing.T, cn string) *tls.Config {
 	t.Helper()

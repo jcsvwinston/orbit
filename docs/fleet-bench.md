@@ -60,17 +60,17 @@ place for a capability, not the capability.
 
 ## The result
 
-**18 of 50 controls present. 5 partial. 27 absent.**
+**20 of 50 controls present. 3 partial. 27 absent.**
 
 | family | present | partial | absent |
 |---|---|---|---|
-| identity | 8 | 2 | 0 |
+| identity | 10 | 0 | 0 |
 | datasource | 4 | 2 | 6 |
 | retention | 1 | 0 | 6 |
 | alerts | 2 | 0 | 4 |
 | ha | 1 | 1 | 3 |
 | ui | 2 | 0 | 8 |
-| **total** | **18** | **5** | **27** |
+| **total** | **20** | **3** | **27** |
 
 ### alerts — 2 present · 0 partial · 4 absent
 
@@ -110,7 +110,7 @@ place for a capability, not the capability.
 | `HA-04` | agents are assigned across servers deterministically | **absent** | no shard, peer, cluster or assignment field in server.Config or agent.Config and nothing about it on the wire: an agent connects to the first endpoint in its list that answers /healthz. |
 | `HA-05` | a reconnect under the same node_id supersedes the previous stream: one node, no duplicates | **partial** | the registry keeps one entry: Registry.Add (server/nodes/registry.go) evicts the old entry and cancels its context, which stops the server's writer. The old stream itself is not ended: AgentService.Stream's reader loop (server/services/agent_service.go:106-117) blocks in stream.Receive() and only checks streamCtx.Err() after Receive returns an error, so the superseded peer sees no error and a frame it sends after the takeover is still published as the node — a UI subscriber receives it. The old stream lives until its peer closes it. |
 
-### identity — 8 present · 2 partial · 0 absent
+### identity — 10 present · 0 partial · 0 absent
 
 | id | control | verdict | what is missing |
 |---|---|---|---|
@@ -120,8 +120,8 @@ place for a capability, not the capability.
 | `IDENT-04` | a real agent connects over mutual TLS and registers; without a client certificate it never does | **present** | — |
 | `IDENT-05` | the agent's client certificate can be given by configuration (file paths) rather than as a Go value | **present** | — |
 | `IDENT-06` | the node identity is bound to the certificate: a certificate for node-a declaring node_id node-b is refused or registered as node-a | **present** | — |
-| `IDENT-07` | the server's certificate rotates without a restart: a new handshake sees the new certificate | **partial** | only the generic Go path exists: a tls.Config whose GetCertificate answers from a source the caller swaps is honoured by the next handshake. The product offers nothing on top — server.Config takes a *tls.Config and the binary loads --agent-cert/--agent-key once at boot (server/cmd/admin-server/main.go); no reload flag, signal or file watch. |
-| `IDENT-08` | the agent presents a new client certificate on its next connection without a restart | **partial** | only the generic Go path exists: a tls.Config whose GetClientCertificate answers from a source the caller swaps is honoured when the agent reconnects (measured across a failover to a second server). The product offers nothing on top — ExtensionConfig names the files (tls_cert_file, tls_key_file, tls_ca_file) and loads them ONCE at boot; nothing watches them and a reconnect presents the certificate the process started with. |
+| `IDENT-07` | the server's certificate rotates without a restart: a new handshake sees the new certificate | **present** | — |
+| `IDENT-08` | the agent presents a new client certificate on its next connection without a restart | **present** | — |
 | `IDENT-09` | a shared token authenticates an agent; a wrong token is refused with one rate-limited WARN naming the remote IP | **present** | — |
 | `IDENT-10` | /healthz answers without credentials on both listeners while the same listeners refuse an uncredentialled RPC | **present** | — |
 
@@ -135,6 +135,17 @@ fleet) must keep working until the next major flips the default. The probe
 measures both regimes. `IDENT-05` boots a real agent through the extension from
 nothing but three file paths and no `node_id`; the node the server lists is the
 certificate's Common Name.
+
+`IDENT-07` and `IDENT-08` are **present** because both sides serve their
+certificate *from* the files rather than copying it out of them once:
+`server.TLSFromFiles` (what `--agent-cert`/`--agent-key` and `--ui-cert`/`--ui-key`
+build) and the agent's `tls_cert_file`/`tls_key_file` re-read the pair when a
+handshake finds the files changed, so a rotation is a write to two files and no
+restart. The probes rewrite the files and handshake again: the server presents
+the new certificate on the next connection, the agent on its next connection
+(measured across a failover). A half-written rotation keeps the previous
+certificate serving, with one WARN. The CA bundles (`--agent-client-ca`,
+`tls_ca_file`) are still read once; rotating a CA is not a control yet.
 
 ### retention — 1 present · 0 partial · 6 absent
 

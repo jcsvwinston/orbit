@@ -112,8 +112,9 @@ token works instead: start with `--ui-bearer` and send
 chain: h2c by default, TLS when configured (mutual TLS on the agent
 listener with `--agent-client-ca`, and `--agent-identity-from-cert` to make
 the certificate's Common Name the only `node_id` that agent may register
-under). `/healthz` is public on both, carved out of auth so load balancers
-can probe it.
+under). Listener certificates are served from their files and re-read when
+a handshake finds them changed, so a rotation needs no restart. `/healthz` is
+public on both, carved out of auth so load balancers can probe it.
 
 **Routing primitives** move frames between them:
 

@@ -146,7 +146,7 @@ func run(args []string) error {
 	}
 
 	if *agentCert != "" || *agentKey != "" || *agentClientCA != "" {
-		tc, err := loadTLS(*agentCert, *agentKey)
+		tc, err := loadTLS(*agentCert, *agentKey, logger)
 		if err != nil {
 			return fmt.Errorf("agent TLS: %w", err)
 		}
@@ -158,7 +158,7 @@ func run(args []string) error {
 		cfg.AgentTLS = tc
 	}
 	if *uiCert != "" || *uiKey != "" {
-		tc, err := loadTLS(*uiCert, *uiKey)
+		tc, err := loadTLS(*uiCert, *uiKey, logger)
 		if err != nil {
 			return fmt.Errorf("ui TLS: %w", err)
 		}
@@ -209,18 +209,14 @@ func newLogger(level, format string) *slog.Logger {
 	}
 }
 
-func loadTLS(certFile, keyFile string) (*tls.Config, error) {
+// loadTLS is server.TLSFromFiles with the flag names in the error: the
+// certificate is served from the files and re-read when they change, so a
+// rotation needs no restart (the client CA bundle, when given, is read once).
+func loadTLS(certFile, keyFile string, logger *slog.Logger) (*tls.Config, error) {
 	if strings.TrimSpace(certFile) == "" || strings.TrimSpace(keyFile) == "" {
 		return nil, errors.New("both --cert and --key must be supplied to enable TLS")
 	}
-	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
-	if err != nil {
-		return nil, err
-	}
-	return &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		MinVersion:   tls.VersionTLS12,
-	}, nil
+	return server.TLSFromFiles(certFile, keyFile, logger)
 }
 
 // requireClientCerts turns a server-side TLS config into a mutual-TLS one:

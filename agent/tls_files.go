@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 )
@@ -16,10 +17,16 @@ import (
 // against, TLSServerName the name it is verified as. With none of the four
 // set it returns TLS unchanged (nil stays nil: the system trust store).
 //
-// The files are read here, once. A certificate that changes on disk is
-// picked up by the next connection only after the rotation the arc adds
-// next; today it needs a restart.
+// The client certificate is served from the files, not copied out of them:
+// every handshake checks whether the two files changed and re-reads them
+// when they did, so a rotated certificate is what the next connection
+// presents — no restart. The CA bundle is read once. Rotate with the same
+// Common Name when the server binds node identity to the certificate.
 func (c ExtensionConfig) TLSConfig() (*tls.Config, error) {
+	return c.tlsConfig(nil)
+}
+
+func (c ExtensionConfig) tlsConfig(logger *slog.Logger) (*tls.Config, error) {
 	if !c.hasTLSFiles() {
 		return c.TLS, nil
 	}
@@ -33,13 +40,16 @@ func (c ExtensionConfig) TLSConfig() (*tls.Config, error) {
 		return nil, errors.New("admin agent: tls_cert_file and tls_key_file must be set together")
 	}
 	if c.TLSCertFile != "" {
-		cert, err := loadClientCertificate(c.TLSCertFile, c.TLSKeyFile)
+		src, err := newKeyPairFiles(c.TLSCertFile, c.TLSKeyFile, logger)
 		if err != nil {
 			return nil, err
 		}
-		// The file replaces whatever TLS carried: a deployment that names
-		// its certificate in the configuration means that one.
-		cfg.Certificates = []tls.Certificate{cert}
+		// The files replace whatever TLS carried: a deployment that names
+		// its certificate in the configuration means that one. Go consults
+		// GetClientCertificate before Certificates, so the latter is
+		// cleared to leave no doubt about which one is presented.
+		cfg.Certificates = nil
+		cfg.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) { return src.current(), nil }
 	}
 	if c.TLSCAFile != "" {
 		pemBytes, err := os.ReadFile(c.TLSCAFile)
@@ -68,7 +78,10 @@ func (c ExtensionConfig) certificateNodeID() (string, error) {
 	if c.TLSCertFile == "" {
 		return "", nil
 	}
-	cert, err := loadClientCertificate(c.TLSCertFile, c.TLSKeyFile)
+	if c.TLSKeyFile == "" {
+		return "", errors.New("admin agent: tls_cert_file and tls_key_file must be set together")
+	}
+	cert, err := loadPair(c.TLSCertFile, c.TLSKeyFile)
 	if err != nil {
 		return "", err
 	}
@@ -81,24 +94,4 @@ func (c ExtensionConfig) certificateNodeID() (string, error) {
 
 func (c ExtensionConfig) hasTLSFiles() bool {
 	return c.TLSCertFile != "" || c.TLSKeyFile != "" || c.TLSCAFile != "" || c.TLSServerName != ""
-}
-
-// loadClientCertificate reads a PEM certificate/key pair and guarantees the
-// parsed leaf is attached, whatever the Go version's LoadX509KeyPair does.
-func loadClientCertificate(certFile, keyFile string) (tls.Certificate, error) {
-	if keyFile == "" {
-		return tls.Certificate{}, errors.New("admin agent: tls_cert_file and tls_key_file must be set together")
-	}
-	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
-	if err != nil {
-		return tls.Certificate{}, fmt.Errorf("admin agent: load client certificate: %w", err)
-	}
-	if cert.Leaf == nil && len(cert.Certificate) > 0 {
-		leaf, err := x509.ParseCertificate(cert.Certificate[0])
-		if err != nil {
-			return tls.Certificate{}, fmt.Errorf("admin agent: parse client certificate %q: %w", certFile, err)
-		}
-		cert.Leaf = leaf
-	}
-	return cert, nil
 }
