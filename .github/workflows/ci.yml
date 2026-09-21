@@ -35,9 +35,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [., proto, agent, server, quarkbridge, quarkdatasource]
+        module: [., datasource, proto, agent, server, quarkbridge, quarkdatasource]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0 # link_unpublished_siblings.sh reads the tag list
       - name: PR title in English (QADR-0007)
         # The squash title becomes the changelog line and the release note of
         # an English-speaking product (QM-18). The title goes through an env
@@ -50,6 +52,12 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      # A sibling requirement whose tag the cut has not created yet (a
+      # module born out of the root, ADR-012) is pointed at this tree for
+      # the lane; once the tag exists the script links nothing and the lane
+      # is plain GOWORK=off again.
+      - name: Link sibling modules whose tag does not exist yet
+        run: bash scripts/ci/link_unpublished_siblings.sh ${{ matrix.module }}
       - name: go build (no workspace)
         working-directory: ${{ matrix.module }}
         env:
@@ -81,13 +89,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [., proto, agent, server, quarkbridge, quarkdatasource]
+        module: [., datasource, proto, agent, server, quarkbridge, quarkdatasource]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0 # link_unpublished_siblings.sh reads the tag list
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
           cache: true
+      - name: Link sibling modules whose tag does not exist yet
+        run: bash scripts/ci/link_unpublished_siblings.sh ${{ matrix.module }}
       - name: go mod tidy leaves no diff
         working-directory: ${{ matrix.module }}
         env:
@@ -95,6 +107,8 @@ jobs:
           GOWORK: "off"
         run: |
           go mod tidy
+          # The temporary replace (if any) is not part of the diff.
+          bash "$GITHUB_WORKSPACE/scripts/ci/link_unpublished_siblings.sh" "${{ matrix.module }}" --drop
           if ! git diff --exit-code -- go.mod go.sum; then
             echo "::error::go.mod/go.sum in ${{ matrix.module }} are not tidy. Run 'go mod tidy' there and commit." >&2
             exit 1
@@ -169,6 +183,8 @@ jobs:
       # set (the server's integration tests drive a real agent), which is the
       # combination `standalone` above cannot check.
       - run: go test ./... -count=1
+      - run: go test ./... -count=1
+        working-directory: datasource
       - run: go test ./... -count=1
         working-directory: proto
       - run: go test ./... -count=1
@@ -272,9 +288,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [., proto, agent, server, quarkbridge, quarkdatasource]
+        module: [., datasource, proto, agent, server, quarkbridge, quarkdatasource]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0 # link_unpublished_siblings.sh reads the tag list
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
@@ -290,6 +308,8 @@ jobs:
       # cleanly. The vulnerability database is fetched at run time, so a
       # pinned binary still scans against current advisories.
       - run: go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+      - name: Link sibling modules whose tag does not exist yet
+        run: bash scripts/ci/link_unpublished_siblings.sh ${{ matrix.module }}
       - name: govulncheck (no workspace)
         working-directory: ${{ matrix.module }}
         env:

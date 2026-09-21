@@ -24,7 +24,7 @@ import (
 	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/observe"
 
-	dsnucleus "github.com/jcsvwinston/orbit/internal/datasource/nucleus"
+	dsnucleus "github.com/jcsvwinston/orbit/datasource/nucleus"
 )
 
 // OwnedNote is the model row ownership is measured on: `owner` says which

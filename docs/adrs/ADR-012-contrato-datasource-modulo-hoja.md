@@ -99,7 +99,47 @@ Tres hechos medidos que cambian el problema:
   nombra el módulo nuevo; el `go get` de un origen alternativo es
   `github.com/jcsvwinston/orbit/datasource`, sin arrastrar el panel.
 
-## Lo que NO decide este ADR
+## Enmienda de `S4` (2026-09-21): el adaptador viaja con el contrato
+
+La medición de `S4` cerró la pregunta que este ADR dejaba abierta. El
+adaptador que convierte una aplicación Nucleus en un `DataSource` era
+`internal/datasource/nucleus`, y el agente no puede reutilizarlo desde
+ningún módulo de la raíz. Las dos formas aditivas medidas:
+
+- **Un tercer módulo** para el adaptador (`datasource/nucleus` con su propio
+  `go.mod`): mantiene el contrato a cero dependencias, pero cuesta otra
+  entrada de release-please, otro tag, otra fila en `versions.yaml`, otra
+  lane, y un segundo suelo que nombrar en cada corte.
+- **El adaptador como subpaquete del módulo `datasource`**, que entonces
+  requiere Nucleus. Se midió qué añade esa dependencia a cada consumidor:
+  **nada** — la raíz, `quarkdatasource` y el agente ya requieren
+  `github.com/jcsvwinston/nucleus` por su cuenta, y un tercero que escriba un
+  origen alternativo lo hace para una aplicación Nucleus.
+
+Se elige la segunda: `github.com/jcsvwinston/orbit/datasource` lleva el
+contrato en su raíz y el adaptador en `datasource/nucleus` (importado como
+`dsnucleus`). El punto 1 de la decisión queda enmendado en «cero
+dependencias»: el módulo requiere Nucleus y nada más de la suite. Un
+contrato sin implementación por defecto habría obligado a cada consumidor a
+traer la suya.
+
+Mecánica ejecutada con la extracción, además de la ya escrita:
+
+- Hasta el corte que crea `datasource/v1.0.0`, la raíz y `quarkdatasource`
+  lo requieren por un tag que no existe. En el `go.work` del repo va un
+  `replace` VERSIONADO (listar el directorio no basta: la versión requerida
+  entra igual en el grafo y Go pide su `go.mod` al proxy), y las lanes
+  `GOWORK=off` (standalone, tidy, govulncheck) pasan por
+  `scripts/ci/link_unpublished_siblings.sh`, que añade un `replace` de
+  directorio en el `go.mod` sólo mientras el tag no exista y lo retira antes
+  del diff de tidy. El corte que publica el tag retira el `replace` del
+  `go.work` y añade a `go.sum` las líneas del módulo (un commit de
+  convergencia, como los de `proto`).
+- `check_internal_pins.sh` acepta que un módulo sin tag esté pinado en su
+  `initial-version` de `release-please-config.json`, y ya no lleva la
+  excepción del borde raíz: no queda módulo que requiera la raíz.
+
+
 
 - **Quién implementa el contrato en el agente.** `internal/datasource/nucleus`
   es interno a la raíz. `S4` decide entre hacerlo público (bajo `datasource/`

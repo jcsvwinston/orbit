@@ -27,8 +27,8 @@ rule from the [upgrade guide](../operations/upgrade.md): as a consumer you
 only ever choose two versions — the root (with your app) and the
 server/agent pair (with your fleet).
 
-| orbit (root) | proto | agent | server | quarkbridge | quarkdatasource |
-| --- | --- | --- | --- | --- | --- |
+| orbit (root) | datasource | proto | agent | server | quarkbridge | quarkdatasource |
+| --- | --- | --- | --- | --- | --- | --- |
 HDR
 # NOTA sobre la ventana rancia (y sobre un arreglo que NO funciona).
 #
@@ -61,9 +61,12 @@ for tag in $(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V -r)
     local cut
     cut=$(printf '%s\n' "$sibling_tags" | sed -nE "s#^$1/(v[0-9]+\.[0-9]+\.[0-9]+)\$#\1#p" | sort -V | tail -1)
     if [[ -n "$cut" ]]; then printf '%s' "$cut"; return; fi
-    printf '%s' "$manifest" | sed -nE "s/.*\"$1\": *\"([^\"]+)\".*/v\1/p" | head -1
+    local declared
+    declared=$(printf '%s' "$manifest" | sed -nE "s/.*\"$1\": *\"([^\"]+)\".*/v\1/p" | head -1)
+    # A module that did not exist at that release (datasource before ADR-012).
+    printf '%s' "${declared:-—}"
   }
-  echo "| \`$tag\` | \`$(get proto)\` | \`$(get agent)\` | \`$(get server)\` | \`$(get quarkbridge)\` | \`$(get quarkdatasource)\` |"
+  echo "| \`$tag\` | \`$(get datasource)\` | \`$(get proto)\` | \`$(get agent)\` | \`$(get server)\` | \`$(get quarkbridge)\` | \`$(get quarkdatasource)\` |"
 done
 cat <<'FTR'
 
