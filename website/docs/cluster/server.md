@@ -59,13 +59,14 @@ is a read-only snapshot of each node's own policy, and it does not gate
 the operator's fleet-plane actions, which are audited rather than
 authorized per verb and object. The protocol now *declares* where that
 identity will ride (`DataStudioRequest.operator`: subject, role, read-only,
-tenant) and where operator filters go (`ListRecordsRequest.where`), but the
-server does not fill the former and the agent does not read the latter yet
-— a declaration on the wire changes nothing until both ends act on it,
-which is the next step of the fleet's move onto the same data-access
-contract the in-process panel uses. What did change: every list the fleet
-serves carries an exact total, filtered or not, so the pager can say how
-many pages there are.
+tenant), but the server does not fill it yet — a declaration on the wire
+changes nothing until both ends act on it, which is the next step of the
+fleet's move onto the same data-access contract the in-process panel uses.
+What did change: a `ListRecordsRequest` carries filters with an operator
+(`where`, the same twelve the panel accepts) and the agent applies them — or
+refuses one it does not know, rather than dropping it — and every list the
+fleet serves carries an exact total, filtered or not, so the pager can say
+how many pages there are.
 
 Because of that, **Data Studio mutations are refused by default**. The
 gates, all server-side:
