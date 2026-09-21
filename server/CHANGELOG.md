@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/jcsvwinston/orbit/compare/server/v0.13.0...server/v0.14.0) (2026-09-21)
+
+
+### Added
+
+* **agent:** operator filters reach the agent, and the modules pin the tags the cut created (A9 S3, part 2) ([#507](https://github.com/jcsvwinston/orbit/issues/507)) ([641ea2f](https://github.com/jcsvwinston/orbit/commit/641ea2f4a9621fc73be23160ca4d0c8c5854eef7))
+
 ## [0.13.0](https://github.com/jcsvwinston/orbit/compare/server/v0.12.2...server/v0.13.0) (2026-09-21)
 
 
