@@ -104,6 +104,18 @@ Mutations are attributed and recorded in the server's fleet Audit log, which
 tells you afterwards who did what. If some operators should not be writing at
 all, use the role header or run the whole server read-only.
 
+## The operator on the agent
+
+Every Data Studio request the server routes to an agent carries the
+operator it authenticated — subject, role, read-only flag and the tenant
+from the trusted proxy's `--ui-tenant-header` (default `X-Auth-Tenant`,
+read only on the trusted-proxy path like the user header). The agent
+applies the application's own policy to that operator per model and verb
+and confines a tenant-scoped operator to its tenant's rows, so the fleet
+no longer bypasses what the in-process panel enforces. A tenant header is
+therefore an authorization input: set it only from the proxy that
+authenticates the operator, never from the browser.
+
 ## Credential lockout
 
 Both listeners keep a small per-IP lockout: **20 wrong credentials within a

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -25,6 +26,8 @@ import (
 	"github.com/jcsvwinston/orbit/agent/metrics"
 	"github.com/jcsvwinston/orbit/agent/rbac"
 	"github.com/jcsvwinston/orbit/agent/stream"
+	"github.com/jcsvwinston/orbit/datasource"
+	dsnucleus "github.com/jcsvwinston/orbit/datasource/nucleus"
 )
 
 // Config bundles every dependency the agent needs. The framework's
@@ -99,6 +102,14 @@ type Config struct {
 	// operations on behalf of UI requests routed through the admin
 	// server. Empty disables the Data Studio path.
 	Databases map[string]*db.DB
+
+	// DataSource is what Data Studio reads and writes through (ADR-002):
+	// the same contract the in-process panel speaks, so a Quark data source
+	// or a third-party implementation serves the fleet as it serves the
+	// panel. Nil builds the default Nucleus adapter over Registry and
+	// Databases — which is what every agent did before, minus the second
+	// CRUD implementation it used to carry.
+	DataSource datasource.DataSource
 
 	// Authorizer is a read-only view of the framework's RBAC state (the
 	// *authz.Enforcer satisfies it). Required for the Access control
@@ -255,9 +266,10 @@ func New(cfg Config) (*Agent, error) {
 	})
 
 	dataStudio := dstudio.New(dstudio.Config{
-		Registry:     cfg.Registry,
-		Databases:    cfg.Databases,
+		Source:       dataSourceFor(cfg),
 		DefaultAlias: cfg.DefaultDatabaseAlias,
+		Authorizer:   cfg.Authorizer,
+		Logger:       cfg.Logger,
 	})
 
 	return &Agent{
@@ -549,4 +561,36 @@ func (a *Agent) updateBufferGauges(ctx context.Context, stop <-chan struct{}) {
 			}
 		}
 	}
+}
+
+// dataSourceFor is the DataSource Data Studio serves through: the one the
+// configuration hands over, else the Nucleus adapter over the registry and
+// the database handles — nil when there is no registry, which disables Data
+// Studio on this node as before.
+func dataSourceFor(cfg Config) datasource.DataSource {
+	if cfg.DataSource != nil {
+		return cfg.DataSource
+	}
+	if cfg.Registry == nil {
+		return nil
+	}
+	alias := strings.TrimSpace(cfg.DefaultDatabaseAlias)
+	if alias == "" {
+		alias = "default"
+	}
+	handles := cfg.Databases
+	return dsnucleus.New(dsnucleus.Config{
+		Registry:     cfg.Registry,
+		DefaultAlias: alias,
+		Resolve: func(a string) (*db.DB, string, error) {
+			if strings.TrimSpace(a) == "" {
+				a = alias
+			}
+			h, ok := handles[a]
+			if !ok || h == nil {
+				return nil, "", fmt.Errorf("admin agent: database alias %q is not configured", a)
+			}
+			return h, h.System(), nil
+		},
+	})
 }

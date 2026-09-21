@@ -1,3 +1,0 @@
-go test fuzz v1
-string("9223372036854775808")
-string("int64")

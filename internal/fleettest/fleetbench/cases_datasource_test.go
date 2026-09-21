@@ -22,32 +22,17 @@ func controlsDatasource() []control {
 		{id: "FDS-04", family: "datasource", title: "a viewer operator (read-only role) can read and cannot mutate",
 			want: present, probe: probeViewerCannotMutate},
 		{id: "FDS-05", family: "datasource", title: "the operator identity crosses the stream: the agent-side handler is told who is asking",
-			want: partial, note: "the wire declares it since A9 S3 (DataStudioRequest.operator, an OperatorIdentity with subject, " +
-				"role, read_only and tenant), but the server never fills it and the agent never reads it: a BeforeCreate hook " +
-				"on the model still sees no framework identity (auth.ClaimsFromContext) when the fleet operator writes through " +
-				"it. A declaration is not a surface; S4 makes the agent run under it and S5 makes the server send it.",
-			probe: probeIdentityCrossesStream},
+			want: present, probe: probeIdentityCrossesStream},
 		{id: "FDS-06", family: "datasource", title: "the application's per-model policy applies to the fleet operator: a denied model is refused",
-			want: absent, note: "an agent whose Authorizer denies every action on the model still answers ListRecords with rows: " +
-				"agent/datastudio builds a model.CRUD on the database handle and never consults the Authorizer " +
-				"(the Authorizer feeds the read-only RBAC snapshot the fleet UI displays, not enforcement).",
-			probe: probeAppPolicyAppliesToFleet},
+			want: present, probe: probeAppPolicyAppliesToFleet},
 		{id: "FDS-07", family: "datasource", title: "fleet reads are tenant-filtered when the model declares a tenant column",
-			want: partial, note: "a model with a declared tenant column answers every tenant's rows to an operator scoped to one. " +
-				"The wire declares where the tenant rides since A9 S3 (OperatorIdentity.tenant on DataStudioRequest), but " +
-				"server.Config has no tenant header to read it from, the server fills nothing, and the agent-side handler " +
-				"runs with no tenant in its context (agent/datastudio). S4 scopes the agent by the identity it receives; " +
-				"S5 makes the server send it.",
-			probe: probeTenantFilteredReads},
+			want: present, probe: probeTenantFilteredReads},
 		{id: "FDS-08", family: "datasource", title: "filters with operators (contains, range, set, null) reach the agent",
 			want: present, probe: probeFilterOperatorsOverWire},
 		{id: "FDS-09", family: "datasource", title: "pagination carries an exact total, filtered or not",
 			want: present, probe: probePaginationExactTotal},
 		{id: "FDS-10", family: "datasource", title: "the agent serves Data Studio through the datasource contract, so a contract implementation can be registered in the fleet",
-			want: absent, note: "agent/go.mod does not require the root module that owns the datasource package, and agent.Config " +
-				"has no field typed from it: the agent builds its own model.CRUD path (agent/datastudio) and a contract " +
-				"implementation such as quarkdatasource cannot be handed to it.",
-			probe: probeAgentSpeaksDatasource},
+			want: present, probe: probeAgentSpeaksDatasource},
 		{id: "FDS-11", family: "datasource", title: "a fleet mutation leaves an audit entry with operator, model, record and node, and says what changed",
 			want: partial, note: "ListAudit returns the entry attributed to actor, action, target (model and record id) and node; " +
 				"AuditEntry has no before/after values. Whether the entry survives the process is RET-04's measurement.",

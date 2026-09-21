@@ -538,31 +538,32 @@ func probePaginationExactTotal(t *testing.T, e *env) verdict {
 }
 
 // FDS-10: the agent serves Data Studio through the datasource contract.
-// Two facts: the agent module requires the module that owns the contract,
+// Two facts: the agent module requires the module that owns the contract
+// (its own module since ADR-012: github.com/jcsvwinston/orbit/datasource —
+// requiring the root would drag the panel in and is what ADR-006 forbids),
 // and agent.Config takes a value typed from it.
 func probeAgentSpeaksDatasource(t *testing.T, e *env) verdict {
-	const rootModule = "github.com/jcsvwinston/orbit"
-	const contractPkg = rootModule + "/datasource"
+	const contractModule = "github.com/jcsvwinston/orbit/datasource"
 
-	requiresRoot := false
+	requiresContract := false
 	for _, line := range strings.Split(e.readFile(t, "agent/go.mod"), "\n") {
 		fields := strings.Fields(strings.TrimPrefix(strings.TrimSpace(line), "require "))
-		if len(fields) >= 2 && fields[0] == rootModule {
-			requiresRoot = true
+		if len(fields) >= 2 && fields[0] == contractModule {
+			requiresContract = true
 		}
 	}
 	hasField := false
 	rt := reflect.TypeOf(agent.Config{})
 	for i := 0; i < rt.NumField(); i++ {
-		if typeMentions(rt.Field(i).Type, contractPkg, 0) {
+		if typeMentions(rt.Field(i).Type, contractModule, 0) {
 			hasField = true
 		}
 	}
-	t.Logf("agent/go.mod requires the root module: %v; agent.Config has a datasource-typed field: %v", requiresRoot, hasField)
+	t.Logf("agent/go.mod requires the contract module: %v; agent.Config has a datasource-typed field: %v", requiresContract, hasField)
 	switch {
-	case requiresRoot && hasField:
+	case requiresContract && hasField:
 		return present
-	case requiresRoot || hasField:
+	case requiresContract || hasField:
 		return partial
 	}
 	return absent

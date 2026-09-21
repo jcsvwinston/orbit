@@ -121,6 +121,7 @@ func New(cfg Config) *Server {
 		AuthHeader:    cfg.UIAuthHeader,
 		EmailHeader:   cfg.UIEmailHeader,
 		RoleHeader:    cfg.UIRoleHeader,
+		TenantHeader:  cfg.UITenantHeader,
 		TrustedCIDRs:  cfg.UITrustedProxyCIDRs,
 		ProxySecret:   cfg.UIProxySecret,
 		ForceReadOnly: cfg.UIReadOnly,

@@ -92,6 +92,14 @@ type Config struct {
 	// CIDR-only behaviour. See auth.UIMiddleware.
 	UIProxySecret string
 
+	// UITenantHeader is the trusted-proxy header that carries the tenant
+	// the operator is scoped to (default "X-Auth-Tenant"). Honoured only on
+	// the same trusted-proxy path as UIAuthHeader. The value travels to the
+	// agent with the operator identity on every Data Studio request
+	// (ADR-002); an application whose model declares a tenant column then
+	// confines that operator to it, as the in-process panel would.
+	UITenantHeader string
+
 	// UIRoleHeader is the trusted-proxy header that carries the operator's
 	// role (default "X-Auth-Role"). Honoured only on the same trusted-proxy
 	// path as UIAuthHeader. Value "viewer" (or "readonly"/"read-only")

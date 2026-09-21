@@ -111,6 +111,25 @@ the node's name is fixed at boot. The CA bundle is read once. The `/healthz`
 probe the agent sends before opening a stream uses the same configuration and
 carries no token.
 
+## Data Studio through the contract
+
+The agent serves the fleet's Data Studio through Orbit's `datasource`
+contract — the same one the in-process panel speaks. By default it builds
+the Nucleus adapter over the application's model registry and database
+handles; an application on the Quark ORM hands its `quarkdatasource`
+adapter to `ExtensionConfig.DataSource` (set in code, as for
+`orbit.Config.DataSource`) and the fleet browses and edits Quark models.
+
+Each request carries the operator the admin server resolved. The agent runs
+it as the panel would: the framework identity reaches your model hooks
+(`auth.ClaimsFromContext`), your policy applies per model and verb through
+the agent's `Authorizer` (`*authz.Enforcer` decides directly; a policy
+source that only exposes rows is compiled into one), and an operator scoped
+to a tenant is confined to the rows whose tenant column says so. A request
+without an operator — an admin server older than `v0.15.0` — runs with no
+identity, no policy and no tenant, exactly as before; the server's own
+gates (mutation allowlist, read-only role) stay in front either way.
+
 ## Node identity
 
 The agent resolves a stable **NodeID**: a UUIDv4 persisted at

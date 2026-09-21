@@ -96,6 +96,7 @@ func run(args []string) error {
 	uiEmailHeader := fs.String("ui-email-header", envOr("NUCLEUS_ADMIN_UI_EMAIL_HEADER", "X-Auth-Email"), "trusted-proxy header carrying user email")
 	uiTrustedCIDRs := fs.String("ui-trusted-cidrs", os.Getenv("NUCLEUS_ADMIN_UI_TRUSTED_CIDRS"), "comma-separated CIDRs allowed to set trusted-proxy headers")
 	uiProxySecret := fs.String("ui-proxy-secret", os.Getenv("NUCLEUS_ADMIN_UI_PROXY_SECRET"), "shared secret the trusted proxy must echo in X-Auth-Proxy-Secret before its forwarded identity is honoured; empty keeps CIDR-only trust")
+	uiTenantHeader := fs.String("ui-tenant-header", envOr("NUCLEUS_ADMIN_UI_TENANT_HEADER", "X-Auth-Tenant"), "trusted-proxy header carrying the tenant the operator is scoped to; sent to the agent with the operator identity")
 	uiRoleHeader := fs.String("ui-role-header", envOr("NUCLEUS_ADMIN_UI_ROLE_HEADER", "X-Auth-Role"), "trusted-proxy header carrying the operator role; value \"viewer\" makes that operator read-only")
 	uiReadOnly := fs.Bool("ui-read-only", envBool("NUCLEUS_ADMIN_UI_READ_ONLY"), "make every UI operator read-only (Data Studio mutations refused)")
 	dsAllowedModels := fs.String("datastudio-allowed-models", os.Getenv("NUCLEUS_ADMIN_DATASTUDIO_ALLOWED_MODELS"), "comma-separated model names Data Studio may MUTATE (create/update/delete/bulk); empty refuses every mutation, \"*\" allows all models. Reads are not gated")
@@ -138,6 +139,7 @@ func run(args []string) error {
 		UITrustedProxyCIDRs:          splitCSV(*uiTrustedCIDRs),
 		UIProxySecret:                strings.TrimSpace(*uiProxySecret),
 		UIRoleHeader:                 *uiRoleHeader,
+		UITenantHeader:               *uiTenantHeader,
 		UIReadOnly:                   *uiReadOnly,
 		UIInsecureOpen:               *uiInsecureOpen,
 		DataStudioAllowedModels:      splitCSV(*dsAllowedModels),
