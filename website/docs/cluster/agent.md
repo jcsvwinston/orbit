@@ -97,10 +97,19 @@ agent.ExtensionConfig{
 the certificate file replaces `TLS.Certificates`, the CA bundle becomes
 `TLS.RootCAs`, the server name overrides the endpoint's host. A certificate
 without its key, a missing file or a CA bundle with no PEM certificate fail
-the boot with the field named. The files are read once, at boot: a
-certificate that changes on disk is presented after a restart, not before.
-The `/healthz` probe the agent sends before opening a stream uses the same
-configuration and carries no token.
+the boot with the field named.
+
+**The certificate rotates without a restart.** The agent serves its client
+certificate *from* the files: every handshake checks whether the two files
+changed (size or modification time) and re-reads them when they did, so the
+next connection presents the new certificate. Under a live stream that is the
+next reconnect; a rotation is a write to two files. Write the certificate and
+the key as a pair — a key that does not match yet keeps the previous
+certificate in use, with one WARN, until the pair is whole. Keep the Common
+Name across rotations when the server binds node identity to the certificate:
+the node's name is fixed at boot. The CA bundle is read once. The `/healthz`
+probe the agent sends before opening a stream uses the same configuration and
+carries no token.
 
 ## Node identity
 

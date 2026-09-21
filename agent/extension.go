@@ -69,7 +69,7 @@ func (e *extension) Attach(a *app.App) error {
 	// The certificate files, when named, become the TLS configuration
 	// and — unless node_id is set — the node's name: the Common Name the
 	// server authenticates is the identity the agent registers under.
-	tlsCfg, err := e.adminCfg.TLSConfig()
+	tlsCfg, err := e.adminCfg.tlsConfig(a.Logger)
 	if err != nil {
 		return fmt.Errorf("admin agent extension: %w", err)
 	}

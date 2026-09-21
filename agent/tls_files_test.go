@@ -96,10 +96,14 @@ func TestExtensionConfig_TLSConfig_LoadsTheFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TLSConfig: %v", err)
 	}
-	if len(cfg.Certificates) != 1 || cfg.Certificates[0].Leaf == nil {
-		t.Fatalf("want one client certificate with its leaf parsed, got %+v", cfg.Certificates)
+	if cfg.GetClientCertificate == nil {
+		t.Fatal("the client certificate must be served through GetClientCertificate (so a rotation on disk reaches the next handshake)")
 	}
-	if cn := cfg.Certificates[0].Leaf.Subject.CommonName; cn != "node-from-files" {
+	presented, err := cfg.GetClientCertificate(&tls.CertificateRequestInfo{})
+	if err != nil || presented == nil || presented.Leaf == nil {
+		t.Fatalf("GetClientCertificate: %v, %+v", err, presented)
+	}
+	if cn := presented.Leaf.Subject.CommonName; cn != "node-from-files" {
 		t.Fatalf("client certificate CN = %q", cn)
 	}
 	if cfg.RootCAs == nil {
@@ -126,10 +130,13 @@ func TestExtensionConfig_TLSConfig_FilesLoadOnTopOfTLS_WithoutMutatingIt(t *test
 	if cfg.MinVersion != tls.VersionTLS13 {
 		t.Fatal("the clone lost a setting the caller made")
 	}
-	if len(cfg.Certificates) != 1 || cfg.Certificates[0].Leaf == nil {
-		t.Fatal("the file certificate must replace the one TLS carried")
+	if len(cfg.Certificates) != 0 || cfg.GetClientCertificate == nil {
+		t.Fatal("the file certificate must replace the one TLS carried: Certificates cleared, GetClientCertificate serving the files")
 	}
-	if len(given.Certificates) != 1 || given.Certificates[0].Leaf != nil {
+	if presented, err := cfg.GetClientCertificate(&tls.CertificateRequestInfo{}); err != nil || presented.Leaf.Subject.CommonName != "node-x" {
+		t.Fatalf("GetClientCertificate presents %v, %v; want node-x", presented, err)
+	}
+	if len(given.Certificates) != 1 || given.GetClientCertificate != nil {
 		t.Fatal("the caller's tls.Config was mutated")
 	}
 }

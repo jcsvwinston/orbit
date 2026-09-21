@@ -11,6 +11,7 @@ import (
 	"github.com/jcsvwinston/nucleus/pkg/observability"
 	"io"
 	"net/http"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -325,24 +326,18 @@ func (r *certRecorder) saw(cn string) bool {
 }
 
 // IDENT-07: the server's certificate can be rotated without a restart.
-// The generic Go path (a tls.Config whose GetCertificate answers from a
-// source the caller swaps) is measured by handshake; the PRODUCT surface —
-// a knob that reloads the files the binary was started with — by
-// reflection on server.Config.
+// Two facts. The generic Go path (a tls.Config whose GetCertificate answers
+// from a source the caller swaps) is measured by handshake — it is what any
+// product surface must be built on. Then the PRODUCT surface: a
+// configuration built from two file paths (server.TLSFromFiles, what the
+// binary's --agent-cert/--agent-key produce) presents the new certificate
+// after the files are rewritten, with no signal and no restart.
 func probeServerCertRotation(t *testing.T, e *env) verdict {
 	ca := newTestCA(t)
 	v1, _ := ca.issue(t, "server-v1", x509.ExtKeyUsageServerAuth)
 	v2, _ := ca.issue(t, "server-v2", x509.ExtKeyUsageServerAuth)
-	var current atomic.Pointer[tls.Certificate]
-	current.Store(&v1)
-	cfg := &tls.Config{
-		MinVersion:     tls.VersionTLS12,
-		GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) { return current.Load(), nil },
-	}
-	srv := e.startServer(t, server.Config{AgentTLS: cfg, AgentToken: "bench-token"})
-
-	seen := func() string {
-		conn, err := tls.Dial("tcp", srv.AgentAddr(), &tls.Config{InsecureSkipVerify: true}) //nolint:gosec // the probe reads the leaf, it trusts nothing
+	seen := func(addr string) string {
+		conn, err := tls.Dial("tcp", addr, &tls.Config{InsecureSkipVerify: true}) //nolint:gosec // the probe reads the leaf, it trusts nothing
 		if err != nil {
 			t.Fatalf("tls.Dial: %v", err)
 		}
@@ -353,26 +348,50 @@ func probeServerCertRotation(t *testing.T, e *env) verdict {
 		}
 		return certs[0].Subject.CommonName
 	}
-	if got := seen(); got != "server-v1" {
+
+	// Fact 1: the generic path.
+	var current atomic.Pointer[tls.Certificate]
+	current.Store(&v1)
+	generic := e.startServer(t, server.Config{AgentTLS: &tls.Config{
+		MinVersion:     tls.VersionTLS12,
+		GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) { return current.Load(), nil },
+	}, AgentToken: "bench-token"})
+	if got := seen(generic.AgentAddr()); got != "server-v1" {
 		t.Fatalf("first handshake saw %q, want server-v1", got)
 	}
 	current.Store(&v2)
-	if got := seen(); got != "server-v2" {
+	if got := seen(generic.AgentAddr()); got != "server-v2" {
 		t.Logf("after the swap the handshake still saw %q: the certificate is fixed when the listener is built", got)
 		return absent
 	}
-	// A knob that appears is a name, not a measured rotation: the verdict
-	// stays partial until this probe rotates the files and handshakes again.
-	if knobs := fieldsNamed(server.Config{}, "", certFileKnobs...); len(knobs) > 0 {
-		t.Logf("server.Config offers %v: extend this probe to rotate the files and handshake again", knobs)
+
+	// Fact 2: the product path. Files on disk, rewritten in place.
+	dir := t.TempDir()
+	certFile, keyFile := filepath.Join(dir, "server.crt"), filepath.Join(dir, "server.key")
+	t0 := time.Now().Add(-10 * time.Second)
+	writeKeyPair(t, certFile, keyFile, v1, t0)
+	fromFiles, err := server.TLSFromFiles(certFile, keyFile, discardLogger())
+	if err != nil {
+		t.Logf("server.TLSFromFiles refused the pair: %v", err)
+		return partial
 	}
-	return partial
+	product := e.startServer(t, server.Config{AgentTLS: fromFiles, AgentToken: "bench-token"})
+	if got := seen(product.AgentAddr()); got != "server-v1" {
+		t.Fatalf("the file-backed listener presented %q before any rotation, want server-v1", got)
+	}
+	writeKeyPair(t, certFile, keyFile, v2, t0.Add(2*time.Second))
+	if got := seen(product.AgentAddr()); got != "server-v2" {
+		t.Logf("after rewriting the files the handshake still saw %q: the binary reads its certificate once", got)
+		return partial
+	}
+	return present
 }
 
 // IDENT-08: the agent picks up a new client certificate for its next
 // connection without a restart. Two mTLS servers record the certificates
-// they see; the agent's tls.Config answers GetClientCertificate from a
-// source the probe swaps between the first connection and the failover.
+// they see; the agent is configured from FILES (the product surface), the
+// files are rewritten while the agent is connected to the first server,
+// and the failover to the second must present the new certificate.
 func probeAgentCertRotation(t *testing.T, e *env) verdict {
 	ca := newTestCA(t)
 	recA, recB := &certRecorder{}, &certRecorder{}
@@ -390,10 +409,17 @@ func probeAgentCertRotation(t *testing.T, e *env) verdict {
 
 	c1 := ca.clientTLSWithCert(t, "agent-v1").Certificates[0]
 	c2 := ca.clientTLSWithCert(t, "agent-v2").Certificates[0]
-	var current atomic.Pointer[tls.Certificate]
-	current.Store(&c1)
-	tlsCfg := ca.clientTLS()
-	tlsCfg.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) { return current.Load(), nil }
+	dir := t.TempDir()
+	caFile, _, _ := ca.writePEM(t, dir, "unused")
+	certFile, keyFile := filepath.Join(dir, "agent.crt"), filepath.Join(dir, "agent.key")
+	t0 := time.Now().Add(-10 * time.Second)
+	writeKeyPair(t, certFile, keyFile, c1, t0)
+	tlsCfg, err := agent.ExtensionConfig{TLSCertFile: certFile, TLSKeyFile: keyFile, TLSCAFile: caFile}.TLSConfig()
+	if err != nil {
+		t.Logf("ExtensionConfig.TLSConfig refused the files: %v", err)
+		return absent
+	}
+	tlsCfg.ServerName = "127.0.0.1"
 
 	const node = "fb-rotating"
 	e.startAgent(t, agent.Config{
@@ -408,7 +434,8 @@ func probeAgentCertRotation(t *testing.T, e *env) verdict {
 		t.Fatal("the first server did not see the agent-v1 certificate")
 	}
 
-	current.Store(&c2)
+	// The rotation: the two files rewritten while the agent is connected.
+	writeKeyPair(t, certFile, keyFile, c2, t0.Add(2*time.Second))
 	srvA.stop()
 	relayA.close()
 	if !waitRegistered(srvB.Server, node, 10*time.Second) {
@@ -416,15 +443,10 @@ func probeAgentCertRotation(t *testing.T, e *env) verdict {
 	}
 	switch {
 	case recB.saw("agent-v2"):
-		// A knob that appears is a name, not a measured rotation: partial
-		// until this probe rotates the files instead of the callback.
-		if knobs := fieldsNamed(agent.ExtensionConfig{}, "koanf", certFileKnobs...); len(knobs) > 0 {
-			t.Logf("ExtensionConfig offers %v: extend this probe to rotate the files instead of the callback", knobs)
-		}
-		return partial
+		return present
 	case recB.saw("agent-v1"):
-		t.Log("the second server saw agent-v1: the certificate was fixed when the agent was built")
-		return absent
+		t.Log("the second server saw agent-v1: the agent read its certificate files once, at boot")
+		return partial
 	default:
 		t.Fatal("the second server recorded no client certificate")
 		return absent

@@ -178,6 +178,15 @@ because a fleet that shares one certificate across its agents would stop
 registering; issue one certificate per node, named after it, and turn the
 flag on. The default flips in the next major.
 
+**Certificates rotate without a restart, on both sides.** The server serves
+its listener certificates (`--agent-cert`/`--agent-key`, `--ui-cert`/`--ui-key`)
+from the files and re-reads them when a handshake finds them changed; the
+agent does the same with `tls_cert_file`/`tls_key_file` on its next
+connection. Write the pair together — a certificate whose key has not been
+rotated yet keeps the previous pair serving, with one WARN — and keep the
+Common Name when `--agent-identity-from-cert` is on. The CA bundles are read
+once: rotating the CA itself still needs a restart.
+
 Agents accept `https://` endpoints and use the system trust store by
 default. For a private CA, or to present a client certificate, name the PEM
 files in the agent's configuration (`tls_cert_file`, `tls_key_file`,
