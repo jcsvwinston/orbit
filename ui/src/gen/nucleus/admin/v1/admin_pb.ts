@@ -2175,6 +2175,78 @@ export class GetSchemaRequest extends Message<GetSchemaRequest> {
 }
 
 /**
+ * RecordFilter is one comparison against one column, the wire form of the
+ * datasource contract's Filter (ADR-001): the operators are its closed set
+ * and mean what they mean there — the pattern operators match the text
+ * literally, and an `in` with no values matches nothing. The agent refuses
+ * an operator it does not know rather than dropping the filter: a filter
+ * quietly treated as "no filter" answers every row and looks like a result.
+ *
+ * @generated from message nucleus.admin.v1.RecordFilter
+ */
+export class RecordFilter extends Message<RecordFilter> {
+  /**
+   * Column (field key) the comparison applies to.
+   *
+   * @generated from field: string column = 1;
+   */
+  column = "";
+
+  /**
+   * One of: eq, ne, gt, gte, lt, lte, contains, startswith, endswith, in,
+   * not_in, isnull. Case-insensitive.
+   *
+   * @generated from field: string op = 2;
+   */
+  op = "";
+
+  /**
+   * The text form of the value for every single-valued operator; "true" or
+   * "false" for isnull.
+   *
+   * @generated from field: string value = 3;
+   */
+  value = "";
+
+  /**
+   * The set for in and not_in.
+   *
+   * @generated from field: repeated string values = 4;
+   */
+  values: string[] = [];
+
+  constructor(data?: PartialMessage<RecordFilter>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "nucleus.admin.v1.RecordFilter";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "column", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "op", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "value", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "values", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): RecordFilter {
+    return new RecordFilter().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): RecordFilter {
+    return new RecordFilter().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): RecordFilter {
+    return new RecordFilter().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: RecordFilter | PlainMessage<RecordFilter> | undefined, b: RecordFilter | PlainMessage<RecordFilter> | undefined): boolean {
+    return proto3.util.equals(RecordFilter, a, b);
+  }
+}
+
+/**
  * @generated from message nucleus.admin.v1.ListRecordsRequest
  */
 export class ListRecordsRequest extends Message<ListRecordsRequest> {
@@ -2214,6 +2286,9 @@ export class ListRecordsRequest extends Message<ListRecordsRequest> {
   orderBy = "";
 
   /**
+   * Equality filters, column -> value. Kept for older callers; ANDed with
+   * `where`.
+   *
    * @generated from field: map<string, string> filters = 14;
    */
   filters: { [key: string]: string } = {};
@@ -2222,6 +2297,14 @@ export class ListRecordsRequest extends Message<ListRecordsRequest> {
    * @generated from field: repeated string fields = 15;
    */
   fields: string[] = [];
+
+  /**
+   * Filters that need an operator (a range, a prefix, a set, a null
+   * check). ANDed with each other and with `filters`.
+   *
+   * @generated from field: repeated nucleus.admin.v1.RecordFilter where = 16;
+   */
+  where: RecordFilter[] = [];
 
   constructor(data?: PartialMessage<ListRecordsRequest>) {
     super();
@@ -2240,6 +2323,7 @@ export class ListRecordsRequest extends Message<ListRecordsRequest> {
     { no: 13, name: "order_by", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 14, name: "filters", kind: "map", K: 9 /* ScalarType.STRING */, V: {kind: "scalar", T: 9 /* ScalarType.STRING */} },
     { no: 15, name: "fields", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+    { no: 16, name: "where", kind: "message", T: RecordFilter, repeated: true },
   ]);
 
   static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListRecordsRequest {
@@ -2710,6 +2794,77 @@ export class BulkActionResponse extends Message<BulkActionResponse> {
 }
 
 /**
+ * OperatorIdentity is who is asking, as the admin server's UI auth chain
+ * resolved it (ADR-002): the subject and role the panel would see, whether
+ * the operator is read-only, and the tenant the operation is scoped to.
+ * The server fills it; an agent that receives one runs the operation under
+ * that identity, so the application's per-model policy and tenant filter
+ * apply to the fleet operator as they apply in-process. An agent that
+ * receives none keeps the current behaviour (allowlist + read-only gate).
+ *
+ * @generated from message nucleus.admin.v1.OperatorIdentity
+ */
+export class OperatorIdentity extends Message<OperatorIdentity> {
+  /**
+   * @generated from field: string subject = 1;
+   */
+  subject = "";
+
+  /**
+   * @generated from field: string email = 2;
+   */
+  email = "";
+
+  /**
+   * @generated from field: string role = 3;
+   */
+  role = "";
+
+  /**
+   * @generated from field: bool read_only = 4;
+   */
+  readOnly = false;
+
+  /**
+   * Tenant the operation is scoped to; empty means no tenant scope.
+   *
+   * @generated from field: string tenant = 5;
+   */
+  tenant = "";
+
+  constructor(data?: PartialMessage<OperatorIdentity>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "nucleus.admin.v1.OperatorIdentity";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "subject", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "email", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "role", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "read_only", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 5, name: "tenant", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): OperatorIdentity {
+    return new OperatorIdentity().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): OperatorIdentity {
+    return new OperatorIdentity().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): OperatorIdentity {
+    return new OperatorIdentity().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: OperatorIdentity | PlainMessage<OperatorIdentity> | undefined, b: OperatorIdentity | PlainMessage<OperatorIdentity> | undefined): boolean {
+    return proto3.util.equals(OperatorIdentity, a, b);
+  }
+}
+
+/**
  * DataStudioRequest is sent from server to agent over the bidi
  * AgentService.Stream multiplexed with events. Each request carries an
  * opaque request_id the agent echoes in its DataStudioResponse so the
@@ -2722,6 +2877,14 @@ export class DataStudioRequest extends Message<DataStudioRequest> {
    * @generated from field: string request_id = 1;
    */
   requestId = "";
+
+  /**
+   * The operator on whose behalf the request runs. Additive: unset from
+   * older servers.
+   *
+   * @generated from field: nucleus.admin.v1.OperatorIdentity operator = 2;
+   */
+  operator?: OperatorIdentity;
 
   /**
    * @generated from oneof nucleus.admin.v1.DataStudioRequest.body
@@ -2785,6 +2948,7 @@ export class DataStudioRequest extends Message<DataStudioRequest> {
   static readonly typeName = "nucleus.admin.v1.DataStudioRequest";
   static readonly fields: FieldList = proto3.util.newFieldList(() => [
     { no: 1, name: "request_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "operator", kind: "message", T: OperatorIdentity },
     { no: 10, name: "list_models", kind: "message", T: ListModelsRequest, oneof: "body" },
     { no: 11, name: "get_schema", kind: "message", T: GetSchemaRequest, oneof: "body" },
     { no: 12, name: "list_records", kind: "message", T: ListRecordsRequest, oneof: "body" },

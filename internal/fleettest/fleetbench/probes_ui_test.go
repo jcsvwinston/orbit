@@ -527,14 +527,52 @@ func probeUIKnowsRole(t *testing.T, e *env) verdict {
 	return partial
 }
 
-// UI-09: the fleet UI has a tenant notion: some message on the wire
-// carries one.
+// spaTenantUse is a tenant the SPA's code USES: a property read or set, or
+// the generated carrier type — not the word inside a translated string.
+var spaTenantUse = regexp.MustCompile(`\.tenant\b|\btenant\s*:|OperatorIdentity`)
+
+// UI-09: the fleet UI has a tenant notion. Two facts, because a field in a
+// descriptor is a declaration and this control is about the UI: some
+// message on the wire carries a tenant, AND the SPA's own source (not the
+// generated stubs) names it — sends it or shows it.
 func probeFleetTenantNotion(t *testing.T, e *env) verdict {
-	if fields := anyFieldContaining("tenant"); len(fields) > 0 {
-		t.Logf("tenant fields on the wire: %v", fields)
-		return present
+	fields := anyFieldContaining("tenant")
+	if len(fields) == 0 {
+		return absent
 	}
-	return absent
+	t.Logf("tenant fields on the wire: %v", fields)
+	var spa []string
+	root := filepath.Join(e.repoRoot(), "ui", "src")
+	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if d.Name() == "gen" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if ext := filepath.Ext(path); ext != ".ts" && ext != ".tsx" {
+			return nil
+		}
+		b, err := os.ReadFile(path)
+		if err == nil && spaTenantUse.Match(b) {
+			rel, _ := filepath.Rel(root, path)
+			spa = append(spa, rel)
+		}
+		return nil
+	})
+	if len(spa) == 0 {
+		// The word alone does not count: ui/src/lib/i18n.ts has said
+		// "tenant filters apply" in the Data Studio blurb since before any
+		// wire field existed. Prose is not a notion; a property the SPA
+		// reads or sets is.
+		t.Log("the SPA's own source never reads or sets a tenant property: the wire declares one the UI neither sends nor shows")
+		return partial
+	}
+	t.Logf("SPA files naming a tenant: %v", spa)
+	return present
 }
 
 // UI-10: the panel's initial load stays within its budget, and the budget

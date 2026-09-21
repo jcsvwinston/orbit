@@ -22,10 +22,10 @@ func controlsDatasource() []control {
 		{id: "FDS-04", family: "datasource", title: "a viewer operator (read-only role) can read and cannot mutate",
 			want: present, probe: probeViewerCannotMutate},
 		{id: "FDS-05", family: "datasource", title: "the operator identity crosses the stream: the agent-side handler is told who is asking",
-			want: absent, note: "DataStudioRequest and every request body it wraps (proto/nucleus/admin/v1/admin.proto) carry no " +
-				"subject, operator or identity field, and a BeforeCreate hook on the model sees no framework identity " +
-				"(auth.ClaimsFromContext) when the fleet operator writes through it; the agent executes with its own database " +
-				"access and the server's resolved operator stays on the server (it reaches the audit ring, not the stream).",
+			want: partial, note: "the wire declares it since A9 S3 (DataStudioRequest.operator, an OperatorIdentity with subject, " +
+				"role, read_only and tenant), but the server never fills it and the agent never reads it: a BeforeCreate hook " +
+				"on the model still sees no framework identity (auth.ClaimsFromContext) when the fleet operator writes through " +
+				"it. A declaration is not a surface; S4 makes the agent run under it and S5 makes the server send it.",
 			probe: probeIdentityCrossesStream},
 		{id: "FDS-06", family: "datasource", title: "the application's per-model policy applies to the fleet operator: a denied model is refused",
 			want: absent, note: "an agent whose Authorizer denies every action on the model still answers ListRecords with rows: " +
@@ -33,20 +33,20 @@ func controlsDatasource() []control {
 				"(the Authorizer feeds the read-only RBAC snapshot the fleet UI displays, not enforcement).",
 			probe: probeAppPolicyAppliesToFleet},
 		{id: "FDS-07", family: "datasource", title: "fleet reads are tenant-filtered when the model declares a tenant column",
-			want: absent, note: "a model with a declared tenant column answers every tenant's rows to an operator scoped to one: " +
-				"no surface carries the tenant — server.Config has no tenant header, no request message has a tenant field, " +
-				"and the agent-side handler runs with no tenant in its context (agent/datastudio, security model).",
+			want: partial, note: "a model with a declared tenant column answers every tenant's rows to an operator scoped to one. " +
+				"The wire declares where the tenant rides since A9 S3 (OperatorIdentity.tenant on DataStudioRequest), but " +
+				"server.Config has no tenant header to read it from, the server fills nothing, and the agent-side handler " +
+				"runs with no tenant in its context (agent/datastudio). S4 scopes the agent by the identity it receives; " +
+				"S5 makes the server send it.",
 			probe: probeTenantFilteredReads},
 		{id: "FDS-08", family: "datasource", title: "filters with operators (contains, range, set, null) reach the agent",
-			want: partial, note: "ListRecordsRequest.filters is a map<string,string> the agent applies as column = value, so equality " +
-				"narrows the page; an operator spelling (Title__contains) is not a column, is dropped in silence and every row " +
-				"comes back. The typed operator filters the model layer accepts (QueryOpts.Where) have no field on the wire.",
+			want: partial, note: "the wire declares them since A9 S3 (RecordFilter and ListRecordsRequest.where, the datasource " +
+				"contract's closed set of operators), and the server forwards the request verbatim, but the agent does not read " +
+				"the field yet: agent/go.mod pins proto by tag (ADR-006), so the mapping onto the model layer's Where lands in " +
+				"the PR that follows the proto/v0.5.0 cut. Until then a `where` filter is dropped and every row comes back.",
 			probe: probeFilterOperatorsOverWire},
 		{id: "FDS-09", family: "datasource", title: "pagination carries an exact total, filtered or not",
-			want: absent, note: "PaginatedRecords declares total and total_estimated, and every page answers total -1 with " +
-				"total_estimated true, filtered or not: the agent never asks the model layer for a count " +
-				"(QueryOpts.ExactTotal is not set in agent/datastudio), so no fleet pager can say how many pages there are.",
-			probe: probePaginationExactTotal},
+			want: present, probe: probePaginationExactTotal},
 		{id: "FDS-10", family: "datasource", title: "the agent serves Data Studio through the datasource contract, so a contract implementation can be registered in the fleet",
 			want: absent, note: "agent/go.mod does not require the root module that owns the datasource package, and agent.Config " +
 				"has no field typed from it: the agent builds its own model.CRUD path (agent/datastudio) and a contract " +
