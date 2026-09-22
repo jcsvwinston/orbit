@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/jcsvwinston/orbit/compare/proto/v0.5.0...proto/v0.6.0) (2026-09-22)
+
+
+### Added
+
+* **proto:** the audit entry says what changed, and the agent can return the previous values (A9 S5, part 1) ([#512](https://github.com/jcsvwinston/orbit/issues/512)) ([29200ff](https://github.com/jcsvwinston/orbit/commit/29200fffcf794770e747567908933cdaba9080a0))
+
 ## [0.5.0](https://github.com/jcsvwinston/orbit/compare/proto/v0.4.4...proto/v0.5.0) (2026-09-21)
 
 

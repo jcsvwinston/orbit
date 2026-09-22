@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.11.0](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v1.10.0...quarkdatasource/v1.11.0) (2026-09-22)
+
+
+### Added
+
+* **datasource:** the contract and its Nucleus adapter become a module of their own (A9 S4, part 1) ([#509](https://github.com/jcsvwinston/orbit/issues/509)) ([cbc0f8b](https://github.com/jcsvwinston/orbit/commit/cbc0f8be32c6214d4f941d9c1a27376ccaba5dbe))
+* **proto:** the audit entry says what changed, and the agent can return the previous values (A9 S5, part 1) ([#512](https://github.com/jcsvwinston/orbit/issues/512)) ([29200ff](https://github.com/jcsvwinston/orbit/commit/29200fffcf794770e747567908933cdaba9080a0))
+
 ## [1.10.0](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v1.9.3...quarkdatasource/v1.10.0) (2026-09-21)
 
 

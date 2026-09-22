@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.0](https://github.com/jcsvwinston/orbit/compare/server/v0.14.0...server/v0.15.0) (2026-09-22)
+
+
+### Added
+
+* **agent:** the fleet's Data Studio speaks the datasource contract, as the operator the server sends (A9 S4, part 2) ([#511](https://github.com/jcsvwinston/orbit/issues/511)) ([1e3c614](https://github.com/jcsvwinston/orbit/commit/1e3c614c84870f1db742877e34edfd29215b9913))
+
 ## [0.14.0](https://github.com/jcsvwinston/orbit/compare/server/v0.13.0...server/v0.14.0) (2026-09-21)
 
 
