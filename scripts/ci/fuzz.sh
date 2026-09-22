@@ -58,7 +58,7 @@ TARGETS=$(
 .	./internal/admin	FuzzImportValidation
 quarkdatasource	.	FuzzEscapeLike
 server	./routing	FuzzEventFilterMatches
-agent	./datastudio	FuzzParseID
+datasource	./nucleus	FuzzStoreParseID
 EOF
 )
 

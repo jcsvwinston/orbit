@@ -3,6 +3,8 @@ package agent
 import (
 	"crypto/tls"
 	"time"
+
+	"github.com/jcsvwinston/orbit/datasource"
 )
 
 // ExtensionConfig is the framework-facing configuration for the admin
@@ -88,6 +90,14 @@ type ExtensionConfig struct {
 	// Labels are arbitrary key/value pairs forwarded with NodeRegistration
 	// and shown in the admin UI's node topology view.
 	Labels map[string]string `koanf:"labels"`
+
+	// DataSource is what the fleet's Data Studio reads and writes through
+	// (ADR-002): the same contract the in-process panel speaks. Nil builds
+	// the Nucleus adapter over the application's registry and database
+	// handles. An application on the Quark ORM passes its quarkdatasource
+	// adapter here, as it does in orbit.Config.DataSource. Not bound from a
+	// config file (koanf:"-").
+	DataSource datasource.DataSource `koanf:"-"`
 
 	// DefaultDatabaseAlias is the alias the agent's Data Studio handler
 	// uses when a request arrives with an empty database_alias. Falls

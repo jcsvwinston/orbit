@@ -63,7 +63,7 @@ func NewDataStudioService(state *State, timeout time.Duration, allowedModels []s
 // ListModels: returns the union of every connected agent's registered
 // model set. When include_counts is true the call is routed to ONE
 // agent (the first connected one) so the counts are coherent.
-func (s *DataStudioService) ListModels(_ context.Context, req *connect.Request[adminv1.ListModelsRequest]) (*connect.Response[adminv1.ListModelsResponse], error) {
+func (s *DataStudioService) ListModels(ctx context.Context, req *connect.Request[adminv1.ListModelsRequest]) (*connect.Response[adminv1.ListModelsResponse], error) {
 	body := req.Msg
 	if !body.GetIncludeCounts() && body.GetNodeId() == "" {
 		// Fast path: synthesize the response from the registry without
@@ -80,7 +80,7 @@ func (s *DataStudioService) ListModels(_ context.Context, req *connect.Request[a
 	}
 
 	wrapped := &adminv1.DataStudioRequest{Body: &adminv1.DataStudioRequest_ListModels{ListModels: body}}
-	resp, _, err := s.dispatch(body.GetNodeId(), "", wrapped)
+	resp, _, err := s.dispatch(ctx, body.GetNodeId(), "", wrapped)
 	if err != nil {
 		return nil, err
 	}
@@ -90,10 +90,10 @@ func (s *DataStudioService) ListModels(_ context.Context, req *connect.Request[a
 	return nil, connect.NewError(connect.CodeUnknown, errors.New("admin server: empty list_models response"))
 }
 
-func (s *DataStudioService) GetSchema(_ context.Context, req *connect.Request[adminv1.GetSchemaRequest]) (*connect.Response[adminv1.ModelSchema], error) {
+func (s *DataStudioService) GetSchema(ctx context.Context, req *connect.Request[adminv1.GetSchemaRequest]) (*connect.Response[adminv1.ModelSchema], error) {
 	body := req.Msg
 	wrapped := &adminv1.DataStudioRequest{Body: &adminv1.DataStudioRequest_GetSchema{GetSchema: body}}
-	resp, _, err := s.dispatch(body.GetNodeId(), body.GetModelName(), wrapped)
+	resp, _, err := s.dispatch(ctx, body.GetNodeId(), body.GetModelName(), wrapped)
 	if err != nil {
 		return nil, err
 	}
@@ -103,10 +103,10 @@ func (s *DataStudioService) GetSchema(_ context.Context, req *connect.Request[ad
 	return nil, connect.NewError(connect.CodeUnknown, errors.New("admin server: empty get_schema response"))
 }
 
-func (s *DataStudioService) ListRecords(_ context.Context, req *connect.Request[adminv1.ListRecordsRequest]) (*connect.Response[adminv1.PaginatedRecords], error) {
+func (s *DataStudioService) ListRecords(ctx context.Context, req *connect.Request[adminv1.ListRecordsRequest]) (*connect.Response[adminv1.PaginatedRecords], error) {
 	body := req.Msg
 	wrapped := &adminv1.DataStudioRequest{Body: &adminv1.DataStudioRequest_ListRecords{ListRecords: body}}
-	resp, _, err := s.dispatch(body.GetNodeId(), body.GetModelName(), wrapped)
+	resp, _, err := s.dispatch(ctx, body.GetNodeId(), body.GetModelName(), wrapped)
 	if err != nil {
 		return nil, err
 	}
@@ -116,10 +116,10 @@ func (s *DataStudioService) ListRecords(_ context.Context, req *connect.Request[
 	return nil, connect.NewError(connect.CodeUnknown, errors.New("admin server: empty list_records response"))
 }
 
-func (s *DataStudioService) GetRecord(_ context.Context, req *connect.Request[adminv1.GetRecordRequest]) (*connect.Response[adminv1.Record], error) {
+func (s *DataStudioService) GetRecord(ctx context.Context, req *connect.Request[adminv1.GetRecordRequest]) (*connect.Response[adminv1.Record], error) {
 	body := req.Msg
 	wrapped := &adminv1.DataStudioRequest{Body: &adminv1.DataStudioRequest_GetRecord{GetRecord: body}}
-	resp, _, err := s.dispatch(body.GetNodeId(), body.GetModelName(), wrapped)
+	resp, _, err := s.dispatch(ctx, body.GetNodeId(), body.GetModelName(), wrapped)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +135,7 @@ func (s *DataStudioService) CreateRecord(ctx context.Context, req *connect.Reque
 	}
 	body := req.Msg
 	wrapped := &adminv1.DataStudioRequest{Body: &adminv1.DataStudioRequest_CreateRecord{CreateRecord: body}}
-	resp, node, err := s.dispatch(body.GetNodeId(), body.GetModelName(), wrapped)
+	resp, node, err := s.dispatch(ctx, body.GetNodeId(), body.GetModelName(), wrapped)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +152,7 @@ func (s *DataStudioService) UpdateRecord(ctx context.Context, req *connect.Reque
 	}
 	body := req.Msg
 	wrapped := &adminv1.DataStudioRequest{Body: &adminv1.DataStudioRequest_UpdateRecord{UpdateRecord: body}}
-	resp, node, err := s.dispatch(body.GetNodeId(), body.GetModelName(), wrapped)
+	resp, node, err := s.dispatch(ctx, body.GetNodeId(), body.GetModelName(), wrapped)
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +169,7 @@ func (s *DataStudioService) DeleteRecord(ctx context.Context, req *connect.Reque
 	}
 	body := req.Msg
 	wrapped := &adminv1.DataStudioRequest{Body: &adminv1.DataStudioRequest_DeleteRecord{DeleteRecord: body}}
-	resp, node, err := s.dispatch(body.GetNodeId(), body.GetModelName(), wrapped)
+	resp, node, err := s.dispatch(ctx, body.GetNodeId(), body.GetModelName(), wrapped)
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +186,7 @@ func (s *DataStudioService) BulkAction(ctx context.Context, req *connect.Request
 	}
 	body := req.Msg
 	wrapped := &adminv1.DataStudioRequest{Body: &adminv1.DataStudioRequest_BulkAction{BulkAction: body}}
-	resp, node, err := s.dispatch(body.GetNodeId(), body.GetModelName(), wrapped)
+	resp, node, err := s.dispatch(ctx, body.GetNodeId(), body.GetModelName(), wrapped)
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +201,41 @@ func (s *DataStudioService) BulkAction(ctx context.Context, req *connect.Request
 // dispatch picks an agent, allocates a request_id, and sends the
 // pre-built request over the agent's bidi stream. Blocks on the
 // matching DataStudioResponse for at most s.Timeout.
-func (s *DataStudioService) dispatch(nodeID, modelName string, req *adminv1.DataStudioRequest) (*adminv1.DataStudioResponse, string, error) {
+// operatorOnTheWire is the identity the UI auth chain resolved, as the
+// agent receives it (ADR-002): subject, email, role, whether the operator
+// is read-only and the tenant it is scoped to. Nil when the request carries
+// no identity, which the agent treats as "no operator" — its behaviour
+// before the field existed.
+func operatorOnTheWire(ctx context.Context) *adminv1.OperatorIdentity {
+	id := auth.IdentityFromContext(ctx)
+	if strings.TrimSpace(id.Subject) == "" {
+		return nil
+	}
+	return &adminv1.OperatorIdentity{
+		Subject:  id.Subject,
+		Email:    id.Email,
+		Role:     id.Role,
+		ReadOnly: id.ReadOnly,
+		Tenant:   id.Tenant,
+	}
+}
+
+// agentErrorCode maps the agent's error text onto a Connect code. Two
+// prefixes are a wire convention with the agent's Data Studio handler:
+// "permission denied:" and "not found:". Anything else is Unknown, as
+// before.
+func agentErrorCode(msg string) connect.Code {
+	lower := strings.ToLower(strings.TrimSpace(msg))
+	switch {
+	case strings.HasPrefix(lower, "permission denied"):
+		return connect.CodePermissionDenied
+	case strings.HasPrefix(lower, "not found"):
+		return connect.CodeNotFound
+	}
+	return connect.CodeUnknown
+}
+
+func (s *DataStudioService) dispatch(ctx context.Context, nodeID, modelName string, req *adminv1.DataStudioRequest) (*adminv1.DataStudioResponse, string, error) {
 	if s == nil || s.state == nil {
 		return nil, "", connect.NewError(connect.CodeInternal, errors.New("admin server: state not initialized"))
 	}
@@ -225,6 +259,7 @@ func (s *DataStudioService) dispatch(nodeID, modelName string, req *adminv1.Data
 		return nil, "", connect.NewError(connect.CodeResourceExhausted, err)
 	}
 	req.RequestId = id
+	req.Operator = operatorOnTheWire(ctx)
 
 	frame := &adminv1.Frame{
 		Body: &adminv1.Frame_Command{
@@ -247,7 +282,7 @@ func (s *DataStudioService) dispatch(nodeID, modelName string, req *adminv1.Data
 		return nil, "", connect.NewError(connect.CodeUnavailable, errors.New("admin server: empty data studio response"))
 	}
 	if resp.Error != "" {
-		return nil, "", connect.NewError(connect.CodeUnknown, errors.New(resp.Error))
+		return nil, "", connect.NewError(agentErrorCode(resp.Error), errors.New(resp.Error))
 	}
 	return resp, entry.NodeID, nil
 }

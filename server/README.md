@@ -98,6 +98,11 @@ models the fleet may write is an explicit server-side decision:
   while every read surface (streams, nodes, Data Studio reads,
   RBAC/audit) keeps working. Any other value — including absent — keeps
   the operator read-write (still subject to the model allowlist).
+* `--ui-tenant-header` (default `X-Auth-Tenant`): the tenant the trusted
+  reverse proxy says the operator is scoped to. It travels to the agent
+  with the operator identity on every Data Studio request, and an agent
+  whose model declares a tenant column confines the operator to it. Read
+  only on the trusted-proxy path, like `--ui-auth-header`.
 * `--ui-read-only` (env `NUCLEUS_ADMIN_UI_READ_ONLY=1`): makes EVERY
   operator read-only, turning the server into a pure observability
   plane.

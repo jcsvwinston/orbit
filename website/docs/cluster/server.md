@@ -50,25 +50,31 @@ A production-flavoured invocation:
 Run `./bin/admin-server --help` (or `--version`) for the full surface. Every
 flag has a `NUCLEUS_ADMIN_*` env-var counterpart.
 
-:::warning Fleet mutations bypass the app's RBAC and tenant filtering
+:::info The operator travels with every Data Studio request
 A Data Studio operation routed through the fleet plane executes on the
-agent with the agent's own database access: **no operator identity crosses
-the stream**, so the application's per-model RBAC and multi-tenant
-filtering do not run. The `Access control` screen does not change that: it
-is a read-only snapshot of each node's own policy, and it does not gate
-the operator's fleet-plane actions, which are audited rather than
-authorized per verb and object. The protocol now *declares* where that
-identity will ride (`DataStudioRequest.operator`: subject, role, read-only,
-tenant), but the server does not fill it yet — a declaration on the wire
-changes nothing until both ends act on it, which is the next step of the
-fleet's move onto the same data-access contract the in-process panel uses.
-What did change: a `ListRecordsRequest` carries filters with an operator
-(`where`, the same twelve the panel accepts) and the agent applies them — or
-refuses one it does not know, rather than dropping it — and every list the
-fleet serves carries an exact total, filtered or not, so the pager can say
-how many pages there are.
+agent, through the same data-access contract the in-process panel uses,
+**as the operator the UI auth chain resolved**: every request carries the
+subject, role, read-only flag and tenant of the caller. On an agent from
+`v0.10.0` on, that identity reaches the application's model hooks, the
+application's per-model policy applies to the operator per verb (`list`,
+`retrieve`, `create`, `update`, `delete`, `bulk_delete`) through the
+agent's authorizer, and an operator scoped to a tenant only sees and
+touches that tenant's rows — reads are confined by the model's tenant
+column, a create is stamped with the tenant, an update or delete first
+confirms the row is the tenant's. The tenant comes from the trusted proxy:
+`--ui-tenant-header` (default `X-Auth-Tenant`), honoured on the same path
+as `--ui-auth-header`.
 
-Because of that, **Data Studio mutations are refused by default**. The
+An agent older than that ignores the identity and behaves as before — no
+policy, no tenant — so the server-side gates below stay in front for every
+agent. The `Access control` screen is a read-only snapshot of each node's
+policy; enforcement happens on the agent. A `ListRecordsRequest` carries
+filters with an operator (`where`, the same twelve the panel accepts) and
+the agent applies them — or refuses one it does not know, rather than
+dropping it — and every list the fleet serves carries an exact total,
+filtered or not.
+
+**Data Studio mutations are refused by default.** The
 gates, all server-side:
 
 - `--datastudio-allowed-models` — comma-separated model names Data Studio

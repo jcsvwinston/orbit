@@ -60,17 +60,17 @@ place for a capability, not the capability.
 
 ## The result
 
-**22 of 50 controls present. 5 partial. 23 absent.**
+**26 of 50 controls present. 3 partial. 21 absent.**
 
 | family | present | partial | absent |
 |---|---|---|---|
 | identity | 10 | 0 | 0 |
-| datasource | 6 | 3 | 3 |
+| datasource | 10 | 1 | 1 |
 | retention | 1 | 0 | 6 |
 | alerts | 2 | 0 | 4 |
 | ha | 1 | 1 | 3 |
 | ui | 2 | 1 | 7 |
-| **total** | **22** | **5** | **23** |
+| **total** | **26** | **3** | **21** |
 
 ### alerts — 2 present · 0 partial · 4 absent
 
@@ -83,7 +83,7 @@ place for a capability, not the capability.
 | `ALR-05` | the agent publishes its own Prometheus collectors on its metrics listener | **present** | — |
 | `ALR-06` | a node that stops sending frames is listed as not connected within the inactivity timeout plus one janitor tick | **present** | — |
 
-### datasource — 6 present · 3 partial · 3 absent
+### datasource — 10 present · 1 partial · 1 absent
 
 | id | control | verdict | what is missing |
 |---|---|---|---|
@@ -91,28 +91,33 @@ place for a capability, not the capability.
 | `FDS-02` | a record survives create, read, update and delete through the fleet once its model is allowlisted | **present** | — |
 | `FDS-03` | mutations are refused by default; the allowlist opens a model; reads are never gated | **present** | — |
 | `FDS-04` | a viewer operator (read-only role) can read and cannot mutate | **present** | — |
-| `FDS-05` | the operator identity crosses the stream: the agent-side handler is told who is asking | **partial** | the wire declares it since A9 S3 (DataStudioRequest.operator, an OperatorIdentity with subject, role, read_only and tenant), but the server never fills it and the agent never reads it: a BeforeCreate hook on the model still sees no framework identity (auth.ClaimsFromContext) when the fleet operator writes through it. A declaration is not a surface; S4 makes the agent run under it and S5 makes the server send it. |
-| `FDS-06` | the application's per-model policy applies to the fleet operator: a denied model is refused | **absent** | an agent whose Authorizer denies every action on the model still answers ListRecords with rows: agent/datastudio builds a model.CRUD on the database handle and never consults the Authorizer (the Authorizer feeds the read-only RBAC snapshot the fleet UI displays, not enforcement). |
-| `FDS-07` | fleet reads are tenant-filtered when the model declares a tenant column | **partial** | a model with a declared tenant column answers every tenant's rows to an operator scoped to one. The wire declares where the tenant rides since A9 S3 (OperatorIdentity.tenant on DataStudioRequest), but server.Config has no tenant header to read it from, the server fills nothing, and the agent-side handler runs with no tenant in its context (agent/datastudio). S4 scopes the agent by the identity it receives; S5 makes the server send it. |
+| `FDS-05` | the operator identity crosses the stream: the agent-side handler is told who is asking | **present** | — |
+| `FDS-06` | the application's per-model policy applies to the fleet operator: a denied model is refused | **present** | — |
+| `FDS-07` | fleet reads are tenant-filtered when the model declares a tenant column | **present** | — |
 | `FDS-08` | filters with operators (contains, range, set, null) reach the agent | **present** | — |
 | `FDS-09` | pagination carries an exact total, filtered or not | **present** | — |
-| `FDS-10` | the agent serves Data Studio through the datasource contract, so a contract implementation can be registered in the fleet | **absent** | agent/go.mod does not require the root module that owns the datasource package, and agent.Config has no field typed from it: the agent builds its own model.CRUD path (agent/datastudio) and a contract implementation such as quarkdatasource cannot be handed to it. |
+| `FDS-10` | the agent serves Data Studio through the datasource contract, so a contract implementation can be registered in the fleet | **present** | — |
 | `FDS-11` | a fleet mutation leaves an audit entry with operator, model, record and node, and says what changed | **partial** | ListAudit returns the entry attributed to actor, action, target (model and record id) and node; AuditEntry has no before/after values. Whether the entry survives the process is RET-04's measurement. |
 | `FDS-12` | the fleet-consumes-the-contract decision (docs/adrs/ADR-002) is recorded as implemented in the ADR and in the index | **absent** | the ADR's front matter says status: accepted and the index row in docs/adrs/README.md says "pendiente de implementar": the decision is taken and the work is open. |
 
-Three controls moved to **partial** in A9 `S3` for the same reason and none of
-them is closer to present than the note says: the wire now *declares* the
-operator identity (`DataStudioRequest.operator`, with a `tenant`) and the
-operator filters (`ListRecordsRequest.where`), and declaring is not doing.
-`FDS-05` and `FDS-07` wait for the server to fill the identity (`S5`) and the
-agent to run under it (`S4`). `UI-09` was made stricter on the way: a field in
-a descriptor is not a tenant notion in the UI, and neither is the word "tenant"
-inside a translated string — the SPA has to read or set the property. `FDS-08`
-and `FDS-09` are **present**: the agent maps `where` onto the model layer's
-operators and refuses one it does not know rather than dropping it (a dropped
-filter looks like a result), and asks for an exact count on every list,
-filtered or not. `FDS-08` needed `proto/v0.5.0` to exist first — the agent
-pins the protocol by tag — which is why it landed one release after the field.
+`FDS-05`, `FDS-06`, `FDS-07` and `FDS-10` are **present** since A9 `S4`: the
+agent serves Data Studio through the same `datasource` contract the panel
+speaks (its own module since ADR-012, with the Nucleus adapter inside), and
+the admin server sends the operator the UI auth chain resolved
+(`DataStudioRequest.operator`: subject, role, read-only, tenant). Under that
+identity the agent puts the framework claims on the context (a model hook
+sees who is asking), applies the application's policy per model and verb
+through its Authorizer (the panel's verbs: `list`, `retrieve`, `create`,
+`update`, `delete`, `bulk_delete`), and confines a tenant-scoped operator to
+its tenant — an equality filter on the model's tenant column for reads, the
+tenant stamped on a create, ownership confirmed before an update or delete.
+The tenant reaches the server through the trusted proxy's `X-Auth-Tenant`
+header (`--ui-tenant-header`). A request without an operator — an older
+server — behaves as before, with no identity, no policy and no tenant.
+`UI-09` stays partial: the wire carries a tenant, the SPA still neither
+sends nor shows one. `FDS-08` and `FDS-09` are **present** too: operator
+filters are applied through the contract (an unknown operator is refused,
+never dropped) and every list carries an exact total.
 
 ### ha — 1 present · 1 partial · 3 absent
 

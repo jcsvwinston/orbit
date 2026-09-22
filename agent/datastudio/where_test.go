@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jcsvwinston/nucleus/pkg/model"
+	"github.com/jcsvwinston/orbit/datasource"
 
 	adminv1 "github.com/jcsvwinston/orbit/proto/gen/go/nucleus/admin/v1"
 )
@@ -20,11 +20,11 @@ func TestWhereFromWire_MapsEveryOperator(t *testing.T) {
 	if err != nil {
 		t.Fatalf("whereFromWire: %v", err)
 	}
-	want := []model.Filter{
-		{Column: "Title", Op: model.OpContains, Value: "article"},
-		{Column: "Views", Op: model.OpGreaterEqual, Value: "10"},
-		{Column: "Status", Op: model.OpIn, Values: []string{"draft", "live"}},
-		{Column: "DeletedAt", Op: model.OpIsNull, Value: "true"},
+	want := []datasource.Filter{
+		{Column: "Title", Op: datasource.OpContains, Value: "article"},
+		{Column: "Views", Op: datasource.OpGreaterEqual, Value: "10"},
+		{Column: "Status", Op: datasource.OpIn, Values: []string{"draft", "live"}},
+		{Column: "DeletedAt", Op: datasource.OpIsNull, Value: "true"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %d filters, want %d: %+v", len(got), len(want), got)

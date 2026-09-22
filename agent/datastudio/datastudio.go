@@ -1,41 +1,29 @@
-// Package datastudio is the agent-side handler for DataStudioRequest
-// frames sent by the admin server. The admin server has no direct DB
-// access; it routes UI Data Studio operations to a connected agent
-// over the existing bidi stream. The agent executes the operation
-// locally via a pkg/model.CRUD built directly on the database handle
-// and sends a DataStudioResponse back.
+// Package datastudio serves Data Studio requests on the agent side of the
+// fleet plane through Orbit's datasource contract (ADR-001, ADR-002): the
+// same DataSource the in-process panel speaks, so a Nucleus registry, a
+// Quark data source or any third-party implementation answers the fleet the
+// way it answers the panel.
 //
-// SECURITY MODEL — read before wiring this into an app. The handler
-// executes with the AGENT'S OWN database access, not the operator's:
-// no operator identity crosses the bidi stream, so the application's
-// per-request machinery does NOT run here. Concretely:
+// Until A9 S4 this package built its own model.CRUD path over the agent's
+// database handles, with no operator behind the request: the fleet was a
+// second Data Studio with its own semantics and none of the application's
+// authorization. Now the request carries the operator the admin server
+// resolved (DataStudioRequest.operator, sent by servers from v0.14.1 on) and
+// the handler runs it as the panel would run it for that operator:
 //
-//   - NO per-model RBAC: the app's Authorizer is never consulted; any
-//     operation the admin server dispatches runs against the DB.
-//   - NO multi-tenant resolution or filtering: there is no tenant in
-//     the context, so reads span every tenant's rows and writes carry
-//     whatever tenant values the request supplies.
-//   - NO signals: the CRUD is constructed with a nil signals bus, so
-//     bus subscribers (PreCreate/PostCreate/…) never fire. Hooks that
-//     live on the model's own Config (BeforeCreate etc.) still run,
-//     because they travel with the model metadata.
-//   - Field-level handling only: primary-key/read-only/excluded fields
-//     are respected when decoding records, and values are converted to
-//     the field's Go type; the app's request-level validation does not
-//     run.
+//   - the framework identity reaches the model layer's hooks
+//     (auth.ClaimsFromContext sees the operator's subject and role);
+//   - the application's policy applies per model and verb through the
+//     agent's Authorizer — the same verbs the panel uses: list, retrieve,
+//     create, update, delete, bulk_delete;
+//   - a tenant-scoped operator is confined to its tenant: reads carry an
+//     equality filter on the model's tenant column, a create is stamped with
+//     the tenant, and an update or delete first confirms the row is the
+//     tenant's.
 //
-// The defensible gates live on the ADMIN SERVER: operator read-only
-// roles (viewer / --ui-read-only) and the per-model mutation allowlist
-// (--datastudio-allowed-models, deny-by-default). Only enable this
-// handler on agents whose whole database may be exposed to every
-// read-write operator of the admin server. Propagating a real operator
-// identity across the stream is an open direction — see
-// docs/adrs/ADR-002-fleet-datastudio-identidad.md in the repo root.
-//
-// Construction is opt-in: pass a non-nil *model.Registry and at least
-// one *db.DB in the agent's Config. When the registry is nil, the
-// Handler is disabled and the agent ignores DataStudioRequests with a
-// canned "data studio not enabled on this agent" error response.
+// A request that carries no operator — an older server — behaves as before:
+// no identity, no policy, no tenant. The server's own gates (the mutation
+// allowlist, the read-only role) stay in front in both cases.
 package datastudio
 
 import (
@@ -43,31 +31,38 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"reflect"
-	"strconv"
+	"log/slog"
+	"sort"
 	"strings"
 	"sync"
-	"time"
 
-	"github.com/jcsvwinston/nucleus/pkg/db"
-	"github.com/jcsvwinston/nucleus/pkg/model"
+	"github.com/jcsvwinston/nucleus/pkg/auth"
+	"github.com/jcsvwinston/nucleus/pkg/authz"
+
+	"github.com/jcsvwinston/orbit/agent/rbac"
+	"github.com/jcsvwinston/orbit/datasource"
 
 	adminv1 "github.com/jcsvwinston/orbit/proto/gen/go/nucleus/admin/v1"
 )
 
-// Config wires the handler into the framework's existing CRUD plumbing.
+// Config is what the handler needs to serve Data Studio.
 type Config struct {
-	// Registry is the model registry to introspect. Nil disables the
-	// handler.
-	Registry *model.Registry
-
-	// Databases is the alias -> DB handle map. Must contain at least
-	// the DefaultAlias when the handler is enabled.
-	Databases map[string]*db.DB
+	// Source answers every model and record question. Nil disables the
+	// handler (the agent reports Data Studio as not enabled on this node).
+	Source datasource.DataSource
 
 	// DefaultAlias is used when a request's database_alias is empty.
 	// Defaults to "default".
 	DefaultAlias string
+
+	// Authorizer is the application's policy, consulted per model and
+	// verb for the operator a request carries. Nil (or a request without
+	// an operator) means no per-model authorization on the agent — the
+	// server's gates alone, as before ADR-002.
+	Authorizer rbac.PolicySource
+
+	// Logger receives diagnostics. Nil means slog.Default.
+	Logger *slog.Logger
 }
 
 func (c Config) defaultAlias() string {
@@ -77,36 +72,45 @@ func (c Config) defaultAlias() string {
 	return "default"
 }
 
-// Handler dispatches DataStudioRequest frames. It is goroutine-safe;
-// the agent's stream layer calls Dispatch from its receive loop.
-type Handler struct {
-	cfg Config
-
-	// crudCache is keyed by "<alias>::<modelName>"; mu protects access.
-	mu        sync.Mutex
-	crudCache map[string]*model.CRUD
+// Decider is the half of an authorizer that answers a question. Nucleus's
+// *authz.Enforcer implements it; a PolicySource that only exposes its rows
+// is compiled into one on first use.
+type Decider interface {
+	Can(sub, obj, act string) bool
 }
 
-// New constructs a Handler. Returns nil when cfg.Registry is nil
-// (caller treats this as "Data Studio disabled on this agent").
+// Handler dispatches DataStudioRequest frames. It is goroutine-safe; the
+// agent's stream layer calls Dispatch from its receive loop.
+type Handler struct {
+	cfg    Config
+	logger *slog.Logger
+
+	once    sync.Once
+	decider Decider
+	decErr  error
+}
+
+// New constructs a Handler. Returns nil when cfg.Source is nil (caller
+// treats this as "Data Studio disabled on this agent").
 func New(cfg Config) *Handler {
-	if cfg.Registry == nil {
+	if cfg.Source == nil {
 		return nil
 	}
-	return &Handler{
-		cfg:       cfg,
-		crudCache: make(map[string]*model.CRUD),
+	logger := cfg.Logger
+	if logger == nil {
+		logger = slog.Default()
 	}
+	return &Handler{cfg: cfg, logger: logger}
 }
 
 // RegisteredModels returns the names of every model this handler can
-// serve. The agent ships this list in NodeRegistration so the admin
-// server can route requests to the right node.
+// serve. The agent ships this list in NodeRegistration so the admin server
+// can route requests to the right node.
 func (h *Handler) RegisteredModels() []string {
-	if h == nil || h.cfg.Registry == nil {
+	if h == nil || h.cfg.Source == nil {
 		return nil
 	}
-	all := h.cfg.Registry.All()
+	all := h.cfg.Source.All()
 	out := make([]string, 0, len(all))
 	for _, m := range all {
 		out = append(out, m.Name)
@@ -115,33 +119,39 @@ func (h *Handler) RegisteredModels() []string {
 }
 
 // Dispatch executes the request and returns the response. The response
-// always carries the same RequestId; on failure, Error is non-empty
-// and Body is nil. Dispatch never returns nil.
+// always carries the same RequestId; on failure, Error is non-empty and
+// Body is nil. Dispatch never returns nil.
+//
+// Two error prefixes are a wire convention the admin server maps onto
+// Connect codes: "permission denied:" → PermissionDenied and "not found:"
+// → NotFound. Everything else is Unknown.
 func (h *Handler) Dispatch(ctx context.Context, req *adminv1.DataStudioRequest) *adminv1.DataStudioResponse {
 	resp := &adminv1.DataStudioResponse{RequestId: req.GetRequestId()}
 
-	if h == nil || h.cfg.Registry == nil {
+	if h == nil || h.cfg.Source == nil {
 		resp.Error = "admin agent: data studio is not enabled on this node"
 		return resp
 	}
+	op := req.GetOperator()
+	ctx = withOperator(ctx, op)
 
 	switch body := req.GetBody().(type) {
 	case *adminv1.DataStudioRequest_ListModels:
-		h.handleListModels(resp, body.ListModels)
+		h.handleListModels(ctx, resp, op, body.ListModels)
 	case *adminv1.DataStudioRequest_GetSchema:
-		h.handleGetSchema(resp, body.GetSchema)
+		h.handleGetSchema(resp, op, body.GetSchema)
 	case *adminv1.DataStudioRequest_ListRecords:
-		h.handleListRecords(ctx, resp, body.ListRecords)
+		h.handleListRecords(ctx, resp, op, body.ListRecords)
 	case *adminv1.DataStudioRequest_GetRecord:
-		h.handleGetRecord(ctx, resp, body.GetRecord)
+		h.handleGetRecord(ctx, resp, op, body.GetRecord)
 	case *adminv1.DataStudioRequest_CreateRecord:
-		h.handleCreateRecord(ctx, resp, body.CreateRecord)
+		h.handleCreateRecord(ctx, resp, op, body.CreateRecord)
 	case *adminv1.DataStudioRequest_UpdateRecord:
-		h.handleUpdateRecord(ctx, resp, body.UpdateRecord)
+		h.handleUpdateRecord(ctx, resp, op, body.UpdateRecord)
 	case *adminv1.DataStudioRequest_DeleteRecord:
-		h.handleDeleteRecord(ctx, resp, body.DeleteRecord)
+		h.handleDeleteRecord(ctx, resp, op, body.DeleteRecord)
 	case *adminv1.DataStudioRequest_BulkAction:
-		h.handleBulkAction(ctx, resp, body.BulkAction)
+		h.handleBulkAction(ctx, resp, op, body.BulkAction)
 	default:
 		resp.Error = fmt.Sprintf("admin agent: unsupported data studio request: %T", body)
 	}
@@ -149,11 +159,140 @@ func (h *Handler) Dispatch(ctx context.Context, req *adminv1.DataStudioRequest) 
 }
 
 // =============================================================================
+// the operator: identity, policy, tenant
+// =============================================================================
+
+// withOperator puts the operator on the context the way the framework's
+// own request pipeline would, so a model hook (BeforeCreate, ...) that
+// asks auth.ClaimsFromContext sees who is asking. No operator, no claims.
+func withOperator(ctx context.Context, op *adminv1.OperatorIdentity) context.Context {
+	if op == nil || strings.TrimSpace(op.GetSubject()) == "" {
+		return ctx
+	}
+	return auth.ContextWithClaims(ctx, &auth.Claims{
+		UserID:   op.GetSubject(),
+		Username: op.GetSubject(),
+		Role:     op.GetRole(),
+	})
+}
+
+// authorize answers whether the operator may perform verb on the model,
+// with the panel's rule: no policy configured means allowed; with a policy,
+// the subject or its role must be granted `<verb>` on `admin:<Model>`.
+func (h *Handler) authorize(op *adminv1.OperatorIdentity, modelName, verb string) error {
+	if op == nil || strings.TrimSpace(op.GetSubject()) == "" || h.cfg.Authorizer == nil {
+		return nil
+	}
+	if op.GetReadOnly() && verb != "list" && verb != "retrieve" {
+		return fmt.Errorf("permission denied: operator %q is read-only", op.GetSubject())
+	}
+	d, err := h.deciderFor()
+	if err != nil {
+		return fmt.Errorf("permission denied: the application's policy could not be loaded: %v", err)
+	}
+	resource := "admin:" + modelName
+	if d.Can(op.GetSubject(), resource, verb) {
+		return nil
+	}
+	if role := strings.TrimSpace(op.GetRole()); role != "" && d.Can(role, resource, verb) {
+		return nil
+	}
+	return fmt.Errorf("permission denied: %q may not %s %s", op.GetSubject(), verb, modelName)
+}
+
+// deciderFor returns the policy as something that can answer. An
+// Authorizer that decides for itself (nucleus's Enforcer) is used as is; one
+// that only exposes its rows is compiled into an in-memory enforcer once —
+// allow rows become grants, rows whose fourth column says deny become
+// denials, grouping rows become roles.
+func (h *Handler) deciderFor() (Decider, error) {
+	h.once.Do(func() {
+		if d, ok := h.cfg.Authorizer.(Decider); ok {
+			h.decider = d
+			return
+		}
+		enf, err := authz.New(h.logger)
+		if err != nil {
+			h.decErr = err
+			return
+		}
+		rows, err := h.cfg.Authorizer.GetPolicy()
+		if err != nil {
+			h.decErr = err
+			return
+		}
+		for _, row := range rows {
+			if len(row) < 3 {
+				continue
+			}
+			if len(row) >= 4 && strings.EqualFold(strings.TrimSpace(row[3]), "deny") {
+				err = enf.Deny(row[0], row[1], row[2])
+			} else {
+				err = enf.AddPolicy(row[0], row[1], row[2])
+			}
+			if err != nil {
+				h.decErr = err
+				return
+			}
+		}
+		groups, err := h.cfg.Authorizer.GetGroupingPolicy()
+		if err != nil {
+			h.decErr = err
+			return
+		}
+		for _, g := range groups {
+			if len(g) >= 2 {
+				if err := enf.AddRole(g[0], g[1]); err != nil {
+					h.decErr = err
+					return
+				}
+			}
+		}
+		h.decider = enf
+	})
+	return h.decider, h.decErr
+}
+
+// tenantScope is the confinement of one request for one model: the
+// tenant the operator is scoped to and the model's tenant field. A zero
+// scope (Enforced false) means the request sees every row — no tenant on
+// the operator, or a model without a tenant field.
+type tenantScope struct {
+	Tenant string
+	Field  datasource.FieldInfo
+}
+
+func (s tenantScope) Enforced() bool { return s.Tenant != "" && s.Field.Column != "" }
+
+func scopeFor(op *adminv1.OperatorIdentity, mi datasource.ModelInfo) tenantScope {
+	if op == nil || strings.TrimSpace(op.GetTenant()) == "" || mi.TenantField == "" {
+		return tenantScope{}
+	}
+	f, ok := mi.Field(mi.TenantField)
+	if !ok {
+		f = datasource.FieldInfo{Name: mi.TenantField, Column: mi.TenantField}
+	}
+	return tenantScope{Tenant: strings.TrimSpace(op.GetTenant()), Field: f}
+}
+
+// owns reports whether rec — a record the store returned — belongs to the
+// scope's tenant. The record is keyed by whatever the data source emits
+// (the Nucleus adapter: the field's JSON key), so the tenant is looked up
+// by the field's name and column, folded.
+func (s tenantScope) owns(rec datasource.Record) bool {
+	v, ok := lookup(rec, s.Field.Name, s.Field.Column)
+	if !ok {
+		return false
+	}
+	return fmt.Sprint(v) == s.Tenant
+}
+
+// =============================================================================
 // list_models / get_schema (read-only metadata)
 // =============================================================================
 
-func (h *Handler) handleListModels(resp *adminv1.DataStudioResponse, req *adminv1.ListModelsRequest) {
-	all := h.cfg.Registry.All()
+func (h *Handler) handleListModels(ctx context.Context, resp *adminv1.DataStudioResponse, op *adminv1.OperatorIdentity, req *adminv1.ListModelsRequest) {
+	all := h.cfg.Source.All()
 	out := make([]*adminv1.ModelInfo, 0, len(all))
 	alias := strings.TrimSpace(req.GetDatabaseAlias())
 
@@ -161,18 +300,15 @@ func (h *Handler) handleListModels(resp *adminv1.DataStudioResponse, req *adminv
 		if alias != "" && m.DatabaseAlias != "" && !strings.EqualFold(alias, m.DatabaseAlias) {
 			continue
 		}
-		info := h.metaToInfo(m)
-		if req.GetIncludeCounts() {
-			if c, ok := h.crudFor(m, alias); ok {
-				if total, estimated, err := h.countModel(c); err == nil {
-					info.RecordCount = total
-					info.RecordCountEstimated = estimated
-				} else {
-					info.RecordCount = -1
+		info := modelToProto(m)
+		info.RecordCount = -1
+		if req.GetIncludeCounts() && h.authorize(op, m.Name, "list") == nil {
+			if st, err := h.cfg.Source.Store(m.Name, h.aliasFor(alias, m)); err == nil {
+				if c, err := st.Count(ctx); err == nil && c.Present {
+					info.RecordCount = c.Count
+					info.RecordCountEstimated = c.IsEstimated
 				}
 			}
-		} else {
-			info.RecordCount = -1
 		}
 		out = append(out, info)
 	}
@@ -181,16 +317,20 @@ func (h *Handler) handleListModels(resp *adminv1.DataStudioResponse, req *adminv
 	}
 }
 
-func (h *Handler) handleGetSchema(resp *adminv1.DataStudioResponse, req *adminv1.GetSchemaRequest) {
-	meta, ok := h.cfg.Registry.Get(req.GetModelName())
+func (h *Handler) handleGetSchema(resp *adminv1.DataStudioResponse, op *adminv1.OperatorIdentity, req *adminv1.GetSchemaRequest) {
+	mi, ok := h.cfg.Source.Get(req.GetModelName())
 	if !ok {
-		resp.Error = fmt.Sprintf("admin agent: model %q is not registered", req.GetModelName())
+		resp.Error = fmt.Sprintf("not found: model %q is not registered", req.GetModelName())
+		return
+	}
+	if err := h.authorize(op, mi.Name, "get_schema"); err != nil {
+		resp.Error = err.Error()
 		return
 	}
 	resp.Body = &adminv1.DataStudioResponse_Schema{
 		Schema: &adminv1.ModelSchema{
-			Info:   h.metaToInfo(meta),
-			Fields: fieldsToProto(meta.Fields),
+			Info:   modelToProto(mi),
+			Fields: fieldsToProto(mi.Fields),
 		},
 	}
 }
@@ -199,18 +339,16 @@ func (h *Handler) handleGetSchema(resp *adminv1.DataStudioResponse, req *adminv1
 // list_records / get_record
 // =============================================================================
 
-func (h *Handler) handleListRecords(ctx context.Context, resp *adminv1.DataStudioResponse, req *adminv1.ListRecordsRequest) {
-	meta, ok := h.cfg.Registry.Get(req.GetModelName())
-	if !ok {
-		resp.Error = fmt.Sprintf("admin agent: model %q is not registered", req.GetModelName())
+func (h *Handler) handleListRecords(ctx context.Context, resp *adminv1.DataStudioResponse, op *adminv1.OperatorIdentity, req *adminv1.ListRecordsRequest) {
+	mi, st, err := h.storeFor(req.GetModelName(), req.GetDatabaseAlias())
+	if err != nil {
+		resp.Error = err.Error()
 		return
 	}
-	c, ok := h.crudFor(meta, req.GetDatabaseAlias())
-	if !ok {
-		resp.Error = fmt.Sprintf("admin agent: database alias not configured for %q", req.GetModelName())
+	if err := h.authorize(op, mi.Name, "list"); err != nil {
+		resp.Error = err.Error()
 		return
 	}
-
 	page := int(req.GetPage())
 	if page < 1 {
 		page = 1
@@ -219,150 +357,185 @@ func (h *Handler) handleListRecords(ctx context.Context, resp *adminv1.DataStudi
 	if pageSize < 1 {
 		pageSize = 25
 	}
-
 	where, err := whereFromWire(req.GetWhere())
 	if err != nil {
 		resp.Error = err.Error()
 		return
 	}
-	opts := model.QueryOpts{
+	filters := cloneFilters(req.GetFilters())
+	// A tenant-scoped operator sees the tenant's rows: the scope is written
+	// over any filter the request carried on the same column, not merged.
+	if scope := scopeFor(op, mi); scope.Enforced() {
+		if filters == nil {
+			filters = map[string]string{}
+		}
+		filters[scope.Field.Column] = scope.Tenant
+	}
+	res, err := st.List(ctx, datasource.Query{
 		Page:     page,
 		PageSize: pageSize,
 		Search:   req.GetSearch(),
+		Filters:  filters,
 		OrderBy:  req.GetOrderBy(),
-		Filters:  req.GetFilters(),
-		Fields:   req.GetFields(),
 		Where:    where,
 		// The fleet UI is a screen with a pager: it needs to know how many
-		// pages there are, filtered or not. The count is a second query;
-		// the model layer answered -1/estimated for every filtered list
-		// until asked.
+		// pages there are, filtered or not.
 		ExactTotal: true,
-	}
-
-	result, err := c.FindAll(ctx, opts)
+	})
 	if err != nil {
 		resp.Error = err.Error()
 		return
 	}
-
-	items := entitiesToRecords(result.Items, meta)
-
+	items := make([]*adminv1.Record, 0, len(res.Items))
+	for _, rec := range res.Items {
+		items = append(items, recordToProto(rec, mi))
+	}
 	resp.Body = &adminv1.DataStudioResponse_RecordsPage{
 		RecordsPage: &adminv1.PaginatedRecords{
 			Items:          items,
-			Page:           uint32(result.Page),
-			PageSize:       uint32(result.PageSize),
-			Total:          result.Total,
-			TotalEstimated: result.IsEstimated,
-			HasMore:        result.HasMore,
+			Page:           uint32(res.Page),
+			PageSize:       uint32(res.PageSize),
+			Total:          res.Total,
+			TotalEstimated: res.IsEstimated,
+			HasMore:        res.HasMore,
 		},
 	}
 }
 
-func (h *Handler) handleGetRecord(ctx context.Context, resp *adminv1.DataStudioResponse, req *adminv1.GetRecordRequest) {
-	meta, ok := h.cfg.Registry.Get(req.GetModelName())
-	if !ok {
-		resp.Error = fmt.Sprintf("admin agent: model %q is not registered", req.GetModelName())
-		return
-	}
-	c, ok := h.crudFor(meta, req.GetDatabaseAlias())
-	if !ok {
-		resp.Error = fmt.Sprintf("admin agent: database alias not configured for %q", req.GetModelName())
-		return
-	}
-	pk, err := parseID(req.GetId(), meta)
+func (h *Handler) handleGetRecord(ctx context.Context, resp *adminv1.DataStudioResponse, op *adminv1.OperatorIdentity, req *adminv1.GetRecordRequest) {
+	mi, st, err := h.storeFor(req.GetModelName(), req.GetDatabaseAlias())
 	if err != nil {
 		resp.Error = err.Error()
 		return
 	}
-	entity, err := c.FindByID(ctx, pk)
+	if err := h.authorize(op, mi.Name, "retrieve"); err != nil {
+		resp.Error = err.Error()
+		return
+	}
+	rec, err := h.getOwned(ctx, st, scopeFor(op, mi), req.GetId())
 	if err != nil {
 		resp.Error = err.Error()
 		return
 	}
-	resp.Body = &adminv1.DataStudioResponse_Record{
-		Record: entityToRecord(entity, meta),
+	resp.Body = &adminv1.DataStudioResponse_Record{Record: recordToProto(rec, mi)}
+}
+
+// getOwned reads one record and, for a scoped operator, confirms it is the
+// tenant's: a row of another tenant is "not found", never "forbidden" — the
+// scope hides what it does not own.
+func (h *Handler) getOwned(ctx context.Context, st datasource.RecordStore, scope tenantScope, id string) (datasource.Record, error) {
+	rec, err := st.Get(ctx, id)
+	if err != nil {
+		return nil, err
 	}
+	if rec == nil {
+		return nil, fmt.Errorf("not found: record %q", id)
+	}
+	if scope.Enforced() && !scope.owns(rec) {
+		return nil, fmt.Errorf("not found: record %q", id)
+	}
+	return rec, nil
 }
 
 // =============================================================================
 // create / update / delete / bulk
 // =============================================================================
 
-func (h *Handler) handleCreateRecord(ctx context.Context, resp *adminv1.DataStudioResponse, req *adminv1.CreateRecordRequest) {
-	meta, ok := h.cfg.Registry.Get(req.GetModelName())
-	if !ok {
-		resp.Error = fmt.Sprintf("admin agent: model %q is not registered", req.GetModelName())
-		return
-	}
-	c, ok := h.crudFor(meta, req.GetDatabaseAlias())
-	if !ok {
-		resp.Error = fmt.Sprintf("admin agent: database alias not configured for %q", req.GetModelName())
-		return
-	}
-	entity, err := buildEntityFromRecord(req.GetRecord(), meta)
+func (h *Handler) handleCreateRecord(ctx context.Context, resp *adminv1.DataStudioResponse, op *adminv1.OperatorIdentity, req *adminv1.CreateRecordRequest) {
+	mi, st, err := h.storeFor(req.GetModelName(), req.GetDatabaseAlias())
 	if err != nil {
 		resp.Error = err.Error()
 		return
 	}
-	if err := c.Create(ctx, entity); err != nil {
+	if err := h.authorize(op, mi.Name, "create"); err != nil {
 		resp.Error = err.Error()
 		return
 	}
-	resp.Body = &adminv1.DataStudioResponse_Record{Record: entityToRecord(entity, meta)}
+	rec, err := recordFromProto(req.GetRecord())
+	if err != nil {
+		resp.Error = err.Error()
+		return
+	}
+	// A scoped operator creates in its tenant and nowhere else: the tenant
+	// field is stamped, and a record that names another tenant is refused
+	// rather than moved.
+	if scope := scopeFor(op, mi); scope.Enforced() {
+		if v, ok := lookup(rec, scope.Field.Name, scope.Field.Column); ok && fmt.Sprint(v) != "" && fmt.Sprint(v) != scope.Tenant {
+			resp.Error = fmt.Sprintf("permission denied: the record names tenant %q, the operator is scoped to %q", fmt.Sprint(v), scope.Tenant)
+			return
+		}
+		delete(rec, scope.Field.Column)
+		rec[scope.Field.Name] = scope.Tenant
+	}
+	created, err := st.Create(ctx, rec)
+	if err != nil {
+		resp.Error = err.Error()
+		return
+	}
+	if created == nil {
+		created = rec
+	}
+	resp.Body = &adminv1.DataStudioResponse_Record{Record: recordToProto(created, mi)}
 }
 
-func (h *Handler) handleUpdateRecord(ctx context.Context, resp *adminv1.DataStudioResponse, req *adminv1.UpdateRecordRequest) {
-	meta, ok := h.cfg.Registry.Get(req.GetModelName())
-	if !ok {
-		resp.Error = fmt.Sprintf("admin agent: model %q is not registered", req.GetModelName())
-		return
-	}
-	c, ok := h.crudFor(meta, req.GetDatabaseAlias())
-	if !ok {
-		resp.Error = fmt.Sprintf("admin agent: database alias not configured for %q", req.GetModelName())
-		return
-	}
-	pk, err := parseID(req.GetId(), meta)
+func (h *Handler) handleUpdateRecord(ctx context.Context, resp *adminv1.DataStudioResponse, op *adminv1.OperatorIdentity, req *adminv1.UpdateRecordRequest) {
+	mi, st, err := h.storeFor(req.GetModelName(), req.GetDatabaseAlias())
 	if err != nil {
 		resp.Error = err.Error()
 		return
 	}
-	updates, err := recordToUpdates(req.GetRecord(), meta)
+	if err := h.authorize(op, mi.Name, "update"); err != nil {
+		resp.Error = err.Error()
+		return
+	}
+	scope := scopeFor(op, mi)
+	if _, err := h.getOwned(ctx, st, scope, req.GetId()); err != nil {
+		resp.Error = err.Error()
+		return
+	}
+	rec, err := recordFromProto(req.GetRecord())
 	if err != nil {
 		resp.Error = err.Error()
 		return
 	}
-	if err := c.Update(ctx, pk, updates); err != nil {
+	if scope.Enforced() {
+		// The tenant is not a field an update may move a row across.
+		if v, ok := lookup(rec, scope.Field.Name, scope.Field.Column); ok && fmt.Sprint(v) != scope.Tenant {
+			resp.Error = fmt.Sprintf("permission denied: an update may not move the record to tenant %q", fmt.Sprint(v))
+			return
+		}
+		delete(rec, scope.Field.Column)
+		delete(rec, scope.Field.Name)
+	}
+	if err := st.Update(ctx, req.GetId(), rec); err != nil {
 		resp.Error = err.Error()
 		return
 	}
-	updated, err := c.FindByID(ctx, pk)
+	updated, err := st.Get(ctx, req.GetId())
 	if err != nil {
 		resp.Error = err.Error()
 		return
 	}
-	resp.Body = &adminv1.DataStudioResponse_Record{Record: entityToRecord(updated, meta)}
+	resp.Body = &adminv1.DataStudioResponse_Record{Record: recordToProto(updated, mi)}
 }
 
-func (h *Handler) handleDeleteRecord(ctx context.Context, resp *adminv1.DataStudioResponse, req *adminv1.DeleteRecordRequest) {
-	meta, ok := h.cfg.Registry.Get(req.GetModelName())
-	if !ok {
-		resp.Error = fmt.Sprintf("admin agent: model %q is not registered", req.GetModelName())
-		return
-	}
-	c, ok := h.crudFor(meta, req.GetDatabaseAlias())
-	if !ok {
-		resp.Error = fmt.Sprintf("admin agent: database alias not configured for %q", req.GetModelName())
-		return
-	}
-	pk, err := parseID(req.GetId(), meta)
+func (h *Handler) handleDeleteRecord(ctx context.Context, resp *adminv1.DataStudioResponse, op *adminv1.OperatorIdentity, req *adminv1.DeleteRecordRequest) {
+	mi, st, err := h.storeFor(req.GetModelName(), req.GetDatabaseAlias())
 	if err != nil {
 		resp.Error = err.Error()
 		return
 	}
-	if err := c.Delete(ctx, pk); err != nil {
+	if err := h.authorize(op, mi.Name, "delete"); err != nil {
+		resp.Error = err.Error()
+		return
+	}
+	if scope := scopeFor(op, mi); scope.Enforced() {
+		if _, err := h.getOwned(ctx, st, scope, req.GetId()); err != nil {
+			resp.Error = err.Error()
+			return
+		}
+	}
+	if err := st.Delete(ctx, req.GetId()); err != nil {
 		resp.Error = err.Error()
 		return
 	}
@@ -371,31 +544,31 @@ func (h *Handler) handleDeleteRecord(ctx context.Context, resp *adminv1.DataStud
 	}
 }
 
-func (h *Handler) handleBulkAction(ctx context.Context, resp *adminv1.DataStudioResponse, req *adminv1.BulkActionRequest) {
-	meta, ok := h.cfg.Registry.Get(req.GetModelName())
-	if !ok {
-		resp.Error = fmt.Sprintf("admin agent: model %q is not registered", req.GetModelName())
+func (h *Handler) handleBulkAction(ctx context.Context, resp *adminv1.DataStudioResponse, op *adminv1.OperatorIdentity, req *adminv1.BulkActionRequest) {
+	mi, st, err := h.storeFor(req.GetModelName(), req.GetDatabaseAlias())
+	if err != nil {
+		resp.Error = err.Error()
 		return
 	}
-	c, ok := h.crudFor(meta, req.GetDatabaseAlias())
-	if !ok {
-		resp.Error = fmt.Sprintf("admin agent: database alias not configured for %q", req.GetModelName())
-		return
-	}
-
 	switch strings.ToLower(strings.TrimSpace(req.GetAction())) {
 	case "delete":
+		if err := h.authorize(op, mi.Name, "bulk_delete"); err != nil {
+			resp.Error = err.Error()
+			return
+		}
+		scope := scopeFor(op, mi)
 		out := &adminv1.BulkActionResponse{}
-		for _, raw := range req.GetIds() {
-			pk, err := parseID(raw, meta)
-			if err != nil {
-				out.Failed++
-				out.Errors = append(out.Errors, fmt.Sprintf("%s: %v", raw, err))
-				continue
+		for _, id := range req.GetIds() {
+			if scope.Enforced() {
+				if _, err := h.getOwned(ctx, st, scope, id); err != nil {
+					out.Failed++
+					out.Errors = append(out.Errors, fmt.Sprintf("%s: %v", id, err))
+					continue
+				}
 			}
-			if err := c.Delete(ctx, pk); err != nil {
+			if err := st.Delete(ctx, id); err != nil {
 				out.Failed++
-				out.Errors = append(out.Errors, fmt.Sprintf("%s: %v", raw, err))
+				out.Errors = append(out.Errors, fmt.Sprintf("%s: %v", id, err))
 				continue
 			}
 			out.Affected++
@@ -410,51 +583,43 @@ func (h *Handler) handleBulkAction(ctx context.Context, resp *adminv1.DataStudio
 // helpers
 // =============================================================================
 
-func (h *Handler) crudFor(meta *model.ModelMeta, alias string) (*model.CRUD, bool) {
-	a := strings.TrimSpace(alias)
-	if a == "" {
-		a = strings.TrimSpace(meta.DatabaseAlias)
+func (h *Handler) aliasFor(requested string, mi datasource.ModelInfo) string {
+	if a := strings.TrimSpace(requested); a != "" {
+		return a
 	}
-	if a == "" {
-		a = h.cfg.defaultAlias()
+	if mi.DatabaseAlias != "" {
+		return mi.DatabaseAlias
 	}
-
-	key := a + "::" + meta.Name
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if c, ok := h.crudCache[key]; ok {
-		return c, true
-	}
-
-	dbHandle, ok := h.cfg.Databases[a]
-	if !ok || dbHandle == nil {
-		return nil, false
-	}
-	sqlDB, err := dbHandle.SqlDB()
-	if err != nil {
-		return nil, false
-	}
-	c := model.NewCRUD(sqlDB, meta, nil)
-	// Drive per-engine placeholder rebinding + estimate queries (F-3, ADR-013).
-	// db.DB.System() emits "postgresql"/"mssql"; SetDialect normalises those to
-	// the canonical tokens the CRUD layer keys on, so data-studio CRUD is
-	// portable to PostgreSQL/Oracle/SQL Server rather than `?`-only.
-	c.SetDialect(dbHandle.System())
-	h.crudCache[key] = c
-	return c, true
+	return h.cfg.defaultAlias()
 }
 
-func (h *Handler) countModel(c *model.CRUD) (int64, bool, error) {
-	// FindAll with a tiny page returns Total + IsEstimated honestly;
-	// re-using it avoids duplicating the dialect/estimate logic.
-	res, err := c.FindAll(context.Background(), model.QueryOpts{Page: 1, PageSize: 1})
-	if err != nil {
-		return 0, false, err
+func (h *Handler) storeFor(modelName, alias string) (datasource.ModelInfo, datasource.RecordStore, error) {
+	mi, ok := h.cfg.Source.Get(modelName)
+	if !ok {
+		return datasource.ModelInfo{}, nil, fmt.Errorf("not found: model %q is not registered", modelName)
 	}
-	return res.Total, res.IsEstimated, nil
+	st, err := h.cfg.Source.Store(mi.Name, h.aliasFor(alias, mi))
+	if err != nil {
+		return datasource.ModelInfo{}, nil, err
+	}
+	if st == nil {
+		return datasource.ModelInfo{}, nil, errors.New("admin agent: the data source returned no store")
+	}
+	return mi, st, nil
 }
 
-func (h *Handler) metaToInfo(m *model.ModelMeta) *adminv1.ModelInfo {
+func cloneFilters(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func modelToProto(m datasource.ModelInfo) *adminv1.ModelInfo {
 	return &adminv1.ModelInfo{
 		Name:          m.Name,
 		Plural:        m.Plural,
@@ -465,7 +630,7 @@ func (h *Handler) metaToInfo(m *model.ModelMeta) *adminv1.ModelInfo {
 	}
 }
 
-func fieldsToProto(in []model.FieldMeta) []*adminv1.ModelField {
+func fieldsToProto(in []datasource.FieldInfo) []*adminv1.ModelField {
 	out := make([]*adminv1.ModelField, 0, len(in))
 	for _, f := range in {
 		out = append(out, &adminv1.ModelField{
@@ -483,14 +648,13 @@ func fieldsToProto(in []model.FieldMeta) []*adminv1.ModelField {
 			IsExcluded:   f.IsExcluded,
 			IsForeignKey: f.IsForeignKey,
 			ForeignModel: f.ForeignModel,
-			MaxLength:    int32(f.MaxLength),
 			Choices:      choicesToProto(f.Choices),
 		})
 	}
 	return out
 }
 
-func choicesToProto(in []model.Choice) []*adminv1.FieldChoice {
+func choicesToProto(in []datasource.Choice) []*adminv1.FieldChoice {
 	if len(in) == 0 {
 		return nil
 	}
@@ -501,253 +665,83 @@ func choicesToProto(in []model.Choice) []*adminv1.FieldChoice {
 	return out
 }
 
-// entitiesToRecords accepts a reflect.SliceOf(meta.Type) and serializes
-// each element to a Record by JSON-encoding every non-excluded field.
-func entitiesToRecords(itemsAny any, meta *model.ModelMeta) []*adminv1.Record {
-	v := reflect.ValueOf(itemsAny)
-	if !v.IsValid() {
-		return nil
+// fold is the key a record value is matched by: case and underscores
+// ignored, so the Nucleus adapter's "tenant_id" (its JSON key) and the
+// wire's "TenantID" (the Go field name the fleet SPA indexes by) meet.
+func fold(s string) string {
+	return strings.ToLower(strings.ReplaceAll(s, "_", ""))
+}
+
+// lookup finds a value in a record under any of the given keys, exactly
+// first and folded second.
+func lookup(rec datasource.Record, keys ...string) (any, bool) {
+	for _, k := range keys {
+		if k == "" {
+			continue
+		}
+		if v, ok := rec[k]; ok {
+			return v, true
+		}
 	}
-	if v.Kind() == reflect.Ptr {
-		v = v.Elem()
+	for _, k := range keys {
+		if k == "" {
+			continue
+		}
+		fk := fold(k)
+		for rk, v := range rec {
+			if fold(rk) == fk {
+				return v, true
+			}
+		}
 	}
-	if v.Kind() != reflect.Slice {
-		return nil
-	}
-	out := make([]*adminv1.Record, 0, v.Len())
-	for i := 0; i < v.Len(); i++ {
-		out = append(out, entityValueToRecord(v.Index(i), meta))
+	return nil, false
+}
+
+// recordToProto renders a record the way the wire has always carried it:
+// values_json keyed by the model's field NAMES, each value as its JSON
+// text. The data source keys records its own way (the Nucleus adapter by
+// JSON tag), so every field is looked up by name and column, folded; a
+// field the record does not carry is left out, as before.
+func recordToProto(rec datasource.Record, mi datasource.ModelInfo) *adminv1.Record {
+	out := &adminv1.Record{ValuesJson: make(map[string]string, len(mi.Fields))}
+	for _, f := range mi.Fields {
+		if f.IsExcluded {
+			continue
+		}
+		v, ok := lookup(rec, f.Name, f.Column)
+		if !ok {
+			continue
+		}
+		raw, err := json.Marshal(v)
+		if err != nil {
+			continue
+		}
+		out.ValuesJson[f.Name] = string(raw)
 	}
 	return out
 }
 
-func entityToRecord(entity any, meta *model.ModelMeta) *adminv1.Record {
-	v := reflect.ValueOf(entity)
-	if v.Kind() == reflect.Ptr {
-		v = v.Elem()
+// recordFromProto decodes the wire's values_json (field name → JSON text)
+// into a record keyed by those names; the data source resolves a field by
+// its name as well as its column, so the keys pass through unchanged.
+func recordFromProto(pr *adminv1.Record) (datasource.Record, error) {
+	rec := make(datasource.Record, len(pr.GetValuesJson()))
+	keys := make([]string, 0, len(pr.GetValuesJson()))
+	for k := range pr.GetValuesJson() {
+		keys = append(keys, k)
 	}
-	return entityValueToRecord(v, meta)
-}
-
-func entityValueToRecord(v reflect.Value, meta *model.ModelMeta) *adminv1.Record {
-	rec := &adminv1.Record{ValuesJson: make(map[string]string, len(meta.Fields))}
-	if v.Kind() != reflect.Struct {
-		return rec
-	}
-	for _, f := range meta.Fields {
-		if f.IsExcluded {
+	sort.Strings(keys)
+	for _, k := range keys {
+		raw := pr.GetValuesJson()[k]
+		var v any
+		if strings.TrimSpace(raw) == "" {
+			rec[k] = ""
 			continue
 		}
-		fv := v.FieldByName(f.Name)
-		if !fv.IsValid() {
-			continue
+		if err := json.Unmarshal([]byte(raw), &v); err != nil {
+			return nil, fmt.Errorf("admin agent: field %q: invalid JSON value %q", k, raw)
 		}
-		raw, err := json.Marshal(normalizeForJSON(fv.Interface()))
-		if err != nil {
-			continue
-		}
-		rec.ValuesJson[f.Name] = string(raw)
+		rec[k] = v
 	}
-	return rec
-}
-
-func normalizeForJSON(v any) any {
-	if t, ok := v.(time.Time); ok {
-		if t.IsZero() {
-			return nil
-		}
-		return t.UTC().Format(time.RFC3339)
-	}
-	return v
-}
-
-// buildEntityFromRecord constructs a fresh *T (where T = meta.Type) and
-// populates fields from the record's JSON values. Read-only and
-// excluded fields are ignored.
-func buildEntityFromRecord(rec *adminv1.Record, meta *model.ModelMeta) (any, error) {
-	if rec == nil {
-		return nil, errors.New("admin agent: record is required")
-	}
-	ptr := reflect.New(meta.Type)
-	v := ptr.Elem()
-
-	if err := applyRecordToValue(rec, meta, v, true); err != nil {
-		return nil, err
-	}
-	return ptr.Interface(), nil
-}
-
-// recordToUpdates extracts a column->value map suitable for
-// model.CRUD.Update from a record. Read-only / excluded fields are
-// silently dropped.
-func recordToUpdates(rec *adminv1.Record, meta *model.ModelMeta) (map[string]any, error) {
-	if rec == nil {
-		return nil, errors.New("admin agent: record is required")
-	}
-	out := make(map[string]any, len(rec.ValuesJson))
-	for _, f := range meta.Fields {
-		if f.IsPK || f.IsReadOnly || f.IsExcluded {
-			continue
-		}
-		raw, ok := rec.ValuesJson[f.Name]
-		if !ok {
-			continue
-		}
-		val, err := decodeFieldValue(raw, f)
-		if err != nil {
-			return nil, fmt.Errorf("field %q: %w", f.Name, err)
-		}
-		out[f.Column] = val
-	}
-	return out, nil
-}
-
-func applyRecordToValue(rec *adminv1.Record, meta *model.ModelMeta, v reflect.Value, includePKWhenSet bool) error {
-	for _, f := range meta.Fields {
-		if f.IsExcluded {
-			continue
-		}
-		raw, ok := rec.ValuesJson[f.Name]
-		if !ok {
-			continue
-		}
-		if f.IsPK && !includePKWhenSet {
-			continue
-		}
-		fv := v.FieldByName(f.Name)
-		if !fv.IsValid() || !fv.CanSet() {
-			continue
-		}
-		val, err := decodeFieldValue(raw, f)
-		if err != nil {
-			return fmt.Errorf("field %q: %w", f.Name, err)
-		}
-		if val == nil {
-			fv.Set(reflect.Zero(fv.Type()))
-			continue
-		}
-		converted, err := convertToFieldType(val, fv.Type())
-		if err != nil {
-			return fmt.Errorf("field %q: %w", f.Name, err)
-		}
-		fv.Set(converted)
-	}
-	return nil
-}
-
-func decodeFieldValue(raw string, f model.FieldMeta) (any, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" || raw == "null" {
-		return nil, nil
-	}
-	switch strings.ToLower(f.GoType) {
-	case "time.time":
-		var s string
-		if err := json.Unmarshal([]byte(raw), &s); err != nil {
-			return nil, err
-		}
-		t, err := time.Parse(time.RFC3339, s)
-		if err != nil {
-			return nil, err
-		}
-		return t, nil
-	}
-	var v any
-	if err := json.Unmarshal([]byte(raw), &v); err != nil {
-		return nil, err
-	}
-	return v, nil
-}
-
-func convertToFieldType(in any, t reflect.Type) (reflect.Value, error) {
-	if in == nil {
-		return reflect.Zero(t), nil
-	}
-	v := reflect.ValueOf(in)
-	if v.Type().ConvertibleTo(t) {
-		return v.Convert(t), nil
-	}
-	// Numeric upgrades: JSON unmarshals integers into float64; convert.
-	switch t.Kind() {
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		if f, ok := in.(float64); ok {
-			return reflect.ValueOf(int64(f)).Convert(t), nil
-		}
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		if f, ok := in.(float64); ok {
-			return reflect.ValueOf(uint64(f)).Convert(t), nil
-		}
-	case reflect.Float32, reflect.Float64:
-		if f, ok := in.(float64); ok {
-			return reflect.ValueOf(f).Convert(t), nil
-		}
-	case reflect.Bool:
-		if b, ok := in.(bool); ok {
-			return reflect.ValueOf(b), nil
-		}
-	}
-	return reflect.Value{}, fmt.Errorf("cannot convert %T into %s", in, t)
-}
-
-// idBits is the width the primary key's Go kind can actually hold. parseID
-// narrows to it: an id of 300 for an int8 key is not a row of that table, and
-// refusing it here says so, instead of sending a query no row can answer (or,
-// on a driver that narrows the argument itself, one that answers about row 44).
-// "int"/"uint" are the platform's width, which is what the field holds.
-func idBits(kind string) int {
-	switch kind {
-	case "int8", "uint8":
-		return 8
-	case "int16", "uint16":
-		return 16
-	case "int32", "uint32":
-		return 32
-	case "int", "uint":
-		return strconv.IntSize
-	default:
-		return 64
-	}
-}
-
-// parseID narrows a record id — a string at the wire boundary (ADR-001 D1) —
-// to the primary key's Go kind, so what reaches the typed CRUD call is a
-// number when the key is numeric and never a fragment of what came in. A key
-// of any other kind stays the trimmed boundary string.
-func parseID(raw string, meta *model.ModelMeta) (any, error) {
-	id := strings.TrimSpace(raw)
-	if id == "" {
-		return nil, errors.New("admin agent: id is required")
-	}
-	pk := meta.PrimaryKey
-	if pk == "" {
-		pk = "ID"
-	}
-	for _, f := range meta.Fields {
-		if f.Name != pk {
-			continue
-		}
-		kind := strings.ToLower(f.GoType)
-		switch kind {
-		case "int", "int8", "int16", "int32", "int64":
-			n, err := strconv.ParseInt(id, 10, idBits(kind))
-			if err != nil {
-				if errors.Is(err, strconv.ErrRange) {
-					return nil, fmt.Errorf("admin agent: id %q is out of range for %s", id, f.GoType)
-				}
-				return nil, fmt.Errorf("admin agent: id %q is not an integer", id)
-			}
-			return n, nil
-		case "uint", "uint8", "uint16", "uint32", "uint64":
-			n, err := strconv.ParseUint(id, 10, idBits(kind))
-			if err != nil {
-				if errors.Is(err, strconv.ErrRange) {
-					return nil, fmt.Errorf("admin agent: id %q is out of range for %s", id, f.GoType)
-				}
-				return nil, fmt.Errorf("admin agent: id %q is not an unsigned integer", id)
-			}
-			return n, nil
-		}
-		break
-	}
-	return id, nil
+	return rec, nil
 }

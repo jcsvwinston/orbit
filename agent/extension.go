@@ -104,6 +104,7 @@ func (e *extension) Attach(a *app.App) error {
 		MetricsAddr:          e.adminCfg.MetricsAddr,
 		Registry:             a.Models,
 		Databases:            a.DBs,
+		DataSource:           e.adminCfg.DataSource,
 		Authorizer:           a.Authorizer,
 		DefaultDatabaseAlias: e.adminCfg.DefaultDatabaseAlias,
 		Logger:               a.Logger,

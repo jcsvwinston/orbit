@@ -34,6 +34,12 @@ type Identity struct {
 	// (Data Studio create/update/delete/bulk). Set from the trusted
 	// proxy's role header or forced globally via UIConfig.ForceReadOnly.
 	ReadOnly bool
+
+	// Tenant is the tenant the operator is scoped to, from the trusted
+	// proxy's tenant header (UIConfig.TenantHeader); empty means no scope.
+	// It travels to the agent with the operator identity (ADR-002), where
+	// the application's tenant column confines what the operator sees.
+	Tenant string
 }
 
 // AgentMiddleware returns an http middleware that enforces shared-token
@@ -129,6 +135,11 @@ type UIConfig struct {
 	// Empty keeps the CIDR-only behaviour.
 	ProxySecret string
 
+	// TenantHeader names the trusted-proxy header carrying the tenant the
+	// operator is scoped to (default "X-Auth-Tenant"). Honoured only on the
+	// trusted-proxy path, like AuthHeader; absent means no tenant scope.
+	TenantHeader string
+
 	// RoleHeader names the trusted-proxy header carrying the operator's
 	// role (default "X-Auth-Role"). Honoured only on the trusted-proxy
 	// path, together with AuthHeader. Value "viewer" / "readonly" /
@@ -179,6 +190,10 @@ func UIMiddleware(cfg UIConfig) func(http.Handler) http.Handler {
 	if roleHeader == "" {
 		roleHeader = "X-Auth-Role"
 	}
+	tenantHeader := strings.TrimSpace(cfg.TenantHeader)
+	if tenantHeader == "" {
+		tenantHeader = "X-Auth-Tenant"
+	}
 	limiter := newFailureLimiter()
 
 	return func(next http.Handler) http.Handler {
@@ -201,6 +216,7 @@ func UIMiddleware(cfg UIConfig) func(http.Handler) http.Handler {
 						Email:    strings.TrimSpace(r.Header.Get(emailHeader)),
 						Role:     "ui-operator",
 						ReadOnly: cfg.ForceReadOnly || readOnlyRole(r.Header.Get(roleHeader)),
+						Tenant:   strings.TrimSpace(r.Header.Get(tenantHeader)),
 					}
 					next.ServeHTTP(w, r.WithContext(WithIdentity(r.Context(), id)))
 					return
