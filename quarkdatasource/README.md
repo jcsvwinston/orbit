@@ -39,6 +39,36 @@ app, err := nucleus.New().
     Build()
 ```
 
+### In the fleet
+
+The fleet's Data Studio speaks the same contract. An application that runs
+the Orbit agent passes the same adapter to the agent's extension, and the
+admin server's Data Studio browses and edits the Quark models through it,
+as the operator the server sends (subject, role, read-only, tenant):
+
+```go
+import (
+    "github.com/jcsvwinston/orbit/agent"
+    "github.com/jcsvwinston/orbit/quarkdatasource"
+)
+
+ds := quarkdatasource.New(client, quarkdatasource.WithTenantColumn("tenant_id"))
+quarkdatasource.Register[User](ds)
+
+app, err := nucleus.New().
+    Mount(orbit.Module(orbit.Config{Prefix: "/admin", DataSource: ds})).
+    WithExtensions(agent.NewExtension(agent.ExtensionConfig{
+        Endpoints:  []string{"https://admin.internal:9090"},
+        Token:      os.Getenv("NUCLEUS_ADMIN_TOKEN"),
+        DataSource: ds, // the fleet's Data Studio runs on the same Quark models
+    }, stateDir, appVersion)).
+    Build()
+```
+
+Nil leaves the agent on its Nucleus adapter, so an application that never
+sets it serves what it always served. The tenant column named at
+construction is what confines an operator with a tenant on both planes.
+
 ## Why registration is generic (`Register[T]`)
 
 Quark's query API is typed — `quark.For[T](ctx, provider)` (its ADR-0002/0014

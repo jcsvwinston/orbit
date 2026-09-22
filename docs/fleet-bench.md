@@ -97,7 +97,7 @@ place for a capability, not the capability.
 | `FDS-08` | filters with operators (contains, range, set, null) reach the agent | **present** | — |
 | `FDS-09` | pagination carries an exact total, filtered or not | **present** | — |
 | `FDS-10` | the agent serves Data Studio through the datasource contract, so a contract implementation can be registered in the fleet | **present** | — |
-| `FDS-11` | a fleet mutation leaves an audit entry with operator, model, record and node, and says what changed | **partial** | ListAudit returns the entry attributed to actor, action, target (model and record id) and node; AuditEntry has no before/after values. Whether the entry survives the process is RET-04's measurement. |
+| `FDS-11` | a fleet mutation leaves an audit entry with operator, model, record and node, and says what changed | **partial** | ListAudit returns the entry attributed to actor, action, target (model and record id) and node; AuditEntry declares before_json and after_json (additive, with DataStudioResponse.previous for the agent to send the old values) and the server writes nothing into them yet: it uses them once it pins the proto tag that carries them. Whether the entry survives the process is RET-04's measurement. |
 | `FDS-12` | the fleet-consumes-the-contract decision (docs/adrs/ADR-002) is recorded as implemented in the ADR and in the index | **absent** | the ADR's front matter says status: accepted and the index row in docs/adrs/README.md says "pendiente de implementar": the decision is taken and the work is open. |
 
 `FDS-05`, `FDS-06`, `FDS-07` and `FDS-10` are **present** since A9 `S4`: the
@@ -118,6 +118,13 @@ server — behaves as before, with no identity, no policy and no tenant.
 sends nor shows one. `FDS-08` and `FDS-09` are **present** too: operator
 filters are applied through the contract (an unknown operator is refused,
 never dropped) and every list carries an exact total.
+
+`FDS-11` stays partial after A9 `S5` (part 1) for the reason `FDS-05` and
+`FDS-07` stayed partial after `S3`: the wire now declares what changed
+(`AuditEntry.before_json`, `AuditEntry.after_json`, and
+`DataStudioResponse.previous` for the agent to return the old values), and
+declaring is not doing. The server and the agent fill them in part 2, once
+they can pin the proto tag that carries the fields.
 
 ### ha — 1 present · 1 partial · 3 absent
 

@@ -3818,6 +3818,12 @@ type DataStudioResponse struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	RequestId string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	Error     string                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	// The records as they were BEFORE a mutation, keyed like `record`: one
+	// for an update or a delete, one per affected record for a bulk action.
+	// The server writes them into its audit ring as the "before" side of
+	// the entry. Additive: empty on creates and reads, and from agents that
+	// predate it.
+	Previous []*Record `protobuf:"bytes,3,rep,name=previous,proto3" json:"previous,omitempty"`
 	// Types that are valid to be assigned to Body:
 	//
 	//	*DataStudioResponse_ListModels
@@ -3873,6 +3879,13 @@ func (x *DataStudioResponse) GetError() string {
 		return x.Error
 	}
 	return ""
+}
+
+func (x *DataStudioResponse) GetPrevious() []*Record {
+	if x != nil {
+		return x.Previous
+	}
+	return nil
 }
 
 func (x *DataStudioResponse) GetBody() isDataStudioResponse_Body {
@@ -4326,7 +4339,13 @@ type AuditEntry struct {
 	// Human-readable target, e.g. "Article #42 (default)".
 	Target string `protobuf:"bytes,4,opt,name=target,proto3" json:"target,omitempty"`
 	// Agent the action was routed to.
-	NodeId        string `protobuf:"bytes,5,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	NodeId string `protobuf:"bytes,5,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	// What changed, as JSON: the record's values before and after the
+	// action. A create has no before; a delete has no after; a bulk action
+	// carries a JSON array on each side. Additive: empty from servers and
+	// agents that predate it, and when the action has no such side.
+	BeforeJson    string `protobuf:"bytes,6,opt,name=before_json,json=beforeJson,proto3" json:"before_json,omitempty"`
+	AfterJson     string `protobuf:"bytes,7,opt,name=after_json,json=afterJson,proto3" json:"after_json,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4392,6 +4411,20 @@ func (x *AuditEntry) GetTarget() string {
 func (x *AuditEntry) GetNodeId() string {
 	if x != nil {
 		return x.NodeId
+	}
+	return ""
+}
+
+func (x *AuditEntry) GetBeforeJson() string {
+	if x != nil {
+		return x.BeforeJson
+	}
+	return ""
+}
+
+func (x *AuditEntry) GetAfterJson() string {
+	if x != nil {
+		return x.AfterJson
 	}
 	return ""
 }
@@ -4812,11 +4845,12 @@ const file_nucleus_admin_v1_admin_proto_rawDesc = "" +
 	"\rdelete_record\x18\x10 \x01(\v2%.nucleus.admin.v1.DeleteRecordRequestH\x00R\fdeleteRecord\x12F\n" +
 	"\vbulk_action\x18\x11 \x01(\v2#.nucleus.admin.v1.BulkActionRequestH\x00R\n" +
 	"bulkActionB\x06\n" +
-	"\x04body\"\xe8\x03\n" +
+	"\x04body\"\x9e\x04\n" +
 	"\x12DataStudioResponse\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x14\n" +
-	"\x05error\x18\x02 \x01(\tR\x05error\x12G\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\x124\n" +
+	"\bprevious\x18\x03 \x03(\v2\x18.nucleus.admin.v1.RecordR\bprevious\x12G\n" +
 	"\vlist_models\x18\n" +
 	" \x01(\v2$.nucleus.admin.v1.ListModelsResponseH\x00R\n" +
 	"listModels\x127\n" +
@@ -4850,14 +4884,18 @@ const file_nucleus_admin_v1_admin_proto_rawDesc = "" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"}\n" +
 	"\x0fGetRbacResponse\x120\n" +
 	"\x05roles\x18\x01 \x03(\v2\x1a.nucleus.admin.v1.RbacRoleR\x05roles\x128\n" +
-	"\bpolicies\x18\x02 \x03(\v2\x1c.nucleus.admin.v1.RbacPolicyR\bpolicies\"\x9b\x01\n" +
+	"\bpolicies\x18\x02 \x03(\v2\x1c.nucleus.admin.v1.RbacPolicyR\bpolicies\"\xdb\x01\n" +
 	"\n" +
 	"AuditEntry\x12.\n" +
 	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x14\n" +
 	"\x05actor\x18\x02 \x01(\tR\x05actor\x12\x16\n" +
 	"\x06action\x18\x03 \x01(\tR\x06action\x12\x16\n" +
 	"\x06target\x18\x04 \x01(\tR\x06target\x12\x17\n" +
-	"\anode_id\x18\x05 \x01(\tR\x06nodeId\"(\n" +
+	"\anode_id\x18\x05 \x01(\tR\x06nodeId\x12\x1f\n" +
+	"\vbefore_json\x18\x06 \x01(\tR\n" +
+	"beforeJson\x12\x1d\n" +
+	"\n" +
+	"after_json\x18\a \x01(\tR\tafterJson\"(\n" +
 	"\x10ListAuditRequest\x12\x14\n" +
 	"\x05limit\x18\x01 \x01(\x05R\x05limit\"K\n" +
 	"\x11ListAuditResponse\x126\n" +
@@ -5041,53 +5079,54 @@ var file_nucleus_admin_v1_admin_proto_depIdxs = []int32{
 	40, // 58: nucleus.admin.v1.DataStudioRequest.update_record:type_name -> nucleus.admin.v1.UpdateRecordRequest
 	41, // 59: nucleus.admin.v1.DataStudioRequest.delete_record:type_name -> nucleus.admin.v1.DeleteRecordRequest
 	43, // 60: nucleus.admin.v1.DataStudioRequest.bulk_action:type_name -> nucleus.admin.v1.BulkActionRequest
-	33, // 61: nucleus.admin.v1.DataStudioResponse.list_models:type_name -> nucleus.admin.v1.ListModelsResponse
-	30, // 62: nucleus.admin.v1.DataStudioResponse.schema:type_name -> nucleus.admin.v1.ModelSchema
-	37, // 63: nucleus.admin.v1.DataStudioResponse.records_page:type_name -> nucleus.admin.v1.PaginatedRecords
-	31, // 64: nucleus.admin.v1.DataStudioResponse.record:type_name -> nucleus.admin.v1.Record
-	42, // 65: nucleus.admin.v1.DataStudioResponse.delete_record:type_name -> nucleus.admin.v1.DeleteRecordResponse
-	44, // 66: nucleus.admin.v1.DataStudioResponse.bulk_action:type_name -> nucleus.admin.v1.BulkActionResponse
-	49, // 67: nucleus.admin.v1.RbacResponse.roles:type_name -> nucleus.admin.v1.RbacRole
-	50, // 68: nucleus.admin.v1.RbacResponse.policies:type_name -> nucleus.admin.v1.RbacPolicy
-	49, // 69: nucleus.admin.v1.GetRbacResponse.roles:type_name -> nucleus.admin.v1.RbacRole
-	50, // 70: nucleus.admin.v1.GetRbacResponse.policies:type_name -> nucleus.admin.v1.RbacPolicy
-	64, // 71: nucleus.admin.v1.AuditEntry.time:type_name -> google.protobuf.Timestamp
-	54, // 72: nucleus.admin.v1.ListAuditResponse.entries:type_name -> nucleus.admin.v1.AuditEntry
-	17, // 73: nucleus.admin.v1.AgentService.Stream:input_type -> nucleus.admin.v1.Frame
-	20, // 74: nucleus.admin.v1.ControlService.ListNodes:input_type -> nucleus.admin.v1.ListNodesRequest
-	22, // 75: nucleus.admin.v1.ControlService.StreamEvents:input_type -> nucleus.admin.v1.StreamEventsRequest
-	23, // 76: nucleus.admin.v1.ControlService.GetSnapshot:input_type -> nucleus.admin.v1.GetSnapshotRequest
-	25, // 77: nucleus.admin.v1.ControlService.GetSelf:input_type -> nucleus.admin.v1.GetSelfRequest
-	32, // 78: nucleus.admin.v1.DataStudioService.ListModels:input_type -> nucleus.admin.v1.ListModelsRequest
-	34, // 79: nucleus.admin.v1.DataStudioService.GetSchema:input_type -> nucleus.admin.v1.GetSchemaRequest
-	36, // 80: nucleus.admin.v1.DataStudioService.ListRecords:input_type -> nucleus.admin.v1.ListRecordsRequest
-	38, // 81: nucleus.admin.v1.DataStudioService.GetRecord:input_type -> nucleus.admin.v1.GetRecordRequest
-	39, // 82: nucleus.admin.v1.DataStudioService.CreateRecord:input_type -> nucleus.admin.v1.CreateRecordRequest
-	40, // 83: nucleus.admin.v1.DataStudioService.UpdateRecord:input_type -> nucleus.admin.v1.UpdateRecordRequest
-	41, // 84: nucleus.admin.v1.DataStudioService.DeleteRecord:input_type -> nucleus.admin.v1.DeleteRecordRequest
-	43, // 85: nucleus.admin.v1.DataStudioService.BulkAction:input_type -> nucleus.admin.v1.BulkActionRequest
-	52, // 86: nucleus.admin.v1.ManageService.GetRbac:input_type -> nucleus.admin.v1.GetRbacRequest
-	55, // 87: nucleus.admin.v1.ManageService.ListAudit:input_type -> nucleus.admin.v1.ListAuditRequest
-	17, // 88: nucleus.admin.v1.AgentService.Stream:output_type -> nucleus.admin.v1.Frame
-	21, // 89: nucleus.admin.v1.ControlService.ListNodes:output_type -> nucleus.admin.v1.ListNodesResponse
-	10, // 90: nucleus.admin.v1.ControlService.StreamEvents:output_type -> nucleus.admin.v1.Event
-	24, // 91: nucleus.admin.v1.ControlService.GetSnapshot:output_type -> nucleus.admin.v1.Snapshot
-	26, // 92: nucleus.admin.v1.ControlService.GetSelf:output_type -> nucleus.admin.v1.SelfInfo
-	33, // 93: nucleus.admin.v1.DataStudioService.ListModels:output_type -> nucleus.admin.v1.ListModelsResponse
-	30, // 94: nucleus.admin.v1.DataStudioService.GetSchema:output_type -> nucleus.admin.v1.ModelSchema
-	37, // 95: nucleus.admin.v1.DataStudioService.ListRecords:output_type -> nucleus.admin.v1.PaginatedRecords
-	31, // 96: nucleus.admin.v1.DataStudioService.GetRecord:output_type -> nucleus.admin.v1.Record
-	31, // 97: nucleus.admin.v1.DataStudioService.CreateRecord:output_type -> nucleus.admin.v1.Record
-	31, // 98: nucleus.admin.v1.DataStudioService.UpdateRecord:output_type -> nucleus.admin.v1.Record
-	42, // 99: nucleus.admin.v1.DataStudioService.DeleteRecord:output_type -> nucleus.admin.v1.DeleteRecordResponse
-	44, // 100: nucleus.admin.v1.DataStudioService.BulkAction:output_type -> nucleus.admin.v1.BulkActionResponse
-	53, // 101: nucleus.admin.v1.ManageService.GetRbac:output_type -> nucleus.admin.v1.GetRbacResponse
-	56, // 102: nucleus.admin.v1.ManageService.ListAudit:output_type -> nucleus.admin.v1.ListAuditResponse
-	88, // [88:103] is the sub-list for method output_type
-	73, // [73:88] is the sub-list for method input_type
-	73, // [73:73] is the sub-list for extension type_name
-	73, // [73:73] is the sub-list for extension extendee
-	0,  // [0:73] is the sub-list for field type_name
+	31, // 61: nucleus.admin.v1.DataStudioResponse.previous:type_name -> nucleus.admin.v1.Record
+	33, // 62: nucleus.admin.v1.DataStudioResponse.list_models:type_name -> nucleus.admin.v1.ListModelsResponse
+	30, // 63: nucleus.admin.v1.DataStudioResponse.schema:type_name -> nucleus.admin.v1.ModelSchema
+	37, // 64: nucleus.admin.v1.DataStudioResponse.records_page:type_name -> nucleus.admin.v1.PaginatedRecords
+	31, // 65: nucleus.admin.v1.DataStudioResponse.record:type_name -> nucleus.admin.v1.Record
+	42, // 66: nucleus.admin.v1.DataStudioResponse.delete_record:type_name -> nucleus.admin.v1.DeleteRecordResponse
+	44, // 67: nucleus.admin.v1.DataStudioResponse.bulk_action:type_name -> nucleus.admin.v1.BulkActionResponse
+	49, // 68: nucleus.admin.v1.RbacResponse.roles:type_name -> nucleus.admin.v1.RbacRole
+	50, // 69: nucleus.admin.v1.RbacResponse.policies:type_name -> nucleus.admin.v1.RbacPolicy
+	49, // 70: nucleus.admin.v1.GetRbacResponse.roles:type_name -> nucleus.admin.v1.RbacRole
+	50, // 71: nucleus.admin.v1.GetRbacResponse.policies:type_name -> nucleus.admin.v1.RbacPolicy
+	64, // 72: nucleus.admin.v1.AuditEntry.time:type_name -> google.protobuf.Timestamp
+	54, // 73: nucleus.admin.v1.ListAuditResponse.entries:type_name -> nucleus.admin.v1.AuditEntry
+	17, // 74: nucleus.admin.v1.AgentService.Stream:input_type -> nucleus.admin.v1.Frame
+	20, // 75: nucleus.admin.v1.ControlService.ListNodes:input_type -> nucleus.admin.v1.ListNodesRequest
+	22, // 76: nucleus.admin.v1.ControlService.StreamEvents:input_type -> nucleus.admin.v1.StreamEventsRequest
+	23, // 77: nucleus.admin.v1.ControlService.GetSnapshot:input_type -> nucleus.admin.v1.GetSnapshotRequest
+	25, // 78: nucleus.admin.v1.ControlService.GetSelf:input_type -> nucleus.admin.v1.GetSelfRequest
+	32, // 79: nucleus.admin.v1.DataStudioService.ListModels:input_type -> nucleus.admin.v1.ListModelsRequest
+	34, // 80: nucleus.admin.v1.DataStudioService.GetSchema:input_type -> nucleus.admin.v1.GetSchemaRequest
+	36, // 81: nucleus.admin.v1.DataStudioService.ListRecords:input_type -> nucleus.admin.v1.ListRecordsRequest
+	38, // 82: nucleus.admin.v1.DataStudioService.GetRecord:input_type -> nucleus.admin.v1.GetRecordRequest
+	39, // 83: nucleus.admin.v1.DataStudioService.CreateRecord:input_type -> nucleus.admin.v1.CreateRecordRequest
+	40, // 84: nucleus.admin.v1.DataStudioService.UpdateRecord:input_type -> nucleus.admin.v1.UpdateRecordRequest
+	41, // 85: nucleus.admin.v1.DataStudioService.DeleteRecord:input_type -> nucleus.admin.v1.DeleteRecordRequest
+	43, // 86: nucleus.admin.v1.DataStudioService.BulkAction:input_type -> nucleus.admin.v1.BulkActionRequest
+	52, // 87: nucleus.admin.v1.ManageService.GetRbac:input_type -> nucleus.admin.v1.GetRbacRequest
+	55, // 88: nucleus.admin.v1.ManageService.ListAudit:input_type -> nucleus.admin.v1.ListAuditRequest
+	17, // 89: nucleus.admin.v1.AgentService.Stream:output_type -> nucleus.admin.v1.Frame
+	21, // 90: nucleus.admin.v1.ControlService.ListNodes:output_type -> nucleus.admin.v1.ListNodesResponse
+	10, // 91: nucleus.admin.v1.ControlService.StreamEvents:output_type -> nucleus.admin.v1.Event
+	24, // 92: nucleus.admin.v1.ControlService.GetSnapshot:output_type -> nucleus.admin.v1.Snapshot
+	26, // 93: nucleus.admin.v1.ControlService.GetSelf:output_type -> nucleus.admin.v1.SelfInfo
+	33, // 94: nucleus.admin.v1.DataStudioService.ListModels:output_type -> nucleus.admin.v1.ListModelsResponse
+	30, // 95: nucleus.admin.v1.DataStudioService.GetSchema:output_type -> nucleus.admin.v1.ModelSchema
+	37, // 96: nucleus.admin.v1.DataStudioService.ListRecords:output_type -> nucleus.admin.v1.PaginatedRecords
+	31, // 97: nucleus.admin.v1.DataStudioService.GetRecord:output_type -> nucleus.admin.v1.Record
+	31, // 98: nucleus.admin.v1.DataStudioService.CreateRecord:output_type -> nucleus.admin.v1.Record
+	31, // 99: nucleus.admin.v1.DataStudioService.UpdateRecord:output_type -> nucleus.admin.v1.Record
+	42, // 100: nucleus.admin.v1.DataStudioService.DeleteRecord:output_type -> nucleus.admin.v1.DeleteRecordResponse
+	44, // 101: nucleus.admin.v1.DataStudioService.BulkAction:output_type -> nucleus.admin.v1.BulkActionResponse
+	53, // 102: nucleus.admin.v1.ManageService.GetRbac:output_type -> nucleus.admin.v1.GetRbacResponse
+	56, // 103: nucleus.admin.v1.ManageService.ListAudit:output_type -> nucleus.admin.v1.ListAuditResponse
+	89, // [89:104] is the sub-list for method output_type
+	74, // [74:89] is the sub-list for method input_type
+	74, // [74:74] is the sub-list for extension type_name
+	74, // [74:74] is the sub-list for extension extendee
+	0,  // [0:74] is the sub-list for field type_name
 }
 
 func init() { file_nucleus_admin_v1_admin_proto_init() }

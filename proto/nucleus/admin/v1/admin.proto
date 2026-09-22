@@ -579,6 +579,12 @@ message DataStudioRequest {
 message DataStudioResponse {
   string request_id = 1;
   string error = 2;
+  // The records as they were BEFORE a mutation, keyed like `record`: one
+  // for an update or a delete, one per affected record for a bulk action.
+  // The server writes them into its audit ring as the "before" side of
+  // the entry. Additive: empty on creates and reads, and from agents that
+  // predate it.
+  repeated Record previous = 3;
   oneof body {
     ListModelsResponse list_models = 10;
     ModelSchema schema = 11;
@@ -661,6 +667,12 @@ message AuditEntry {
   string target = 4;
   // Agent the action was routed to.
   string node_id = 5;
+  // What changed, as JSON: the record's values before and after the
+  // action. A create has no before; a delete has no after; a bulk action
+  // carries a JSON array on each side. Additive: empty from servers and
+  // agents that predate it, and when the action has no such side.
+  string before_json = 6;
+  string after_json = 7;
 }
 
 message ListAuditRequest {

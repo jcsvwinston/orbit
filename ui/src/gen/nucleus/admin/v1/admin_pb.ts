@@ -2995,6 +2995,17 @@ export class DataStudioResponse extends Message<DataStudioResponse> {
   error = "";
 
   /**
+   * The records as they were BEFORE a mutation, keyed like `record`: one
+   * for an update or a delete, one per affected record for a bulk action.
+   * The server writes them into its audit ring as the "before" side of
+   * the entry. Additive: empty on creates and reads, and from agents that
+   * predate it.
+   *
+   * @generated from field: repeated nucleus.admin.v1.Record previous = 3;
+   */
+  previous: Record[] = [];
+
+  /**
    * @generated from oneof nucleus.admin.v1.DataStudioResponse.body
    */
   body: {
@@ -3045,6 +3056,7 @@ export class DataStudioResponse extends Message<DataStudioResponse> {
   static readonly fields: FieldList = proto3.util.newFieldList(() => [
     { no: 1, name: "request_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 2, name: "error", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "previous", kind: "message", T: Record, repeated: true },
     { no: 10, name: "list_models", kind: "message", T: ListModelsResponse, oneof: "body" },
     { no: 11, name: "schema", kind: "message", T: ModelSchema, oneof: "body" },
     { no: 12, name: "records_page", kind: "message", T: PaginatedRecords, oneof: "body" },
@@ -3395,6 +3407,21 @@ export class AuditEntry extends Message<AuditEntry> {
    */
   nodeId = "";
 
+  /**
+   * What changed, as JSON: the record's values before and after the
+   * action. A create has no before; a delete has no after; a bulk action
+   * carries a JSON array on each side. Additive: empty from servers and
+   * agents that predate it, and when the action has no such side.
+   *
+   * @generated from field: string before_json = 6;
+   */
+  beforeJson = "";
+
+  /**
+   * @generated from field: string after_json = 7;
+   */
+  afterJson = "";
+
   constructor(data?: PartialMessage<AuditEntry>) {
     super();
     proto3.util.initPartial(data, this);
@@ -3408,6 +3435,8 @@ export class AuditEntry extends Message<AuditEntry> {
     { no: 3, name: "action", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 4, name: "target", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 5, name: "node_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 6, name: "before_json", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 7, name: "after_json", kind: "scalar", T: 9 /* ScalarType.STRING */ },
   ]);
 
   static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): AuditEntry {
