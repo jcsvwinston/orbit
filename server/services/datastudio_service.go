@@ -2,8 +2,10 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -140,7 +142,8 @@ func (s *DataStudioService) CreateRecord(ctx context.Context, req *connect.Reque
 		return nil, err
 	}
 	if rec := resp.GetRecord(); rec != nil {
-		s.audit(ctx, "datastudio.create", auditTarget(body.GetModelName(), recordID(rec, ""), body.GetDatabaseAlias()), node)
+		s.audit(ctx, "datastudio.create", auditTarget(body.GetModelName(), recordID(rec, ""), body.GetDatabaseAlias()), node,
+			auditSides{After: recordJSON(rec)})
 		return connect.NewResponse(rec), nil
 	}
 	return nil, connect.NewError(connect.CodeUnknown, errors.New("admin server: empty create response"))
@@ -157,7 +160,8 @@ func (s *DataStudioService) UpdateRecord(ctx context.Context, req *connect.Reque
 		return nil, err
 	}
 	if rec := resp.GetRecord(); rec != nil {
-		s.audit(ctx, "datastudio.update", auditTarget(body.GetModelName(), body.GetId(), body.GetDatabaseAlias()), node)
+		s.audit(ctx, "datastudio.update", auditTarget(body.GetModelName(), body.GetId(), body.GetDatabaseAlias()), node,
+			auditSides{Before: previousJSON(resp), After: recordJSON(rec)})
 		return connect.NewResponse(rec), nil
 	}
 	return nil, connect.NewError(connect.CodeUnknown, errors.New("admin server: empty update response"))
@@ -174,7 +178,8 @@ func (s *DataStudioService) DeleteRecord(ctx context.Context, req *connect.Reque
 		return nil, err
 	}
 	if del := resp.GetDeleteRecord(); del != nil {
-		s.audit(ctx, "datastudio.delete", auditTarget(body.GetModelName(), body.GetId(), body.GetDatabaseAlias()), node)
+		s.audit(ctx, "datastudio.delete", auditTarget(body.GetModelName(), body.GetId(), body.GetDatabaseAlias()), node,
+			auditSides{Before: previousJSON(resp)})
 		return connect.NewResponse(del), nil
 	}
 	return nil, connect.NewError(connect.CodeUnknown, errors.New("admin server: empty delete response"))
@@ -192,7 +197,8 @@ func (s *DataStudioService) BulkAction(ctx context.Context, req *connect.Request
 	}
 	if bulk := resp.GetBulkAction(); bulk != nil {
 		s.audit(ctx, "datastudio.bulk."+body.GetAction(),
-			fmt.Sprintf("%s ×%d (%s)", body.GetModelName(), len(body.GetIds()), aliasOrDefault(body.GetDatabaseAlias())), node)
+			fmt.Sprintf("%s ×%d (%s)", body.GetModelName(), len(body.GetIds()), aliasOrDefault(body.GetDatabaseAlias())), node,
+			auditSides{Before: previousJSON(resp)})
 		return connect.NewResponse(bulk), nil
 	}
 	return nil, connect.NewError(connect.CodeUnknown, errors.New("admin server: empty bulk response"))
@@ -340,9 +346,23 @@ func (s *DataStudioService) requireWrite(ctx context.Context, modelName string) 
 		fmt.Errorf("admin server: model %q is not on the data studio mutation allowlist (--datastudio-allowed-models)", modelName))
 }
 
+// auditSides is what changed: the record's values before and after the
+// action as JSON, each side empty when the action has none.
+type auditSides struct {
+	Before string
+	After  string
+}
+
+// maxAuditSideBytes bounds one side of an audit entry. The ring is
+// in-memory and holds thousands of entries; a record with a large text or
+// blob column must not turn it into a copy of the table. A side over the
+// bound is replaced by a JSON object that says so and how large it was.
+const maxAuditSideBytes = 64 << 10
+
 // audit records a fleet-plane action in the server's audit ring,
-// attributed to the operator resolved by the UI auth chain.
-func (s *DataStudioService) audit(ctx context.Context, action, target, nodeID string) {
+// attributed to the operator resolved by the UI auth chain, with what
+// changed.
+func (s *DataStudioService) audit(ctx context.Context, action, target, nodeID string, sides auditSides) {
 	if s == nil || s.state == nil || s.state.Audit == nil {
 		return
 	}
@@ -355,7 +375,71 @@ func (s *DataStudioService) audit(ctx context.Context, action, target, nodeID st
 		Action: action,
 		Target: target,
 		NodeID: nodeID,
+		Before: boundSide(sides.Before),
+		After:  boundSide(sides.After),
 	})
+}
+
+func boundSide(side string) string {
+	if len(side) <= maxAuditSideBytes {
+		return side
+	}
+	return fmt.Sprintf(`{"truncated":true,"bytes":%d}`, len(side))
+}
+
+// recordJSON renders a wire record as one JSON object: values_json maps
+// each field name to JSON text already, so the object is assembled from
+// those fragments as they are. Keys are sorted, so two renderings of the
+// same record compare equal. A value that is not valid JSON is kept as a
+// JSON string, never dropped: the audit must not lose a field because an
+// agent encoded it oddly.
+func recordJSON(rec *adminv1.Record) string {
+	if rec == nil {
+		return ""
+	}
+	values := rec.GetValuesJson()
+	keys := make([]string, 0, len(values))
+	for k := range values {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	b.WriteByte('{')
+	for i, k := range keys {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		key, _ := json.Marshal(k)
+		b.Write(key)
+		b.WriteByte(':')
+		raw := values[k]
+		if json.Valid([]byte(raw)) {
+			b.WriteString(raw)
+		} else {
+			quoted, _ := json.Marshal(raw)
+			b.Write(quoted)
+		}
+	}
+	b.WriteByte('}')
+	return b.String()
+}
+
+// previousJSON renders the records an agent returned as they were before
+// the action: one record is an object, several (a bulk action) a JSON
+// array, none — an agent that predates the field — the empty string.
+func previousJSON(resp *adminv1.DataStudioResponse) string {
+	prev := resp.GetPrevious()
+	switch {
+	case len(prev) == 0:
+		return ""
+	case len(prev) == 1 && resp.GetBulkAction() == nil:
+		return recordJSON(prev[0])
+	}
+	parts := make([]string, 0, len(prev))
+	for _, r := range prev {
+		parts = append(parts, recordJSON(r))
+	}
+	return "[" + strings.Join(parts, ",") + "]"
 }
 
 // recordID extracts the record's id from its JSON value map ("" when

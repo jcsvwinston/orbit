@@ -643,26 +643,36 @@ func probeFleetAuditEntry(t *testing.T, e *env) verdict {
 		t.Logf("the entry is not attributed: %v", missing)
 		return absent
 	}
-	// What changed: a diff-like field, and for the mutation just made it
-	// must carry something — a declared field left empty is a declaration.
-	md := en.ProtoReflect().Descriptor()
-	var filled, empty []string
-	for _, name := range fieldsContaining(md, "before", "after", "old", "new", "diff", "previous", "values", "change") {
-		fd := md.Fields().ByName(protoreflect.Name(name))
-		if fd != nil && en.ProtoReflect().Has(fd) {
-			filled = append(filled, name)
-		} else {
-			empty = append(empty, name)
-		}
-	}
-	switch {
-	case len(filled) > 0:
-		return present
-	case len(empty) > 0:
-		t.Logf("AuditEntry declares %v but the entry for this create carries nothing in them", empty)
+	// What changed. A create can only say what was written; an update says
+	// both sides. Fields that exist but carry nothing are a declaration, not
+	// an audit — that is what kept this control partial for one release.
+	if en.GetAfterJson() == "" || !strings.Contains(en.GetAfterJson(), "audited") {
+		t.Logf("the create's entry does not say what was written: after_json=%q", en.GetAfterJson())
 		return partial
 	}
-	t.Log("AuditEntry has no before/after fields")
+	if _, err := e.dataStudio(srv.Server).UpdateRecord(ctx, connect.NewRequest(&adminv1.UpdateRecordRequest{
+		ModelName: "TestArticle", Id: id,
+		Record: &adminv1.Record{ValuesJson: map[string]string{"Title": `"audited, renamed"`}},
+	})); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	resp, err = e.manage(srv.Server).ListAudit(ctx, connect.NewRequest(&adminv1.ListAuditRequest{}))
+	if err != nil {
+		t.Fatalf("ListAudit after update: %v", err)
+	}
+	up := resp.Msg.GetEntries()[0]
+	if up.GetAction() != "datastudio.update" {
+		t.Fatalf("newest entry is %q, want the update", up.GetAction())
+	}
+	before, after := up.GetBeforeJson(), up.GetAfterJson()
+	switch {
+	case strings.Contains(before, `"audited"`) && strings.Contains(after, `"audited, renamed"`):
+		return present
+	case before == "" && after == "":
+		t.Log("AuditEntry declares before_json and after_json but the update's entry carries nothing in them")
+		return partial
+	}
+	t.Logf("the update's entry does not say what changed: before_json=%q after_json=%q", before, after)
 	return partial
 }
 

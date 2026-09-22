@@ -15,6 +15,11 @@ type AuditEntry struct {
 	Action string // e.g. "datastudio.create"
 	Target string // human-readable, e.g. `Article #42 ("default")`
 	NodeID string
+	// Before and After are the record's values as JSON objects (a JSON
+	// array for a bulk action), each side empty when the action has none:
+	// a create has no Before, a delete has no After.
+	Before string
+	After  string
 }
 
 // AuditRing is a bounded, in-memory, newest-wins ring of fleet-plane

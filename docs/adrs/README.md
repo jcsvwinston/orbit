@@ -10,7 +10,7 @@
 | ID | Título | Estado | Relacionado |
 |---|---|---|---|
 | [ADR-001](ADR-001-datastudio-agnostic-datasource.md) | Data Studio agnóstico del origen de datos (contrato `datasource`) | Accepted | nucleus ADR-019 · quantum QADR-0006 |
-| [ADR-002](ADR-002-fleet-datastudio-identidad.md) | Rumbo del Data Studio del plano fleet: el fleet consume el contrato `datasource` | Accepted (2026-08-31, D2) · pendiente de implementar | ADR-001 · ADR-003 · quantum QADR-0006 |
+| [ADR-002](ADR-002-fleet-datastudio-identidad.md) | Rumbo del Data Studio del plano fleet: el fleet consume el contrato `datasource` | Implemented (2026-09-22, A9 `S3`–`S5`; decidido 2026-08-31, D2) | ADR-001 · ADR-003 · ADR-012 · quantum QADR-0006 |
 | [ADR-003](ADR-003-plano-fleet-agente-servidor.md) | Plano fleet como subsistema opt-in (agent/server/proto, stream bidi) | Accepted · retroactivo | ADR-001 · quantum QADR-0006 |
 | [ADR-004](ADR-004-frontera-authn-delegada-authz-panel.md) | Autenticación delegada, autorización del panel propia | Accepted · retroactivo | nucleus ADR-019 |
 | [ADR-005](ADR-005-confinamiento-storage-browse.md) | El navegador de storage del panel se confina a un root fijo | Accepted · retroactivo | ADR-004 |
@@ -22,13 +22,14 @@
 | [ADR-011](ADR-011-la-ropa-del-producto.md) | El panel lleva la ropa del producto — marca, tarjetas propias e idioma, sin traducir los datos | Accepted (2026-09-18) | ADR-004 · ADR-010 |
 | [ADR-012](ADR-012-contrato-datasource-modulo-hoja.md) | El contrato `datasource` es un módulo hoja — la segunda arista que ADR-006 permite (extraído en A9 `S4`, con el adaptador Nucleus como subpaquete) | Accepted (2026-09-21) | ADR-001 · ADR-002 · ADR-006 · quantum QADR-0002 · QADR-0010 |
 
-**ADR-002 está aceptado pero no implementado**: la D2 de la auditoría
-integral 2026-08-30 decidió (2026-08-31) que el Data Studio del plano fleet
-consuma el contrato `datasource` con identidad propagada por el stream. El
-acta conserva el análisis de la alternativa descartada; su sección «Plan»
-enumera el arco pendiente. Hasta que se ejecute, las puertas actuales del
-fleet (allowlist de modelos mutables, operadores de solo lectura) siguen
-vigentes.
+**ADR-002 está implementado** (2026-09-22): la D2 de la auditoría integral
+2026-08-30 decidió (2026-08-31) que el Data Studio del plano fleet consuma el
+contrato `datasource` con identidad propagada por el stream, y el arco A9 de
+la suite lo ejecutó en tres sesiones (orbit#506, #509, #511, #512 y la parte
+2 de `S5`). El acta conserva el análisis de la alternativa descartada y su
+sección «Ejecución» dice con qué se cumplió cada paso. Las puertas del
+servidor (allowlist de modelos mutables, operadores de solo lectura) siguen
+vigentes: la propagación no relajó ninguna.
 
 > El estado de esta tabla es un **resumen**; la verdad vive en el frontmatter
 > de cada ADR. «Retroactivo» marca actas escritas después de ejecutar la

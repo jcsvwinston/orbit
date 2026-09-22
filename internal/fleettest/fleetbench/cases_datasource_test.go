@@ -34,14 +34,14 @@ func controlsDatasource() []control {
 		{id: "FDS-10", family: "datasource", title: "the agent serves Data Studio through the datasource contract, so a contract implementation can be registered in the fleet",
 			want: present, probe: probeAgentSpeaksDatasource},
 		{id: "FDS-11", family: "datasource", title: "a fleet mutation leaves an audit entry with operator, model, record and node, and says what changed",
-			want: partial, note: "ListAudit returns the entry attributed to actor, action, target (model and record id) and node; " +
-				"AuditEntry declares before_json and after_json (additive, with DataStudioResponse.previous for the agent to " +
-				"send the old values) and the server writes nothing into them yet: it uses them once it pins the proto tag " +
-				"that carries them. Whether the entry survives the process is RET-04's measurement.",
+			want: present, note: "ListAudit returns the entry attributed to actor, action, target (model and record id) and node, " +
+				"with after_json on a create, before_json on a delete and both on an update (the agent returns the record as it " +
+				"was in DataStudioResponse.previous; a bulk action carries an array). A side over 64 KiB is replaced by a marker " +
+				"that says so. Whether the entry survives the process is RET-04's measurement.",
 			probe: probeFleetAuditEntry},
 		{id: "FDS-12", family: "datasource", title: "the fleet-consumes-the-contract decision (docs/adrs/ADR-002) is recorded as implemented in the ADR and in the index",
-			want: absent, note: "the ADR's front matter says status: accepted and the index row in docs/adrs/README.md says " +
-				"\"pendiente de implementar\": the decision is taken and the work is open.",
+			want: present, note: "the ADR's front matter says status: implemented and its Execution section names the PR and " +
+				"the bench control behind each step of its plan; the index row in docs/adrs/README.md says Implemented.",
 			probe: probeADR002RecordedImplemented},
 	}
 }

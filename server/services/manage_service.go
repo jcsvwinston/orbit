@@ -100,11 +100,13 @@ func (s *ManageService) ListAudit(_ context.Context, req *connect.Request[adminv
 	out := &adminv1.ListAuditResponse{Entries: make([]*adminv1.AuditEntry, 0, len(entries))}
 	for _, e := range entries {
 		out.Entries = append(out.Entries, &adminv1.AuditEntry{
-			Time:   timestamppb.New(e.Time),
-			Actor:  e.Actor,
-			Action: e.Action,
-			Target: e.Target,
-			NodeId: e.NodeID,
+			Time:       timestamppb.New(e.Time),
+			Actor:      e.Actor,
+			Action:     e.Action,
+			Target:     e.Target,
+			NodeId:     e.NodeID,
+			BeforeJson: e.Before,
+			AfterJson:  e.After,
 		})
 	}
 	return connect.NewResponse(out), nil
