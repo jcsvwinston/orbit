@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/jcsvwinston/orbit/compare/server/v0.15.0...server/v0.16.0) (2026-09-22)
+
+
+### Added
+
+* **fleet:** the audit entry says what changed, quarkdatasource serves the fleet, and ADR-002 is implemented (A9 S5, part 2) ([#513](https://github.com/jcsvwinston/orbit/issues/513)) ([6140860](https://github.com/jcsvwinston/orbit/commit/6140860aa637551fe16de6927c9daab9d4ff67d2))
+
 ## [0.15.0](https://github.com/jcsvwinston/orbit/compare/server/v0.14.0...server/v0.15.0) (2026-09-22)
 
 
