@@ -35,8 +35,9 @@ there is now answered as not found rather than as done.
 **A Quark application's models are served by the fleet.** An agent whose
 data source is the `quarkdatasource` adapter — with no Nucleus registry or
 database behind it — serves those models through the admin server as the
-operator the server sends, tenant included. The decision that the fleet
-consumes the data contract (ADR-002) is recorded as implemented.
+operator the server sends, tenant included. With that, the fleet's Data
+Studio and the panel's are one implementation over one contract, the
+direction chosen in August and now done.
 
 **The modules pin what the last cut published.** `agent` and `server`
 require `proto v0.6.0`; the root and `quarkdatasource` resolve
