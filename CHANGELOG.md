@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.13.0](https://github.com/jcsvwinston/orbit/compare/v1.12.0...v1.13.0) (2026-09-22)
+
+
+### Added
+
+* **agent:** the fleet's Data Studio speaks the datasource contract, as the operator the server sends (A9 S4, part 2) ([#511](https://github.com/jcsvwinston/orbit/issues/511)) ([1e3c614](https://github.com/jcsvwinston/orbit/commit/1e3c614c84870f1db742877e34edfd29215b9913))
+* **datasource:** the contract and its Nucleus adapter become a module of their own (A9 S4, part 1) ([#509](https://github.com/jcsvwinston/orbit/issues/509)) ([cbc0f8b](https://github.com/jcsvwinston/orbit/commit/cbc0f8be32c6214d4f941d9c1a27376ccaba5dbe))
+* **proto:** the audit entry says what changed, and the agent can return the previous values (A9 S5, part 1) ([#512](https://github.com/jcsvwinston/orbit/issues/512)) ([29200ff](https://github.com/jcsvwinston/orbit/commit/29200fffcf794770e747567908933cdaba9080a0))
+
 ## [1.12.0](https://github.com/jcsvwinston/orbit/compare/v1.11.0...v1.12.0) (2026-09-21)
 
 
