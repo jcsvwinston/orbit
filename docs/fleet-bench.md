@@ -60,7 +60,7 @@ place for a capability, not the capability.
 
 ## The result
 
-**26 of 50 controls present. 3 partial. 21 absent.**
+**28 of 50 controls present. 2 partial. 20 absent.**
 
 | family | present | partial | absent |
 |---|---|---|---|
@@ -83,7 +83,7 @@ place for a capability, not the capability.
 | `ALR-05` | the agent publishes its own Prometheus collectors on its metrics listener | **present** | — |
 | `ALR-06` | a node that stops sending frames is listed as not connected within the inactivity timeout plus one janitor tick | **present** | — |
 
-### datasource — 10 present · 1 partial · 1 absent
+### datasource — 12 present · 0 partial · 0 absent
 
 | id | control | verdict | what is missing |
 |---|---|---|---|
@@ -97,8 +97,8 @@ place for a capability, not the capability.
 | `FDS-08` | filters with operators (contains, range, set, null) reach the agent | **present** | — |
 | `FDS-09` | pagination carries an exact total, filtered or not | **present** | — |
 | `FDS-10` | the agent serves Data Studio through the datasource contract, so a contract implementation can be registered in the fleet | **present** | — |
-| `FDS-11` | a fleet mutation leaves an audit entry with operator, model, record and node, and says what changed | **partial** | ListAudit returns the entry attributed to actor, action, target (model and record id) and node; AuditEntry declares before_json and after_json (additive, with DataStudioResponse.previous for the agent to send the old values) and the server writes nothing into them yet: it uses them once it pins the proto tag that carries them. Whether the entry survives the process is RET-04's measurement. |
-| `FDS-12` | the fleet-consumes-the-contract decision (docs/adrs/ADR-002) is recorded as implemented in the ADR and in the index | **absent** | the ADR's front matter says status: accepted and the index row in docs/adrs/README.md says "pendiente de implementar": the decision is taken and the work is open. |
+| `FDS-11` | a fleet mutation leaves an audit entry with operator, model, record and node, and says what changed | **present** | ListAudit returns the entry attributed to actor, action, target (model and record id) and node, with after_json on a create, before_json on a delete and both on an update (the agent returns the record as it was in DataStudioResponse.previous; a bulk action carries an array). A side over 64 KiB is replaced by a marker that says so. Whether the entry survives the process is RET-04's measurement. |
+| `FDS-12` | the fleet-consumes-the-contract decision (docs/adrs/ADR-002) is recorded as implemented in the ADR and in the index | **present** | the ADR's front matter says status: implemented and its Execution section names the PR and the bench control behind each step of its plan; the index row in docs/adrs/README.md says Implemented. |
 
 `FDS-05`, `FDS-06`, `FDS-07` and `FDS-10` are **present** since A9 `S4`: the
 agent serves Data Studio through the same `datasource` contract the panel
@@ -119,12 +119,23 @@ sends nor shows one. `FDS-08` and `FDS-09` are **present** too: operator
 filters are applied through the contract (an unknown operator is refused,
 never dropped) and every list carries an exact total.
 
-`FDS-11` stays partial after A9 `S5` (part 1) for the reason `FDS-05` and
-`FDS-07` stayed partial after `S3`: the wire now declares what changed
-(`AuditEntry.before_json`, `AuditEntry.after_json`, and
-`DataStudioResponse.previous` for the agent to return the old values), and
-declaring is not doing. The server and the agent fill them in part 2, once
-they can pin the proto tag that carries the fields.
+`FDS-11` and `FDS-12` are **present** since A9 `S5`, and the family is
+complete. The audit entry a fleet mutation leaves says what changed: the
+record as written on a create, as it was on a delete, both on an update,
+one per row on a bulk action — the agent returns the previous values in
+`DataStudioResponse.previous` and the server writes both sides into its
+ring, bounding each at 64 KiB with a marker. The probe creates a record,
+renames it, and reads the update's entry: the old title on one side, the
+new on the other. ADR-002 is recorded as implemented in the ADR, with an
+execution section that names the PR and the control behind each step of
+its plan, and in the index. The last step of that plan — `quarkdatasource`
+in the fleet — is measured outside the numbered controls:
+`TestQuarkDataSourceInTheFleet` starts an agent whose only data source is
+the Quark adapter, with no Nucleus registry or database, and drives it
+through the server as two tenants. The fields of `S5`'s part 1 were
+declared one release before they were filled, for the reason `FDS-05` and
+`FDS-07` stayed partial after `S3`: the agent and the server pin the
+protocol by tag.
 
 ### ha — 1 present · 1 partial · 3 absent
 

@@ -4,7 +4,7 @@ go 1.26.6
 
 require (
 	connectrpc.com/connect v1.20.0
-	github.com/jcsvwinston/orbit/proto v0.5.0
+	github.com/jcsvwinston/orbit/proto v0.6.0
 )
 
 require (

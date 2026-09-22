@@ -116,6 +116,12 @@ no longer bypasses what the in-process panel enforces. A tenant header is
 therefore an authorization input: set it only from the proxy that
 authenticates the operator, never from the browser.
 
+What an operator changed through the fleet is written down: each mutation's
+audit entry carries the record before and after the action, attributed to
+the operator, the model, the record and the node. Treat the `Audit log`
+screen as such — it shows the values of the rows operators touched, so the
+operators who may read it are the ones who may read those rows.
+
 ## Credential lockout
 
 Both listeners keep a small per-IP lockout: **20 wrong credentials within a

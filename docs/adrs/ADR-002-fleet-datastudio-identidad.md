@@ -1,7 +1,7 @@
 ---
 id: ADR-002
 title: Rumbo del Data Studio del plano fleet (identidad y autorización)
-status: accepted
+status: implemented
 date: 2026-08-31
 deciders: jcsvwinston
 related: [ADR-001, ADR-003, quantum/QADR-0006]
@@ -11,13 +11,13 @@ tags: [orbit, fleet, data-studio, seguridad]
 
 # ADR-002 — Rumbo del Data Studio del plano fleet
 
-> **Estado: aceptado (2026-08-31), en dirección Opción A.** La decisión es la
-> D2 de la auditoría integral 2026-08-30, registrada en `quantum/docs/RUMBO.md`:
-> el plano fleet consume el contrato `datasource`. La Opción B (declarar el
-> fleet «telemetría + lectura») queda descartada. Este acta conserva el
-> análisis de ambas opciones tal como se escribió; la sección «Decisión» es
-> la que manda. La implementación es un arco propio y NO está hecha a fecha
-> de aceptación (ver «Plan»).
+> **Estado: implementado (2026-09-22, arco A9 de la suite, sesiones `S3` a
+> `S5`).** La decisión es la D2 de la auditoría integral 2026-08-30,
+> registrada en `quantum/docs/RUMBO.md`: el plano fleet consume el contrato
+> `datasource`. La Opción B (declarar el fleet «telemetría + lectura») quedó
+> descartada. Este acta conserva el análisis de ambas opciones tal como se
+> escribió; la sección «Decisión» es la que manda y la sección «Ejecución»
+> dice con qué se cumplió cada paso del plan.
 
 ## Contexto
 
@@ -132,3 +132,35 @@ Consecuencias que se aceptan con la decisión:
 
 Cada paso lleva sus tests y su doc en el mismo PR (regla de la suite). El
 estado de ejecución del arco se sigue en `quantum/docs/RUMBO.md`, no aquí.
+
+## Ejecución
+
+Los cuatro pasos del plan, con el PR que los cumplió y el control del banco
+`internal/fleettest/fleetbench` que lo mide:
+
+1. **Proto**: `OperatorIdentity` y `DataStudioRequest.operator` (sujeto,
+   correo, rol, solo lectura, tenant), `RecordFilter` y
+   `ListRecordsRequest.where` — orbit#506, `proto/v0.5.0`. Después,
+   `AuditEntry.before_json`/`after_json` y `DataStudioResponse.previous` —
+   orbit#512, `proto/v0.6.0`.
+2. **Agente**: el contrato pasa a módulo hoja con su adaptador Nucleus
+   dentro (ADR-012, orbit#509, `datasource/v1.0.0`) y `agent/datastudio`
+   se reescribe sobre `datasource.DataSource` bajo el operador recibido:
+   claims del framework en el contexto, la política de la aplicación por
+   modelo y verbo, confinamiento por tenant — orbit#511, `agent/v0.10.0`
+   (`FDS-05`, `FDS-06`, `FDS-07`, `FDS-08`, `FDS-09`, `FDS-10`).
+3. **Servidor**: rellena `operator` desde `auth.Identity` en cada petición,
+   con el tenant de la cabecera del proxy de confianza — orbit#511,
+   `server/v0.15.0`; y escribe en su audit los valores antes y después de
+   cada mutación con lo que el agente devuelve — la parte 2 de `S5`
+   (`FDS-11`).
+4. **La doble implementación se retira** con orbit#511 (`agent/datastudio`
+   ya no importa `nucleus/pkg/model`), y `quarkdatasource` entra en el
+   fleet por `agent.ExtensionConfig.DataSource`: una aplicación Quark pasa el
+   mismo adaptador al agente y al panel, y el banco lo prueba con un agente
+   real sobre un cliente Quark (`TestQuarkDataSourceInTheFleet`).
+
+La consecuencia que la decisión aceptaba como riesgo —una propagación a
+medias— se evitó no relajando ninguna puerta: la allowlist de modelos
+mutables y los operadores de solo lectura siguen vigentes en el servidor,
+y el agente sin operador (un servidor anterior) se comporta como antes.

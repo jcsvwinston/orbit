@@ -489,10 +489,14 @@ func (h *Handler) handleUpdateRecord(ctx context.Context, resp *adminv1.DataStud
 		return
 	}
 	scope := scopeFor(op, mi)
-	if _, err := h.getOwned(ctx, st, scope, req.GetId()); err != nil {
+	before, err := h.getOwned(ctx, st, scope, req.GetId())
+	if err != nil {
 		resp.Error = err.Error()
 		return
 	}
+	// Rendered BEFORE the write: a store may hand out the record it holds,
+	// and after Update that record is the new one.
+	previous := recordToProto(before, mi)
 	rec, err := recordFromProto(req.GetRecord())
 	if err != nil {
 		resp.Error = err.Error()
@@ -516,6 +520,9 @@ func (h *Handler) handleUpdateRecord(ctx context.Context, resp *adminv1.DataStud
 		resp.Error = err.Error()
 		return
 	}
+	// The record as it was rides back with the one it became: the server
+	// writes both sides into its audit entry without a second round trip.
+	resp.Previous = []*adminv1.Record{previous}
 	resp.Body = &adminv1.DataStudioResponse_Record{Record: recordToProto(updated, mi)}
 }
 
@@ -529,16 +536,20 @@ func (h *Handler) handleDeleteRecord(ctx context.Context, resp *adminv1.DataStud
 		resp.Error = err.Error()
 		return
 	}
-	if scope := scopeFor(op, mi); scope.Enforced() {
-		if _, err := h.getOwned(ctx, st, scope, req.GetId()); err != nil {
-			resp.Error = err.Error()
-			return
-		}
+	// Read before deleting: ownership when the operator is tenant-scoped,
+	// and in every case the record as it was, which is all the audit entry
+	// can ever say about a delete.
+	before, err := h.getOwned(ctx, st, scopeFor(op, mi), req.GetId())
+	if err != nil {
+		resp.Error = err.Error()
+		return
 	}
+	previous := recordToProto(before, mi)
 	if err := st.Delete(ctx, req.GetId()); err != nil {
 		resp.Error = err.Error()
 		return
 	}
+	resp.Previous = []*adminv1.Record{previous}
 	resp.Body = &adminv1.DataStudioResponse_DeleteRecord{
 		DeleteRecord: &adminv1.DeleteRecordResponse{Deleted: true},
 	}
@@ -559,19 +570,20 @@ func (h *Handler) handleBulkAction(ctx context.Context, resp *adminv1.DataStudio
 		scope := scopeFor(op, mi)
 		out := &adminv1.BulkActionResponse{}
 		for _, id := range req.GetIds() {
-			if scope.Enforced() {
-				if _, err := h.getOwned(ctx, st, scope, id); err != nil {
-					out.Failed++
-					out.Errors = append(out.Errors, fmt.Sprintf("%s: %v", id, err))
-					continue
-				}
+			before, err := h.getOwned(ctx, st, scope, id)
+			if err != nil {
+				out.Failed++
+				out.Errors = append(out.Errors, fmt.Sprintf("%s: %v", id, err))
+				continue
 			}
+			previous := recordToProto(before, mi)
 			if err := st.Delete(ctx, id); err != nil {
 				out.Failed++
 				out.Errors = append(out.Errors, fmt.Sprintf("%s: %v", id, err))
 				continue
 			}
 			out.Affected++
+			resp.Previous = append(resp.Previous, previous)
 		}
 		resp.Body = &adminv1.DataStudioResponse_BulkAction{BulkAction: out}
 	default:

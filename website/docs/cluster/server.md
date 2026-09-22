@@ -65,6 +65,14 @@ confirms the row is the tenant's. The tenant comes from the trusted proxy:
 `--ui-tenant-header` (default `X-Auth-Tenant`), honoured on the same path
 as `--ui-auth-header`.
 
+Every mutation the server routes leaves an entry in its audit log that
+says what changed: the record as written on a create, the record as it was
+on a delete, both on an update, and one record per row on a bulk action.
+The agent returns the previous values with its answer, so the server writes
+both sides without a second round trip. A side larger than 64 KiB is
+replaced by a marker that says so and how large it was. The log is the
+in-memory ring the `Audit log` screen reads; it does not survive a restart.
+
 An agent older than that ignores the identity and behaves as before — no
 policy, no tenant — so the server-side gates below stay in front for every
 agent. The `Access control` screen is a read-only snapshot of each node's
