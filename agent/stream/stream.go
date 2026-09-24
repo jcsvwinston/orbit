@@ -130,6 +130,7 @@ type Stream struct {
 	// observability.Subscription.
 	subsMu     sync.Mutex
 	activeSubs map[string]*activeSub
+	parked     []observability.Filter // filters of the subscriptions the last Run cancelled
 
 	// stream-lifetime context, cancelled when Run returns.
 	streamCtx    context.Context
@@ -161,6 +162,7 @@ type activeSub struct {
 	sub     *observability.Subscription
 	sampler *sampler.Sampler
 	cancel  func()
+	filter  observability.Filter
 }
 
 // New constructs a Stream wrapping the given AgentService client. Run
@@ -526,6 +528,7 @@ func (s *Stream) handleSubscribe(in *adminv1.Subscribe) {
 		sub:     sub,
 		sampler: smp,
 		cancel:  cancel,
+		filter:  wantFilter,
 	}
 	s.subsMu.Lock()
 	s.activeSubs[id] = a
@@ -625,10 +628,29 @@ func (s *Stream) cancelSubscription(id string) {
 	s.cfg.Metrics.ActiveSubscriptions.Set(float64(count))
 }
 
+// ParkedFilters is what the server was subscribed to when the stream
+// ended: the filters of the subscriptions Run cancelled. The agent keeps
+// listening to the bus under them while it has no stream, so the events
+// of an outage reach the server after the reconnect (ADR-013).
+func (s *Stream) ParkedFilters() []observability.Filter {
+	s.subsMu.Lock()
+	defer s.subsMu.Unlock()
+	out := make([]observability.Filter, len(s.parked))
+	copy(out, s.parked)
+	return out
+}
+
 func (s *Stream) cancelAllSubscriptions() {
 	s.subsMu.Lock()
 	subs := s.activeSubs
 	s.activeSubs = make(map[string]*activeSub)
+	parked := make([]observability.Filter, 0, len(subs))
+	for _, a := range subs {
+		if a != nil {
+			parked = append(parked, a.filter)
+		}
+	}
+	s.parked = parked
 	s.subsMu.Unlock()
 
 	for _, a := range subs {

@@ -18,8 +18,12 @@
 //     server-to-agent traffic (Subscribe, Unsubscribe, SnapshotRequest)
 //     travels on the existing AgentService.Stream multiplexed Frame channel.
 //
-//   - The server is NOT persistence: events live in bounded ring buffers and
-//     are dropped on overflow. Long-term retention is OpenTelemetry's job.
+//   - The server retains only what it is asked to: without Config.DataDir
+//     events live in bounded ring buffers, dropped on overflow, and a
+//     restart starts empty. With a data directory it keeps events, the
+//     fleet audit trail and host-metrics samples in one local SQLite file
+//     for a retention window (ADR-013). Long-term storage is still
+//     OpenTelemetry's job.
 //
 //   - A shared token and/or mutual TLS (client certificates verified
 //     against --agent-client-ca) gate the agent listener; trusted-proxy

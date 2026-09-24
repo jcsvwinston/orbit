@@ -71,7 +71,9 @@ func (r *restartable) waitAgentBack(t *testing.T) {
 // RET-01: events the server replays to a new UI subscriber survive a
 // server restart.
 func probeReplaySurvivesRestart(t *testing.T, e *env) verdict {
-	r := e.startRestartable(t, server.Config{}, agent.Config{NodeIDOverride: "fb-replay"})
+	// The knob this probe asked for: a data directory the restarted server
+	// reopens (restartable starts the second server on the same Config).
+	r := e.startRestartable(t, server.Config{DataDir: t.TempDir()}, agent.Config{NodeIDOverride: "fb-replay"})
 	srv1, ag := r.srv, r.ag
 
 	ctx1, cancel1 := context.WithCancel(context.Background())
@@ -102,7 +104,7 @@ func probeReplaySurvivesRestart(t *testing.T, e *env) verdict {
 	defer cancel3()
 	after, _ := subscribeHTTP(ctx3, e.control(srv2.Server), true)
 	got := collectPaths(after, 3, 700*time.Millisecond)
-	t.Logf("replay after restart: %v (server.Config persistence knobs: %v)", got, fieldsNamed(server.Config{}, "", "Persist", "Store", "DataDir", "StateDir"))
+	t.Logf("replay after restart: %v", got)
 	switch {
 	case len(got) >= 3:
 		return present
@@ -137,8 +139,11 @@ func probeOfflineEventsDelivered(t *testing.T, e *env) verdict {
 	r.relay.dropConnections()
 	// The agent drops its bus subscription when the stream dies; wait for
 	// that so the events below are emitted into the outage, not the tail.
+	// An agent that parks events keeps a bus subscription through the
+	// outage; one that does not drops it. Either way the events below are
+	// emitted while the agent provably has no stream, which is the test.
 	if !pollUntil(3*time.Second, func() bool { return !ag.bus.HasSubscribers(observability.KindHTTPRequest) }) {
-		t.Log("the agent kept its bus subscription through the outage")
+		t.Log("the agent kept a bus subscription through the outage (it parks events)")
 	}
 	for i := 0; i < 3; i++ {
 		emitHTTP(ag.bus, ag.NodeID(), fmt.Sprintf("/offline/%d", i))
@@ -212,7 +217,7 @@ func probeHostMetricsHistory(t *testing.T, e *env) verdict {
 func probeAuditSurvivesRestart(t *testing.T, e *env) verdict {
 	d, reg := e.agentDB(t, false)
 	r := e.startRestartable(t,
-		server.Config{DataStudioAllowedModels: []string{"TestArticle"}},
+		server.Config{DataStudioAllowedModels: []string{"TestArticle"}, DataDir: t.TempDir()},
 		agent.Config{Registry: reg, Databases: map[string]*db.DB{"default": d}})
 	ctx := ctxFor(t)
 	if _, err := createArticle(ctx, e.dataStudio(r.srv.Server), "to be remembered"); err != nil {
@@ -239,16 +244,39 @@ func probeAuditSurvivesRestart(t *testing.T, e *env) verdict {
 	return absent
 }
 
-// RET-05: a retention window is configurable and enforced. A knob that
-// appears flips this probe to partial (red against the recorded verdict),
-// and the probe then has to set it and watch an old entry go.
+// RET-05: a retention window is configurable and enforced. The probe
+// sets a window of one second, writes an audit entry, reads it back
+// inside the window, and reads again once the window has passed: the
+// entry must be gone from what the server serves, whether the janitor
+// has run or not.
 func probeRetentionWindow(t *testing.T, e *env) verdict {
 	knobs := fieldsNamed(server.Config{}, "", "Retention", "TimeToLive", "Persist", "DataDir", "StateDir", "Database", "MaxAge", "Expir")
 	if len(knobs) == 0 {
 		return absent
 	}
-	t.Logf("server.Config offers %v: extend this probe to set it and observe eviction", knobs)
-	return partial
+	srv := e.startServer(t, server.Config{DataDir: t.TempDir(), Retention: time.Second, DataStudioAllowedModels: []string{"TestArticle"}})
+	d, reg := e.agentDB(t, false)
+	ag := e.startAgent(t, agent.Config{Endpoints: []string{"http://" + srv.AgentAddr()}, Registry: reg, Databases: map[string]*db.DB{"default": d}})
+	if !waitRegistered(srv.Server, ag.NodeID(), 4*time.Second) {
+		t.Fatal("agent did not register")
+	}
+	ctx := ctxFor(t)
+	if _, err := createArticle(ctx, e.dataStudio(srv.Server), "short-lived"); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	inside, err := e.manage(srv.Server).ListAudit(ctx, connect.NewRequest(&adminv1.ListAuditRequest{}))
+	if err != nil || len(inside.Msg.GetEntries()) == 0 {
+		t.Fatalf("the entry is not served inside its window: err=%v entries=%d", err, len(inside.Msg.GetEntries()))
+	}
+	gone := pollUntil(4*time.Second, func() bool {
+		after, err := e.manage(srv.Server).ListAudit(ctx, connect.NewRequest(&adminv1.ListAuditRequest{}))
+		return err == nil && len(after.Msg.GetEntries()) == 0
+	})
+	if !gone {
+		t.Logf("server.Config offers %v, but an entry older than a one-second window is still served after four seconds", knobs)
+		return partial
+	}
+	return present
 }
 
 // RET-06: the fleet audit trail can be exported (a download from the UI

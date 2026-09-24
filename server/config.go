@@ -158,6 +158,18 @@ type Config struct {
 	// events see overflow drops. Default 256.
 	EventChannelSize int
 
+	// DataDir, when non-empty, is where the server keeps what it retains
+	// (ADR-013): the events it replays, the fleet audit trail and the
+	// host-metrics samples per node, in one SQLite file (store.FileName)
+	// that survives a restart. Empty (the default) keeps everything in
+	// bounded memory as before, and a restart starts empty.
+	DataDir string
+
+	// Retention is how long the store keeps a row. Reads never return a
+	// row older than it, and a janitor deletes those rows. Only meaningful
+	// with DataDir. Default 7 days; negative keeps everything.
+	Retention time.Duration
+
 	// MetricsAddr, when non-empty, runs a third HTTP listener on this
 	// address serving Prometheus /metrics (the default registry: go_* and
 	// process_* collectors; server-specific collectors are future work)
@@ -196,6 +208,9 @@ func (c Config) withDefaults() Config {
 	}
 	if c.EventChannelSize <= 0 {
 		c.EventChannelSize = 256
+	}
+	if c.Retention == 0 {
+		c.Retention = 7 * 24 * time.Hour
 	}
 	if strings.TrimSpace(c.UIAuthHeader) == "" {
 		c.UIAuthHeader = "X-Auth-User"

@@ -163,6 +163,37 @@ which is which:
 middleware for UIs. The resolved operator identity travels in the request
 context, which is what attributes audit entries.
 
+## Retention
+
+By default the server keeps nothing across a restart: recent events live in
+bounded ring buffers, the audit log in a ring of 2048 entries, and host
+metrics as the last sample per node. Give it a data directory and it
+retains, in one SQLite file it creates there:
+
+```bash
+admin-server --data-dir /var/lib/orbit-admin --retention 168h
+```
+
+- **Events** it forwards to the UI are written as they arrive, and at start
+  the replay buffers are filled from the file: a panel opened after a
+  restart shows what the previous process saw.
+- **The audit log** is written entry by entry and read from the file, so a
+  restart does not lose who changed what.
+- **Host metrics** are kept as a series per node, one sample per heartbeat.
+
+`--retention` (env `NUCLEUS_ADMIN_RETENTION`, default 7 days) is the window:
+nothing older is served, whether or not the janitor that deletes old rows
+has run yet, and it runs every minute. A negative value keeps everything.
+The audit log downloads from `GET /api/audit/export?format=csv|json` on the
+UI listener, behind the same authentication as the rest of the UI API, up to
+10000 rows newest first. Two servers must not share a data directory.
+
+The agent does its part: while its stream is down it keeps listening under
+the subscriptions the server had and parks the events in its ring buffer,
+which the next stream sends first. That buffer is bounded, so an outage
+longer than it keeps the newest events per type and counts the rest as
+dropped (`admin_agent_events_parked_total`, `admin_agent_events_dropped_total`).
+
 ## Operational notes
 
 - `/metrics` is opt-in. `--metrics-addr` (env `NUCLEUS_ADMIN_METRICS_ADDR`)

@@ -60,7 +60,7 @@ place for a capability, not the capability.
 
 ## The result
 
-**28 of 50 controls present. 2 partial. 20 absent.**
+**33 of 50 controls present. 2 partial. 15 absent.**
 
 | family | present | partial | absent |
 |---|---|---|---|
@@ -184,17 +184,35 @@ the new certificate on the next connection, the agent on its next connection
 certificate serving, with one WARN. The CA bundles (`--agent-client-ca`,
 `tls_ca_file`) are still read once; rotating a CA is not a control yet.
 
-### retention — 1 present · 0 partial · 6 absent
+### retention — 6 present · 0 partial · 1 absent
 
 | id | control | verdict | what is missing |
 |---|---|---|---|
-| `RET-01` | events the server replays to a new UI subscriber survive a server restart | **absent** | the replay is a per-kind in-memory ring (server/routing/replay.go): a second server started on the same address replays nothing to a new subscriber, and server.Config has no persistence knob to change that. |
-| `RET-02` | an event emitted while the agent has no stream is delivered after it reconnects | **absent** | the agent subscribes to the bus only while a stream is open and its ring buffer absorbs backpressure on an OPEN stream (agent/buffer/buffer.go): three events emitted during a server outage never arrive after the reconnect. |
+| `RET-01` | events the server replays to a new UI subscriber survive a server restart | **present** | with server.Config.DataDir the server retains events in a SQLite file (server/store) and warms its replay ring from it at start; a restarted server replays what the previous process received. Without a data directory the ring is in memory and a restart starts empty, as before. |
+| `RET-02` | an event emitted while the agent has no stream is delivered after it reconnects | **present** | when a stream ends the agent keeps listening to the bus under the filters the server had and parks the events in its ring buffer (agent/catcher.go); the next stream drains the buffer right after registering. Bounded by the buffer: an outage longer than it keeps the newest events per kind, counted as dropped. |
 | `RET-03` | host metrics have a history per node, not only the last sample | **absent** | the node registry keeps the latest HostMetrics per node (server/nodes/registry.go SetHostMetrics); NodeInfo carries one host_metrics message, not a series, and no RPC returns a history. |
-| `RET-04` | the fleet audit trail survives a server restart | **absent** | the fleet audit is an in-memory ring of 2048 entries (server/routing/audit.go AuditRing): after a restart ListAudit is empty. The panel's own trail is a table with a retention window; the fleet's is not. |
-| `RET-05` | a retention window is configurable and enforced | **absent** | server.Config has no retention, TTL, persistence or data-directory field: there is nothing to retain for and nothing to enforce it on. |
-| `RET-06` | the fleet audit trail can be exported (CSV or JSON download) | **absent** | no route on the UI listener answers an export path (the single-page fallback catches them) and ManageService has only GetRbac and ListAudit; the panel's CSV export has no fleet counterpart. |
+| `RET-04` | the fleet audit trail survives a server restart | **present** | with server.Config.DataDir every audit entry is written to the store and ListAudit reads from it, so a restarted server serves the trail the previous process wrote, within the retention window. |
+| `RET-05` | a retention window is configurable and enforced | **present** | server.Config.Retention (--retention, default 7 days, with --data-dir) bounds every read and a janitor deletes older rows; the probe sets a one-second window and watches an audit entry leave what the server serves. |
+| `RET-06` | the fleet audit trail can be exported (CSV or JSON download) | **present** | GET /api/audit/export?format=csv\|json on the UI listener, behind the same auth chain as the RPCs, downloads the trail ListAudit serves (the store when the server retains, the ring otherwise), newest first, up to 10000 rows. |
 | `RET-07` | the replay buffer is bounded, drops the oldest and exposes its size and counters | **present** | — |
+
+
+`RET-01`, `RET-02`, `RET-04`, `RET-05` and `RET-06` are **present** since A9
+`S6`. The server retains when given a data directory
+(`server.Config.DataDir`, `--data-dir`): events, the fleet audit trail and
+host-metrics samples go to one SQLite file, the replay ring is warmed from
+it at start, `ListAudit` and the download read from it, and the retention
+window (`--retention`, default 7 days) bounds every read before the janitor
+deletes the rows. The agent keeps listening under the server's
+subscriptions while it has no stream and parks the events in its ring
+buffer, which the next stream sends first. Without a data directory the
+server is the in-memory one it was, and a restart starts empty: the probes
+set the directory, which is the knob they asked for. `RET-03` stays absent
+for the reason `FDS-11` stayed partial for one release: the samples are
+retained, and the protocol does not yet declare the RPC that returns them —
+that change travels with the next protocol cut. Two mutations turned the
+probes red: a server that does not warm its replay ring from the store
+(`RET-01`), an agent that parks nothing (`RET-02`).
 
 ### ui — 2 present · 1 partial · 7 absent
 
