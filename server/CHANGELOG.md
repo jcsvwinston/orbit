@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0](https://github.com/jcsvwinston/orbit/compare/server/v0.16.0...server/v0.17.0) (2026-09-24)
+
+
+### Added
+
+* **fleet:** the server retains locally, with a window and a download, and the agent parks events while it has no stream (A9 S6) ([#515](https://github.com/jcsvwinston/orbit/issues/515)) ([d4aeb43](https://github.com/jcsvwinston/orbit/commit/d4aeb4368ff328487ac0a7cc3b79212a968f19b3))
+
 ## [0.16.0](https://github.com/jcsvwinston/orbit/compare/server/v0.15.0...server/v0.16.0) (2026-09-22)
 
 

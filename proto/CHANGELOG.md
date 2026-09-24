@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/jcsvwinston/orbit/compare/proto/v0.6.0...proto/v0.7.0) (2026-09-24)
+
+
+### Added
+
+* **proto:** the wire declares what retention, alerts and a fleet of servers need — one additive change for A9 S6 to S8 ([#518](https://github.com/jcsvwinston/orbit/issues/518)) ([307d4ed](https://github.com/jcsvwinston/orbit/commit/307d4ed3550a92e73518d5fb25f6c579e424b6ea))
+
 ## [0.6.0](https://github.com/jcsvwinston/orbit/compare/proto/v0.5.0...proto/v0.6.0) (2026-09-22)
 
 
