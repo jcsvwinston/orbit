@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.15.0](https://github.com/jcsvwinston/orbit/compare/v1.14.0...v1.15.0) (2026-09-24)
+
+
+### Added
+
+* **fleet:** the server retains locally, with a window and a download, and the agent parks events while it has no stream (A9 S6) ([#515](https://github.com/jcsvwinston/orbit/issues/515)) ([d4aeb43](https://github.com/jcsvwinston/orbit/commit/d4aeb4368ff328487ac0a7cc3b79212a968f19b3))
+* **proto:** the wire declares what retention, alerts and a fleet of servers need — one additive change for A9 S6 to S8 ([#518](https://github.com/jcsvwinston/orbit/issues/518)) ([307d4ed](https://github.com/jcsvwinston/orbit/commit/307d4ed3550a92e73518d5fb25f6c579e424b6ea))
+
 ## [1.14.0](https://github.com/jcsvwinston/orbit/compare/v1.13.0...v1.14.0) (2026-09-22)
 
 
