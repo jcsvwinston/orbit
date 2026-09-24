@@ -153,6 +153,20 @@ always matches a registered node. (The agent stamps it over the in-process
 bus's own node label, which is host-local and does not correlate with the fleet
 registry.)
 
+## When the stream is down
+
+Losing the server does not lose the events. While the agent has no stream
+it keeps listening to the application's event bus under the subscriptions
+the server had, and parks what it hears in its per-type ring buffer; the
+next stream sends the parked events right after registering, before
+anything new. The buffer is bounded (default 64 per type, the same buffer
+that absorbs backpressure on an open stream), so an outage longer than it
+keeps the newest events per type and counts the rest in
+`admin_agent_events_dropped_total{reason="buffer_full"}`; what was parked is
+counted in `admin_agent_events_parked_total`. An agent with no
+subscriptions when the stream ended parks nothing: the server had asked
+for nothing.
+
 ## Hot-path cost
 
 The agent never blocks the framework's request thread. Every producer-side path

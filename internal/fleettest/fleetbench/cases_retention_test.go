@@ -13,29 +13,30 @@ package fleetbench
 func controlsRetention() []control {
 	return []control{
 		{id: "RET-01", family: "retention", title: "events the server replays to a new UI subscriber survive a server restart",
-			want: absent, note: "the replay is a per-kind in-memory ring (server/routing/replay.go): a second server started on " +
-				"the same address replays nothing to a new subscriber, and server.Config has no persistence knob to change that.",
+			want: present, note: "with server.Config.DataDir the server retains events in a SQLite file (server/store) and warms " +
+				"its replay ring from it at start; a restarted server replays what the previous process received. Without a data " +
+				"directory the ring is in memory and a restart starts empty, as before.",
 			probe: probeReplaySurvivesRestart},
 		{id: "RET-02", family: "retention", title: "an event emitted while the agent has no stream is delivered after it reconnects",
-			want: absent, note: "the agent subscribes to the bus only while a stream is open and its ring buffer absorbs " +
-				"backpressure on an OPEN stream (agent/buffer/buffer.go): three events emitted during a server outage never " +
-				"arrive after the reconnect.",
+			want: present, note: "when a stream ends the agent keeps listening to the bus under the filters the server had and " +
+				"parks the events in its ring buffer (agent/catcher.go); the next stream drains the buffer right after registering. " +
+				"Bounded by the buffer: an outage longer than it keeps the newest events per kind, counted as dropped.",
 			probe: probeOfflineEventsDelivered},
 		{id: "RET-03", family: "retention", title: "host metrics have a history per node, not only the last sample",
 			want: absent, note: "the node registry keeps the latest HostMetrics per node (server/nodes/registry.go SetHostMetrics); " +
 				"NodeInfo carries one host_metrics message, not a series, and no RPC returns a history.",
 			probe: probeHostMetricsHistory},
 		{id: "RET-04", family: "retention", title: "the fleet audit trail survives a server restart",
-			want: absent, note: "the fleet audit is an in-memory ring of 2048 entries (server/routing/audit.go AuditRing): after a " +
-				"restart ListAudit is empty. The panel's own trail is a table with a retention window; the fleet's is not.",
+			want: present, note: "with server.Config.DataDir every audit entry is written to the store and ListAudit reads from it, " +
+				"so a restarted server serves the trail the previous process wrote, within the retention window.",
 			probe: probeAuditSurvivesRestart},
 		{id: "RET-05", family: "retention", title: "a retention window is configurable and enforced",
-			want: absent, note: "server.Config has no retention, TTL, persistence or data-directory field: there is nothing to " +
-				"retain for and nothing to enforce it on.",
+			want: present, note: "server.Config.Retention (--retention, default 7 days, with --data-dir) bounds every read and a " +
+				"janitor deletes older rows; the probe sets a one-second window and watches an audit entry leave what the server serves.",
 			probe: probeRetentionWindow},
 		{id: "RET-06", family: "retention", title: "the fleet audit trail can be exported (CSV or JSON download)",
-			want: absent, note: "no route on the UI listener answers an export path (the single-page fallback catches them) and " +
-				"ManageService has only GetRbac and ListAudit; the panel's CSV export has no fleet counterpart.",
+			want: present, note: "GET /api/audit/export?format=csv|json on the UI listener, behind the same auth chain as the RPCs, " +
+				"downloads the trail ListAudit serves (the store when the server retains, the ring otherwise), newest first, up to 10000 rows.",
 			probe: probeAuditExport},
 		{id: "RET-07", family: "retention", title: "the replay buffer is bounded, drops the oldest and exposes its size and counters",
 			want: present, probe: probeReplayBounded},

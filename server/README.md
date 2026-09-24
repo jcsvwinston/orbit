@@ -140,6 +140,16 @@ strict `Content-Security-Policy` (self-contained SPA, no external
 origins), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`
 and `Referrer-Policy: no-referrer`.
 
+## Retention
+
+`--data-dir` (env `NUCLEUS_ADMIN_DATA_DIR`) makes the server keep events,
+the fleet audit trail and host-metrics samples in one SQLite file under
+that directory, across restarts; `--retention` (env
+`NUCLEUS_ADMIN_RETENTION`, default `168h`) is how long a row is served and
+kept. Without a data directory everything stays in bounded memory, as
+before. The audit trail downloads from `GET /api/audit/export?format=csv|json`
+on the UI listener. See `docs/adrs/ADR-013`.
+
 ## Sub-packages
 
 | Sub-package         | Responsibility                                                                                                            |

@@ -96,7 +96,10 @@ func (s *ManageService) ListAudit(_ context.Context, req *connect.Request[adminv
 	if limit <= 0 || limit > defaultAuditListLimit {
 		limit = defaultAuditListLimit
 	}
-	entries := s.state.Audit.List(limit)
+	entries, err := s.auditEntries(limit)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
 	out := &adminv1.ListAuditResponse{Entries: make([]*adminv1.AuditEntry, 0, len(entries))}
 	for _, e := range entries {
 		out.Entries = append(out.Entries, &adminv1.AuditEntry{
@@ -110,6 +113,27 @@ func (s *ManageService) ListAudit(_ context.Context, req *connect.Request[adminv
 		})
 	}
 	return connect.NewResponse(out), nil
+}
+
+// auditEntries reads the trail: from the store when the server retains
+// (bounded by its window, and it survived any restart), from the ring
+// otherwise. The store is flushed first so a caller reads its own write.
+func (s *ManageService) auditEntries(limit int) ([]routing.AuditEntry, error) {
+	if s.state.Store == nil {
+		return s.state.Audit.List(limit), nil
+	}
+	if err := s.state.Store.Flush(context.Background()); err != nil {
+		return nil, fmt.Errorf("admin server: audit store: %w", err)
+	}
+	rows, err := s.state.Store.ListAudit(limit)
+	if err != nil {
+		return nil, fmt.Errorf("admin server: audit store: %w", err)
+	}
+	out := make([]routing.AuditEntry, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, routing.AuditEntry{Time: r.Time, Actor: r.Actor, Action: r.Action, Target: r.Target, NodeID: r.NodeID, Before: r.Before, After: r.After})
+	}
+	return out, nil
 }
 
 // pickAgent mirrors DataStudioService.pickAgent for node addressing

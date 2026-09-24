@@ -25,8 +25,10 @@ import (
 	"github.com/jcsvwinston/orbit/server/nodes"
 	"github.com/jcsvwinston/orbit/server/routing"
 	"github.com/jcsvwinston/orbit/server/services"
+	"github.com/jcsvwinston/orbit/server/store"
 	"github.com/jcsvwinston/orbit/server/ui"
 
+	adminv1 "github.com/jcsvwinston/orbit/proto/gen/go/nucleus/admin/v1"
 	adminv1connect "github.com/jcsvwinston/orbit/proto/gen/go/nucleus/admin/v1/adminv1connect"
 )
 
@@ -34,6 +36,10 @@ import (
 // listeners: one for agents and one for UIs/operators. Both serve over
 // HTTP/2 (h2c when no TLS config is provided).
 type Server struct {
+	// store is the retention store, nil without Config.DataDir. Opened
+	// in Run, before the listeners, and closed with them.
+	store *store.Store
+
 	cfg Config
 
 	state *services.State
@@ -113,6 +119,9 @@ func New(cfg Config) *Server {
 	protectedUI.Handle(adminv1connect.NewControlServiceHandler(controlSvc, handlerOpts...))
 	protectedUI.Handle(adminv1connect.NewDataStudioServiceHandler(dataStudioSvc, handlerOpts...))
 	protectedUI.Handle(adminv1connect.NewManageServiceHandler(manageSvc, handlerOpts...))
+	// The audit trail as a file, behind the same auth chain as the RPCs:
+	// a download the Audit log screen links to (ADR-013).
+	protectedUI.Handle("GET /api/audit/export", auditExportHandler(state))
 	protectedUI.Handle("/", staticUIHandler())
 	uiRoot := http.NewServeMux()
 	uiRoot.HandleFunc("/healthz", healthOK)
@@ -230,13 +239,32 @@ func (s *Server) Run(ctx context.Context) error {
 			"reason", "--ui-insecure-open set; local development only")
 	}
 
+	// Retention (ADR-013): open the store before any listener, warm the
+	// replay ring with what the last process retained, and purge on a
+	// timer. Without a data directory nothing here runs and the server
+	// is the in-memory one it always was.
+	if dir := strings.TrimSpace(s.cfg.DataDir); dir != "" {
+		st, err := store.Open(dir, s.cfg.Retention)
+		if err != nil {
+			return fmt.Errorf("admin server: %w", err)
+		}
+		s.store = st
+		s.state.Store = st
+		s.warmReplay()
+		go s.purgeRetained(ctx)
+		s.logger.Info("admin server retains locally",
+			"data_dir", dir, "file", store.FileName, "retention", s.cfg.Retention)
+	}
+
 	agentLn, err := net.Listen("tcp", s.cfg.AgentAddr)
 	if err != nil {
+		s.closeStore()
 		return fmt.Errorf("admin server: listen agent %s: %w", s.cfg.AgentAddr, err)
 	}
 	uiLn, err := net.Listen("tcp", s.cfg.UIAddr)
 	if err != nil {
 		_ = agentLn.Close()
+		s.closeStore()
 		return fmt.Errorf("admin server: listen ui %s: %w", s.cfg.UIAddr, err)
 	}
 	// TLS is applied at the listener, not left on http.Server.TLSConfig:
@@ -252,6 +280,7 @@ func (s *Server) Run(ctx context.Context) error {
 		if err != nil {
 			_ = agentLn.Close()
 			_ = uiLn.Close()
+			s.closeStore()
 			return fmt.Errorf("admin server: listen metrics %s: %w", s.cfg.MetricsAddr, err)
 		}
 	}
@@ -309,12 +338,81 @@ func (s *Server) Run(ctx context.Context) error {
 	case <-ctx.Done():
 		shutdownErr := s.shutdown(2 * time.Second)
 		wg.Wait()
+		s.closeStore()
 		return shutdownErr
 	case err := <-errCh:
 		_ = s.shutdown(time.Second)
 		wg.Wait()
+		s.closeStore()
 		return err
 	}
+}
+
+// warmReplay fills the replay ring from the store, so a UI that opens
+// right after a restart sees what the previous process saw — the ring
+// keeps at most its capacity per kind; the store hands over the newest.
+func (s *Server) warmReplay() {
+	caps := map[adminv1.EventType]int{
+		adminv1.EventType_EVENT_TYPE_HTTP_REQUEST:   s.cfg.HTTPReplayBufferSize,
+		adminv1.EventType_EVENT_TYPE_SQL_STATEMENT:  s.cfg.SQLReplayBufferSize,
+		adminv1.EventType_EVENT_TYPE_SESSION_CHANGE: s.cfg.SessionReplayBufferSize,
+		adminv1.EventType_EVENT_TYPE_CUSTOM:         s.cfg.CustomReplayBufferSize,
+	}
+	for kind, capacity := range caps {
+		if capacity <= 0 {
+			continue
+		}
+		events, err := s.store.RecentEvents(kind, capacity)
+		if err != nil {
+			s.logger.Warn("admin server: could not warm the replay ring from the store", "kind", kind, "error", err)
+			continue
+		}
+		for _, ev := range events {
+			s.state.Replay.Push(ev)
+		}
+	}
+}
+
+// purgeRetained deletes rows older than the retention window on a timer:
+// every minute, or ten times per window when the window is shorter than
+// ten minutes. Reads are bounded by the window regardless; the purge is
+// what keeps the file from growing.
+func (s *Server) purgeRetained(ctx context.Context) {
+	if s.cfg.Retention <= 0 {
+		return
+	}
+	interval := time.Minute
+	if s.cfg.Retention/10 < interval {
+		interval = s.cfg.Retention / 10
+	}
+	if interval < 100*time.Millisecond {
+		interval = 100 * time.Millisecond
+	}
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if n, err := s.store.Purge(); err != nil {
+				s.logger.Warn("admin server: retention purge failed", "error", err)
+			} else if n > 0 {
+				s.logger.Debug("admin server: retention purge", "rows", n)
+			}
+		}
+	}
+}
+
+func (s *Server) closeStore() {
+	if s.store == nil {
+		return
+	}
+	if err := s.store.Close(); err != nil {
+		s.logger.Warn("admin server: closing the retention store", "error", err)
+	}
+	s.store = nil
+	s.state.Store = nil
 }
 
 // shutdown gracefully closes every listener. Best-effort; bounded by

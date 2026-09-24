@@ -168,6 +168,7 @@ type Agent struct {
 	nodeID string
 
 	bufs       *buffer.PerKind
+	catcher    *catcher // bus listener that parks events while no stream is open (nil while one is)
 	metrics    *metrics.Metrics
 	dialer     *connection.Dialer
 	dataStudio *dstudio.Handler
@@ -328,6 +329,7 @@ func (a *Agent) Connected() <-chan struct{} {
 // errors it sleeps according to the dialer backoff and retries. Returns
 // nil on graceful shutdown.
 func (a *Agent) Run(ctx context.Context) error {
+	defer a.stopCatcher()
 	if a == nil {
 		return errors.New("admin agent: nil agent")
 	}
@@ -439,6 +441,10 @@ func (a *Agent) runOnce(ctx context.Context) error {
 		streamCfg.Rbac = a.rbac
 	}
 	st := stream.New(res.Client, streamCfg)
+	// The stream that is about to open drains the ring buffer right after
+	// registering, so whatever the catcher parked during the outage goes
+	// out first; stop catching now, before the stream subscribes itself.
+	a.stopCatcher()
 
 	// streamLifeCtx is intentionally NOT a child of ctx. It is cancelled
 	// only after the agent has had a chance to flush a Goodbye frame and
@@ -472,6 +478,11 @@ func (a *Agent) runOnce(ctx context.Context) error {
 		}
 		return ctx.Err()
 	case err := <-streamDone:
+		// The stream is gone and the next one is a dial away. Keep
+		// listening to the bus under the filters the server had, into the
+		// ring buffer, so the outage leaves a gap in delivery, not in the
+		// record (ADR-013).
+		a.startCatcher(st.ParkedFilters())
 		if connect.CodeOf(err) == connect.CodeUnauthenticated {
 			a.warnTokenRejected(res.Endpoint)
 		}

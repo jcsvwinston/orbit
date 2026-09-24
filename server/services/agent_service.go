@@ -20,6 +20,7 @@ import (
 	"github.com/jcsvwinston/orbit/server/auth"
 	"github.com/jcsvwinston/orbit/server/nodes"
 	"github.com/jcsvwinston/orbit/server/routing"
+	"github.com/jcsvwinston/orbit/server/store"
 
 	adminv1 "github.com/jcsvwinston/orbit/proto/gen/go/nucleus/admin/v1"
 	adminv1connect "github.com/jcsvwinston/orbit/proto/gen/go/nucleus/admin/v1/adminv1connect"
@@ -35,6 +36,7 @@ type State struct {
 	DataStudio     *routing.DataStudioRouter
 	Rbac           *routing.RbacRouter
 	Audit          *routing.AuditRing
+	Store          *store.Store // nil without server.Config.DataDir: nothing is retained
 	Logger         *slog.Logger
 	SendChanBuffer int
 	OnAgentSubMode func(*nodes.Entry, *routing.EventBus) // hook called whenever bus demand changes
@@ -146,13 +148,16 @@ func (s *AgentService) Stream(ctx context.Context, stream *connect.BidiStream[ad
 		case *adminv1.Frame_Event:
 			if body.Event != nil {
 				s.state.Replay.Push(body.Event)
+				s.state.Store.AppendEvent(body.Event)
 				s.state.EventBus.Publish(body.Event)
 			}
 		case *adminv1.Frame_Heartbeat:
 			// last-seen already touched above; keep the newest host
-			// metrics sample for the fleet UI.
+			// metrics sample for the fleet UI, and the series when the
+			// server retains.
 			if body.Heartbeat != nil {
 				s.state.Nodes.SetHostMetrics(info.NodeID, body.Heartbeat.HostMetrics)
+				s.state.Store.AppendHostMetrics(info.NodeID, body.Heartbeat.HostMetrics)
 			}
 		case *adminv1.Frame_SnapshotResponse:
 			s.state.Snapshots.Resolve(body.SnapshotResponse)

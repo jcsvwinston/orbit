@@ -21,6 +21,7 @@
 | [ADR-010](ADR-010-acciones-y-pantallas-de-la-aplicacion.md) | La aplicación añade sus verbos y sus pantallas al panel, por adición y bajo sus mismas reglas | Accepted (2026-09-18) | ADR-001 · ADR-004 · ADR-007 |
 | [ADR-011](ADR-011-la-ropa-del-producto.md) | El panel lleva la ropa del producto — marca, tarjetas propias e idioma, sin traducir los datos | Accepted (2026-09-18) | ADR-004 · ADR-010 |
 | [ADR-012](ADR-012-contrato-datasource-modulo-hoja.md) | El contrato `datasource` es un módulo hoja — la segunda arista que ADR-006 permite (extraído en A9 `S4`, con el adaptador Nucleus como subpaquete) | Accepted (2026-09-21) | ADR-001 · ADR-002 · ADR-006 · quantum QADR-0002 · QADR-0010 |
+| [ADR-013](ADR-013-retencion-local-del-plano-fleet.md) | El servidor del fleet retiene localmente — eventos, audit y métricas con ventana, en un fichero opcional; el agente aparca lo que ocurre sin stream | Accepted · implemented (2026-09-24, A9 `S6`) | ADR-003 · ADR-006 · ADR-008 · quantum QADR-0008 |
 
 **ADR-002 está implementado** (2026-09-22): la D2 de la auditoría integral
 2026-08-30 decidió (2026-08-31) que el Data Studio del plano fleet consuma el

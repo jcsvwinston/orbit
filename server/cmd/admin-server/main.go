@@ -43,6 +43,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"syscall"
+	"time"
 
 	server "github.com/jcsvwinston/orbit/server"
 )
@@ -96,6 +97,8 @@ func run(args []string) error {
 	uiEmailHeader := fs.String("ui-email-header", envOr("NUCLEUS_ADMIN_UI_EMAIL_HEADER", "X-Auth-Email"), "trusted-proxy header carrying user email")
 	uiTrustedCIDRs := fs.String("ui-trusted-cidrs", os.Getenv("NUCLEUS_ADMIN_UI_TRUSTED_CIDRS"), "comma-separated CIDRs allowed to set trusted-proxy headers")
 	uiProxySecret := fs.String("ui-proxy-secret", os.Getenv("NUCLEUS_ADMIN_UI_PROXY_SECRET"), "shared secret the trusted proxy must echo in X-Auth-Proxy-Secret before its forwarded identity is honoured; empty keeps CIDR-only trust")
+	dataDir := fs.String("data-dir", os.Getenv("NUCLEUS_ADMIN_DATA_DIR"), "directory where the server retains events, the audit trail and host-metrics samples across restarts (one SQLite file); empty keeps everything in bounded memory")
+	retention := fs.Duration("retention", envDuration("NUCLEUS_ADMIN_RETENTION", 7*24*time.Hour), "how long the retained rows are kept and served (with --data-dir); a negative value keeps everything")
 	uiTenantHeader := fs.String("ui-tenant-header", envOr("NUCLEUS_ADMIN_UI_TENANT_HEADER", "X-Auth-Tenant"), "trusted-proxy header carrying the tenant the operator is scoped to; sent to the agent with the operator identity")
 	uiRoleHeader := fs.String("ui-role-header", envOr("NUCLEUS_ADMIN_UI_ROLE_HEADER", "X-Auth-Role"), "trusted-proxy header carrying the operator role; value \"viewer\" makes that operator read-only")
 	uiReadOnly := fs.Bool("ui-read-only", envBool("NUCLEUS_ADMIN_UI_READ_ONLY"), "make every UI operator read-only (Data Studio mutations refused)")
@@ -144,6 +147,8 @@ func run(args []string) error {
 		UIInsecureOpen:               *uiInsecureOpen,
 		DataStudioAllowedModels:      splitCSV(*dsAllowedModels),
 		MetricsAddr:                  strings.TrimSpace(*metricsAddr),
+		DataDir:                      strings.TrimSpace(*dataDir),
+		Retention:                    *retention,
 		Logger:                       logger,
 	}
 
@@ -269,4 +274,15 @@ func splitCSV(in string) []string {
 		out = append(out, p)
 	}
 	return out
+}
+
+// envDuration reads a duration from the environment, falling back to def
+// when unset or unparsable (the flag's help names the default).
+func envDuration(key string, def time.Duration) time.Duration {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+	}
+	return def
 }

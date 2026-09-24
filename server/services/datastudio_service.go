@@ -14,6 +14,7 @@ import (
 	"github.com/jcsvwinston/orbit/server/auth"
 	"github.com/jcsvwinston/orbit/server/nodes"
 	"github.com/jcsvwinston/orbit/server/routing"
+	"github.com/jcsvwinston/orbit/server/store"
 
 	adminv1 "github.com/jcsvwinston/orbit/proto/gen/go/nucleus/admin/v1"
 	adminv1connect "github.com/jcsvwinston/orbit/proto/gen/go/nucleus/admin/v1/adminv1connect"
@@ -370,13 +371,18 @@ func (s *DataStudioService) audit(ctx context.Context, action, target, nodeID st
 	if actor == "" {
 		actor = "unknown"
 	}
-	s.state.Audit.Append(routing.AuditEntry{
+	entry := routing.AuditEntry{
 		Actor:  actor,
 		Action: action,
 		Target: target,
 		NodeID: nodeID,
 		Before: boundSide(sides.Before),
 		After:  boundSide(sides.After),
+	}
+	s.state.Audit.Append(entry)
+	s.state.Store.AppendAudit(store.AuditEntry{
+		Actor: entry.Actor, Action: entry.Action, Target: entry.Target, NodeID: entry.NodeID,
+		Before: entry.Before, After: entry.After,
 	})
 }
 

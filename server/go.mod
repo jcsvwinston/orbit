@@ -14,6 +14,7 @@ require (
 	github.com/prometheus/client_golang v1.24.1
 	golang.org/x/net v0.58.0
 	google.golang.org/protobuf v1.36.12
+	modernc.org/sqlite v1.58.0
 )
 
 require (
@@ -47,5 +48,4 @@ require (
 	modernc.org/libc v1.75.6 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
-	modernc.org/sqlite v1.58.0 // indirect
 )
