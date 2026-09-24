@@ -30,7 +30,7 @@ import (
 	"github.com/jcsvwinston/orbit/server/routing"
 	"github.com/jcsvwinston/orbit/server/services"
 	"github.com/jcsvwinston/orbit/server/store"
-	"github.com/jcsvwinston/orbit/server/ui"
+	orbitui "github.com/jcsvwinston/orbit/ui"
 
 	adminv1 "github.com/jcsvwinston/orbit/proto/gen/go/nucleus/admin/v1"
 	adminv1connect "github.com/jcsvwinston/orbit/proto/gen/go/nucleus/admin/v1/adminv1connect"
@@ -572,7 +572,9 @@ func securityHeaders(next http.Handler) http.Handler {
 // build pipeline has not produced dist (fresh checkout), it serves the
 // PlaceholderHTML page.
 func staticUIHandler() http.Handler {
-	if uiFS := ui.FS(); uiFS != nil {
+	// The fleet plane's entry of the one frontend project (ADR-015),
+	// embedded by the ui module the root module embeds too.
+	if uiFS := orbitui.Fleet(); uiFS != nil {
 		return spaHandler(uiFS)
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -581,9 +583,35 @@ func staticUIHandler() http.Handler {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(ui.PlaceholderHTML))
+		_, _ = w.Write([]byte(placeholderHTML))
 	})
 }
+
+// placeholderHTML is what the UI listener answers when the embedded dist
+// is somehow absent: the RPCs work, the SPA does not.
+const placeholderHTML = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Orbit admin server (no UI built)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html,body{background:#0a0a0a;color:#e4e4e7;font:14px/1.5 system-ui,sans-serif;margin:0}
+  main{max-width:640px;margin:64px auto;padding:0 24px}
+  code{background:#1c1c1c;padding:2px 6px;border-radius:4px}
+  h1{font-size:20px;font-weight:600}
+  .muted{color:#a1a1aa}
+</style>
+</head>
+<body>
+<main>
+<h1>Orbit admin server</h1>
+<p class="muted">The Connect-RPC services are up; the embedded UI is missing from this build.
+Run <code>npm ci &amp;&amp; npm run build</code> in <code>ui/</code> and rebuild the binary.</p>
+</main>
+</body>
+</html>
+`
 
 // spaHandler serves static assets from fsys with SPA-style fallback to
 // index.html. Hash-based asset filenames cache fine; index.html should

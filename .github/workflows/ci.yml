@@ -35,7 +35,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [., datasource, proto, agent, server, quarkbridge, quarkdatasource]
+        module: [., datasource, ui, proto, agent, server, quarkbridge, quarkdatasource]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -89,7 +89,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [., datasource, proto, agent, server, quarkbridge, quarkdatasource]
+        module: [., datasource, ui, proto, agent, server, quarkbridge, quarkdatasource]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -288,7 +288,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [., datasource, proto, agent, server, quarkbridge, quarkdatasource]
+        module: [., datasource, ui, proto, agent, server, quarkbridge, quarkdatasource]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -365,7 +365,7 @@ jobs:
           fi
 
   ui:
-    name: UI (typecheck, lint, build)
+    name: UI (one project, two entries — typecheck, lint, test, build, embedded dist freshness)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -380,50 +380,20 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
-      - run: npm run build
-
-  # -------------------------------------------------------------------------
-  # The embedded admin SPA ships as a COMMITTED dist (internal/admin/ui/dist,
-  # embedded via go:embed) so consumers get the panel without a Node
-  # toolchain. That makes drift silent: the dist once lagged its own source
-  # (the source said Orbit while the embedded bundle still hardcoded
-  # "Nucleus Admin" three times), and nothing noticed because the SPA has no
-  # gate at all. Rebuilding and diffing proves the committed dist is exactly
-  # what ui/src produces — the build is deterministic (vite/rollup/esbuild
-  # pinned by package-lock).
-  # -------------------------------------------------------------------------
-  admin-ui:
-    name: Admin SPA (embedded dist freshness)
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: internal/admin/ui
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: internal/admin/ui/package-lock.json
-      - run: npm ci
-      - run: npm run lint
       - run: npm test
       - run: npm run build
+      # The dist both binaries embed is committed (ADR-015): a source change
+      # without a rebuild ships the old frontend. The build above must
+      # reproduce the committed copy byte for byte.
       - name: dist matches source
         run: |
           if ! git diff --quiet -- dist || [ -n "$(git status --porcelain dist)" ]; then
-            echo "internal/admin/ui/dist is stale. Run 'npm ci && npm run build' in internal/admin/ui and commit the dist." >&2
+            echo "ui/dist is stale. Run 'npm ci && npm run build' in ui/ and commit the dist." >&2
             git status --porcelain dist >&2
             git --no-pager diff --stat dist >&2
             exit 1
           fi
 
-  # The half of the admin bench a Go probe cannot measure: contrast, focus
-  # order, keyboard reach, whether a dialog can be dismissed. None of those
-  # exist until a browser has laid the page out, so this lane installs one.
-  # ORBIT_BENCH_BROWSER=required turns the local "skip when not installed"
-  # into a failure: a lane that went green because the instrument was missing
-  # would be the worst of both.
   admin-browser-bench:
     name: Admin bench (browser)
     runs-on: ubuntu-latest
@@ -472,7 +442,6 @@ jobs:
       - vuln
       - docs
       - ui
-      - admin-ui
       - admin-browser-bench
 
     steps:
@@ -491,7 +460,6 @@ jobs:
             vuln ${{ needs.vuln.result }}
             docs ${{ needs.docs.result }}
             ui ${{ needs.ui.result }}
-            admin-ui ${{ needs.admin-ui.result }}
             admin-browser-bench ${{ needs.admin-browser-bench.result }}
         run: |
           set -euo pipefail

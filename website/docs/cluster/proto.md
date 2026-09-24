@@ -20,7 +20,7 @@ installed:
 - `gen/go/nucleus/admin/v1/` — Go message structs and Connect-RPC service
   stubs, imported by [`orbit/agent`](./agent.md) and
   [`orbit/server`](./server.md).
-- `../ui/src/gen/nucleus/admin/v1/` — TypeScript stubs consumed by the
+- `../ui/src/fleet/gen/nucleus/admin/v1/` — TypeScript stubs consumed by the
   Connect-Web client in the UI.
 
 Regenerating is a manual step: run `make proto` after any `.proto` change.

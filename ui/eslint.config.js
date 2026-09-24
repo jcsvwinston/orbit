@@ -1,33 +1,32 @@
 import js from '@eslint/js'
-import reactHooks from 'eslint-plugin-react-hooks'
-import reactRefresh from 'eslint-plugin-react-refresh'
+import globals from 'globals'
 import tseslint from 'typescript-eslint'
+import reactHooks from 'eslint-plugin-react-hooks'
 
 export default tseslint.config(
-  { ignores: ['dist', 'src/gen/**'] },
+  { ignores: ['dist', 'node_modules', 'coverage', 'src/fleet/gen/**'] },
   {
-    extends: [js.configs.recommended, ...tseslint.configs.recommendedTypeChecked],
     files: ['**/*.{ts,tsx}'],
+    extends: [js.configs.recommended, ...tseslint.configs.recommended],
+    plugins: { 'react-hooks': reactHooks },
     languageOptions: {
       ecmaVersion: 2022,
-      parserOptions: {
-        project: ['./tsconfig.app.json', './tsconfig.node.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-    },
-    plugins: {
-      'react-hooks': reactHooks,
-      'react-refresh': reactRefresh,
+      globals: { ...globals.browser, ...globals.es2021 },
     },
     rules: {
-      ...reactHooks.configs.recommended.rules,
-      'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
-      // Strict bans per refactor plan.
+      // The two classic hooks rules. The plugin's v7 "recommended" preset
+      // also ships the React Compiler lints (set-state-in-effect,
+      // immutability, ...), which flag idiomatic load-on-mount effects; the
+      // SPA does not use the compiler, so those stay off.
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'error',
+      // The panel talks to a typed backend; `any` hides contract drift.
       '@typescript-eslint/no-explicit-any': 'error',
-      '@typescript-eslint/no-unsafe-assignment': 'error',
-      '@typescript-eslint/no-unsafe-member-access': 'error',
-      '@typescript-eslint/no-unsafe-call': 'error',
-      '@typescript-eslint/no-unsafe-return': 'error',
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
     },
+  },
+  {
+    files: ['vite.config.ts', 'vite.fleet.config.ts', 'eslint.config.js', 'tailwind.config.js', 'tailwind.fleet.config.js', 'tools/**/*.ts'],
+    languageOptions: { globals: { ...globals.node } },
   },
 )

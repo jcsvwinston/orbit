@@ -12,26 +12,26 @@ package fleetbench
 func controlsUI() []control {
 	return []control{
 		{id: "UI-01", family: "ui", title: "one frontend project serves both planes: the server and the panel embed the same dist",
-			want: absent, note: "two projects: ui/package.json builds into server/ui/dist (embedded by server/ui/embed.go) and " +
-				"internal/admin/ui/package.json builds into internal/admin/ui/dist (embedded by internal/admin/ui_fallback.go).",
+			want: present, note: "one project (ui/package.json) with two entries builds into one dist that the ui module embeds " +
+				"(ui/embed.go, ADR-015); the admin server serves dist/fleet and the panel dist/panel, both through that module, " +
+				"and neither embeds a dist of its own.",
 			probe: probeOneFrontendProject},
 		{id: "UI-02", family: "ui", title: "the two planes share design tokens: one token source imported by both, or one project",
-			want: absent, note: "ui/src/index.css declares numbered --t0…--t53 custom properties and internal/admin/ui/src/index.css " +
-				"declares HSL shadcn-style ones; neither stylesheet nor tailwind config imports a file the other one does, " +
-				"relative or through a package that resolves inside the repository.",
+			want: present, note: "one project: both entries' stylesheets import src/shared/tokens.css, the design system's tokens. " +
+				"The fleet's screens still read their numbered palette (src/fleet/index.css) until they are re-skinned onto the " +
+				"shared names; the source is one.",
 			probe: probeSharedDesignTokens},
 		{id: "UI-03", family: "ui", title: "the fleet UI has automated tests: a runner, a test script and at least one spec",
-			want: absent, note: "ui/package.json has no test script and no test runner among its devDependencies, and no " +
-				"*.test.* or *.spec.* file exists under ui/; the panel has vitest and a test suite.",
+			want: present, note: "the one project runs vitest (npm test) over the panel's suite and the fleet's specs " +
+				"(src/fleet/lib/*.test.ts); the CI lane runs it before building.",
 			probe: probeFleetUITests},
 		{id: "UI-04", family: "ui", title: "CI checks that the fleet UI's committed dist is fresh, as the panel's lane does",
-			want: absent, note: "the ui job in .github/workflows/ci.yml runs typecheck, lint and build in ui/ and never diffs " +
-				"server/ui/dist afterwards; the admin-ui job does exactly that for internal/admin/ui/dist.",
+			want: present, note: "the ui job in .github/workflows/ci.yml typechecks, lints, tests and builds the one project and " +
+				"fails when the committed ui/dist — the one both binaries embed — differs from what it built.",
 			probe: probeFleetDistFreshnessGate},
 		{id: "UI-05", family: "ui", title: "a bundle-size budget covers the fleet UI (a test constant, a size-limit configuration or a CI step)",
-			want: absent, note: "server/ui has no test file naming a byte budget (a constant like `<name>Budget = N * 1024`), " +
-				"ui/package.json has no size-limit configuration or tooling, and no CI job in ui/ enforces a size; the only " +
-				"budget in the repository is the panel's (internal/admin/ui_embed_test.go).",
+			want: present, note: "ui/embed_test.go names a budget per entry (panel and fleet initial JS and CSS) and fails the ui " +
+				"module's tests when the embedded dist exceeds it; the fleet's is its whole bundle today, a ceiling for the re-skin.",
 			probe: probeFleetBundleBudget},
 		{id: "UI-06", family: "ui", title: "the fleet UI's generated stubs are connect-es 2 / protobuf-es 2, in the dependencies and in the generators",
 			want: absent, note: "ui/package.json pins @connectrpc/connect ^1.6.1, @connectrpc/connect-web ^1.7.0 and " +

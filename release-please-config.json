@@ -69,7 +69,8 @@
         "proto",
         "agent",
         "server",
-        "datasource"
+        "datasource",
+        "ui"
       ],
       "extra-files": [
         {
@@ -128,6 +129,13 @@
       "package-name": "github.com/jcsvwinston/orbit/datasource",
       "release-type": "go",
       "component": "datasource",
+      "include-component-in-tag": true,
+      "initial-version": "1.0.0"
+    },
+    "ui": {
+      "package-name": "github.com/jcsvwinston/orbit/ui",
+      "release-type": "go",
+      "component": "ui",
       "include-component-in-tag": true,
       "initial-version": "1.0.0"
     }

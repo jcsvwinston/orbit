@@ -16,7 +16,7 @@ One paragraph: the behaviour before, the behaviour after, and why.
 - [ ] `server/`
 - [ ] `quarkbridge/`
 - [ ] `quarkdatasource/`
-- [ ] `internal/admin/ui` (dist rebuilt and committed)
+- [ ] `ui` (dist rebuilt and committed: both entries)
 - [ ] `ui/` (fleet SPA)
 - [ ] `website/docs/`
 

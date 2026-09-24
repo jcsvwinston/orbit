@@ -258,29 +258,38 @@ func isSpecFile(name string) bool {
 // ---- probes -----------------------------------------------------------------------------------------
 
 // UI-01: one frontend project serves both planes — the fleet server and
-// the in-process panel embed the same dist.
+// the in-process panel embed the same dist. Since ADR-015 the dist is
+// embedded by one module (ui/embed.go) that both Go modules require and
+// import; before, each plane embedded a dist of its own project.
 func probeOneFrontendProject(t *testing.T, e *env) verdict {
-	fleet := e.embedTargets(t, "server/ui/embed.go")
-	var panel []string
-	for _, p := range e.embedTargets(t, "internal/admin/ui_fallback.go") {
-		if strings.HasSuffix(p, "dist") {
-			panel = append(panel, p)
-		}
-	}
-	if len(fleet) == 0 || len(panel) == 0 {
-		t.Fatalf("embed directives not found: fleet=%v panel=%v", fleet, panel)
-	}
 	projects := 0
 	for _, m := range []string{"ui/package.json", "internal/admin/ui/package.json"} {
 		if fileExists(filepath.Join(e.repoRoot(), m)) {
 			projects++
 		}
 	}
-	t.Logf("fleet embeds %s; panel embeds %s; %d package.json projects", fleet[0], panel[0], projects)
+	// The module that embeds the dist, and the two planes importing it.
+	embeds := e.embedTargets(t, "ui/embed.go")
+	const module = `"github.com/jcsvwinston/orbit/ui"`
+	fleetImports := strings.Contains(e.readFile(t, "server/server.go"), module)
+	panelImports := strings.Contains(e.readFile(t, "internal/admin/ui_fallback.go"), module)
+	// And neither plane embeds a dist of its own any more.
+	ownDist := 0
+	for _, f := range []string{"server/ui/embed.go", "internal/admin/ui_fallback.go"} {
+		if !fileExists(filepath.Join(e.repoRoot(), f)) {
+			continue
+		}
+		for _, p := range e.embedTargets(t, f) {
+			if strings.HasSuffix(p, "dist") {
+				ownDist++
+			}
+		}
+	}
+	t.Logf("projects=%d module embeds %v; fleet imports it=%v panel imports it=%v; planes embedding their own dist=%d", projects, embeds, fleetImports, panelImports, ownDist)
 	switch {
-	case fleet[0] == panel[0]:
+	case projects == 1 && len(embeds) > 0 && fleetImports && panelImports && ownDist == 0:
 		return present
-	case projects <= 1:
+	case projects <= 1 || fleetImports || panelImports:
 		return partial
 	}
 	return absent
@@ -344,31 +353,28 @@ func probeFleetUITests(t *testing.T, e *env) verdict {
 	return absent
 }
 
-// UI-04: CI checks that the fleet UI's committed dist is fresh, the way
-// the panel's lane does. The panel's lane is the positive control for the
-// parser: if it cannot see that one, it measures nothing.
+// UI-04: CI checks that the committed dist both planes embed is fresh: a
+// job that works in the frontend project, builds it and diffs its dist.
+// Before ADR-015 the panel's lane did that for its own dist and the fleet's
+// lane built without diffing; now one lane covers the one dist.
 func probeFleetDistFreshnessGate(t *testing.T, e *env) verdict {
 	jobs := workflowJobs(e.readFile(t, ".github/workflows/ci.yml"))
-	adminUI, ok := jobs["admin-ui"]
-	if !ok || !jobDiffsDist(adminUI) {
-		t.Fatalf("the parser does not see the admin-ui freshness step (job found: %v)", ok)
-	}
 	lanes := 0
 	for name, lines := range jobs {
-		if name == "admin-ui" {
-			continue
-		}
-		inFleet := jobWorksIn(lines, "ui") || jobNames(lines, "server/ui/dist")
-		if !inFleet {
+		inUI := jobWorksIn(lines, "ui") || jobNames(lines, "ui/dist") || jobWorksIn(lines, "internal/admin/ui")
+		if !inUI {
 			continue
 		}
 		lanes++
-		if jobDiffsDist(lines) {
-			t.Logf("job %q diffs the fleet dist", name)
+		if jobDiffsDist(lines) && (jobWorksIn(lines, "ui") || jobNames(lines, "ui/dist")) {
+			t.Logf("job %q builds the frontend project and diffs its dist", name)
 			return present
 		}
 	}
-	t.Logf("%d job(s) touch the fleet UI and none diffs server/ui/dist after building", lanes)
+	if lanes == 0 {
+		t.Fatal("no CI job works in the frontend project: the parser sees nothing to measure")
+	}
+	t.Logf("%d job(s) touch the frontend and none diffs ui/dist after building", lanes)
 	return absent
 }
 
@@ -376,10 +382,15 @@ func probeFleetDistFreshnessGate(t *testing.T, e *env) verdict {
 // budget constant over server/ui/dist, a size-limit configuration in the
 // fleet project, or a CI step that enforces one.
 func probeFleetBundleBudget(t *testing.T, e *env) verdict {
-	for _, f := range e.walkFiles(t, "server/ui", func(n string) bool { return strings.HasSuffix(n, "_test.go") }) {
-		if m := anyBudget.FindString(e.readFile(t, f)); m != "" {
-			t.Logf("%s names a budget: %s", f, m)
-			return present
+	// A Go test over the embedded dist naming a budget: in the module
+	// that embeds it (ui/, ADR-015) or where the fleet dist used to live.
+	for _, root := range []string{"ui", "server/ui"} {
+		for _, f := range e.walkFiles(t, root, func(n string) bool { return strings.HasSuffix(n, "_test.go") }) {
+			src := e.readFile(t, f)
+			if m := anyBudget.FindString(src); m != "" && strings.Contains(strings.ToLower(src), "fleet") {
+				t.Logf("%s names a budget that covers the fleet entry: %s", f, m)
+				return present
+			}
 		}
 	}
 	pkg := e.packageJSON(t, "ui/package.json")
@@ -579,24 +590,25 @@ func probeFleetTenantNotion(t *testing.T, e *env) verdict {
 // is a test constant the test COMPARES against — a constant nothing reads
 // is a number in a document with a Go extension.
 func probePanelBudgetEnforced(t *testing.T, e *env) verdict {
-	src := e.readFile(t, "internal/admin/ui_embed_test.go")
+	// The budget test moved with the dist to the ui module (ADR-015).
+	src := e.readFile(t, "ui/embed_test.go")
 	js, css, ok := budgetConstants(src)
 	if !ok {
-		t.Log("internal/admin/ui_embed_test.go names no initial JS/CSS budget")
+		t.Log("ui/embed_test.go names no initial JS/CSS budget for the panel entry")
 		return absent
 	}
 	if !budgetJSUsed.MatchString(src) || !budgetCSSUsed.MatchString(src) {
 		t.Logf("the budget constants exist but the test does not compare against both: js compared=%v css compared=%v", budgetJSUsed.MatchString(src), budgetCSSUsed.MatchString(src))
 		return partial
 	}
-	index := e.readFile(t, "internal/admin/ui/dist/index.html")
+	index := e.readFile(t, "ui/dist/panel/index.html")
 	refs := indexAssetRef.FindAllStringSubmatch(index, -1)
 	if len(refs) == 0 {
 		t.Fatal("the panel's index.html references no ./assets/*")
 	}
 	var sumJS, sumCSS int64
 	for _, m := range refs {
-		size := e.fileSize("internal/admin/ui/dist/assets/" + m[1])
+		size := e.fileSize("ui/dist/panel/assets/" + m[1])
 		if size < 0 {
 			t.Fatalf("index.html references assets/%s, which is not in the dist", m[1])
 		}

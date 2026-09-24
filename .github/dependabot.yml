@@ -123,15 +123,15 @@ updates:
   # themes with the Theming API, Recharts 3 and tailwind-merge 3 change
   # their APIs, lucide 1.x renames icons. Grouped, they made the build fail
   # and blocked every patch behind them (#406).
+  # ui/ is the one frontend project since ADR-015 (the panel and the fleet
+  # plane): the majors below are migrations, not bumps, on either entry.
   - package-ecosystem: npm
-    directory: /internal/admin/ui
+    directory: /ui
     schedule: { interval: weekly, day: monday }
     groups:
       npm-deps: { patterns: ["*"] }
     ignore:
       - dependency-name: typescript
-        update-types: ["version-update:semver-major"]
-      - dependency-name: tailwindcss
         update-types: ["version-update:semver-major"]
       - dependency-name: ag-grid-community
         update-types: ["version-update:semver-major"]
@@ -142,18 +142,6 @@ updates:
       - dependency-name: tailwind-merge
         update-types: ["version-update:semver-major"]
       - dependency-name: lucide-react
-        update-types: ["version-update:semver-major"]
-  # Same rule for the fleet SPA: connect-es 2 and protobuf-es 2 need the
-  # generated code regenerated with protoc-gen-es v2 (proto/ owns that),
-  # ESLint 10 and plugin-react 6 change their configuration, and
-  # @types/node follows the Node version of the build, not the calendar.
-  - package-ecosystem: npm
-    directory: /ui
-    schedule: { interval: weekly, day: monday }
-    groups:
-      npm-deps: { patterns: ["*"] }
-    ignore:
-      - dependency-name: typescript
         update-types: ["version-update:semver-major"]
       - dependency-name: "@bufbuild/protobuf"
         update-types: ["version-update:semver-major"]
