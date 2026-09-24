@@ -13,7 +13,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-import { BulkActionRequest, BulkActionResponse, CreateRecordRequest, DeleteRecordRequest, DeleteRecordResponse, Event, Frame, GetRbacRequest, GetRbacResponse, GetRecordRequest, GetSchemaRequest, GetSelfRequest, GetSnapshotRequest, ListAuditRequest, ListAuditResponse, ListModelsRequest, ListModelsResponse, ListNodesRequest, ListNodesResponse, ListRecordsRequest, ModelSchema, PaginatedRecords, Record, SelfInfo, Snapshot, StreamEventsRequest, UpdateRecordRequest } from "./admin_pb.js";
+import { Alert, BulkActionRequest, BulkActionResponse, CreateRecordRequest, DeleteRecordRequest, DeleteRecordResponse, Event, Frame, GetRbacRequest, GetRbacResponse, GetRecordRequest, GetSchemaRequest, GetSelfRequest, GetSnapshotRequest, ListAlertRulesRequest, ListAlertRulesResponse, ListAlertsRequest, ListAlertsResponse, ListAuditRequest, ListAuditResponse, ListHostMetricsRequest, ListHostMetricsResponse, ListModelsRequest, ListModelsResponse, ListNodesRequest, ListNodesResponse, ListRecordsRequest, ModelSchema, PaginatedRecords, PeerFrame, Record, SelfInfo, Snapshot, StreamAlertsRequest, StreamEventsRequest, UpdateRecordRequest } from "./admin_pb.js";
 import { MethodKind } from "@bufbuild/protobuf";
 
 /**
@@ -84,6 +84,34 @@ export const ControlService = {
       name: "GetSelf",
       I: GetSelfRequest,
       O: SelfInfo,
+      kind: MethodKind.Unary,
+    },
+  }
+} as const;
+
+/**
+ * MetricsService is the UI-facing surface for retained host metrics. A
+ * service of its own rather than an RPC on ControlService: adding an RPC
+ * to a service changes the handler interface every implementation must
+ * satisfy, and the server pins this protocol by tag — a new service is
+ * simply not served until the server implements it.
+ *
+ * @generated from service nucleus.admin.v1.MetricsService
+ */
+export const MetricsService = {
+  typeName: "nucleus.admin.v1.MetricsService",
+  methods: {
+    /**
+     * ListHostMetrics returns a node's retained host-metrics samples, oldest
+     * first, within the server's retention window. A server that retains
+     * nothing answers an empty list.
+     *
+     * @generated from rpc nucleus.admin.v1.MetricsService.ListHostMetrics
+     */
+    listHostMetrics: {
+      name: "ListHostMetrics",
+      I: ListHostMetricsRequest,
+      O: ListHostMetricsResponse,
       kind: MethodKind.Unary,
     },
   }
@@ -202,6 +230,66 @@ export const ManageService = {
       I: ListAuditRequest,
       O: ListAuditResponse,
       kind: MethodKind.Unary,
+    },
+  }
+} as const;
+
+/**
+ * AlertService is the UI-facing surface for alerts: the rules the server
+ * evaluates, the alerts they raised, and a stream of state changes.
+ *
+ * @generated from service nucleus.admin.v1.AlertService
+ */
+export const AlertService = {
+  typeName: "nucleus.admin.v1.AlertService",
+  methods: {
+    /**
+     * @generated from rpc nucleus.admin.v1.AlertService.ListAlertRules
+     */
+    listAlertRules: {
+      name: "ListAlertRules",
+      I: ListAlertRulesRequest,
+      O: ListAlertRulesResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc nucleus.admin.v1.AlertService.ListAlerts
+     */
+    listAlerts: {
+      name: "ListAlerts",
+      I: ListAlertsRequest,
+      O: ListAlertsResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc nucleus.admin.v1.AlertService.StreamAlerts
+     */
+    streamAlerts: {
+      name: "StreamAlerts",
+      I: StreamAlertsRequest,
+      O: Alert,
+      kind: MethodKind.ServerStreaming,
+    },
+  }
+} as const;
+
+/**
+ * PeerService is the server-to-server surface. Authenticated like the
+ * agent listener (token or client certificate); never exposed to UIs.
+ *
+ * @generated from service nucleus.admin.v1.PeerService
+ */
+export const PeerService = {
+  typeName: "nucleus.admin.v1.PeerService",
+  methods: {
+    /**
+     * @generated from rpc nucleus.admin.v1.PeerService.Sync
+     */
+    sync: {
+      name: "Sync",
+      I: PeerFrame,
+      O: PeerFrame,
+      kind: MethodKind.BiDiStreaming,
     },
   }
 } as const;
