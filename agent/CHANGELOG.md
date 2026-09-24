@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/jcsvwinston/orbit/compare/agent/v0.12.0...agent/v0.13.0) (2026-09-24)
+
+
+### Added
+
+* **fleet:** threshold alerts with webhook and e-mail channels, the server's own collectors, and the retained metrics served (A9 S7) ([#520](https://github.com/jcsvwinston/orbit/issues/520)) ([f5ac186](https://github.com/jcsvwinston/orbit/commit/f5ac186e76404582b3e92afdc1f67572b8a452a1))
+
 ## [0.12.0](https://github.com/jcsvwinston/orbit/compare/agent/v0.11.0...agent/v0.12.0) (2026-09-24)
 
 
