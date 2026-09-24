@@ -46,6 +46,7 @@ import (
 	"time"
 
 	server "github.com/jcsvwinston/orbit/server"
+	"github.com/jcsvwinston/orbit/server/alerts"
 )
 
 // version is stamped at link time by the release build (-X main.version=vX.Y.Z,
@@ -99,6 +100,11 @@ func run(args []string) error {
 	uiProxySecret := fs.String("ui-proxy-secret", os.Getenv("NUCLEUS_ADMIN_UI_PROXY_SECRET"), "shared secret the trusted proxy must echo in X-Auth-Proxy-Secret before its forwarded identity is honoured; empty keeps CIDR-only trust")
 	dataDir := fs.String("data-dir", os.Getenv("NUCLEUS_ADMIN_DATA_DIR"), "directory where the server retains events, the audit trail and host-metrics samples across restarts (one SQLite file); empty keeps everything in bounded memory")
 	retention := fs.Duration("retention", envDuration("NUCLEUS_ADMIN_RETENTION", 7*24*time.Hour), "how long the retained rows are kept and served (with --data-dir); a negative value keeps everything")
+	alertRulesFile := fs.String("alert-rules-file", os.Getenv("NUCLEUS_ADMIN_ALERT_RULES_FILE"), "JSON file with the threshold rules the server evaluates against every heartbeat's host metrics (a rule: name, metric, op, threshold, for, severity, node_ids, channels); empty evaluates nothing")
+	alertWebhooks := fs.String("alert-webhooks", os.Getenv("NUCLEUS_ADMIN_ALERT_WEBHOOKS"), "comma-separated name=url webhook channels rules may notify; the server POSTs the alert as JSON")
+	alertSMTPAddr := fs.String("alert-smtp-addr", os.Getenv("NUCLEUS_ADMIN_ALERT_SMTP_ADDR"), "host:port of the SMTP server for the e-mail channel (named \"email\"); with --alert-smtp-from and --alert-smtp-to. Credentials from NUCLEUS_ADMIN_ALERT_SMTP_USER / NUCLEUS_ADMIN_ALERT_SMTP_PASSWORD")
+	alertSMTPFrom := fs.String("alert-smtp-from", os.Getenv("NUCLEUS_ADMIN_ALERT_SMTP_FROM"), "sender of the alert e-mails")
+	alertSMTPTo := fs.String("alert-smtp-to", os.Getenv("NUCLEUS_ADMIN_ALERT_SMTP_TO"), "comma-separated recipients of the alert e-mails")
 	uiTenantHeader := fs.String("ui-tenant-header", envOr("NUCLEUS_ADMIN_UI_TENANT_HEADER", "X-Auth-Tenant"), "trusted-proxy header carrying the tenant the operator is scoped to; sent to the agent with the operator identity")
 	uiRoleHeader := fs.String("ui-role-header", envOr("NUCLEUS_ADMIN_UI_ROLE_HEADER", "X-Auth-Role"), "trusted-proxy header carrying the operator role; value \"viewer\" makes that operator read-only")
 	uiReadOnly := fs.Bool("ui-read-only", envBool("NUCLEUS_ADMIN_UI_READ_ONLY"), "make every UI operator read-only (Data Studio mutations refused)")
@@ -150,6 +156,37 @@ func run(args []string) error {
 		DataDir:                      strings.TrimSpace(*dataDir),
 		Retention:                    *retention,
 		Logger:                       logger,
+	}
+	if path := strings.TrimSpace(*alertRulesFile); path != "" {
+		f, err := os.Open(path)
+		if err != nil {
+			return fmt.Errorf("alert rules: %w", err)
+		}
+		rules, err := alerts.ParseRules(f)
+		_ = f.Close()
+		if err != nil {
+			return fmt.Errorf("alert rules %s: %w", path, err)
+		}
+		cfg.AlertRules = rules
+	}
+	if hooks := splitCSV(*alertWebhooks); len(hooks) > 0 {
+		cfg.AlertWebhooks = make(map[string]string, len(hooks))
+		for _, h := range hooks {
+			name, url, ok := strings.Cut(h, "=")
+			if !ok {
+				return fmt.Errorf("--alert-webhooks: want name=url, got %q", h)
+			}
+			cfg.AlertWebhooks[strings.TrimSpace(name)] = strings.TrimSpace(url)
+		}
+	}
+	if strings.TrimSpace(*alertSMTPAddr) != "" {
+		cfg.AlertSMTP = &alerts.SMTPConfig{
+			Addr:     strings.TrimSpace(*alertSMTPAddr),
+			From:     strings.TrimSpace(*alertSMTPFrom),
+			To:       splitCSV(*alertSMTPTo),
+			Username: os.Getenv("NUCLEUS_ADMIN_ALERT_SMTP_USER"),
+			Password: os.Getenv("NUCLEUS_ADMIN_ALERT_SMTP_PASSWORD"),
+		}
 	}
 
 	if *agentCert != "" || *agentKey != "" || *agentClientCA != "" {

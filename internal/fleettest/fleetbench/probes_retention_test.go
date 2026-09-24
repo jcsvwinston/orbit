@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"google.golang.org/protobuf/reflect/protoreflect"
 
 	"github.com/jcsvwinston/nucleus/pkg/db"
 	"github.com/jcsvwinston/nucleus/pkg/observability"
@@ -171,46 +170,47 @@ func probeOfflineEventsDelivered(t *testing.T, e *env) verdict {
 }
 
 // RET-03: host metrics have a history per node, not only the last sample.
+// The probe retains (a data directory), lets the agent heartbeat a few
+// times, and reads more than one sample back through the API, in order.
 func probeHostMetricsHistory(t *testing.T, e *env) verdict {
-	srv := e.startServer(t, server.Config{})
+	srv := e.startServer(t, server.Config{DataDir: t.TempDir()})
 	ag := e.startAgent(t, agent.Config{Endpoints: []string{"http://" + srv.AgentAddr()}, NodeIDOverride: "fb-metrics-history"})
 	if !waitRegistered(srv.Server, ag.NodeID(), 4*time.Second) {
 		t.Fatal("agent did not register")
 	}
-	ctl := e.control(srv.Server)
-	sampled := pollUntil(3*time.Second, func() bool {
-		resp, err := ctl.ListNodes(ctxFor(t), connect.NewRequest(&adminv1.ListNodesRequest{}))
+	nodeInfo := messageNamed(t, "NodeInfo")
+	series := append(fieldsContaining(nodeInfo, "history", "samples", "series"), methodsContaining("History", "Series", "Metrics")...)
+	if len(series) == 0 {
+		return absent
+	}
+	api := e.metricsAPI(srv.Server)
+	var samples []*adminv1.HostMetricsSample
+	pollUntil(5*time.Second, func() bool {
+		resp, err := api.ListHostMetrics(ctxFor(t), connect.NewRequest(&adminv1.ListHostMetricsRequest{NodeId: ag.NodeID()}))
 		if err != nil {
 			return false
 		}
-		for _, n := range resp.Msg.GetNodes() {
-			if n.GetNodeId() == ag.NodeID() && n.GetHostMetrics() != nil {
-				return true
-			}
-		}
-		return false
+		samples = resp.Msg.GetSamples()
+		return len(samples) >= 3
 	})
-	if !sampled {
-		t.Fatal("no host metrics sample reached the server in 3s")
-	}
-
-	nodeInfo := messageNamed(t, "NodeInfo")
-	repeated := false
-	fs := nodeInfo.Fields()
-	for i := 0; i < fs.Len(); i++ {
-		f := fs.Get(i)
-		if f.Kind() == protoreflect.MessageKind && string(f.Message().Name()) == "HostMetrics" && f.Cardinality() == protoreflect.Repeated {
-			repeated = true
-		}
-	}
-	series := append(fieldsContaining(nodeInfo, "history", "samples", "series"), methodsContaining("History", "Series", "Metrics")...)
-	// A field or RPC that appears is a name, not a measured history: partial
-	// until this probe reads more than one sample through it.
-	if repeated || len(series) > 0 {
-		t.Logf("a history surface exists (repeated=%v, %v): extend this probe to read more than one sample", repeated, series)
+	if len(samples) < 2 {
+		t.Logf("a history surface exists (%v) but ListHostMetrics returned %d samples in 5s", series, len(samples))
 		return partial
 	}
-	return absent
+	for i := 1; i < len(samples); i++ {
+		if !samples[i].GetTime().AsTime().After(samples[i-1].GetTime().AsTime()) || samples[i].GetMetrics() == nil {
+			t.Logf("samples are not a series in time order with metrics: %v", samples)
+			return partial
+		}
+	}
+	// The window bounds the series too: nothing before `since`.
+	since := samples[len(samples)-1].GetTime()
+	resp, err := api.ListHostMetrics(ctxFor(t), connect.NewRequest(&adminv1.ListHostMetricsRequest{NodeId: ag.NodeID(), Since: since}))
+	if err != nil || len(resp.Msg.GetSamples()) == 0 || resp.Msg.GetSamples()[0].GetTime().AsTime().Before(since.AsTime()) {
+		t.Logf("since is not honoured: err=%v samples=%v", err, resp.Msg.GetSamples())
+		return partial
+	}
+	return present
 }
 
 // RET-04: the fleet audit trail survives a server restart.

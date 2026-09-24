@@ -10,22 +10,23 @@ package fleetbench
 func controlsAlerts() []control {
 	return []control{
 		{id: "ALR-01", family: "alerts", title: "a threshold rule on a host metric raises an alert",
-			want: partial, note: "admin.proto declares AlertRule (a threshold on a host metric, for a duration, on nodes, to channels) " +
-				"and Alert; server.Config has no rule field yet and the server evaluates nothing. Declared, not yet done: the probe " +
-				"breaches a threshold once the server pins the tag and evaluates.",
+			want: present, note: "server.Config.AlertRules (--alert-rules-file) are evaluated against every heartbeat's host metrics " +
+				"(server/alerts): a rule fires once its condition has held for `for` on a node it applies to, resolves when it stops, " +
+				"and the alert names the rule, the node, the value and the time. The probe configures a rule every node breaches and reads the alert.",
 			probe: probeThresholdRules},
 		{id: "ALR-02", family: "alerts", title: "alert channels (webhook, e-mail) exist",
-			want: absent, note: "server.Config has no webhook, SMTP or notification field and the protocol has no channel or " +
-				"recipient message: nothing on the server can be told where to send anything.",
+			want: present, note: "channels are server configuration: webhooks by name (--alert-webhooks name=url, a JSON POST) and one " +
+				"e-mail channel (--alert-smtp-*); a rule names the channels it notifies on firing and on resolution. The probe stands up " +
+				"a webhook and receives the alert.",
 			probe: probeAlertChannels},
 		{id: "ALR-03", family: "alerts", title: "the UI API exposes alert state",
-			want: partial, note: "admin.proto declares AlertService (ListAlertRules, ListAlerts, StreamAlerts) and its messages; the " +
-				"server does not serve it yet. Declared, not yet served: the probe reads alert state through it then.",
+			want: present, note: "AlertService on the UI listener, behind the UI auth chain: ListAlertRules returns the rules as " +
+				"configured, ListAlerts the firing alerts (and the resolved ones on request), StreamAlerts every state change.",
 			probe: probeAlertStateInAPI},
 		{id: "ALR-04", family: "alerts", title: "the server publishes its own Prometheus collectors (nodes connected, events dropped) on the metrics listener",
-			want: absent, note: "the metrics listener (server.Config.MetricsAddr) serves the default registry only — go_* and " +
-				"process_* families; server.go mounts promhttp.Handler() and registers no collector of its own, which " +
-				"server/config.go calls future work.",
+			want: present, note: "the metrics listener serves the server's own registry beside the default one: admin_server_nodes_connected, " +
+				"nodes_known, frames/events/heartbeats received, Data Studio requests by outcome, alerts firing/fired/resolved, replay " +
+				"buffered events, events published/dropped to UI subscriptions.",
 			probe: probeServerOwnMetrics},
 		{id: "ALR-05", family: "alerts", title: "the agent publishes its own Prometheus collectors on its metrics listener",
 			want: present, probe: probeAgentOwnMetrics},

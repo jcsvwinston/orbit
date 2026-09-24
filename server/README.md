@@ -150,6 +150,15 @@ kept. Without a data directory everything stays in bounded memory, as
 before. The audit trail downloads from `GET /api/audit/export?format=csv|json`
 on the UI listener. See `docs/adrs/ADR-013`.
 
+## Alerts
+
+`--alert-rules-file` names a JSON file of threshold rules on host metrics
+(`server/alerts`); `--alert-webhooks name=url,...` and `--alert-smtp-*`
+configure the channels rules notify. `AlertService` exposes rules and
+alerts to the UI. A rule naming an unconfigured channel refuses to start.
+With `--metrics-addr` the server also publishes its own `admin_server_*`
+collectors beside the runtime's.
+
 ## Sub-packages
 
 | Sub-package         | Responsibility                                                                                                            |

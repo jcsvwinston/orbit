@@ -8,10 +8,10 @@ require (
 	github.com/jcsvwinston/nucleus/drivers/mysql v0.1.0
 	github.com/jcsvwinston/nucleus/drivers/postgres v0.1.0
 	github.com/jcsvwinston/nucleus/drivers/sqlite v0.1.7
-	github.com/jcsvwinston/orbit/agent v0.10.0
-	github.com/jcsvwinston/orbit/proto v0.6.0
-	github.com/jcsvwinston/orbit/quarkdatasource v1.11.0
-	github.com/jcsvwinston/orbit/server v0.15.0
+	github.com/jcsvwinston/orbit/agent v0.12.0
+	github.com/jcsvwinston/orbit/proto v0.7.0
+	github.com/jcsvwinston/orbit/quarkdatasource v1.12.0
+	github.com/jcsvwinston/orbit/server v0.17.0
 	github.com/jcsvwinston/quark v1.15.0
 	github.com/jcsvwinston/quark/drivers/sqlite v0.2.2
 	google.golang.org/protobuf v1.36.12
