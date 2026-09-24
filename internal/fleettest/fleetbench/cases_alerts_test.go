@@ -10,16 +10,17 @@ package fleetbench
 func controlsAlerts() []control {
 	return []control{
 		{id: "ALR-01", family: "alerts", title: "a threshold rule on a host metric raises an alert",
-			want: absent, note: "server.Config has no rule or threshold field and admin.proto declares no rule, threshold or " +
-				"alert message: the server stores the last HostMetrics sample per node and evaluates nothing against it.",
+			want: partial, note: "admin.proto declares AlertRule (a threshold on a host metric, for a duration, on nodes, to channels) " +
+				"and Alert; server.Config has no rule field yet and the server evaluates nothing. Declared, not yet done: the probe " +
+				"breaches a threshold once the server pins the tag and evaluates.",
 			probe: probeThresholdRules},
 		{id: "ALR-02", family: "alerts", title: "alert channels (webhook, e-mail) exist",
 			want: absent, note: "server.Config has no webhook, SMTP or notification field and the protocol has no channel or " +
 				"recipient message: nothing on the server can be told where to send anything.",
 			probe: probeAlertChannels},
 		{id: "ALR-03", family: "alerts", title: "the UI API exposes alert state",
-			want: absent, note: "ControlService and ManageService (admin.proto) have no RPC and no message about alerts or incidents; " +
-				"the fleet UI has nothing to show.",
+			want: partial, note: "admin.proto declares AlertService (ListAlertRules, ListAlerts, StreamAlerts) and its messages; the " +
+				"server does not serve it yet. Declared, not yet served: the probe reads alert state through it then.",
 			probe: probeAlertStateInAPI},
 		{id: "ALR-04", family: "alerts", title: "the server publishes its own Prometheus collectors (nodes connected, events dropped) on the metrics listener",
 			want: absent, note: "the metrics listener (server.Config.MetricsAddr) serves the default registry only — go_* and " +

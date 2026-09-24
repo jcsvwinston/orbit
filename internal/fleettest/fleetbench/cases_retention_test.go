@@ -23,8 +23,9 @@ func controlsRetention() []control {
 				"Bounded by the buffer: an outage longer than it keeps the newest events per kind, counted as dropped.",
 			probe: probeOfflineEventsDelivered},
 		{id: "RET-03", family: "retention", title: "host metrics have a history per node, not only the last sample",
-			want: absent, note: "the node registry keeps the latest HostMetrics per node (server/nodes/registry.go SetHostMetrics); " +
-				"NodeInfo carries one host_metrics message, not a series, and no RPC returns a history.",
+			want: partial, note: "the samples are retained per node when the server has a data directory (server/store), and the " +
+				"protocol declares MetricsService.ListHostMetrics to return them; the server serves it once it pins the tag that " +
+				"carries the service. Declared, not yet served: the probe reads more than one sample through it then.",
 			probe: probeHostMetricsHistory},
 		{id: "RET-04", family: "retention", title: "the fleet audit trail survives a server restart",
 			want: present, note: "with server.Config.DataDir every audit entry is written to the store and ListAudit reads from it, " +

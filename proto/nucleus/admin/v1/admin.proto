@@ -230,7 +230,18 @@ message Command {
     Goodbye goodbye = 4;
     DataStudioRequest data_studio = 5;
     RbacRequest rbac = 6;
+    // Redirect tells the agent which server it belongs to (a fleet of
+    // servers assigns nodes deterministically); the agent reconnects
+    // there. Additive: an older agent ignores it.
+    Redirect redirect = 7;
   }
+}
+
+message Redirect {
+  // The endpoint the agent should connect to, as it would appear in the
+  // agent's own endpoint list.
+  string endpoint = 1;
+  string reason = 2;
 }
 
 // =============================================================================
@@ -361,6 +372,37 @@ service ControlService {
   rpc GetSnapshot(GetSnapshotRequest) returns (Snapshot);
   // GetSelf echoes the caller's identity + the server version for the UI.
   rpc GetSelf(GetSelfRequest) returns (SelfInfo);
+}
+
+// MetricsService is the UI-facing surface for retained host metrics. A
+// service of its own rather than an RPC on ControlService: adding an RPC
+// to a service changes the handler interface every implementation must
+// satisfy, and the server pins this protocol by tag — a new service is
+// simply not served until the server implements it.
+service MetricsService {
+  // ListHostMetrics returns a node's retained host-metrics samples, oldest
+  // first, within the server's retention window. A server that retains
+  // nothing answers an empty list.
+  rpc ListHostMetrics(ListHostMetricsRequest) returns (ListHostMetricsResponse);
+}
+
+message ListHostMetricsRequest {
+  string node_id = 1;
+  // Oldest sample wanted; unset means the whole retention window.
+  google.protobuf.Timestamp since = 2;
+  // Maximum samples to return, newest kept. 0 means the server default.
+  int32 limit = 3;
+}
+
+// HostMetricsSample is one heartbeat's host metrics, stamped with the time
+// the server received it.
+message HostMetricsSample {
+  google.protobuf.Timestamp time = 1;
+  HostMetrics metrics = 2;
+}
+
+message ListHostMetricsResponse {
+  repeated HostMetricsSample samples = 1;
 }
 
 // =============================================================================
@@ -691,4 +733,135 @@ message ListAuditResponse {
 service ManageService {
   rpc GetRbac(GetRbacRequest) returns (GetRbacResponse);
   rpc ListAudit(ListAuditRequest) returns (ListAuditResponse);
+}
+
+// =============================================================================
+// Alerts: threshold rules on host metrics, their state, and the UI surface
+// =============================================================================
+//
+// Rules and channels are the server's configuration; the wire carries the
+// rules as read-only for the UI, and the alerts they raise. Declared here
+// so the modules that pin the protocol by tag can serve them after one
+// cut; a server that evaluates nothing answers empty lists.
+
+enum AlertSeverity {
+  ALERT_SEVERITY_UNSPECIFIED = 0;
+  ALERT_SEVERITY_INFO = 1;
+  ALERT_SEVERITY_WARNING = 2;
+  ALERT_SEVERITY_CRITICAL = 3;
+}
+
+enum AlertState {
+  ALERT_STATE_UNSPECIFIED = 0;
+  ALERT_STATE_FIRING = 1;
+  ALERT_STATE_RESOLVED = 2;
+}
+
+// AlertRule is a threshold on one host metric: fire when `metric op
+// threshold` holds for `for_duration` on a node the rule applies to.
+message AlertRule {
+  string id = 1;
+  string name = 2;
+  // A HostMetrics field name: cpu_percent, rss_bytes, heap_alloc_bytes,
+  // goroutines, gc_pause_p99_ms, db_in_use, db_idle, db_max_open.
+  string metric = 3;
+  // One of ">", ">=", "<", "<=", "==".
+  string op = 4;
+  double threshold = 5;
+  google.protobuf.Duration for_duration = 6;
+  AlertSeverity severity = 7;
+  // Empty applies to every node; otherwise node ids or glob patterns.
+  repeated string node_ids = 8;
+  // Names of the channels the server notifies when the rule fires or
+  // resolves, as configured on the server.
+  repeated string channels = 9;
+}
+
+// Alert is one rule firing on one node, and its resolution.
+message Alert {
+  string id = 1;
+  string rule_id = 2;
+  string node_id = 3;
+  AlertState state = 4;
+  // The metric's value when the alert fired (or last evaluated).
+  double value = 5;
+  google.protobuf.Timestamp fired_at = 6;
+  google.protobuf.Timestamp resolved_at = 7;
+  string message = 8;
+}
+
+message ListAlertRulesRequest {}
+
+message ListAlertRulesResponse {
+  repeated AlertRule rules = 1;
+}
+
+message ListAlertsRequest {
+  // Include alerts already resolved, newest first. Firing alerts always
+  // come.
+  bool include_resolved = 1;
+  // Maximum alerts to return. 0 means the server default.
+  int32 limit = 2;
+}
+
+message ListAlertsResponse {
+  repeated Alert alerts = 1;
+}
+
+message StreamAlertsRequest {}
+
+// AlertService is the UI-facing surface for alerts: the rules the server
+// evaluates, the alerts they raised, and a stream of state changes.
+service AlertService {
+  rpc ListAlertRules(ListAlertRulesRequest) returns (ListAlertRulesResponse);
+  rpc ListAlerts(ListAlertsRequest) returns (ListAlertsResponse);
+  rpc StreamAlerts(StreamAlertsRequest) returns (stream Alert);
+}
+
+// =============================================================================
+// Peers: what one admin server tells another
+// =============================================================================
+//
+// A fleet of servers shares its node registry, relays events so a UI on
+// any server sees any agent, and assigns nodes deterministically; the
+// agent learns its server through Command.redirect. The peer stream
+// mirrors AgentService.Stream: bidirectional frames, additive by design.
+
+// PeerHello opens a peer stream: who the server is and which nodes it
+// currently holds.
+message PeerHello {
+  string server_id = 1;
+  string version = 2;
+  // The endpoint agents reach this server on, for Redirect.
+  string agent_endpoint = 3;
+  repeated string node_ids = 4;
+}
+
+// NodeGone announces that a node left the announcing server.
+message NodeGone {
+  string node_id = 1;
+}
+
+// PeerHostMetrics relays one node's host-metrics sample.
+message PeerHostMetrics {
+  string node_id = 1;
+  HostMetricsSample sample = 2;
+}
+
+message PeerFrame {
+  oneof body {
+    PeerHello hello = 1;
+    // A node the announcing server holds, on registration and on change.
+    NodeInfo node = 2;
+    NodeGone node_gone = 3;
+    // An event received from an agent the announcing server holds.
+    Event event = 4;
+    PeerHostMetrics host_metrics = 5;
+  }
+}
+
+// PeerService is the server-to-server surface. Authenticated like the
+// agent listener (token or client certificate); never exposed to UIs.
+service PeerService {
+  rpc Sync(stream PeerFrame) returns (stream PeerFrame);
 }
