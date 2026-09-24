@@ -194,6 +194,57 @@ which the next stream sends first. That buffer is bounded, so an outage
 longer than it keeps the newest events per type and counts the rest as
 dropped (`admin_agent_events_parked_total`, `admin_agent_events_dropped_total`).
 
+## Alerts
+
+The server evaluates threshold rules against the host metrics every
+heartbeat carries, and tells you where you asked. Rules live in a JSON file:
+
+```json
+{
+  "rules": [
+    {"name": "Hot CPU", "metric": "cpu_percent", "op": ">", "threshold": 90,
+     "for": "2m", "severity": "critical", "channels": ["ops"]},
+    {"name": "Goroutine leak", "metric": "goroutines", "op": ">", "threshold": 5000,
+     "for": "5m", "node_ids": ["api-*"], "channels": ["ops", "email"]}
+  ]
+}
+```
+
+```bash
+admin-server --alert-rules-file /etc/orbit-admin/alerts.json   --alert-webhooks ops=https://hooks.example/orbit   --alert-smtp-addr mail.example:587 --alert-smtp-from orbit@example --alert-smtp-to ops@example
+```
+
+A rule names a `HostMetrics` field (`cpu_percent`, `rss_bytes`,
+`heap_alloc_bytes`, `goroutines`, `gc_pause_p99_ms`, `db_in_use`,
+`db_idle`, `db_max_open`), an operator (`>`, `>=`, `<`, `<=`, `==`), a
+threshold and how long the condition must hold (`for`, zero fires on the
+first breaching sample). It applies to every node or to the node ids and
+glob patterns in `node_ids`. When it fires, and again when it resolves, the
+server notifies the channels the rule names: a **webhook** POSTs the alert
+as JSON (`--alert-webhooks name=url`, several separated by commas), and the
+**e-mail** channel sends a plain-text message (`--alert-smtp-addr`,
+`--alert-smtp-from`, `--alert-smtp-to`; credentials from
+`NUCLEUS_ADMIN_ALERT_SMTP_USER` and `NUCLEUS_ADMIN_ALERT_SMTP_PASSWORD`).
+A rule that names a channel you did not configure stops the server at
+start: a rule that would notify nobody by mistake is the quiet failure
+alerts exist to prevent. A failed delivery is logged, not retried; the
+alert itself is raised regardless.
+
+The UI API exposes the state behind the same authentication as the rest:
+`AlertService.ListAlertRules`, `ListAlerts` (firing first, resolved on
+request) and `StreamAlerts`. The last 1024 resolved alerts are kept in
+memory; alerts are not retained across a restart.
+
+## The server's own metrics
+
+With `--metrics-addr`, `/metrics` serves the Go runtime's collectors and
+the server's own: `admin_server_nodes_connected` and `nodes_known`,
+`frames_received_total`, `events_received_total{type}`,
+`heartbeats_received_total`, `datastudio_requests_total{outcome}`,
+`alerts_firing`, `alerts_fired_total`, `alerts_resolved_total`,
+`replay_buffered_events`, and `events_published_total` /
+`events_dropped_total` for the UI subscriptions.
+
 ## Operational notes
 
 - `/metrics` is opt-in. `--metrics-addr` (env `NUCLEUS_ADMIN_METRICS_ADDR`)

@@ -282,13 +282,22 @@ func (s *DataStudioService) dispatch(ctx context.Context, nodeID, modelName stri
 	}
 
 	resp, err := routing.WaitDataStudio(ch, cancel, s.Timeout)
+	outcome := "ok"
+	defer func() {
+		if c := s.state.Counters; c != nil {
+			c.DataStudioRequestsTotal.WithLabelValues(outcome).Inc()
+		}
+	}()
 	if err != nil {
+		outcome = "error"
 		return nil, "", connect.NewError(connect.CodeDeadlineExceeded, err)
 	}
 	if resp == nil {
+		outcome = "error"
 		return nil, "", connect.NewError(connect.CodeUnavailable, errors.New("admin server: empty data studio response"))
 	}
 	if resp.Error != "" {
+		outcome = "error"
 		return nil, "", connect.NewError(agentErrorCode(resp.Error), errors.New(resp.Error))
 	}
 	return resp, entry.NodeID, nil

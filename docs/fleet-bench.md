@@ -60,7 +60,7 @@ place for a capability, not the capability.
 
 ## The result
 
-**33 of 50 controls present. 5 partial. 12 absent.**
+**38 of 50 controls present. 2 partial. 10 absent.**
 
 | family | present | partial | absent |
 |---|---|---|---|
@@ -72,14 +72,14 @@ place for a capability, not the capability.
 | ui | 2 | 1 | 7 |
 | **total** | **26** | **3** | **21** |
 
-### alerts — 2 present · 2 partial · 2 absent
+### alerts — 6 present · 0 partial · 0 absent
 
 | id | control | verdict | what is missing |
 |---|---|---|---|
-| `ALR-01` | a threshold rule on a host metric raises an alert | **partial** | admin.proto declares AlertRule (a threshold on a host metric, for a duration, on nodes, to channels) and Alert; server.Config has no rule field yet and the server evaluates nothing. Declared, not yet done: the probe breaches a threshold once the server pins the tag and evaluates. |
-| `ALR-02` | alert channels (webhook, e-mail) exist | **absent** | server.Config has no webhook, SMTP or notification field and the protocol has no channel or recipient message: nothing on the server can be told where to send anything. |
-| `ALR-03` | the UI API exposes alert state | **partial** | admin.proto declares AlertService (ListAlertRules, ListAlerts, StreamAlerts) and its messages; the server does not serve it yet. Declared, not yet served: the probe reads alert state through it then. |
-| `ALR-04` | the server publishes its own Prometheus collectors (nodes connected, events dropped) on the metrics listener | **absent** | the metrics listener (server.Config.MetricsAddr) serves the default registry only — go_* and process_* families; server.go mounts promhttp.Handler() and registers no collector of its own, which server/config.go calls future work. |
+| `ALR-01` | a threshold rule on a host metric raises an alert | **present** | server.Config.AlertRules (--alert-rules-file) are evaluated against every heartbeat's host metrics (server/alerts): a rule fires once its condition has held for `for` on a node it applies to, resolves when it stops, and the alert names the rule, the node, the value and the time. The probe configures a rule every node breaches and reads the alert. |
+| `ALR-02` | alert channels (webhook, e-mail) exist | **present** | channels are server configuration: webhooks by name (--alert-webhooks name=url, a JSON POST) and one e-mail channel (--alert-smtp-*); a rule names the channels it notifies on firing and on resolution. The probe stands up a webhook and receives the alert. |
+| `ALR-03` | the UI API exposes alert state | **present** | AlertService on the UI listener, behind the UI auth chain: ListAlertRules returns the rules as configured, ListAlerts the firing alerts (and the resolved ones on request), StreamAlerts every state change. |
+| `ALR-04` | the server publishes its own Prometheus collectors (nodes connected, events dropped) on the metrics listener | **present** | the metrics listener serves the server's own registry beside the default one: admin_server_nodes_connected, nodes_known, frames/events/heartbeats received, Data Studio requests by outcome, alerts firing/fired/resolved, replay buffered events, events published/dropped to UI subscriptions. |
 | `ALR-05` | the agent publishes its own Prometheus collectors on its metrics listener | **present** | — |
 | `ALR-06` | a node that stops sending frames is listed as not connected within the inactivity timeout plus one janitor tick | **present** | — |
 
@@ -184,13 +184,13 @@ the new certificate on the next connection, the agent on its next connection
 certificate serving, with one WARN. The CA bundles (`--agent-client-ca`,
 `tls_ca_file`) are still read once; rotating a CA is not a control yet.
 
-### retention — 6 present · 1 partial · 0 absent
+### retention — 7 present · 0 partial · 0 absent
 
 | id | control | verdict | what is missing |
 |---|---|---|---|
 | `RET-01` | events the server replays to a new UI subscriber survive a server restart | **present** | with server.Config.DataDir the server retains events in a SQLite file (server/store) and warms its replay ring from it at start; a restarted server replays what the previous process received. Without a data directory the ring is in memory and a restart starts empty, as before. |
 | `RET-02` | an event emitted while the agent has no stream is delivered after it reconnects | **present** | when a stream ends the agent keeps listening to the bus under the filters the server had and parks the events in its ring buffer (agent/catcher.go); the next stream drains the buffer right after registering. Bounded by the buffer: an outage longer than it keeps the newest events per kind, counted as dropped. |
-| `RET-03` | host metrics have a history per node, not only the last sample | **partial** | the samples are retained per node when the server has a data directory (server/store), and the protocol declares MetricsService.ListHostMetrics to return them; the server serves it once it pins the tag that carries the service. Declared, not yet served: the probe reads more than one sample through it then. |
+| `RET-03` | host metrics have a history per node, not only the last sample | **present** | with a data directory the server retains one host-metrics sample per heartbeat and node and MetricsService.ListHostMetrics returns them oldest first, within the retention window and since the instant asked; without one it answers an empty list and ListNodes carries the last sample only. |
 | `RET-04` | the fleet audit trail survives a server restart | **present** | with server.Config.DataDir every audit entry is written to the store and ListAudit reads from it, so a restarted server serves the trail the previous process wrote, within the retention window. |
 | `RET-05` | a retention window is configurable and enforced | **present** | server.Config.Retention (--retention, default 7 days, with --data-dir) bounds every read and a janitor deletes older rows; the probe sets a one-second window and watches an audit entry leave what the server serves. |
 | `RET-06` | the fleet audit trail can be exported (CSV or JSON download) | **present** | GET /api/audit/export?format=csv\|json on the UI listener, behind the same auth chain as the RPCs, downloads the trail ListAudit serves (the store when the server retains, the ring otherwise), newest first, up to 10000 rows. |
@@ -214,18 +214,31 @@ that change travels with the next protocol cut. Two mutations turned the
 probes red: a server that does not warm its replay ring from the store
 (`RET-01`), an agent that parks nothing (`RET-02`).
 
-`RET-03`, `ALR-01` and `ALR-03` are **partial** since the protocol batch
-that follows `S6`: `admin.proto` declares in one additive change what
-`S6`, `S7` and `S8` need on the wire — `MetricsService.ListHostMetrics`
-for the retained samples, `AlertRule`/`Alert` with `AlertService`
-(`ListAlertRules`, `ListAlerts`, `StreamAlerts`), `Command.redirect`, and
-`PeerService.Sync` with its frames for what one server tells another — so
-the fleet modules, which pin the protocol by tag, pay one cut instead of
-three. Declared is not done: each probe says what it will measure once the
-server serves the surface, and stays partial until then. New services
-rather than new RPCs on existing ones, because an RPC added to a service
-changes the handler interface every implementation must satisfy on the
-day the tag lands.
+The protocol batch that followed `S6` declared in one additive change what
+`S6`, `S7` and `S8` need on the wire — `MetricsService.ListHostMetrics`,
+`AlertRule`/`Alert` with `AlertService`, `Command.redirect`, and
+`PeerService.Sync` with its frames — so the fleet modules, which pin the
+protocol by tag, pay one cut instead of three; new services rather than new
+RPCs on existing ones, because an RPC added to a service changes the handler
+interface every implementation must satisfy the day the tag lands. For one
+release `RET-03`, `ALR-01` and `ALR-03` were partial: declared, not served.
+
+`RET-03` and the `alerts` family are **present** since A9 `S7`, and both
+families are complete. `MetricsService.ListHostMetrics` returns the retained
+samples per node, oldest first, within the window and since the instant
+asked. The server evaluates threshold rules (`--alert-rules-file`: a
+`HostMetrics` field, an operator, a threshold, `for`, severity, node ids or
+globs, channels) against every heartbeat, fires once the condition has held
+for `for`, resolves when it stops, and notifies webhooks (`--alert-webhooks
+name=url`, a JSON POST) and one e-mail channel (`--alert-smtp-*`); a rule
+naming an unconfigured channel refuses to start. `AlertService` exposes
+rules, alerts and a stream of state changes behind the UI auth chain. The
+metrics listener serves the server's own `admin_server_*` collectors beside
+the runtime's. The probes configure a rule every node breaches (goroutines
+above zero), read the alert, receive the webhook, and read three samples of
+history in order. Three mutations turned probes red: an engine that
+evaluates nothing (`ALR-01`), a webhook that does not send (`ALR-02`), a
+history that answers empty (`RET-03`).
 
 ### ui — 2 present · 1 partial · 7 absent
 

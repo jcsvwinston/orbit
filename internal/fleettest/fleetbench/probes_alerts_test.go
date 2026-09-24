@@ -5,6 +5,10 @@ package fleetbench
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -13,7 +17,9 @@ import (
 
 	"github.com/jcsvwinston/orbit/agent"
 	adminv1 "github.com/jcsvwinston/orbit/proto/gen/go/nucleus/admin/v1"
+	adminv1connect "github.com/jcsvwinston/orbit/proto/gen/go/nucleus/admin/v1/adminv1connect"
 	server "github.com/jcsvwinston/orbit/server"
+	"github.com/jcsvwinston/orbit/server/alerts"
 )
 
 // The three descriptor-and-config probes below share one shape: a surface
@@ -21,37 +27,131 @@ import (
 // partial, which is red against the recorded absent, and the probe then
 // has to grow the behaviour check the new surface makes possible.
 
-// ALR-01: a threshold rule on a host metric raises an alert.
+// alertRule is the rule the alert probes use: every agent has goroutines,
+// so "goroutines > 0" fires on the first heartbeat; a rule on CPU or RSS
+// would depend on the machine the bench runs on.
+func alertRule(channels ...string) alerts.Rule {
+	return alerts.Rule{Name: "bench goroutines", Metric: "goroutines", Op: ">", Threshold: 0, Severity: "critical", Channels: channels}
+}
+
+// ALR-01: a threshold rule on a host metric raises an alert. The probe
+// configures a rule every node breaches, connects an agent, and reads the
+// alert through the API: firing, on that node, from that rule.
 func probeThresholdRules(t *testing.T, e *env) verdict {
 	knobs := fieldsNamed(server.Config{}, "", "Alert", "Rule", "Threshold")
 	msgs := messagesContaining("Alert", "Rule", "Threshold")
 	if len(knobs) == 0 && len(msgs) == 0 {
 		return absent
 	}
-	t.Logf("rule surface: config %v, messages %v — extend this probe to breach a threshold", knobs, msgs)
-	return partial
+	srv := e.startServer(t, server.Config{AlertRules: []alerts.Rule{alertRule()}})
+	ag := e.startAgent(t, agent.Config{Endpoints: []string{"http://" + srv.AgentAddr()}, NodeIDOverride: "fb-alerts"})
+	if !waitRegistered(srv.Server, ag.NodeID(), 4*time.Second) {
+		t.Fatal("agent did not register")
+	}
+	al := e.alerts(srv.Server)
+	var firing *adminv1.Alert
+	pollUntil(4*time.Second, func() bool {
+		resp, err := al.ListAlerts(ctxFor(t), connect.NewRequest(&adminv1.ListAlertsRequest{}))
+		if err != nil {
+			return false
+		}
+		for _, a := range resp.Msg.GetAlerts() {
+			if a.GetNodeId() == ag.NodeID() && a.GetState() == adminv1.AlertState_ALERT_STATE_FIRING {
+				firing = a
+				return true
+			}
+		}
+		return false
+	})
+	if firing == nil {
+		t.Logf("rule surface exists (config %v, messages %v) but no alert fired for the node in 4s", knobs, msgs)
+		return partial
+	}
+	if firing.GetRuleId() != "bench-goroutines" || firing.GetValue() <= 0 || firing.GetFiredAt() == nil || firing.GetMessage() == "" {
+		t.Logf("the alert is not attributed to the rule with its value and time: %+v", firing)
+		return partial
+	}
+	return present
 }
 
-// ALR-02: alert channels (webhook, e-mail) exist.
+// ALR-02: alert channels exist and deliver. The probe stands up a webhook,
+// names it in the rule, and waits for the POST that carries the alert.
 func probeAlertChannels(t *testing.T, e *env) verdict {
 	knobs := fieldsNamed(server.Config{}, "", "Webhook", "SMTP", "Slack", "Notif", "Pager", "Sink")
 	msgs := messagesContaining("Webhook", "Notif", "Recipient")
 	if len(knobs) == 0 && len(msgs) == 0 {
 		return absent
 	}
-	t.Logf("channel surface: config %v, messages %v — extend this probe to deliver one", knobs, msgs)
-	return partial
+	got := make(chan map[string]any, 4)
+	hook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		body["_method"] = r.Method
+		body["_ctype"] = r.Header.Get("Content-Type")
+		got <- body
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer hook.Close()
+	srv := e.startServer(t, server.Config{
+		AlertRules:    []alerts.Rule{alertRule("ops")},
+		AlertWebhooks: map[string]string{"ops": hook.URL},
+	})
+	ag := e.startAgent(t, agent.Config{Endpoints: []string{"http://" + srv.AgentAddr()}, NodeIDOverride: "fb-channel"})
+	if !waitRegistered(srv.Server, ag.NodeID(), 4*time.Second) {
+		t.Fatal("agent did not register")
+	}
+	select {
+	case body := <-got:
+		if body["_method"] != http.MethodPost || !strings.Contains(fmt.Sprint(body["_ctype"]), "json") ||
+			body["state"] != "firing" || body["node_id"] != ag.NodeID() || body["rule_id"] != "bench-goroutines" {
+			t.Logf("the webhook was called but the payload does not carry the alert: %v", body)
+			return partial
+		}
+		return present
+	case <-time.After(4 * time.Second):
+		t.Logf("channel surface exists (config %v) but the webhook was not called in 4s", knobs)
+		return partial
+	}
 }
 
-// ALR-03: the UI API exposes alert state.
+// ALR-03: the UI API exposes alert state: the rules the server evaluates
+// and the alerts they raised, through the same auth chain as the rest.
 func probeAlertStateInAPI(t *testing.T, e *env) verdict {
 	methods := methodsContaining("Alert", "Incident")
 	msgs := messagesContaining("Alert", "Incident")
 	if len(methods) == 0 && len(msgs) == 0 {
 		return absent
 	}
-	t.Logf("alert API surface: %v %v — extend this probe to read it", methods, msgs)
-	return partial
+	srv := e.startServer(t, server.Config{AlertRules: []alerts.Rule{alertRule()}})
+	ag := e.startAgent(t, agent.Config{Endpoints: []string{"http://" + srv.AgentAddr()}, NodeIDOverride: "fb-alert-api"})
+	if !waitRegistered(srv.Server, ag.NodeID(), 4*time.Second) {
+		t.Fatal("agent did not register")
+	}
+	al := e.alerts(srv.Server)
+	rules, err := al.ListAlertRules(ctxFor(t), connect.NewRequest(&adminv1.ListAlertRulesRequest{}))
+	if err != nil {
+		t.Logf("ListAlertRules: %v", err)
+		return partial
+	}
+	if len(rules.Msg.GetRules()) != 1 || rules.Msg.GetRules()[0].GetMetric() != "goroutines" || rules.Msg.GetRules()[0].GetSeverity() != adminv1.AlertSeverity_ALERT_SEVERITY_CRITICAL {
+		t.Logf("the API does not return the configured rule as configured: %v", rules.Msg.GetRules())
+		return partial
+	}
+	fired := pollUntil(4*time.Second, func() bool {
+		resp, err := al.ListAlerts(ctxFor(t), connect.NewRequest(&adminv1.ListAlertsRequest{}))
+		return err == nil && len(resp.Msg.GetAlerts()) > 0
+	})
+	if !fired {
+		t.Log("ListAlerts answered nothing in 4s")
+		return partial
+	}
+	// The API is behind the UI auth chain: a credential-less caller from
+	// outside the trusted range is refused, like every other RPC.
+	if _, err := adminv1connect.NewAlertServiceClient(bareClient(), uiURL(srv.Server)).ListAlerts(ctxFor(t), connect.NewRequest(&adminv1.ListAlertsRequest{})); err == nil {
+		t.Log("ListAlerts answered a caller with no credential")
+		return partial
+	}
+	return present
 }
 
 // ALR-04: the server publishes its OWN Prometheus collectors on the

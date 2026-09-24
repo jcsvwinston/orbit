@@ -17,11 +17,14 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 
+	"github.com/jcsvwinston/orbit/server/alerts"
 	"github.com/jcsvwinston/orbit/server/auth"
+	"github.com/jcsvwinston/orbit/server/metrics"
 	"github.com/jcsvwinston/orbit/server/nodes"
 	"github.com/jcsvwinston/orbit/server/routing"
 	"github.com/jcsvwinston/orbit/server/services"
@@ -36,6 +39,12 @@ import (
 // listeners: one for agents and one for UIs/operators. Both serve over
 // HTTP/2 (h2c when no TLS config is provided).
 type Server struct {
+	// promRegistry holds this server's own collectors; the metrics listener
+	// serves it beside the default registry.
+	promRegistry *prometheus.Registry
+	// initErr is a configuration error found while building the server
+	// (alert rules, channels); Run returns it before binding anything.
+	initErr error
 	// store is the retention store, nil without Config.DataDir. Opened
 	// in Run, before the listeners, and closed with them.
 	store *store.Store
@@ -64,7 +73,15 @@ type Server struct {
 func New(cfg Config) *Server {
 	cfg = cfg.withDefaults()
 
+	promRegistry := prometheus.NewRegistry()
+	var initErr error
+	engine, err := buildAlerts(cfg)
+	if err != nil {
+		initErr = err
+	}
 	state := &services.State{
+		Alerts:   engine,
+		Counters: metrics.NewCounters(promRegistry),
 		Nodes:    nodes.New(),
 		EventBus: routing.NewEventBus(),
 		Replay: routing.NewReplay(routing.ReplayCapacities{
@@ -90,10 +107,34 @@ func New(cfg Config) *Server {
 	state.OnAgentSubMode = services.PushAggregate
 
 	s := &Server{
-		cfg:    cfg,
-		state:  state,
-		logger: cfg.Logger,
+		cfg:          cfg,
+		state:        state,
+		logger:       cfg.Logger,
+		promRegistry: promRegistry,
+		initErr:      initErr,
 	}
+	metrics.RegisterDerived(promRegistry, metrics.Derived{
+		NodesConnected: func() float64 {
+			n := 0
+			for _, e := range state.Nodes.List() {
+				if e.Connected {
+					n++
+				}
+			}
+			return float64(n)
+		},
+		NodesKnown:   func() float64 { return float64(len(state.Nodes.List())) },
+		AlertsFiring: func() float64 { return float64(state.Alerts.FiringCount()) },
+		ReplayBuffered: func() float64 {
+			total := 0
+			for _, n := range state.Replay.LenSnapshot() {
+				total += n
+			}
+			return float64(total)
+		},
+		EventsPublishedTotal: func() float64 { return float64(state.EventBus.Stats().Published) },
+		EventsDroppedTotal:   func() float64 { return float64(state.EventBus.Stats().Dropped) },
+	})
 
 	// AgentService listener: protected by AgentMiddleware. /healthz is
 	// carved out BEFORE auth so load balancers and the agent's dialer can
@@ -119,6 +160,8 @@ func New(cfg Config) *Server {
 	protectedUI.Handle(adminv1connect.NewControlServiceHandler(controlSvc, handlerOpts...))
 	protectedUI.Handle(adminv1connect.NewDataStudioServiceHandler(dataStudioSvc, handlerOpts...))
 	protectedUI.Handle(adminv1connect.NewManageServiceHandler(manageSvc, handlerOpts...))
+	protectedUI.Handle(adminv1connect.NewAlertServiceHandler(services.NewAlertService(state), handlerOpts...))
+	protectedUI.Handle(adminv1connect.NewMetricsServiceHandler(services.NewMetricsService(state), handlerOpts...))
 	// The audit trail as a file, behind the same auth chain as the RPCs:
 	// a download the Audit log screen links to (ADR-013).
 	protectedUI.Handle("GET /api/audit/export", auditExportHandler(state))
@@ -140,14 +183,16 @@ func New(cfg Config) *Server {
 	s.agentSrv = newHTTPServer(agentRoot, cfg.AgentTLS)
 	s.uiSrv = newHTTPServer(uiRoot, cfg.UITLS)
 
-	// Optional metrics listener (Config.MetricsAddr): Prometheus default
-	// registry (go_* and process_* collectors; server-specific collectors
-	// are future work) + /healthz. Unauthenticated by design — bind it to
-	// a private interface, like any metrics port.
+	// Optional metrics listener (Config.MetricsAddr): the Prometheus
+	// default registry (go_* and process_* collectors) beside the server's
+	// own (admin_server_*), plus /healthz. Unauthenticated by design —
+	// bind it to a private interface, like any metrics port.
 	if strings.TrimSpace(cfg.MetricsAddr) != "" {
 		metricsRoot := http.NewServeMux()
 		metricsRoot.HandleFunc("/healthz", healthOK)
-		metricsRoot.Handle("/metrics", promhttp.Handler())
+		metricsRoot.Handle("/metrics", promhttp.HandlerFor(
+			prometheus.Gatherers{prometheus.DefaultGatherer, promRegistry},
+			promhttp.HandlerOpts{}))
 		s.metricsSrv = newHTTPServer(metricsRoot, nil)
 		// No long-lived streams on this listener, so full IO timeouts
 		// are safe here (unlike the agent/UI listeners — see
@@ -205,6 +250,9 @@ func (s *Server) UIAddr() string {
 // Run starts both listeners and blocks until ctx is cancelled. Returns
 // nil on graceful shutdown, non-nil on listen errors. Not idempotent.
 func (s *Server) Run(ctx context.Context) error {
+	if s.initErr != nil {
+		return fmt.Errorf("admin server: %w", s.initErr)
+	}
 	// Fail-closed: refuse an unauthenticated agent listener bound to a
 	// non-loopback interface (see agentListenerGuard).
 	warnExposed, err := s.cfg.agentListenerGuard()
@@ -304,6 +352,8 @@ func (s *Server) Run(ctx context.Context) error {
 	// stale when no frame arrives within AgentInactivityTimeout; Touch
 	// revives them if frames resume.
 	go s.expireInactiveAgents(ctx)
+	// Alert notifications go out from one goroutine, bounded per delivery.
+	go s.state.Alerts.Run(ctx)
 
 	errCh := make(chan error, 3)
 	var wg sync.WaitGroup
@@ -656,4 +706,25 @@ func newHTTPServer(handler http.Handler, tlsConfig *tls.Config) *http.Server {
 	// only and every Connect bidi stream would fail.
 	_ = http2.ConfigureServer(srv, h2s)
 	return srv
+}
+
+// buildAlerts turns the configured rules and channels into the engine
+// that evaluates them. No rules and no channels is a valid, silent engine.
+func buildAlerts(cfg Config) (*alerts.Engine, error) {
+	var channels []alerts.Channel
+	for name, url := range cfg.AlertWebhooks {
+		w, err := alerts.NewWebhook(name, url, nil)
+		if err != nil {
+			return nil, err
+		}
+		channels = append(channels, w)
+	}
+	if cfg.AlertSMTP != nil {
+		m, err := alerts.NewSMTP(*cfg.AlertSMTP)
+		if err != nil {
+			return nil, err
+		}
+		channels = append(channels, m)
+	}
+	return alerts.New(cfg.AlertRules, channels, cfg.Logger)
 }

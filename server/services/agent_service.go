@@ -17,7 +17,9 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/jcsvwinston/orbit/server/alerts"
 	"github.com/jcsvwinston/orbit/server/auth"
+	"github.com/jcsvwinston/orbit/server/metrics"
 	"github.com/jcsvwinston/orbit/server/nodes"
 	"github.com/jcsvwinston/orbit/server/routing"
 	"github.com/jcsvwinston/orbit/server/store"
@@ -36,7 +38,9 @@ type State struct {
 	DataStudio     *routing.DataStudioRouter
 	Rbac           *routing.RbacRouter
 	Audit          *routing.AuditRing
-	Store          *store.Store // nil without server.Config.DataDir: nothing is retained
+	Store          *store.Store      // nil without server.Config.DataDir: nothing is retained
+	Alerts         *alerts.Engine    // nil evaluates nothing
+	Counters       *metrics.Counters // nil counts nothing (tests without a metrics listener)
 	Logger         *slog.Logger
 	SendChanBuffer int
 	OnAgentSubMode func(*nodes.Entry, *routing.EventBus) // hook called whenever bus demand changes
@@ -144,20 +148,39 @@ func (s *AgentService) Stream(ctx context.Context, stream *connect.BidiStream[ad
 
 		s.state.Nodes.Touch(info.NodeID, time.Now().UTC())
 
+		if c := s.state.Counters; c != nil {
+			c.FramesReceivedTotal.Inc()
+		}
 		switch body := frame.GetBody().(type) {
 		case *adminv1.Frame_Event:
 			if body.Event != nil {
 				s.state.Replay.Push(body.Event)
 				s.state.Store.AppendEvent(body.Event)
 				s.state.EventBus.Publish(body.Event)
+				if c := s.state.Counters; c != nil {
+					c.EventsReceivedTotal.WithLabelValues(eventTypeLabel(body.Event)).Inc()
+				}
 			}
 		case *adminv1.Frame_Heartbeat:
 			// last-seen already touched above; keep the newest host
-			// metrics sample for the fleet UI, and the series when the
-			// server retains.
+			// metrics sample for the fleet UI, the series when the server
+			// retains, and evaluate the alert rules against it.
 			if body.Heartbeat != nil {
+				if c := s.state.Counters; c != nil {
+					c.HeartbeatsReceivedTotal.Inc()
+				}
 				s.state.Nodes.SetHostMetrics(info.NodeID, body.Heartbeat.HostMetrics)
 				s.state.Store.AppendHostMetrics(info.NodeID, body.Heartbeat.HostMetrics)
+				for _, a := range s.state.Alerts.Observe(info.NodeID, body.Heartbeat.HostMetrics, time.Now()) {
+					if c := s.state.Counters; c != nil {
+						if a.State == alerts.Firing {
+							c.AlertsFiredTotal.Inc()
+						} else {
+							c.AlertsResolvedTotal.Inc()
+						}
+					}
+					s.state.Logger.Info("admin server: alert "+a.State.String(), "alert", a.ID, "node_id", a.NodeID, "value", a.Value)
+				}
 			}
 		case *adminv1.Frame_SnapshotResponse:
 			s.state.Snapshots.Resolve(body.SnapshotResponse)
@@ -243,3 +266,18 @@ func startedAt(reg *adminv1.NodeRegistration) time.Time {
 
 // Compile-time assertion that AgentService satisfies the proto interface.
 var _ adminv1connect.AgentServiceHandler = (*AgentService)(nil)
+
+// eventTypeLabel names an event's kind for the counters.
+func eventTypeLabel(e *adminv1.Event) string {
+	switch e.GetBody().(type) {
+	case *adminv1.Event_HttpRequest:
+		return "http_request"
+	case *adminv1.Event_SqlStatement:
+		return "sql_statement"
+	case *adminv1.Event_SessionChange:
+		return "session_change"
+	case *adminv1.Event_Custom:
+		return "custom"
+	}
+	return "unknown"
+}

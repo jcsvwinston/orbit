@@ -2,6 +2,7 @@ package server
 
 import (
 	"crypto/tls"
+	"github.com/jcsvwinston/orbit/server/alerts"
 	"log/slog"
 	"strings"
 	"time"
@@ -171,11 +172,26 @@ type Config struct {
 	Retention time.Duration
 
 	// MetricsAddr, when non-empty, runs a third HTTP listener on this
-	// address serving Prometheus /metrics (the default registry: go_* and
-	// process_* collectors; server-specific collectors are future work)
-	// plus /healthz. Empty (the default) disables the listener — metrics
-	// are strictly opt-in.
+	// address serving Prometheus /metrics — the Go runtime's collectors
+	// and the server's own (admin_server_*: nodes, frames, events,
+	// alerts) — plus /healthz. Empty (the default) disables the listener;
+	// metrics are strictly opt-in.
 	MetricsAddr string
+
+	// AlertRules are the threshold rules the server evaluates against the
+	// host metrics every heartbeat carries (server/alerts): a metric, an
+	// operator, a threshold, how long it must hold, which nodes, which
+	// channels. The binary reads them from --alert-rules-file. Empty
+	// evaluates nothing.
+	AlertRules []alerts.Rule
+
+	// AlertWebhooks are webhook channels by name: rules refer to the name,
+	// the server POSTs the alert as JSON to the URL.
+	AlertWebhooks map[string]string
+
+	// AlertSMTP configures the e-mail channel (named "email" unless the
+	// config names it). Nil configures none.
+	AlertSMTP *alerts.SMTPConfig
 
 	// Logger receives diagnostics. Pass nil for slog.Default.
 	Logger *slog.Logger

@@ -583,6 +583,14 @@ func (e *env) manage(srv *server.Server) adminv1connect.ManageServiceClient {
 	return adminv1connect.NewManageServiceClient(uiClient(nil), uiURL(srv))
 }
 
+func (e *env) alerts(srv *server.Server) adminv1connect.AlertServiceClient {
+	return adminv1connect.NewAlertServiceClient(uiClient(nil), uiURL(srv))
+}
+
+func (e *env) metricsAPI(srv *server.Server) adminv1connect.MetricsServiceClient {
+	return adminv1connect.NewMetricsServiceClient(uiClient(nil), uiURL(srv))
+}
+
 // viewerHeaders makes the operator read-only through the role header the
 // server honours from a trusted proxy.
 func viewerHeaders() map[string]string { return map[string]string{"X-Auth-Role": "viewer"} }
