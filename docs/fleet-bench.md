@@ -60,7 +60,7 @@ place for a capability, not the capability.
 
 ## The result
 
-**38 of 50 controls present. 2 partial. 10 absent.**
+**42 of 50 controls present. 1 partial. 7 absent.**
 
 | family | present | partial | absent |
 |---|---|---|---|
@@ -137,15 +137,34 @@ declared one release before they were filled, for the reason `FDS-05` and
 `FDS-07` stayed partial after `S3`: the agent and the server pin the
 protocol by tag.
 
-### ha — 1 present · 1 partial · 3 absent
+### ha — 5 present · 0 partial · 0 absent
 
 | id | control | verdict | what is missing |
 |---|---|---|---|
 | `HA-01` | an agent fails over to the next endpoint when the first is unreachable | **present** | — |
-| `HA-02` | two servers share the node registry: an agent connected to A is listed by B | **absent** | each server keeps its own in-memory node registry (server/nodes/registry.go); server B lists nothing about an agent connected to A. server/doc.go states active-active is not implemented. |
-| `HA-03` | a UI subscribed on server B receives events from an agent connected to A | **absent** | events fan out inside the server that received them (server/routing/eventbus.go) and the server never talks to another server: a subscriber on B sees nothing an agent sends to A. |
-| `HA-04` | agents are assigned across servers deterministically | **absent** | no shard, peer, cluster or assignment field in server.Config or agent.Config and nothing about it on the wire: an agent connects to the first endpoint in its list that answers /healthz. |
-| `HA-05` | a reconnect under the same node_id supersedes the previous stream: one node, no duplicates | **partial** | the registry keeps one entry: Registry.Add (server/nodes/registry.go) evicts the old entry and cancels its context, which stops the server's writer. The old stream itself is not ended: AgentService.Stream's reader loop (server/services/agent_service.go:106-117) blocks in stream.Receive() and only checks streamCtx.Err() after Receive returns an error, so the superseded peer sees no error and a frame it sends after the takeover is still published as the node — a UI subscriber receives it. The old stream lives until its peer closes it. |
+| `HA-02` | two servers share the node registry: an agent connected to A is listed by B | **present** | servers configured as peers (server.Config.PeerAddrs) keep one stream to each other and announce their nodes; B lists A's node as remote with the origin in the label orbit.server, and refuses a Data Studio request for it naming the owner (ADR-014). |
+| `HA-03` | a UI subscribed on server B receives events from an agent connected to A | **present** | an event a local agent sends is relayed to every peer, which publishes it to its own UI subscribers and its replay ring; while a peer is connected the agents ship everything, since the mesh carries events, not the peers' filters (ADR-014). |
+| `HA-04` | agents are assigned across servers deterministically | **present** | with server.Config.AssignNodes each node is owned by one server, chosen by rendezvous hashing over this server and the peers it reaches; an agent that registers elsewhere is sent Command.redirect and reconnects to its owner, which it accepts only for an endpoint it is configured for. |
+| `HA-05` | a reconnect under the same node_id supersedes the previous stream: one node, no duplicates | **present** | the registry keeps one entry and the superseded stream is ENDED: the handler waits on its context as well as on Receive, returns Aborted to the old peer when a newer registration evicts it, and drops a frame that raced in after (OR-56). |
+
+
+The `ha` family is **present** since A9 `S8`, and complete. Servers
+configured as peers (`--peers`) keep one stream to each other on the agent
+listener and push their nodes, host metrics and events down it: a node
+connected to A is listed on B as remote, with the origin in the label
+`orbit.server`, and a Data Studio request for it on B is refused naming A
+(`HA-02`); an event A's agent sends reaches a subscriber on B live and in
+B's replay ring (`HA-03`); with `--assign-nodes` each node is owned by one
+server by rendezvous hashing over the servers that reach each other, and an
+agent that registers elsewhere is redirected to its owner, which it accepts
+only for an endpoint it is configured for (`HA-04`); and the stream a
+reconnect under the same node id supersedes is ended — the old peer sees
+`Aborted` and a frame that races in after is dropped, closing OR-56
+(`HA-05`). While a peer is connected the agents send everything they emit,
+since the mesh carries events and not the peers' filters. Three mutations
+turned probes red: a mesh that relays nothing (`HA-03`), a server that does
+not redirect (`HA-04`), a registry that ignores what a peer announces
+(`HA-02`).
 
 ### identity — 10 present · 0 partial · 0 absent
 

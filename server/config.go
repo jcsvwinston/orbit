@@ -1,9 +1,12 @@
 package server
 
 import (
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/hex"
 	"github.com/jcsvwinston/orbit/server/alerts"
 	"log/slog"
+	"os"
 	"strings"
 	"time"
 )
@@ -178,6 +181,38 @@ type Config struct {
 	// metrics are strictly opt-in.
 	MetricsAddr string
 
+	// ServerID names this server to its peers (ADR-014). Default: the
+	// host name, with a random suffix when the host name is empty.
+	ServerID string
+
+	// AgentAdvertiseAddr is the endpoint agents reach THIS server on
+	// (http(s)://host:port of the agent listener), as it appears in the
+	// agents' endpoint lists. Peers learn it, and a node assigned here is
+	// redirected to it. Empty means this server receives no assignments.
+	AgentAdvertiseAddr string
+
+	// PeerAddrs are the agent-listener endpoints of the other admin
+	// servers of the fleet (http(s)://host:port). The server keeps one
+	// stream to each and pushes its nodes, events and host metrics down
+	// it; each peer does the same towards this one. Empty: a single
+	// server, as before.
+	PeerAddrs []string
+
+	// PeerTLS is the client TLS configuration for https:// peers (root CAs,
+	// a client certificate when the peers' listeners verify one). Nil
+	// uses the system trust store.
+	PeerTLS *tls.Config
+
+	// PeerToken is the bearer this server presents to its peers' agent
+	// listeners. Empty uses AgentToken: peers usually share one.
+	PeerToken string
+
+	// AssignNodes makes the fleet assign each node to one server by
+	// rendezvous hashing over this server and the peers it reaches, and
+	// redirect an agent that registered elsewhere to its owner. Off, an
+	// agent stays wherever it connected.
+	AssignNodes bool
+
 	// AlertRules are the threshold rules the server evaluates against the
 	// host metrics every heartbeat carries (server/alerts): a metric, an
 	// operator, a threshold, how long it must hold, which nodes, which
@@ -228,6 +263,12 @@ func (c Config) withDefaults() Config {
 	if c.Retention == 0 {
 		c.Retention = 7 * 24 * time.Hour
 	}
+	if strings.TrimSpace(c.ServerID) == "" {
+		c.ServerID = defaultServerID()
+	}
+	if strings.TrimSpace(c.PeerToken) == "" {
+		c.PeerToken = c.AgentToken
+	}
 	if strings.TrimSpace(c.UIAuthHeader) == "" {
 		c.UIAuthHeader = "X-Auth-User"
 	}
@@ -244,4 +285,14 @@ func (c Config) withDefaults() Config {
 		c.Logger = slog.Default()
 	}
 	return c
+}
+
+// defaultServerID is the host name, or a random name when there is none.
+func defaultServerID() string {
+	if h, err := os.Hostname(); err == nil && strings.TrimSpace(h) != "" {
+		return strings.TrimSpace(h)
+	}
+	var b [4]byte
+	_, _ = rand.Read(b[:])
+	return "server-" + hex.EncodeToString(b[:])
 }

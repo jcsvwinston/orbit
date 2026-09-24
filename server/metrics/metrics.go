@@ -15,6 +15,7 @@ type Counters struct {
 	DataStudioRequestsTotal *prometheus.CounterVec // labels: outcome (ok, error)
 	AlertsFiredTotal        prometheus.Counter
 	AlertsResolvedTotal     prometheus.Counter
+	EventsRelayedInTotal    prometheus.Counter
 }
 
 // NewCounters builds and registers the counters on reg.
@@ -44,9 +45,13 @@ func NewCounters(reg prometheus.Registerer) *Counters {
 			Name: "admin_server_alerts_resolved_total",
 			Help: "Alerts that resolved.",
 		}),
+		EventsRelayedInTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "admin_server_events_relayed_in_total",
+			Help: "Events received from peer servers and fanned out to this server's UI subscriptions.",
+		}),
 	}
 	if reg != nil {
-		reg.MustRegister(c.FramesReceivedTotal, c.EventsReceivedTotal, c.HeartbeatsReceivedTotal, c.DataStudioRequestsTotal, c.AlertsFiredTotal, c.AlertsResolvedTotal)
+		reg.MustRegister(c.FramesReceivedTotal, c.EventsReceivedTotal, c.HeartbeatsReceivedTotal, c.DataStudioRequestsTotal, c.AlertsFiredTotal, c.AlertsResolvedTotal, c.EventsRelayedInTotal)
 	}
 	return c
 }

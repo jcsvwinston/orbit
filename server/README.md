@@ -159,6 +159,15 @@ alerts to the UI. A rule naming an unconfigured channel refuses to start.
 With `--metrics-addr` the server also publishes its own `admin_server_*`
 collectors beside the runtime's.
 
+## A fleet of servers
+
+`--peers` names the other servers' agent listeners; the servers share their
+node registries (remote nodes carry the label `orbit.server`), relay events
+to each other's UIs and, with `--assign-nodes` and `--agent-advertise-addr`,
+assign each node to one server by rendezvous hashing and redirect its agent
+there (`server/peers`, ADR-014). Peers authenticate like agents
+(`--peer-token` defaults to the agent token).
+
 ## Sub-packages
 
 | Sub-package         | Responsibility                                                                                                            |

@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -95,6 +96,11 @@ type Config struct {
 	// call with 401). The agent uses it to reset the dial backoff and
 	// log the honest "connected" line (OR5-2).
 	OnAccepted func()
+
+	// OnRedirect is called with the endpoint a Redirect command names and
+	// reports whether the agent will go there; the stream then ends so
+	// the next dial goes to that endpoint first (ADR-014).
+	OnRedirect func(endpoint string) bool
 }
 
 // RbacDispatcher answers an RBAC snapshot request. Concrete
@@ -435,7 +441,35 @@ func (s *Stream) handleCommand(cmd *adminv1.Command) {
 		s.handleDataStudio(body.DataStudio)
 	case *adminv1.Command_Rbac:
 		s.handleRbac(body.Rbac)
+	case *adminv1.Command_Redirect:
+		s.handleRedirect(body.Redirect)
 	}
+}
+
+// handleRedirect ends this stream so the agent's next cycle dials the
+// server that owns the node (ADR-014). The agent decides whether the
+// endpoint is one it may connect to; a redirect it refuses leaves the
+// stream open.
+func (s *Stream) handleRedirect(in *adminv1.Redirect) {
+	if in == nil || s.cfg.OnRedirect == nil {
+		return
+	}
+	if !s.cfg.OnRedirect(strings.TrimSpace(in.GetEndpoint())) {
+		s.cfg.Logger.Warn("admin server redirected the agent to an endpoint it is not configured for; staying",
+			"endpoint", in.GetEndpoint(), "reason", in.GetReason())
+		return
+	}
+	s.cfg.Logger.Info("admin server redirected the agent; reconnecting there",
+		"endpoint", in.GetEndpoint(), "reason", in.GetReason())
+	s.Goodbye("redirected to " + in.GetEndpoint())
+	// The Goodbye is queued; the cycle ends once the send path flushed it
+	// or the stream context goes. Cancelling here would race the Goodbye.
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		if s.streamCancel != nil {
+			s.streamCancel()
+		}
+	}()
 }
 
 // handleRbac snapshots the app's RBAC state and ships the response back.

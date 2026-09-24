@@ -167,6 +167,16 @@ counted in `admin_agent_events_parked_total`. An agent with no
 subscriptions when the stream ended parks nothing: the server had asked
 for nothing.
 
+## Following the fleet
+
+An admin server may tell the agent that another server owns its node and
+where that server is. The agent goes — it ends the stream and dials that
+endpoint first from then on — **only if the endpoint is in its own list**.
+A redirect to a server the operator did not configure is logged and
+ignored, and the agent stays where it is: the servers decide the fleet's
+layout, the operator decides where an agent may connect. Redirects the
+agent followed are counted in `admin_agent_redirects_total`.
+
 ## Hot-path cost
 
 The agent never blocks the framework's request thread. Every producer-side path

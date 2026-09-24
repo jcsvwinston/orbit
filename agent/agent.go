@@ -417,6 +417,13 @@ func (a *Agent) runOnce(ctx context.Context) error {
 		// Connected() channel (the require_connection guard). Doing any
 		// of these earlier (at Dial time) treated the auth-exempt
 		// /healthz probe as proof of a working connection (OR5-2/OR6-1).
+		OnRedirect: func(endpoint string) bool {
+			if !a.dialer.Prefer(endpoint) {
+				return false
+			}
+			a.metrics.RedirectsTotal.Inc()
+			return true
+		},
 		OnAccepted: func() {
 			accepted.Store(true)
 			// The first accepted stream is a connect; every accepted
