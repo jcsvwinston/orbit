@@ -37,9 +37,12 @@
   --t10: #ececea; --t11: #e2e2df; --t12: #ececea; --t13: #e4e4e1; --t14: #e3e3e0;
   --t15: #e8e8e5; --t16: #e4e4e1; --t17: #e6e6e3; --t18: #e0e0dc; --t19: #d2d2cd;
   --t20: #d5d5d0; --t21: #b5b5bb; --t22: #9b9ba1; --t23: #b8b8be; --t24: #90909a;
-  /* --t26 raised from #8e8e98 (~3.0:1) to meet WCAG AA (OR-UX-P1-9). */
-  --t25: #9494a0; --t26: #6d6d77; --t27: #8c8c96; --t28: #82828c; --t29: #7c7c86;
-  --t30: #6e6e78; --t31: #73737d; --t32: #6b6b74; --t33: #62626b; --t34: #66666f;
+  /* --t26 raised from #8e8e98 (~3.0:1) to meet WCAG AA (OR-UX-P1-9); --t27
+     (#8c8c96) and --t32 (#6b6b74) raised the same way for the small muted
+     text of the sidebar and the overview cards, which the browser bench
+     measured below 4.5:1 on the --t1 surface (A9 S10). */
+  --t25: #9494a0; --t26: #6d6d77; --t27: #6d6d77; --t28: #82828c; --t29: #7c7c86;
+  --t30: #6e6e78; --t31: #73737d; --t32: #62626b; --t33: #62626b; --t34: #66666f;
   --t35: #5d5d66; --t36: #52525b; --t37: #4c4c55; --t38: #47474f; --t39: #3d3d45;
   --t40: #37373f; --t41: #34343c; --t42: #2f2f37; --t43: #2b2b32; --t44: #26262d;
   --t45: #222228; --t46: #1b1b21; --t47: #141419;

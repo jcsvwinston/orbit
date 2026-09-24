@@ -2294,6 +2294,10 @@ type SelfInfo struct {
 	// True when the operator is read-only (viewer role / --ui-read-only): the
 	// UI hides Data Studio mutation controls.
 	ReadOnly bool `protobuf:"varint,4,opt,name=read_only,json=readOnly,proto3" json:"read_only,omitempty"`
+	// Tenant the operator is scoped to, from the trusted proxy's tenant
+	// header; empty means no tenant scope. Additive: a server that predates
+	// it leaves it empty, and the UI shows nothing.
+	Tenant string `protobuf:"bytes,6,opt,name=tenant,proto3" json:"tenant,omitempty"`
 	// The admin server's build version (debug.ReadBuildInfo; "devel" for
 	// source builds).
 	ServerVersion string `protobuf:"bytes,5,opt,name=server_version,json=serverVersion,proto3" json:"server_version,omitempty"`
@@ -2357,6 +2361,13 @@ func (x *SelfInfo) GetReadOnly() bool {
 		return x.ReadOnly
 	}
 	return false
+}
+
+func (x *SelfInfo) GetTenant() string {
+	if x != nil {
+		return x.Tenant
+	}
+	return ""
 }
 
 func (x *SelfInfo) GetServerVersion() string {
@@ -2754,8 +2765,13 @@ type ModelInfo struct {
 	PrimaryKey           string                 `protobuf:"bytes,5,opt,name=primary_key,json=primaryKey,proto3" json:"primary_key,omitempty"`
 	RecordCount          int64                  `protobuf:"varint,6,opt,name=record_count,json=recordCount,proto3" json:"record_count,omitempty"` // -1 when not requested or unknown
 	RecordCountEstimated bool                   `protobuf:"varint,7,opt,name=record_count_estimated,json=recordCountEstimated,proto3" json:"record_count_estimated,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	// The field that scopes the model to a tenant (the framework's tenant
+	// column), empty when the model has none. An operator with a tenant sees
+	// and writes only that tenant's rows through the fleet; the UI can say
+	// so on the column. Additive.
+	TenantField   string `protobuf:"bytes,8,opt,name=tenant_field,json=tenantField,proto3" json:"tenant_field,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ModelInfo) Reset() {
@@ -2835,6 +2851,13 @@ func (x *ModelInfo) GetRecordCountEstimated() bool {
 		return x.RecordCountEstimated
 	}
 	return false
+}
+
+func (x *ModelInfo) GetTenantField() string {
+	if x != nil {
+		return x.TenantField
+	}
+	return ""
 }
 
 type ModelSchema struct {
@@ -5763,12 +5786,13 @@ const file_nucleus_admin_v1_admin_proto_rawDesc = "" +
 	"\x04type\x18\x02 \x01(\x0e2\x1e.nucleus.admin.v1.SnapshotTypeR\x04type\x12=\n" +
 	"\fgenerated_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\vgeneratedAt\x12!\n" +
 	"\fpayload_json\x18\x04 \x01(\fR\vpayloadJson\"\x10\n" +
-	"\x0eGetSelfRequest\"\x92\x01\n" +
+	"\x0eGetSelfRequest\"\xaa\x01\n" +
 	"\bSelfInfo\x12\x18\n" +
 	"\asubject\x18\x01 \x01(\tR\asubject\x12\x14\n" +
 	"\x05email\x18\x02 \x01(\tR\x05email\x12\x12\n" +
 	"\x04role\x18\x03 \x01(\tR\x04role\x12\x1b\n" +
-	"\tread_only\x18\x04 \x01(\bR\breadOnly\x12%\n" +
+	"\tread_only\x18\x04 \x01(\bR\breadOnly\x12\x16\n" +
+	"\x06tenant\x18\x06 \x01(\tR\x06tenant\x12%\n" +
 	"\x0eserver_version\x18\x05 \x01(\tR\rserverVersion\"y\n" +
 	"\x16ListHostMetricsRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x120\n" +
@@ -5805,7 +5829,7 @@ const file_nucleus_admin_v1_admin_proto_rawDesc = "" +
 	"\achoices\x18\x10 \x03(\v2\x1d.nucleus.admin.v1.FieldChoiceR\achoices\"9\n" +
 	"\vFieldChoice\x12\x14\n" +
 	"\x05value\x18\x01 \x01(\tR\x05value\x12\x14\n" +
-	"\x05label\x18\x02 \x01(\tR\x05label\"\xee\x01\n" +
+	"\x05label\x18\x02 \x01(\tR\x05label\"\x91\x02\n" +
 	"\tModelInfo\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x06plural\x18\x02 \x01(\tR\x06plural\x12\x14\n" +
@@ -5814,7 +5838,8 @@ const file_nucleus_admin_v1_admin_proto_rawDesc = "" +
 	"\vprimary_key\x18\x05 \x01(\tR\n" +
 	"primaryKey\x12!\n" +
 	"\frecord_count\x18\x06 \x01(\x03R\vrecordCount\x124\n" +
-	"\x16record_count_estimated\x18\a \x01(\bR\x14recordCountEstimated\"t\n" +
+	"\x16record_count_estimated\x18\a \x01(\bR\x14recordCountEstimated\x12!\n" +
+	"\ftenant_field\x18\b \x01(\tR\vtenantField\"t\n" +
 	"\vModelSchema\x12/\n" +
 	"\x04info\x18\x01 \x01(\v2\x1b.nucleus.admin.v1.ModelInfoR\x04info\x124\n" +
 	"\x06fields\x18\x02 \x03(\v2\x1c.nucleus.admin.v1.ModelFieldR\x06fields\"\x92\x01\n" +

@@ -19,7 +19,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useStreamEvents } from '@/fleet/hooks/useStreamEvents'
-import { EventType, Filter, type Event } from '@/fleet/gen/nucleus/admin/v1/admin_pb'
+import { create } from '@bufbuild/protobuf'
+import { EventType, FilterSchema, type Event } from '@/fleet/gen/nucleus/admin/v1/admin_pb'
 import { durationToMillis, timestampToDate } from '@/fleet/lib/format'
 
 export const WINDOW_SECONDS = 60
@@ -72,7 +73,7 @@ export function useFleetStats(nodeId?: string | null): UseFleetStatsResult {
   // Stable filter reference — useStreamEvents re-opens the stream otherwise.
   const filter = useMemo(
     () =>
-      new Filter({
+      create(FilterSchema, {
         types: [EventType.HTTP_REQUEST, EventType.SQL_STATEMENT, EventType.SESSION_CHANGE],
       }),
     [],

@@ -415,9 +415,17 @@ jobs:
       - run: go test ./internal/adminbench/ -run 'TestBrowserBench' -count=1 -v
         env:
           ORBIT_BENCH_BROWSER: required
+      # The fleet plane's UI, over a real admin server and agent, with the
+      # same instrument (project "fleet"); driven from the test-only module
+      # that may boot them (ADR-006).
+      - run: go test ./internal/fleettest/fleetbench/ -run 'TestFleetBrowserBench' -count=1 -v
+        env:
+          ORBIT_BENCH_BROWSER: required
       - name: the instrument's own report, when it failed
         if: failure()
-        run: cat internal/adminbench/browser/results.json || true
+        run: |
+          cat internal/adminbench/browser/results.json || true
+          cat internal/adminbench/browser/results-fleet.json || true
 
   # ---------------------------------------------------------------------------
   # "CI Required Gate" is the ONE check name branch protection should require:

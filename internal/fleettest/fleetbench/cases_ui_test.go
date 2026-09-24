@@ -34,19 +34,21 @@ func controlsUI() []control {
 				"module's tests when the embedded dist exceeds it; the fleet's is its whole bundle today, a ceiling for the re-skin.",
 			probe: probeFleetBundleBudget},
 		{id: "UI-06", family: "ui", title: "the fleet UI's generated stubs are connect-es 2 / protobuf-es 2, in the dependencies and in the generators",
-			want: absent, note: "ui/package.json pins @connectrpc/connect ^1.6.1, @connectrpc/connect-web ^1.7.0 and " +
-				"@bufbuild/protobuf ^1.10.0, and proto/buf.gen.yaml pins the generators bufbuild/es:v1.10.0 and connectrpc/es:v1.6.1.",
+			want: present, note: "ui/package.json pins @connectrpc/connect ^2, @connectrpc/connect-web ^2 and @bufbuild/protobuf ^2, " +
+				"and proto/buf.gen.yaml generates the fleet's stubs with bufbuild/es v2 alone: messages and service descriptors from " +
+				"one generator, created with create(Schema) and called through createClient.",
 			probe: probeConnectES2},
 		{id: "UI-07", family: "ui", title: "the browser instrument covers the fleet UI: a Playwright spec navigates to a path outside /admin",
-			want: absent, note: "the only Playwright spec (internal/adminbench/browser/specs/panel.spec.ts) navigates to /admin paths only; " +
-				"nothing opens the fleet UI in a browser.",
+			want: present, note: "internal/adminbench/browser/specs/fleet.spec.ts is the fleet project of the same instrument: driven from " +
+				"internal/fleettest (TestFleetBrowserBench), which boots an admin server and an agent, it opens the fleet UI at / and " +
+				"measures six UIF controls (instrument, overview lists the node, contrast, names, landmarks, keyboard).",
 			probe: probeBrowserInstrumentCoversFleet},
 		{id: "UI-08", family: "ui", title: "the fleet UI is told the operator's role: GetSelf says read-only for a viewer",
 			want: present, probe: probeUIKnowsRole},
 		{id: "UI-09", family: "ui", title: "the fleet UI has a tenant notion: a message on the wire carries one and the SPA sends or shows it",
-			want: partial, note: "the wire carries one since A9 S3 (OperatorIdentity.tenant on DataStudioRequest, server to agent), " +
-				"but nothing the fleet SPA sends (ui/src, outside src/gen) names a tenant and no screen shows which tenant an " +
-				"operator or a row belongs to: the Control surface still has no tenant field at all. S10 puts the tenant in the UI.",
+			want: partial, note: "the SPA shows the operator's tenant (SelfInfo.tenant, in the footer line) and marks a tenant-scoped " +
+				"model and its column (ModelInfo.tenant_field) — both additive fields of this session — but the server and the agent " +
+				"fill them once they pin the protocol that carries them; until then the UI reads fields the wire leaves empty.",
 			probe: probeFleetTenantNotion},
 		{id: "UI-10", family: "ui", title: "the panel's initial load stays within its budget, and the budget is a test constant",
 			want: present, probe: probePanelBudgetEnforced},

@@ -4,14 +4,14 @@
 // rewrites /nucleus.admin.v1.* to the admin server) and in production
 // (admin server serves the UI and the RPC paths from the same origin).
 
-import { createPromiseClient, type Interceptor } from '@connectrpc/connect'
+import { createClient, type Interceptor } from '@connectrpc/connect'
 import { createConnectTransport } from '@connectrpc/connect-web'
 import { Code, ConnectError } from '@connectrpc/connect'
 import {
   ControlService,
   DataStudioService,
   ManageService,
-} from '@/fleet/gen/nucleus/admin/v1/admin_connect.js'
+} from '@/fleet/gen/nucleus/admin/v1/admin_pb'
 
 // unauthorizedListeners are notified whenever any RPC comes back
 // Unauthenticated. App subscribes to render the not-authorized screen
@@ -40,10 +40,9 @@ const authInterceptor: Interceptor = (next) => async (req) => {
 const transport = createConnectTransport({
   baseUrl: '/',
   useBinaryFormat: false,
-  credentials: 'same-origin',
   interceptors: [authInterceptor],
 })
 
-export const controlClient = createPromiseClient(ControlService, transport)
-export const dataStudioClient = createPromiseClient(DataStudioService, transport)
-export const manageClient = createPromiseClient(ManageService, transport)
+export const controlClient = createClient(ControlService, transport)
+export const dataStudioClient = createClient(DataStudioService, transport)
+export const manageClient = createClient(ManageService, transport)

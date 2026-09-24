@@ -25,5 +25,15 @@ export default defineConfig({
     // meaning without one.
     viewport: { width: 1280, height: 800 },
   },
-  reporter: [['json', { outputFile: 'results.json' }]],
+  // Two planes, two projects, one instrument. Each Go driver boots its own
+  // application and runs its own project (`--project=panel` from
+  // internal/adminbench, `--project=fleet` from internal/fleettest), so a
+  // spec never runs against the wrong plane.
+  projects: [
+    { name: 'panel', testMatch: /panel\.spec\.ts/ },
+    { name: 'fleet', testMatch: /fleet\.spec\.ts/ },
+  ],
+  // The driver names the results file so the two projects never overwrite
+  // each other's report.
+  reporter: [['json', { outputFile: process.env.PLAYWRIGHT_JSON_OUTPUT_NAME ?? 'results.json' }]],
 })

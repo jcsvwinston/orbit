@@ -81,7 +81,7 @@ func TestBrowserBench(t *testing.T) {
 		t.Fatalf("the bench application is not serving: %d", r.code)
 	}
 
-	cmd := exec.Command("npx", "playwright", "test", "--reporter=json")
+	cmd := exec.Command("npx", "playwright", "test", "--project=panel", "--reporter=json")
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
 		"ORBIT_BENCH_URL="+srv.URL(""),

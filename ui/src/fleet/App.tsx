@@ -9,6 +9,7 @@ import { onUnauthorized } from '@/fleet/lib/transport'
 import { NotAuthorizedPage } from '@/fleet/pages/NotAuthorizedPage'
 import { useNodes } from '@/fleet/hooks/useNodes'
 import { useSelf } from '@/fleet/hooks/useSelf'
+import { describeOperator } from '@/fleet/lib/operator'
 import { OverviewPage } from '@/fleet/pages/OverviewPage'
 import { MetricsPage } from '@/fleet/pages/MetricsPage'
 import { HTTPStreamPage } from '@/fleet/pages/HTTPStreamPage'
@@ -130,9 +131,7 @@ function App(): React.JSX.Element {
   // Footer: the real server version + the operator identity actions are
   // audited under (OR-UX-P1-6).
   const version = self?.serverVersion ? t.app.footerVersion(self.serverVersion) : ''
-  const identity = self?.subject
-    ? `${self.subject}${self.readOnly ? t.app.viewerSuffix : ''}`
-    : ''
+  const identity = describeOperator(self)
 
   return (
     <Layout

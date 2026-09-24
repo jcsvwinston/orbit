@@ -30,6 +30,9 @@ export const t = {
     switchToDark: 'Switch to dark theme',
     footerVersion: (version: string) => `orbit ${version}`,
     viewerSuffix: ' (viewer)',
+    // The tenant the operator is scoped to, as the server resolved it from
+    // the trusted proxy: shown next to who they are audited as.
+    tenantLabel: (tenant: string) => `tenant ${tenant}`,
   },
 
   common: {
@@ -259,7 +262,11 @@ export const t = {
 
   dataStudio: {
     title: 'Data Studio',
-    description: 'Browse and edit registered models. Operations execute on a connected agent — signals, validation and tenant filters apply.',
+    description:
+      'Browse and edit registered models. Operations execute on a connected agent as you: the application\u2019s policy applies per model and verb, and an operator scoped to a tenant sees and writes only that tenant\u2019s rows.',
+    // A model whose rows belong to a tenant, and the column that says which.
+    tenantScoped: (field: string) => `tenant-scoped by ${field}`,
+    tenantColumnTag: 'tenant',
     anyNode: 'any node',
     targetNodeAria: 'Target node',
     targetNodeTitle: 'Route Data Studio operations to a specific node',

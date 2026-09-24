@@ -14,6 +14,7 @@ import { Card, GhostButton, Label } from '@/fleet/components/ui'
 import { useAudit } from '@/fleet/hooks/useManage'
 import { SEMANTIC } from '@/fleet/lib/colors'
 import { t } from '@/fleet/lib/i18n'
+import { timestampDate } from '@bufbuild/protobuf/wkt'
 import type { AuditEntry } from '@/fleet/gen/nucleus/admin/v1/admin_pb'
 
 const AUDIT_GRID = '150px 170px 170px minmax(0,1fr) 110px'
@@ -29,7 +30,7 @@ function actionColor(action: string): string {
 
 function formatTime(entry: AuditEntry): string {
   if (!entry.time) return t.common.empty
-  return entry.time.toDate().toLocaleString(undefined, { hour12: false })
+  return timestampDate(entry.time).toLocaleString(undefined, { hour12: false })
 }
 
 const inputClass =
@@ -71,7 +72,7 @@ export function AuditLogPage() {
       if (action && !e.action.toLowerCase().includes(action)) return false
       if (filters.node && e.nodeId !== filters.node) return false
       if (sinceMs !== null || untilMs !== null) {
-        const t = e.time ? e.time.toDate().getTime() : 0
+        const t = e.time ? timestampDate(e.time).getTime() : 0
         if (sinceMs !== null && t < sinceMs) return false
         if (untilMs !== null && t > untilMs) return false
       }
@@ -94,7 +95,7 @@ export function AuditLogPage() {
     const lines = [header.join(',')]
     for (const e of filtered) {
       const row = [
-        e.time ? e.time.toDate().toISOString() : '',
+        e.time ? timestampDate(e.time).toISOString() : '',
         e.actor,
         e.action,
         e.target,
@@ -201,7 +202,7 @@ export function AuditLogPage() {
             <>
               {pageRows.map((a, idx) => (
                 <div
-                  key={`${a.time?.toDate().getTime() ?? 0}-${idx}`}
+                  key={`${(a.time ? timestampDate(a.time).getTime() : 0)}-${idx}`}
                   role="row"
                   className="grid items-center border-t border-t10 px-4 py-[6.5px] font-mono text-[11.5px] transition-colors hover:bg-t7"
                   style={{ gridTemplateColumns: AUDIT_GRID }}

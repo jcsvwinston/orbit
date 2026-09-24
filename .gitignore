@@ -24,6 +24,7 @@ coverage*.txt
 # dependencies, the JSON report the Go side reads, and Playwright's traces.
 # The specs, the config and the lockfile ARE committed.
 internal/adminbench/browser/results.json
+internal/adminbench/browser/results-fleet.json
 internal/adminbench/browser/test-results/
 internal/adminbench/browser/playwright-report/
 

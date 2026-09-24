@@ -358,6 +358,10 @@ message SelfInfo {
   // True when the operator is read-only (viewer role / --ui-read-only): the
   // UI hides Data Studio mutation controls.
   bool read_only = 4;
+  // Tenant the operator is scoped to, from the trusted proxy's tenant
+  // header; empty means no tenant scope. Additive: a server that predates
+  // it leaves it empty, and the UI shows nothing.
+  string tenant = 6;
   // The admin server's build version (debug.ReadBuildInfo; "devel" for
   // source builds).
   string server_version = 5;
@@ -452,6 +456,11 @@ message ModelInfo {
   string primary_key = 5;
   int64 record_count = 6;     // -1 when not requested or unknown
   bool record_count_estimated = 7;
+  // The field that scopes the model to a tenant (the framework's tenant
+  // column), empty when the model has none. An operator with a tenant sees
+  // and writes only that tenant's rows through the fleet; the UI can say
+  // so on the column. Additive.
+  string tenant_field = 8;
 }
 
 message ModelSchema {

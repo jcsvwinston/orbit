@@ -5,7 +5,8 @@
 // report yet. Recent activity is a live node-filtered HTTP+SQL stream (the
 // node_id correlation was fixed upstream so per-node filtering works).
 import { useMemo } from 'react'
-import { Filter, EventType, type NodeInfo } from '@/fleet/gen/nucleus/admin/v1/admin_pb'
+import { create } from '@bufbuild/protobuf'
+import { EventType, FilterSchema, type NodeInfo } from '@/fleet/gen/nucleus/admin/v1/admin_pb'
 import { useNodes } from '@/fleet/hooks/useNodes'
 import { useHostMetricSeries } from '@/fleet/hooks/useHostMetricSeries'
 import { useStreamEvents } from '@/fleet/hooks/useStreamEvents'
@@ -189,7 +190,7 @@ const ACTIVITY_RENDER = 15
 function RecentActivityCard(props: { nodeId: string; connected: boolean }) {
   const filter = useMemo(
     () =>
-      new Filter({
+      create(FilterSchema, {
         types: [EventType.HTTP_REQUEST, EventType.SQL_STATEMENT],
         nodeIds: [props.nodeId],
       }),
