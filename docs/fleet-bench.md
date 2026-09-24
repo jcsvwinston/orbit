@@ -60,7 +60,7 @@ place for a capability, not the capability.
 
 ## The result
 
-**33 of 50 controls present. 2 partial. 15 absent.**
+**33 of 50 controls present. 5 partial. 12 absent.**
 
 | family | present | partial | absent |
 |---|---|---|---|
@@ -72,13 +72,13 @@ place for a capability, not the capability.
 | ui | 2 | 1 | 7 |
 | **total** | **26** | **3** | **21** |
 
-### alerts — 2 present · 0 partial · 4 absent
+### alerts — 2 present · 2 partial · 2 absent
 
 | id | control | verdict | what is missing |
 |---|---|---|---|
-| `ALR-01` | a threshold rule on a host metric raises an alert | **absent** | server.Config has no rule or threshold field and admin.proto declares no rule, threshold or alert message: the server stores the last HostMetrics sample per node and evaluates nothing against it. |
+| `ALR-01` | a threshold rule on a host metric raises an alert | **partial** | admin.proto declares AlertRule (a threshold on a host metric, for a duration, on nodes, to channels) and Alert; server.Config has no rule field yet and the server evaluates nothing. Declared, not yet done: the probe breaches a threshold once the server pins the tag and evaluates. |
 | `ALR-02` | alert channels (webhook, e-mail) exist | **absent** | server.Config has no webhook, SMTP or notification field and the protocol has no channel or recipient message: nothing on the server can be told where to send anything. |
-| `ALR-03` | the UI API exposes alert state | **absent** | ControlService and ManageService (admin.proto) have no RPC and no message about alerts or incidents; the fleet UI has nothing to show. |
+| `ALR-03` | the UI API exposes alert state | **partial** | admin.proto declares AlertService (ListAlertRules, ListAlerts, StreamAlerts) and its messages; the server does not serve it yet. Declared, not yet served: the probe reads alert state through it then. |
 | `ALR-04` | the server publishes its own Prometheus collectors (nodes connected, events dropped) on the metrics listener | **absent** | the metrics listener (server.Config.MetricsAddr) serves the default registry only — go_* and process_* families; server.go mounts promhttp.Handler() and registers no collector of its own, which server/config.go calls future work. |
 | `ALR-05` | the agent publishes its own Prometheus collectors on its metrics listener | **present** | — |
 | `ALR-06` | a node that stops sending frames is listed as not connected within the inactivity timeout plus one janitor tick | **present** | — |
@@ -184,13 +184,13 @@ the new certificate on the next connection, the agent on its next connection
 certificate serving, with one WARN. The CA bundles (`--agent-client-ca`,
 `tls_ca_file`) are still read once; rotating a CA is not a control yet.
 
-### retention — 6 present · 0 partial · 1 absent
+### retention — 6 present · 1 partial · 0 absent
 
 | id | control | verdict | what is missing |
 |---|---|---|---|
 | `RET-01` | events the server replays to a new UI subscriber survive a server restart | **present** | with server.Config.DataDir the server retains events in a SQLite file (server/store) and warms its replay ring from it at start; a restarted server replays what the previous process received. Without a data directory the ring is in memory and a restart starts empty, as before. |
 | `RET-02` | an event emitted while the agent has no stream is delivered after it reconnects | **present** | when a stream ends the agent keeps listening to the bus under the filters the server had and parks the events in its ring buffer (agent/catcher.go); the next stream drains the buffer right after registering. Bounded by the buffer: an outage longer than it keeps the newest events per kind, counted as dropped. |
-| `RET-03` | host metrics have a history per node, not only the last sample | **absent** | the node registry keeps the latest HostMetrics per node (server/nodes/registry.go SetHostMetrics); NodeInfo carries one host_metrics message, not a series, and no RPC returns a history. |
+| `RET-03` | host metrics have a history per node, not only the last sample | **partial** | the samples are retained per node when the server has a data directory (server/store), and the protocol declares MetricsService.ListHostMetrics to return them; the server serves it once it pins the tag that carries the service. Declared, not yet served: the probe reads more than one sample through it then. |
 | `RET-04` | the fleet audit trail survives a server restart | **present** | with server.Config.DataDir every audit entry is written to the store and ListAudit reads from it, so a restarted server serves the trail the previous process wrote, within the retention window. |
 | `RET-05` | a retention window is configurable and enforced | **present** | server.Config.Retention (--retention, default 7 days, with --data-dir) bounds every read and a janitor deletes older rows; the probe sets a one-second window and watches an audit entry leave what the server serves. |
 | `RET-06` | the fleet audit trail can be exported (CSV or JSON download) | **present** | GET /api/audit/export?format=csv\|json on the UI listener, behind the same auth chain as the RPCs, downloads the trail ListAudit serves (the store when the server retains, the ring otherwise), newest first, up to 10000 rows. |
@@ -213,6 +213,19 @@ retained, and the protocol does not yet declare the RPC that returns them —
 that change travels with the next protocol cut. Two mutations turned the
 probes red: a server that does not warm its replay ring from the store
 (`RET-01`), an agent that parks nothing (`RET-02`).
+
+`RET-03`, `ALR-01` and `ALR-03` are **partial** since the protocol batch
+that follows `S6`: `admin.proto` declares in one additive change what
+`S6`, `S7` and `S8` need on the wire — `MetricsService.ListHostMetrics`
+for the retained samples, `AlertRule`/`Alert` with `AlertService`
+(`ListAlertRules`, `ListAlerts`, `StreamAlerts`), `Command.redirect`, and
+`PeerService.Sync` with its frames for what one server tells another — so
+the fleet modules, which pin the protocol by tag, pay one cut instead of
+three. Declared is not done: each probe says what it will measure once the
+server serves the surface, and stays partial until then. New services
+rather than new RPCs on existing ones, because an RPC added to a service
+changes the handler interface every implementation must satisfy on the
+day the tag lands.
 
 ### ui — 2 present · 1 partial · 7 absent
 

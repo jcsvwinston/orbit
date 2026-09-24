@@ -102,6 +102,64 @@ proto3.util.setEnumType(SnapshotType, "nucleus.admin.v1.SnapshotType", [
 ]);
 
 /**
+ * @generated from enum nucleus.admin.v1.AlertSeverity
+ */
+export enum AlertSeverity {
+  /**
+   * @generated from enum value: ALERT_SEVERITY_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: ALERT_SEVERITY_INFO = 1;
+   */
+  INFO = 1,
+
+  /**
+   * @generated from enum value: ALERT_SEVERITY_WARNING = 2;
+   */
+  WARNING = 2,
+
+  /**
+   * @generated from enum value: ALERT_SEVERITY_CRITICAL = 3;
+   */
+  CRITICAL = 3,
+}
+// Retrieve enum metadata with: proto3.getEnumType(AlertSeverity)
+proto3.util.setEnumType(AlertSeverity, "nucleus.admin.v1.AlertSeverity", [
+  { no: 0, name: "ALERT_SEVERITY_UNSPECIFIED" },
+  { no: 1, name: "ALERT_SEVERITY_INFO" },
+  { no: 2, name: "ALERT_SEVERITY_WARNING" },
+  { no: 3, name: "ALERT_SEVERITY_CRITICAL" },
+]);
+
+/**
+ * @generated from enum nucleus.admin.v1.AlertState
+ */
+export enum AlertState {
+  /**
+   * @generated from enum value: ALERT_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: ALERT_STATE_FIRING = 1;
+   */
+  FIRING = 1,
+
+  /**
+   * @generated from enum value: ALERT_STATE_RESOLVED = 2;
+   */
+  RESOLVED = 2,
+}
+// Retrieve enum metadata with: proto3.getEnumType(AlertState)
+proto3.util.setEnumType(AlertState, "nucleus.admin.v1.AlertState", [
+  { no: 0, name: "ALERT_STATE_UNSPECIFIED" },
+  { no: 1, name: "ALERT_STATE_FIRING" },
+  { no: 2, name: "ALERT_STATE_RESOLVED" },
+]);
+
+/**
  * NodeRegistration is sent by the agent immediately after the bidi stream is
  * established. It identifies the framework process to the admin server.
  *
@@ -1049,6 +1107,16 @@ export class Command extends Message<Command> {
      */
     value: RbacRequest;
     case: "rbac";
+  } | {
+    /**
+     * Redirect tells the agent which server it belongs to (a fleet of
+     * servers assigns nodes deterministically); the agent reconnects
+     * there. Additive: an older agent ignores it.
+     *
+     * @generated from field: nucleus.admin.v1.Redirect redirect = 7;
+     */
+    value: Redirect;
+    case: "redirect";
   } | { case: undefined; value?: undefined } = { case: undefined };
 
   constructor(data?: PartialMessage<Command>) {
@@ -1065,6 +1133,7 @@ export class Command extends Message<Command> {
     { no: 4, name: "goodbye", kind: "message", T: Goodbye, oneof: "body" },
     { no: 5, name: "data_studio", kind: "message", T: DataStudioRequest, oneof: "body" },
     { no: 6, name: "rbac", kind: "message", T: RbacRequest, oneof: "body" },
+    { no: 7, name: "redirect", kind: "message", T: Redirect, oneof: "body" },
   ]);
 
   static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): Command {
@@ -1081,6 +1150,52 @@ export class Command extends Message<Command> {
 
   static equals(a: Command | PlainMessage<Command> | undefined, b: Command | PlainMessage<Command> | undefined): boolean {
     return proto3.util.equals(Command, a, b);
+  }
+}
+
+/**
+ * @generated from message nucleus.admin.v1.Redirect
+ */
+export class Redirect extends Message<Redirect> {
+  /**
+   * The endpoint the agent should connect to, as it would appear in the
+   * agent's own endpoint list.
+   *
+   * @generated from field: string endpoint = 1;
+   */
+  endpoint = "";
+
+  /**
+   * @generated from field: string reason = 2;
+   */
+  reason = "";
+
+  constructor(data?: PartialMessage<Redirect>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "nucleus.admin.v1.Redirect";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "endpoint", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): Redirect {
+    return new Redirect().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): Redirect {
+    return new Redirect().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): Redirect {
+    return new Redirect().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: Redirect | PlainMessage<Redirect> | undefined, b: Redirect | PlainMessage<Redirect> | undefined): boolean {
+    return proto3.util.equals(Redirect, a, b);
   }
 }
 
@@ -1676,6 +1791,142 @@ export class SelfInfo extends Message<SelfInfo> {
 
   static equals(a: SelfInfo | PlainMessage<SelfInfo> | undefined, b: SelfInfo | PlainMessage<SelfInfo> | undefined): boolean {
     return proto3.util.equals(SelfInfo, a, b);
+  }
+}
+
+/**
+ * @generated from message nucleus.admin.v1.ListHostMetricsRequest
+ */
+export class ListHostMetricsRequest extends Message<ListHostMetricsRequest> {
+  /**
+   * @generated from field: string node_id = 1;
+   */
+  nodeId = "";
+
+  /**
+   * Oldest sample wanted; unset means the whole retention window.
+   *
+   * @generated from field: google.protobuf.Timestamp since = 2;
+   */
+  since?: Timestamp;
+
+  /**
+   * Maximum samples to return, newest kept. 0 means the server default.
+   *
+   * @generated from field: int32 limit = 3;
+   */
+  limit = 0;
+
+  constructor(data?: PartialMessage<ListHostMetricsRequest>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "nucleus.admin.v1.ListHostMetricsRequest";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "node_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "since", kind: "message", T: Timestamp },
+    { no: 3, name: "limit", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListHostMetricsRequest {
+    return new ListHostMetricsRequest().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListHostMetricsRequest {
+    return new ListHostMetricsRequest().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListHostMetricsRequest {
+    return new ListHostMetricsRequest().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: ListHostMetricsRequest | PlainMessage<ListHostMetricsRequest> | undefined, b: ListHostMetricsRequest | PlainMessage<ListHostMetricsRequest> | undefined): boolean {
+    return proto3.util.equals(ListHostMetricsRequest, a, b);
+  }
+}
+
+/**
+ * HostMetricsSample is one heartbeat's host metrics, stamped with the time
+ * the server received it.
+ *
+ * @generated from message nucleus.admin.v1.HostMetricsSample
+ */
+export class HostMetricsSample extends Message<HostMetricsSample> {
+  /**
+   * @generated from field: google.protobuf.Timestamp time = 1;
+   */
+  time?: Timestamp;
+
+  /**
+   * @generated from field: nucleus.admin.v1.HostMetrics metrics = 2;
+   */
+  metrics?: HostMetrics;
+
+  constructor(data?: PartialMessage<HostMetricsSample>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "nucleus.admin.v1.HostMetricsSample";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "time", kind: "message", T: Timestamp },
+    { no: 2, name: "metrics", kind: "message", T: HostMetrics },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): HostMetricsSample {
+    return new HostMetricsSample().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): HostMetricsSample {
+    return new HostMetricsSample().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): HostMetricsSample {
+    return new HostMetricsSample().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: HostMetricsSample | PlainMessage<HostMetricsSample> | undefined, b: HostMetricsSample | PlainMessage<HostMetricsSample> | undefined): boolean {
+    return proto3.util.equals(HostMetricsSample, a, b);
+  }
+}
+
+/**
+ * @generated from message nucleus.admin.v1.ListHostMetricsResponse
+ */
+export class ListHostMetricsResponse extends Message<ListHostMetricsResponse> {
+  /**
+   * @generated from field: repeated nucleus.admin.v1.HostMetricsSample samples = 1;
+   */
+  samples: HostMetricsSample[] = [];
+
+  constructor(data?: PartialMessage<ListHostMetricsResponse>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "nucleus.admin.v1.ListHostMetricsResponse";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "samples", kind: "message", T: HostMetricsSample, repeated: true },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListHostMetricsResponse {
+    return new ListHostMetricsResponse().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListHostMetricsResponse {
+    return new ListHostMetricsResponse().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListHostMetricsResponse {
+    return new ListHostMetricsResponse().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: ListHostMetricsResponse | PlainMessage<ListHostMetricsResponse> | undefined, b: ListHostMetricsResponse | PlainMessage<ListHostMetricsResponse> | undefined): boolean {
+    return proto3.util.equals(ListHostMetricsResponse, a, b);
   }
 }
 
@@ -3529,6 +3780,590 @@ export class ListAuditResponse extends Message<ListAuditResponse> {
 
   static equals(a: ListAuditResponse | PlainMessage<ListAuditResponse> | undefined, b: ListAuditResponse | PlainMessage<ListAuditResponse> | undefined): boolean {
     return proto3.util.equals(ListAuditResponse, a, b);
+  }
+}
+
+/**
+ * AlertRule is a threshold on one host metric: fire when `metric op
+ * threshold` holds for `for_duration` on a node the rule applies to.
+ *
+ * @generated from message nucleus.admin.v1.AlertRule
+ */
+export class AlertRule extends Message<AlertRule> {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id = "";
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name = "";
+
+  /**
+   * A HostMetrics field name: cpu_percent, rss_bytes, heap_alloc_bytes,
+   * goroutines, gc_pause_p99_ms, db_in_use, db_idle, db_max_open.
+   *
+   * @generated from field: string metric = 3;
+   */
+  metric = "";
+
+  /**
+   * One of ">", ">=", "<", "<=", "==".
+   *
+   * @generated from field: string op = 4;
+   */
+  op = "";
+
+  /**
+   * @generated from field: double threshold = 5;
+   */
+  threshold = 0;
+
+  /**
+   * @generated from field: google.protobuf.Duration for_duration = 6;
+   */
+  forDuration?: Duration;
+
+  /**
+   * @generated from field: nucleus.admin.v1.AlertSeverity severity = 7;
+   */
+  severity = AlertSeverity.UNSPECIFIED;
+
+  /**
+   * Empty applies to every node; otherwise node ids or glob patterns.
+   *
+   * @generated from field: repeated string node_ids = 8;
+   */
+  nodeIds: string[] = [];
+
+  /**
+   * Names of the channels the server notifies when the rule fires or
+   * resolves, as configured on the server.
+   *
+   * @generated from field: repeated string channels = 9;
+   */
+  channels: string[] = [];
+
+  constructor(data?: PartialMessage<AlertRule>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "nucleus.admin.v1.AlertRule";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "metric", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "op", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "threshold", kind: "scalar", T: 1 /* ScalarType.DOUBLE */ },
+    { no: 6, name: "for_duration", kind: "message", T: Duration },
+    { no: 7, name: "severity", kind: "enum", T: proto3.getEnumType(AlertSeverity) },
+    { no: 8, name: "node_ids", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+    { no: 9, name: "channels", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): AlertRule {
+    return new AlertRule().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): AlertRule {
+    return new AlertRule().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): AlertRule {
+    return new AlertRule().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: AlertRule | PlainMessage<AlertRule> | undefined, b: AlertRule | PlainMessage<AlertRule> | undefined): boolean {
+    return proto3.util.equals(AlertRule, a, b);
+  }
+}
+
+/**
+ * Alert is one rule firing on one node, and its resolution.
+ *
+ * @generated from message nucleus.admin.v1.Alert
+ */
+export class Alert extends Message<Alert> {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id = "";
+
+  /**
+   * @generated from field: string rule_id = 2;
+   */
+  ruleId = "";
+
+  /**
+   * @generated from field: string node_id = 3;
+   */
+  nodeId = "";
+
+  /**
+   * @generated from field: nucleus.admin.v1.AlertState state = 4;
+   */
+  state = AlertState.UNSPECIFIED;
+
+  /**
+   * The metric's value when the alert fired (or last evaluated).
+   *
+   * @generated from field: double value = 5;
+   */
+  value = 0;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp fired_at = 6;
+   */
+  firedAt?: Timestamp;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp resolved_at = 7;
+   */
+  resolvedAt?: Timestamp;
+
+  /**
+   * @generated from field: string message = 8;
+   */
+  message = "";
+
+  constructor(data?: PartialMessage<Alert>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "nucleus.admin.v1.Alert";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "rule_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "node_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "state", kind: "enum", T: proto3.getEnumType(AlertState) },
+    { no: 5, name: "value", kind: "scalar", T: 1 /* ScalarType.DOUBLE */ },
+    { no: 6, name: "fired_at", kind: "message", T: Timestamp },
+    { no: 7, name: "resolved_at", kind: "message", T: Timestamp },
+    { no: 8, name: "message", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): Alert {
+    return new Alert().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): Alert {
+    return new Alert().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): Alert {
+    return new Alert().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: Alert | PlainMessage<Alert> | undefined, b: Alert | PlainMessage<Alert> | undefined): boolean {
+    return proto3.util.equals(Alert, a, b);
+  }
+}
+
+/**
+ * @generated from message nucleus.admin.v1.ListAlertRulesRequest
+ */
+export class ListAlertRulesRequest extends Message<ListAlertRulesRequest> {
+  constructor(data?: PartialMessage<ListAlertRulesRequest>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "nucleus.admin.v1.ListAlertRulesRequest";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListAlertRulesRequest {
+    return new ListAlertRulesRequest().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListAlertRulesRequest {
+    return new ListAlertRulesRequest().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListAlertRulesRequest {
+    return new ListAlertRulesRequest().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: ListAlertRulesRequest | PlainMessage<ListAlertRulesRequest> | undefined, b: ListAlertRulesRequest | PlainMessage<ListAlertRulesRequest> | undefined): boolean {
+    return proto3.util.equals(ListAlertRulesRequest, a, b);
+  }
+}
+
+/**
+ * @generated from message nucleus.admin.v1.ListAlertRulesResponse
+ */
+export class ListAlertRulesResponse extends Message<ListAlertRulesResponse> {
+  /**
+   * @generated from field: repeated nucleus.admin.v1.AlertRule rules = 1;
+   */
+  rules: AlertRule[] = [];
+
+  constructor(data?: PartialMessage<ListAlertRulesResponse>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "nucleus.admin.v1.ListAlertRulesResponse";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "rules", kind: "message", T: AlertRule, repeated: true },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListAlertRulesResponse {
+    return new ListAlertRulesResponse().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListAlertRulesResponse {
+    return new ListAlertRulesResponse().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListAlertRulesResponse {
+    return new ListAlertRulesResponse().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: ListAlertRulesResponse | PlainMessage<ListAlertRulesResponse> | undefined, b: ListAlertRulesResponse | PlainMessage<ListAlertRulesResponse> | undefined): boolean {
+    return proto3.util.equals(ListAlertRulesResponse, a, b);
+  }
+}
+
+/**
+ * @generated from message nucleus.admin.v1.ListAlertsRequest
+ */
+export class ListAlertsRequest extends Message<ListAlertsRequest> {
+  /**
+   * Include alerts already resolved, newest first. Firing alerts always
+   * come.
+   *
+   * @generated from field: bool include_resolved = 1;
+   */
+  includeResolved = false;
+
+  /**
+   * Maximum alerts to return. 0 means the server default.
+   *
+   * @generated from field: int32 limit = 2;
+   */
+  limit = 0;
+
+  constructor(data?: PartialMessage<ListAlertsRequest>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "nucleus.admin.v1.ListAlertsRequest";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "include_resolved", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 2, name: "limit", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListAlertsRequest {
+    return new ListAlertsRequest().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListAlertsRequest {
+    return new ListAlertsRequest().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListAlertsRequest {
+    return new ListAlertsRequest().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: ListAlertsRequest | PlainMessage<ListAlertsRequest> | undefined, b: ListAlertsRequest | PlainMessage<ListAlertsRequest> | undefined): boolean {
+    return proto3.util.equals(ListAlertsRequest, a, b);
+  }
+}
+
+/**
+ * @generated from message nucleus.admin.v1.ListAlertsResponse
+ */
+export class ListAlertsResponse extends Message<ListAlertsResponse> {
+  /**
+   * @generated from field: repeated nucleus.admin.v1.Alert alerts = 1;
+   */
+  alerts: Alert[] = [];
+
+  constructor(data?: PartialMessage<ListAlertsResponse>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "nucleus.admin.v1.ListAlertsResponse";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "alerts", kind: "message", T: Alert, repeated: true },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListAlertsResponse {
+    return new ListAlertsResponse().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListAlertsResponse {
+    return new ListAlertsResponse().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListAlertsResponse {
+    return new ListAlertsResponse().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: ListAlertsResponse | PlainMessage<ListAlertsResponse> | undefined, b: ListAlertsResponse | PlainMessage<ListAlertsResponse> | undefined): boolean {
+    return proto3.util.equals(ListAlertsResponse, a, b);
+  }
+}
+
+/**
+ * @generated from message nucleus.admin.v1.StreamAlertsRequest
+ */
+export class StreamAlertsRequest extends Message<StreamAlertsRequest> {
+  constructor(data?: PartialMessage<StreamAlertsRequest>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "nucleus.admin.v1.StreamAlertsRequest";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): StreamAlertsRequest {
+    return new StreamAlertsRequest().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): StreamAlertsRequest {
+    return new StreamAlertsRequest().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): StreamAlertsRequest {
+    return new StreamAlertsRequest().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: StreamAlertsRequest | PlainMessage<StreamAlertsRequest> | undefined, b: StreamAlertsRequest | PlainMessage<StreamAlertsRequest> | undefined): boolean {
+    return proto3.util.equals(StreamAlertsRequest, a, b);
+  }
+}
+
+/**
+ * PeerHello opens a peer stream: who the server is and which nodes it
+ * currently holds.
+ *
+ * @generated from message nucleus.admin.v1.PeerHello
+ */
+export class PeerHello extends Message<PeerHello> {
+  /**
+   * @generated from field: string server_id = 1;
+   */
+  serverId = "";
+
+  /**
+   * @generated from field: string version = 2;
+   */
+  version = "";
+
+  /**
+   * The endpoint agents reach this server on, for Redirect.
+   *
+   * @generated from field: string agent_endpoint = 3;
+   */
+  agentEndpoint = "";
+
+  /**
+   * @generated from field: repeated string node_ids = 4;
+   */
+  nodeIds: string[] = [];
+
+  constructor(data?: PartialMessage<PeerHello>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "nucleus.admin.v1.PeerHello";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "server_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "version", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "agent_endpoint", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "node_ids", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): PeerHello {
+    return new PeerHello().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): PeerHello {
+    return new PeerHello().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): PeerHello {
+    return new PeerHello().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: PeerHello | PlainMessage<PeerHello> | undefined, b: PeerHello | PlainMessage<PeerHello> | undefined): boolean {
+    return proto3.util.equals(PeerHello, a, b);
+  }
+}
+
+/**
+ * NodeGone announces that a node left the announcing server.
+ *
+ * @generated from message nucleus.admin.v1.NodeGone
+ */
+export class NodeGone extends Message<NodeGone> {
+  /**
+   * @generated from field: string node_id = 1;
+   */
+  nodeId = "";
+
+  constructor(data?: PartialMessage<NodeGone>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "nucleus.admin.v1.NodeGone";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "node_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): NodeGone {
+    return new NodeGone().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): NodeGone {
+    return new NodeGone().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): NodeGone {
+    return new NodeGone().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: NodeGone | PlainMessage<NodeGone> | undefined, b: NodeGone | PlainMessage<NodeGone> | undefined): boolean {
+    return proto3.util.equals(NodeGone, a, b);
+  }
+}
+
+/**
+ * PeerHostMetrics relays one node's host-metrics sample.
+ *
+ * @generated from message nucleus.admin.v1.PeerHostMetrics
+ */
+export class PeerHostMetrics extends Message<PeerHostMetrics> {
+  /**
+   * @generated from field: string node_id = 1;
+   */
+  nodeId = "";
+
+  /**
+   * @generated from field: nucleus.admin.v1.HostMetricsSample sample = 2;
+   */
+  sample?: HostMetricsSample;
+
+  constructor(data?: PartialMessage<PeerHostMetrics>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "nucleus.admin.v1.PeerHostMetrics";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "node_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "sample", kind: "message", T: HostMetricsSample },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): PeerHostMetrics {
+    return new PeerHostMetrics().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): PeerHostMetrics {
+    return new PeerHostMetrics().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): PeerHostMetrics {
+    return new PeerHostMetrics().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: PeerHostMetrics | PlainMessage<PeerHostMetrics> | undefined, b: PeerHostMetrics | PlainMessage<PeerHostMetrics> | undefined): boolean {
+    return proto3.util.equals(PeerHostMetrics, a, b);
+  }
+}
+
+/**
+ * @generated from message nucleus.admin.v1.PeerFrame
+ */
+export class PeerFrame extends Message<PeerFrame> {
+  /**
+   * @generated from oneof nucleus.admin.v1.PeerFrame.body
+   */
+  body: {
+    /**
+     * @generated from field: nucleus.admin.v1.PeerHello hello = 1;
+     */
+    value: PeerHello;
+    case: "hello";
+  } | {
+    /**
+     * A node the announcing server holds, on registration and on change.
+     *
+     * @generated from field: nucleus.admin.v1.NodeInfo node = 2;
+     */
+    value: NodeInfo;
+    case: "node";
+  } | {
+    /**
+     * @generated from field: nucleus.admin.v1.NodeGone node_gone = 3;
+     */
+    value: NodeGone;
+    case: "nodeGone";
+  } | {
+    /**
+     * An event received from an agent the announcing server holds.
+     *
+     * @generated from field: nucleus.admin.v1.Event event = 4;
+     */
+    value: Event;
+    case: "event";
+  } | {
+    /**
+     * @generated from field: nucleus.admin.v1.PeerHostMetrics host_metrics = 5;
+     */
+    value: PeerHostMetrics;
+    case: "hostMetrics";
+  } | { case: undefined; value?: undefined } = { case: undefined };
+
+  constructor(data?: PartialMessage<PeerFrame>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "nucleus.admin.v1.PeerFrame";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "hello", kind: "message", T: PeerHello, oneof: "body" },
+    { no: 2, name: "node", kind: "message", T: NodeInfo, oneof: "body" },
+    { no: 3, name: "node_gone", kind: "message", T: NodeGone, oneof: "body" },
+    { no: 4, name: "event", kind: "message", T: Event, oneof: "body" },
+    { no: 5, name: "host_metrics", kind: "message", T: PeerHostMetrics, oneof: "body" },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): PeerFrame {
+    return new PeerFrame().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): PeerFrame {
+    return new PeerFrame().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): PeerFrame {
+    return new PeerFrame().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: PeerFrame | PlainMessage<PeerFrame> | undefined, b: PeerFrame | PlainMessage<PeerFrame> | undefined): boolean {
+    return proto3.util.equals(PeerFrame, a, b);
   }
 }
 

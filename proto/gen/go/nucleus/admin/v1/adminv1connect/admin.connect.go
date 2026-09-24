@@ -35,10 +35,16 @@ const (
 	AgentServiceName = "nucleus.admin.v1.AgentService"
 	// ControlServiceName is the fully-qualified name of the ControlService service.
 	ControlServiceName = "nucleus.admin.v1.ControlService"
+	// MetricsServiceName is the fully-qualified name of the MetricsService service.
+	MetricsServiceName = "nucleus.admin.v1.MetricsService"
 	// DataStudioServiceName is the fully-qualified name of the DataStudioService service.
 	DataStudioServiceName = "nucleus.admin.v1.DataStudioService"
 	// ManageServiceName is the fully-qualified name of the ManageService service.
 	ManageServiceName = "nucleus.admin.v1.ManageService"
+	// AlertServiceName is the fully-qualified name of the AlertService service.
+	AlertServiceName = "nucleus.admin.v1.AlertService"
+	// PeerServiceName is the fully-qualified name of the PeerService service.
+	PeerServiceName = "nucleus.admin.v1.PeerService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -62,6 +68,9 @@ const (
 	ControlServiceGetSnapshotProcedure = "/nucleus.admin.v1.ControlService/GetSnapshot"
 	// ControlServiceGetSelfProcedure is the fully-qualified name of the ControlService's GetSelf RPC.
 	ControlServiceGetSelfProcedure = "/nucleus.admin.v1.ControlService/GetSelf"
+	// MetricsServiceListHostMetricsProcedure is the fully-qualified name of the MetricsService's
+	// ListHostMetrics RPC.
+	MetricsServiceListHostMetricsProcedure = "/nucleus.admin.v1.MetricsService/ListHostMetrics"
 	// DataStudioServiceListModelsProcedure is the fully-qualified name of the DataStudioService's
 	// ListModels RPC.
 	DataStudioServiceListModelsProcedure = "/nucleus.admin.v1.DataStudioService/ListModels"
@@ -90,6 +99,16 @@ const (
 	ManageServiceGetRbacProcedure = "/nucleus.admin.v1.ManageService/GetRbac"
 	// ManageServiceListAuditProcedure is the fully-qualified name of the ManageService's ListAudit RPC.
 	ManageServiceListAuditProcedure = "/nucleus.admin.v1.ManageService/ListAudit"
+	// AlertServiceListAlertRulesProcedure is the fully-qualified name of the AlertService's
+	// ListAlertRules RPC.
+	AlertServiceListAlertRulesProcedure = "/nucleus.admin.v1.AlertService/ListAlertRules"
+	// AlertServiceListAlertsProcedure is the fully-qualified name of the AlertService's ListAlerts RPC.
+	AlertServiceListAlertsProcedure = "/nucleus.admin.v1.AlertService/ListAlerts"
+	// AlertServiceStreamAlertsProcedure is the fully-qualified name of the AlertService's StreamAlerts
+	// RPC.
+	AlertServiceStreamAlertsProcedure = "/nucleus.admin.v1.AlertService/StreamAlerts"
+	// PeerServiceSyncProcedure is the fully-qualified name of the PeerService's Sync RPC.
+	PeerServiceSyncProcedure = "/nucleus.admin.v1.PeerService/Sync"
 )
 
 // AgentServiceClient is a client for the nucleus.admin.v1.AgentService service.
@@ -310,6 +329,82 @@ func (UnimplementedControlServiceHandler) GetSnapshot(context.Context, *connect.
 
 func (UnimplementedControlServiceHandler) GetSelf(context.Context, *connect.Request[v1.GetSelfRequest]) (*connect.Response[v1.SelfInfo], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nucleus.admin.v1.ControlService.GetSelf is not implemented"))
+}
+
+// MetricsServiceClient is a client for the nucleus.admin.v1.MetricsService service.
+type MetricsServiceClient interface {
+	// ListHostMetrics returns a node's retained host-metrics samples, oldest
+	// first, within the server's retention window. A server that retains
+	// nothing answers an empty list.
+	ListHostMetrics(context.Context, *connect.Request[v1.ListHostMetricsRequest]) (*connect.Response[v1.ListHostMetricsResponse], error)
+}
+
+// NewMetricsServiceClient constructs a client for the nucleus.admin.v1.MetricsService service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewMetricsServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) MetricsServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	metricsServiceMethods := v1.File_nucleus_admin_v1_admin_proto.Services().ByName("MetricsService").Methods()
+	return &metricsServiceClient{
+		listHostMetrics: connect.NewClient[v1.ListHostMetricsRequest, v1.ListHostMetricsResponse](
+			httpClient,
+			baseURL+MetricsServiceListHostMetricsProcedure,
+			connect.WithSchema(metricsServiceMethods.ByName("ListHostMetrics")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// metricsServiceClient implements MetricsServiceClient.
+type metricsServiceClient struct {
+	listHostMetrics *connect.Client[v1.ListHostMetricsRequest, v1.ListHostMetricsResponse]
+}
+
+// ListHostMetrics calls nucleus.admin.v1.MetricsService.ListHostMetrics.
+func (c *metricsServiceClient) ListHostMetrics(ctx context.Context, req *connect.Request[v1.ListHostMetricsRequest]) (*connect.Response[v1.ListHostMetricsResponse], error) {
+	return c.listHostMetrics.CallUnary(ctx, req)
+}
+
+// MetricsServiceHandler is an implementation of the nucleus.admin.v1.MetricsService service.
+type MetricsServiceHandler interface {
+	// ListHostMetrics returns a node's retained host-metrics samples, oldest
+	// first, within the server's retention window. A server that retains
+	// nothing answers an empty list.
+	ListHostMetrics(context.Context, *connect.Request[v1.ListHostMetricsRequest]) (*connect.Response[v1.ListHostMetricsResponse], error)
+}
+
+// NewMetricsServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewMetricsServiceHandler(svc MetricsServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	metricsServiceMethods := v1.File_nucleus_admin_v1_admin_proto.Services().ByName("MetricsService").Methods()
+	metricsServiceListHostMetricsHandler := connect.NewUnaryHandler(
+		MetricsServiceListHostMetricsProcedure,
+		svc.ListHostMetrics,
+		connect.WithSchema(metricsServiceMethods.ByName("ListHostMetrics")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/nucleus.admin.v1.MetricsService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case MetricsServiceListHostMetricsProcedure:
+			metricsServiceListHostMetricsHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedMetricsServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedMetricsServiceHandler struct{}
+
+func (UnimplementedMetricsServiceHandler) ListHostMetrics(context.Context, *connect.Request[v1.ListHostMetricsRequest]) (*connect.Response[v1.ListHostMetricsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nucleus.admin.v1.MetricsService.ListHostMetrics is not implemented"))
 }
 
 // DataStudioServiceClient is a client for the nucleus.admin.v1.DataStudioService service.
@@ -658,4 +753,196 @@ func (UnimplementedManageServiceHandler) GetRbac(context.Context, *connect.Reque
 
 func (UnimplementedManageServiceHandler) ListAudit(context.Context, *connect.Request[v1.ListAuditRequest]) (*connect.Response[v1.ListAuditResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nucleus.admin.v1.ManageService.ListAudit is not implemented"))
+}
+
+// AlertServiceClient is a client for the nucleus.admin.v1.AlertService service.
+type AlertServiceClient interface {
+	ListAlertRules(context.Context, *connect.Request[v1.ListAlertRulesRequest]) (*connect.Response[v1.ListAlertRulesResponse], error)
+	ListAlerts(context.Context, *connect.Request[v1.ListAlertsRequest]) (*connect.Response[v1.ListAlertsResponse], error)
+	StreamAlerts(context.Context, *connect.Request[v1.StreamAlertsRequest]) (*connect.ServerStreamForClient[v1.Alert], error)
+}
+
+// NewAlertServiceClient constructs a client for the nucleus.admin.v1.AlertService service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewAlertServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) AlertServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	alertServiceMethods := v1.File_nucleus_admin_v1_admin_proto.Services().ByName("AlertService").Methods()
+	return &alertServiceClient{
+		listAlertRules: connect.NewClient[v1.ListAlertRulesRequest, v1.ListAlertRulesResponse](
+			httpClient,
+			baseURL+AlertServiceListAlertRulesProcedure,
+			connect.WithSchema(alertServiceMethods.ByName("ListAlertRules")),
+			connect.WithClientOptions(opts...),
+		),
+		listAlerts: connect.NewClient[v1.ListAlertsRequest, v1.ListAlertsResponse](
+			httpClient,
+			baseURL+AlertServiceListAlertsProcedure,
+			connect.WithSchema(alertServiceMethods.ByName("ListAlerts")),
+			connect.WithClientOptions(opts...),
+		),
+		streamAlerts: connect.NewClient[v1.StreamAlertsRequest, v1.Alert](
+			httpClient,
+			baseURL+AlertServiceStreamAlertsProcedure,
+			connect.WithSchema(alertServiceMethods.ByName("StreamAlerts")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// alertServiceClient implements AlertServiceClient.
+type alertServiceClient struct {
+	listAlertRules *connect.Client[v1.ListAlertRulesRequest, v1.ListAlertRulesResponse]
+	listAlerts     *connect.Client[v1.ListAlertsRequest, v1.ListAlertsResponse]
+	streamAlerts   *connect.Client[v1.StreamAlertsRequest, v1.Alert]
+}
+
+// ListAlertRules calls nucleus.admin.v1.AlertService.ListAlertRules.
+func (c *alertServiceClient) ListAlertRules(ctx context.Context, req *connect.Request[v1.ListAlertRulesRequest]) (*connect.Response[v1.ListAlertRulesResponse], error) {
+	return c.listAlertRules.CallUnary(ctx, req)
+}
+
+// ListAlerts calls nucleus.admin.v1.AlertService.ListAlerts.
+func (c *alertServiceClient) ListAlerts(ctx context.Context, req *connect.Request[v1.ListAlertsRequest]) (*connect.Response[v1.ListAlertsResponse], error) {
+	return c.listAlerts.CallUnary(ctx, req)
+}
+
+// StreamAlerts calls nucleus.admin.v1.AlertService.StreamAlerts.
+func (c *alertServiceClient) StreamAlerts(ctx context.Context, req *connect.Request[v1.StreamAlertsRequest]) (*connect.ServerStreamForClient[v1.Alert], error) {
+	return c.streamAlerts.CallServerStream(ctx, req)
+}
+
+// AlertServiceHandler is an implementation of the nucleus.admin.v1.AlertService service.
+type AlertServiceHandler interface {
+	ListAlertRules(context.Context, *connect.Request[v1.ListAlertRulesRequest]) (*connect.Response[v1.ListAlertRulesResponse], error)
+	ListAlerts(context.Context, *connect.Request[v1.ListAlertsRequest]) (*connect.Response[v1.ListAlertsResponse], error)
+	StreamAlerts(context.Context, *connect.Request[v1.StreamAlertsRequest], *connect.ServerStream[v1.Alert]) error
+}
+
+// NewAlertServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewAlertServiceHandler(svc AlertServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	alertServiceMethods := v1.File_nucleus_admin_v1_admin_proto.Services().ByName("AlertService").Methods()
+	alertServiceListAlertRulesHandler := connect.NewUnaryHandler(
+		AlertServiceListAlertRulesProcedure,
+		svc.ListAlertRules,
+		connect.WithSchema(alertServiceMethods.ByName("ListAlertRules")),
+		connect.WithHandlerOptions(opts...),
+	)
+	alertServiceListAlertsHandler := connect.NewUnaryHandler(
+		AlertServiceListAlertsProcedure,
+		svc.ListAlerts,
+		connect.WithSchema(alertServiceMethods.ByName("ListAlerts")),
+		connect.WithHandlerOptions(opts...),
+	)
+	alertServiceStreamAlertsHandler := connect.NewServerStreamHandler(
+		AlertServiceStreamAlertsProcedure,
+		svc.StreamAlerts,
+		connect.WithSchema(alertServiceMethods.ByName("StreamAlerts")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/nucleus.admin.v1.AlertService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case AlertServiceListAlertRulesProcedure:
+			alertServiceListAlertRulesHandler.ServeHTTP(w, r)
+		case AlertServiceListAlertsProcedure:
+			alertServiceListAlertsHandler.ServeHTTP(w, r)
+		case AlertServiceStreamAlertsProcedure:
+			alertServiceStreamAlertsHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedAlertServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedAlertServiceHandler struct{}
+
+func (UnimplementedAlertServiceHandler) ListAlertRules(context.Context, *connect.Request[v1.ListAlertRulesRequest]) (*connect.Response[v1.ListAlertRulesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nucleus.admin.v1.AlertService.ListAlertRules is not implemented"))
+}
+
+func (UnimplementedAlertServiceHandler) ListAlerts(context.Context, *connect.Request[v1.ListAlertsRequest]) (*connect.Response[v1.ListAlertsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nucleus.admin.v1.AlertService.ListAlerts is not implemented"))
+}
+
+func (UnimplementedAlertServiceHandler) StreamAlerts(context.Context, *connect.Request[v1.StreamAlertsRequest], *connect.ServerStream[v1.Alert]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("nucleus.admin.v1.AlertService.StreamAlerts is not implemented"))
+}
+
+// PeerServiceClient is a client for the nucleus.admin.v1.PeerService service.
+type PeerServiceClient interface {
+	Sync(context.Context) *connect.BidiStreamForClient[v1.PeerFrame, v1.PeerFrame]
+}
+
+// NewPeerServiceClient constructs a client for the nucleus.admin.v1.PeerService service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewPeerServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) PeerServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	peerServiceMethods := v1.File_nucleus_admin_v1_admin_proto.Services().ByName("PeerService").Methods()
+	return &peerServiceClient{
+		sync: connect.NewClient[v1.PeerFrame, v1.PeerFrame](
+			httpClient,
+			baseURL+PeerServiceSyncProcedure,
+			connect.WithSchema(peerServiceMethods.ByName("Sync")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// peerServiceClient implements PeerServiceClient.
+type peerServiceClient struct {
+	sync *connect.Client[v1.PeerFrame, v1.PeerFrame]
+}
+
+// Sync calls nucleus.admin.v1.PeerService.Sync.
+func (c *peerServiceClient) Sync(ctx context.Context) *connect.BidiStreamForClient[v1.PeerFrame, v1.PeerFrame] {
+	return c.sync.CallBidiStream(ctx)
+}
+
+// PeerServiceHandler is an implementation of the nucleus.admin.v1.PeerService service.
+type PeerServiceHandler interface {
+	Sync(context.Context, *connect.BidiStream[v1.PeerFrame, v1.PeerFrame]) error
+}
+
+// NewPeerServiceHandler builds an HTTP handler from the service implementation. It returns the path
+// on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewPeerServiceHandler(svc PeerServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	peerServiceMethods := v1.File_nucleus_admin_v1_admin_proto.Services().ByName("PeerService").Methods()
+	peerServiceSyncHandler := connect.NewBidiStreamHandler(
+		PeerServiceSyncProcedure,
+		svc.Sync,
+		connect.WithSchema(peerServiceMethods.ByName("Sync")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/nucleus.admin.v1.PeerService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case PeerServiceSyncProcedure:
+			peerServiceSyncHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedPeerServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedPeerServiceHandler struct{}
+
+func (UnimplementedPeerServiceHandler) Sync(context.Context, *connect.BidiStream[v1.PeerFrame, v1.PeerFrame]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("nucleus.admin.v1.PeerService.Sync is not implemented"))
 }
