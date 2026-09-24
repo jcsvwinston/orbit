@@ -26,6 +26,7 @@ import (
 	"github.com/jcsvwinston/orbit/server/auth"
 	"github.com/jcsvwinston/orbit/server/metrics"
 	"github.com/jcsvwinston/orbit/server/nodes"
+	"github.com/jcsvwinston/orbit/server/peers"
 	"github.com/jcsvwinston/orbit/server/routing"
 	"github.com/jcsvwinston/orbit/server/services"
 	"github.com/jcsvwinston/orbit/server/store"
@@ -79,11 +80,24 @@ func New(cfg Config) *Server {
 	if err != nil {
 		initErr = err
 	}
+	registry := nodes.New()
+	mesh := peers.New(peers.Config{
+		ServerID:      cfg.ServerID,
+		AgentEndpoint: cfg.AgentAdvertiseAddr,
+		Peers:         cfg.PeerAddrs,
+		Token:         cfg.PeerToken,
+		TLS:           cfg.PeerTLS,
+		Nodes:         registry,
+		Logger:        cfg.Logger,
+	})
 	state := &services.State{
-		Alerts:   engine,
-		Counters: metrics.NewCounters(promRegistry),
-		Nodes:    nodes.New(),
-		EventBus: routing.NewEventBus(),
+		Alerts:      engine,
+		Counters:    metrics.NewCounters(promRegistry),
+		Peers:       mesh,
+		ServerID:    cfg.ServerID,
+		AssignNodes: cfg.AssignNodes,
+		Nodes:       registry,
+		EventBus:    routing.NewEventBus(),
 		Replay: routing.NewReplay(routing.ReplayCapacities{
 			HTTP:    cfg.HTTPReplayBufferSize,
 			SQL:     cfg.SQLReplayBufferSize,
@@ -104,7 +118,9 @@ func New(cfg Config) *Server {
 	// A (re)connecting agent immediately receives the current aggregate
 	// demand: without this hook an agent that restarts while UI streams
 	// are open ships nothing until some UI reopens its subscription.
-	state.OnAgentSubMode = services.PushAggregate
+	state.OnAgentSubMode = func(e *nodes.Entry, bus *routing.EventBus) {
+		services.PushAggregateFor(e, bus, state.PeerDemand())
+	}
 
 	s := &Server{
 		cfg:          cfg,
@@ -146,6 +162,10 @@ func New(cfg Config) *Server {
 	handlerOpts := []connect.HandlerOption{connect.WithReadMaxBytes(maxMessageBytes)}
 	protectedAgent := http.NewServeMux()
 	protectedAgent.Handle(adminv1connect.NewAgentServiceHandler(services.NewAgentService(state), handlerOpts...))
+	// Peers speak on the agent listener, behind the same token or client
+	// certificate (ADR-014): a peer is an authenticated machine, like an
+	// agent, and never a UI.
+	protectedAgent.Handle(adminv1connect.NewPeerServiceHandler(services.NewPeerService(state), handlerOpts...))
 	agentRoot := http.NewServeMux()
 	agentRoot.HandleFunc("/healthz", healthOK)
 	agentRoot.Handle("/", auth.AgentMiddleware(cfg.AgentToken, cfg.Logger)(protectedAgent))
@@ -354,6 +374,15 @@ func (s *Server) Run(ctx context.Context) error {
 	go s.expireInactiveAgents(ctx)
 	// Alert notifications go out from one goroutine, bounded per delivery.
 	go s.state.Alerts.Run(ctx)
+	// The mesh: one outbound stream per peer, reconnecting with backoff.
+	if s.state.Peers.Enabled() {
+		if strings.TrimSpace(s.cfg.AgentAdvertiseAddr) == "" && s.cfg.AssignNodes {
+			return errors.New("admin server: AssignNodes (--assign-nodes) needs AgentAdvertiseAddr (--agent-advertise-addr): the fleet cannot assign nodes to a server it cannot name")
+		}
+		go s.state.Peers.Run(ctx)
+		s.logger.Info("admin server joins a fleet of servers",
+			"server_id", s.cfg.ServerID, "peers", peers.Sorted(s.cfg.PeerAddrs), "assign_nodes", s.cfg.AssignNodes)
+	}
 
 	errCh := make(chan error, 3)
 	var wg sync.WaitGroup

@@ -245,6 +245,52 @@ the server's own: `admin_server_nodes_connected` and `nodes_known`,
 `replay_buffered_events`, and `events_published_total` /
 `events_dropped_total` for the UI subscriptions.
 
+## A fleet of servers
+
+One server is enough for a fleet of agents. Several servers become one
+fleet of servers when each is told about the others:
+
+```bash
+# on server A
+admin-server --agent-addr :9090 --agent-advertise-addr http://a.internal:9090 \
+  --peers http://b.internal:9090 --assign-nodes
+# on server B
+admin-server --agent-addr :9090 --agent-advertise-addr http://b.internal:9090 \
+  --peers http://a.internal:9090 --assign-nodes
+```
+
+Each server keeps one stream to every peer, on the peers' agent listeners
+and with the same token or client certificate an agent uses (`--peer-token`
+when it differs). Down that stream it pushes its nodes, their host metrics
+and every event its agents send. So:
+
+- **The node list is shared.** A node connected to A is listed on B, with
+  the server it is connected to in the label `orbit.server`. Its metrics are
+  current on both. A Data Studio request for it on B is refused and names
+  A: the request needs the stream, and the stream is on A.
+- **Events reach every UI.** A panel on B sees what A's agents send, live and
+  in the replay buffer. While a peer is connected the agents send everything
+  they emit, because the mesh carries events, not what each server's panels
+  asked for; each server filters for its own subscribers.
+- **Nodes are assigned, when asked.** With `--assign-nodes`, every node has
+  one owner among the servers that reach each other, chosen by a hash of
+  the node id and the server endpoint, so all servers agree and a server
+  that joins or leaves moves only the nodes it wins or loses. An agent that
+  registers on another server is redirected to its owner and reconnects
+  there — but only if that endpoint is in the agent's own list; the agent
+  refuses a redirect to a server its operator did not configure, and stays.
+  A server needs `--agent-advertise-addr` to receive assignments.
+
+What stays per server: the retention file (two servers must not share a
+data directory), the alert rules (the server a node is connected to
+evaluates it), and the audit log of what its own panels did. There is no
+leader and no discovery: the list of peers is configuration, and every
+server decides with what it sees.
+
+A reconnect under an existing node id ends the previous stream: the old
+peer gets an error, and anything it still sends is dropped rather than
+shown as the node.
+
 ## Operational notes
 
 - `/metrics` is opt-in. `--metrics-addr` (env `NUCLEUS_ADMIN_METRICS_ADDR`)

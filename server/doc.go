@@ -9,10 +9,11 @@
 //
 // Architecture invariants for the server:
 //
-//   - The admin server is single-instance by default. Active-passive failover
-//     is supported by configuring multiple endpoints in the agents'
-//     ExtensionConfig.Endpoints list. Active-active is documented as a future
-//     extension but is NOT implemented.
+//   - One server serves a fleet alone; several servers form a fleet of
+//     servers (ADR-014): configured as peers, they share their node
+//     registries, relay events to each other's UIs and, when asked,
+//     assign each node to one of them and redirect its agent there.
+//     Agents still fail over across their endpoint list.
 //
 //   - The server NEVER calls back into agents over a separate connection. All
 //     server-to-agent traffic (Subscribe, Unsubscribe, SnapshotRequest)

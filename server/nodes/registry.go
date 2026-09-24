@@ -57,6 +57,10 @@ type Entry struct {
 	closeOnce sync.Once
 }
 
+// Remote reports whether the entry stands for a node connected to a peer
+// server: it has no stream, so nothing may be enqueued to it.
+func (e *Entry) Remote() bool { return e != nil && e.Info.Via != "" }
+
 // Close cancels the stream that owns the entry. Idempotent; a nil entry
 // or an entry registered without a cancel is a no-op.
 func (e *Entry) Close() {
@@ -84,7 +88,16 @@ type NodeInfo struct {
 	// (nil until the first one arrives). Stored as the wire message; the
 	// control service forwards it verbatim to the UI.
 	HostMetrics *adminv1.HostMetrics
+
+	// Via names the peer server the node is connected to when it is not
+	// this one (ADR-014): the node is listed here, and its events reach
+	// this server's subscribers, but there is no stream to send it
+	// anything. Empty for a node connected to this server.
+	Via string
 }
+
+// Remote reports whether the node is connected to another server.
+func (n NodeInfo) Remote() bool { return n.Via != "" }
 
 // Registry maintains the live set of connected agents.
 type Registry struct {
@@ -154,13 +167,79 @@ func (r *Registry) Add(ctx context.Context, cancel context.CancelFunc, info Node
 	old, hadOld := r.entries[info.NodeID]
 	r.entries[info.NodeID] = e
 	r.mu.Unlock()
-	if hadOld {
+	if hadOld && !old.Remote() {
 		old.Close()
 	}
 
 	r.publish(NodeChange{NodeID: info.NodeID, Connected: true, Info: info})
 
 	return e, func() { r.remove(info.NodeID, e) }
+}
+
+// SetRemote records a node a peer server announced (ADR-014). A node
+// connected to THIS server is never replaced by a remote announcement:
+// the stream here is the truth about it. A remote entry has no Send
+// channel worth writing to; TryEnqueue refuses it.
+func (r *Registry) SetRemote(info NodeInfo, via string) {
+	via = strings.TrimSpace(via)
+	info.NodeID = strings.TrimSpace(info.NodeID)
+	if via == "" || info.NodeID == "" {
+		return
+	}
+	info.Via = via
+	closed := make(chan struct{})
+	close(closed)
+	e := &Entry{NodeID: info.NodeID, Info: info, Send: make(chan *adminv1.Frame), CtxDone: closed}
+	r.mu.Lock()
+	if cur, ok := r.entries[info.NodeID]; ok && !cur.Remote() {
+		r.mu.Unlock()
+		return
+	}
+	r.entries[info.NodeID] = e
+	r.mu.Unlock()
+	r.publish(NodeChange{NodeID: info.NodeID, Connected: info.Connected, Info: info})
+}
+
+// RemoveRemote forgets a node a peer announced gone, or every node a peer
+// announced when the peer itself goes (nodeID empty).
+func (r *Registry) RemoveRemote(nodeID, via string) {
+	via = strings.TrimSpace(via)
+	if via == "" {
+		return
+	}
+	var gone []NodeInfo
+	r.mu.Lock()
+	for id, e := range r.entries {
+		if !e.Remote() || e.Info.Via != via {
+			continue
+		}
+		if nodeID != "" && id != nodeID {
+			continue
+		}
+		delete(r.entries, id)
+		info := e.Info
+		info.Connected = false
+		info.LastSeenAt = time.Now().UTC()
+		gone = append(gone, info)
+	}
+	r.mu.Unlock()
+	for _, info := range gone {
+		r.publish(NodeChange{NodeID: info.NodeID, Connected: false, Info: info})
+	}
+}
+
+// Local returns the nodes connected to this server: what a peer is told.
+func (r *Registry) Local() []NodeInfo {
+	r.mu.RLock()
+	out := make([]NodeInfo, 0, len(r.entries))
+	for _, e := range r.entries {
+		if !e.Remote() {
+			out = append(out, e.Info)
+		}
+	}
+	r.mu.RUnlock()
+	sort.Slice(out, func(i, j int) bool { return out[i].NodeID < out[j].NodeID })
+	return out
 }
 
 func (r *Registry) remove(nodeID string, owner *Entry) {
@@ -260,6 +339,9 @@ func (r *Registry) ForEach(fn func(*Entry)) {
 // TryEnqueue pushes f onto the entry's Send channel without blocking.
 // Returns false if the channel is full or the entry has been closed.
 func TryEnqueue(e *Entry, f *adminv1.Frame) bool {
+	if e == nil || e.Remote() {
+		return false
+	}
 	if e == nil || f == nil {
 		return false
 	}
@@ -334,6 +416,9 @@ func (r *Registry) AnyWithModel(modelName string) (*Entry, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	for _, e := range r.entries {
+		if e.Remote() {
+			continue // no stream here to serve the request
+		}
 		for _, m := range e.Info.RegisteredModels {
 			if strings.EqualFold(m, modelName) {
 				return e, true

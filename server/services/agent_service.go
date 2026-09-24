@@ -21,6 +21,7 @@ import (
 	"github.com/jcsvwinston/orbit/server/auth"
 	"github.com/jcsvwinston/orbit/server/metrics"
 	"github.com/jcsvwinston/orbit/server/nodes"
+	"github.com/jcsvwinston/orbit/server/peers"
 	"github.com/jcsvwinston/orbit/server/routing"
 	"github.com/jcsvwinston/orbit/server/store"
 
@@ -41,6 +42,9 @@ type State struct {
 	Store          *store.Store      // nil without server.Config.DataDir: nothing is retained
 	Alerts         *alerts.Engine    // nil evaluates nothing
 	Counters       *metrics.Counters // nil counts nothing (tests without a metrics listener)
+	Peers          *peers.Mesh       // nil without peers: a single server (ADR-014)
+	ServerID       string            // how this server names itself to peers
+	AssignNodes    bool              // redirect an agent to the server that owns it (ADR-014)
 	Logger         *slog.Logger
 	SendChanBuffer int
 	OnAgentSubMode func(*nodes.Entry, *routing.EventBus) // hook called whenever bus demand changes
@@ -122,6 +126,19 @@ func (s *AgentService) Stream(ctx context.Context, stream *connect.BidiStream[ad
 		"node_id", info.NodeID,
 		"version", info.Version)
 
+	// A fleet of servers assigns each node to one of them (ADR-014): when
+	// another server owns this node, tell the agent where to go. The
+	// stream stays open until the agent leaves, so a node whose owner is
+	// unreachable is still served here.
+	if s.state.AssignNodes {
+		if owner := s.state.Peers.OwnerFor(nodeID); owner != "" && owner != s.state.Peers.Self() {
+			s.state.Logger.Info("admin agent redirected to its owner", "node_id", nodeID, "owner", owner)
+			nodes.TryEnqueue(entry, &adminv1.Frame{Body: &adminv1.Frame_Command{Command: &adminv1.Command{
+				Body: &adminv1.Command_Redirect{Redirect: &adminv1.Redirect{Endpoint: owner, Reason: "assigned to " + owner}},
+			}}})
+		}
+	}
+
 	// Push the initial agent-side aggregate Subscribe so the agent starts
 	// shipping events that any current UI cares about.
 	if s.state.OnAgentSubMode != nil {
@@ -132,18 +149,59 @@ func (s *AgentService) Stream(ctx context.Context, stream *connect.BidiStream[ad
 	writerDone := make(chan error, 1)
 	go func() { writerDone <- s.runWriter(streamCtx, entry, stream) }()
 
-	// Reader goroutine: us. Process inbound frames until error/EOF.
-	for {
-		frame, err := stream.Receive()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				err = nil
-			} else if connect.CodeOf(err) == connect.CodeCanceled || streamCtx.Err() != nil {
-				err = nil
+	// Reader: frames arrive through a goroutine so the handler can also
+	// wait on its own context. Before, the loop blocked in Receive and
+	// only looked at the context after an error — a stream superseded by a
+	// reconnect under the same node_id stayed open, and every frame its
+	// peer still sent was published as the node (OR-56). Now supersession
+	// ends the handler, which ends the stream the old peer holds, and a
+	// frame that raced in after it is dropped.
+	type received struct {
+		frame *adminv1.Frame
+		err   error
+	}
+	frames := make(chan received, 1)
+	go func() {
+		for {
+			f, err := stream.Receive()
+			select {
+			case frames <- received{f, err}:
+			case <-streamCtx.Done():
+				return
 			}
-			cancel()
-			<-writerDone
-			return err
+			if err != nil {
+				return
+			}
+		}
+	}()
+	superseded := func() error {
+		<-writerDone
+		if ctx.Err() != nil {
+			return nil // the peer or the server went away, nothing to tell
+		}
+		return connect.NewError(connect.CodeAborted, fmt.Errorf("admin agent: stream for node %q superseded by a newer registration", info.NodeID))
+	}
+	for {
+		var frame *adminv1.Frame
+		select {
+		case <-streamCtx.Done():
+			return superseded()
+		case r := <-frames:
+			if r.err != nil {
+				err := r.err
+				if errors.Is(err, io.EOF) {
+					err = nil
+				} else if connect.CodeOf(err) == connect.CodeCanceled || streamCtx.Err() != nil {
+					err = nil
+				}
+				cancel()
+				<-writerDone
+				return err
+			}
+			frame = r.frame
+		}
+		if streamCtx.Err() != nil {
+			return superseded()
 		}
 
 		s.state.Nodes.Touch(info.NodeID, time.Now().UTC())
@@ -157,6 +215,7 @@ func (s *AgentService) Stream(ctx context.Context, stream *connect.BidiStream[ad
 				s.state.Replay.Push(body.Event)
 				s.state.Store.AppendEvent(body.Event)
 				s.state.EventBus.Publish(body.Event)
+				s.state.Peers.RelayEvent(body.Event)
 				if c := s.state.Counters; c != nil {
 					c.EventsReceivedTotal.WithLabelValues(eventTypeLabel(body.Event)).Inc()
 				}
@@ -171,6 +230,7 @@ func (s *AgentService) Stream(ctx context.Context, stream *connect.BidiStream[ad
 				}
 				s.state.Nodes.SetHostMetrics(info.NodeID, body.Heartbeat.HostMetrics)
 				s.state.Store.AppendHostMetrics(info.NodeID, body.Heartbeat.HostMetrics)
+				s.state.Peers.RelayHostMetrics(info.NodeID, body.Heartbeat.HostMetrics, time.Now())
 				for _, a := range s.state.Alerts.Observe(info.NodeID, body.Heartbeat.HostMetrics, time.Now()) {
 					if c := s.state.Counters; c != nil {
 						if a.State == alerts.Firing {
@@ -280,4 +340,11 @@ func eventTypeLabel(e *adminv1.Event) string {
 		return "custom"
 	}
 	return "unknown"
+}
+
+// PeerDemand reports whether a peer server is connected: then every event
+// a local agent emits is wanted, because a UI on the peer may want it and
+// the mesh does not carry the peer's filters (ADR-014).
+func (st *State) PeerDemand() bool {
+	return st != nil && st.Peers != nil && len(st.Peers.LivePeers()) > 0
 }

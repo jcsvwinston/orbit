@@ -100,6 +100,11 @@ func run(args []string) error {
 	uiProxySecret := fs.String("ui-proxy-secret", os.Getenv("NUCLEUS_ADMIN_UI_PROXY_SECRET"), "shared secret the trusted proxy must echo in X-Auth-Proxy-Secret before its forwarded identity is honoured; empty keeps CIDR-only trust")
 	dataDir := fs.String("data-dir", os.Getenv("NUCLEUS_ADMIN_DATA_DIR"), "directory where the server retains events, the audit trail and host-metrics samples across restarts (one SQLite file); empty keeps everything in bounded memory")
 	retention := fs.Duration("retention", envDuration("NUCLEUS_ADMIN_RETENTION", 7*24*time.Hour), "how long the retained rows are kept and served (with --data-dir); a negative value keeps everything")
+	serverID := fs.String("server-id", os.Getenv("NUCLEUS_ADMIN_SERVER_ID"), "how this server names itself to its peers; default the host name")
+	agentAdvertise := fs.String("agent-advertise-addr", os.Getenv("NUCLEUS_ADMIN_AGENT_ADVERTISE_ADDR"), "the endpoint agents reach this server on (http(s)://host:port), as it appears in their endpoint lists; needed to receive node assignments")
+	peerAddrs := fs.String("peers", os.Getenv("NUCLEUS_ADMIN_PEERS"), "comma-separated agent-listener endpoints of the other admin servers; the servers share their nodes and relay events to each other")
+	peerToken := fs.String("peer-token", os.Getenv("NUCLEUS_ADMIN_PEER_TOKEN"), "bearer token presented to the peers' agent listeners; default the agent token")
+	assignNodes := fs.Bool("assign-nodes", envBool("NUCLEUS_ADMIN_ASSIGN_NODES"), "assign each node to one server of the fleet deterministically and redirect agents to their owner (needs --agent-advertise-addr)")
 	alertRulesFile := fs.String("alert-rules-file", os.Getenv("NUCLEUS_ADMIN_ALERT_RULES_FILE"), "JSON file with the threshold rules the server evaluates against every heartbeat's host metrics (a rule: name, metric, op, threshold, for, severity, node_ids, channels); empty evaluates nothing")
 	alertWebhooks := fs.String("alert-webhooks", os.Getenv("NUCLEUS_ADMIN_ALERT_WEBHOOKS"), "comma-separated name=url webhook channels rules may notify; the server POSTs the alert as JSON")
 	alertSMTPAddr := fs.String("alert-smtp-addr", os.Getenv("NUCLEUS_ADMIN_ALERT_SMTP_ADDR"), "host:port of the SMTP server for the e-mail channel (named \"email\"); with --alert-smtp-from and --alert-smtp-to. Credentials from NUCLEUS_ADMIN_ALERT_SMTP_USER / NUCLEUS_ADMIN_ALERT_SMTP_PASSWORD")
@@ -155,6 +160,11 @@ func run(args []string) error {
 		MetricsAddr:                  strings.TrimSpace(*metricsAddr),
 		DataDir:                      strings.TrimSpace(*dataDir),
 		Retention:                    *retention,
+		ServerID:                     strings.TrimSpace(*serverID),
+		AgentAdvertiseAddr:           strings.TrimSpace(*agentAdvertise),
+		PeerAddrs:                    splitCSV(*peerAddrs),
+		PeerToken:                    strings.TrimSpace(*peerToken),
+		AssignNodes:                  *assignNodes,
 		Logger:                       logger,
 	}
 	if path := strings.TrimSpace(*alertRulesFile); path != "" {

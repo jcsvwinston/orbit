@@ -28,7 +28,8 @@ type Metrics struct {
 	EventsEmittedTotal  *prometheus.CounterVec // labels: type
 	EventsDroppedTotal  *prometheus.CounterVec // labels: type, reason
 	EventsParkedTotal   *prometheus.CounterVec // labels: type
-	BufferSize          *prometheus.GaugeVec   // labels: type
+	RedirectsTotal      prometheus.Counter
+	BufferSize          *prometheus.GaugeVec // labels: type
 	ActiveSubscriptions prometheus.Gauge
 	HeartbeatsSent      prometheus.Counter
 	StreamErrorsTotal   *prometheus.CounterVec // labels: stage
@@ -61,6 +62,10 @@ func New() *Metrics {
 			Name: "admin_agent_events_parked_total",
 			Help: "Number of events captured into the ring buffer while the agent had no stream, by event type; they are sent when the next stream opens.",
 		}, []string{"type"}),
+		RedirectsTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "admin_agent_redirects_total",
+			Help: "Times an admin server redirected the agent to the server that owns its node, and the agent went.",
+		}),
 		BufferSize: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "admin_agent_buffer_size",
 			Help: "Current number of events stored in the agent's per-type ring buffer.",
@@ -85,6 +90,7 @@ func New() *Metrics {
 		m.EventsEmittedTotal,
 		m.EventsDroppedTotal,
 		m.EventsParkedTotal,
+		m.RedirectsTotal,
 		m.BufferSize,
 		m.ActiveSubscriptions,
 		m.HeartbeatsSent,

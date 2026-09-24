@@ -108,10 +108,19 @@ func (s *ControlService) ListNodes(ctx context.Context, req *connect.Request[adm
 		Nodes: make([]*adminv1.NodeInfo, 0, len(infos)),
 	}
 	for _, info := range infos {
+		labels := cloneLabels(info.Labels)
+		if info.Remote() {
+			// The UI has no field for it, so the origin rides as a label
+			// a fleet of servers reserves (ADR-014).
+			if labels == nil {
+				labels = map[string]string{}
+			}
+			labels["orbit.server"] = info.Via
+		}
 		out.Nodes = append(out.Nodes, &adminv1.NodeInfo{
 			NodeId:      info.NodeID,
 			Version:     info.Version,
-			Labels:      cloneLabels(info.Labels),
+			Labels:      labels,
 			StartedAt:   timestamppb.New(info.StartedAt),
 			LastSeenAt:  timestamppb.New(info.LastSeenAt),
 			Connected:   info.Connected,
@@ -240,10 +249,17 @@ func (s *ControlService) GetSnapshot(ctx context.Context, req *connect.Request[a
 // aggregateFrame builds the frame carrying the current agent-side
 // aggregate demand: a Subscribe with the union filter + sampling rates,
 // or an Unsubscribe when zero UI subscribers remain (clear ingress).
-func aggregateFrame(bus *routing.EventBus) *adminv1.Frame {
+func aggregateFrame(bus *routing.EventBus, total bool) *adminv1.Frame {
 	const aggregateID = "server-aggregate"
 
 	agg := bus.AggregateFilter()
+	if total {
+		// A peer server is connected: its UIs may want anything this
+		// agent emits, and the mesh carries events, not filters — so the
+		// agent ships everything and each server filters for its own
+		// subscribers (ADR-014).
+		agg = &adminv1.Filter{}
+	}
 	if agg == nil {
 		return &adminv1.Frame{
 			Body: &adminv1.Frame_Command{
@@ -278,16 +294,22 @@ func aggregateFrame(bus *routing.EventBus) *adminv1.Frame {
 // it, an agent that restarts mid-stream stays silent until some UI
 // reopens its subscription.
 func PushAggregate(e *nodes.Entry, bus *routing.EventBus) {
+	PushAggregateFor(e, bus, false)
+}
+
+// PushAggregateFor is PushAggregate with the peer demand decided by the
+// caller (State.PeerDemand): server.New wires the closure.
+func PushAggregateFor(e *nodes.Entry, bus *routing.EventBus, total bool) {
 	if e == nil || bus == nil {
 		return
 	}
-	nodes.TryEnqueue(e, aggregateFrame(bus))
+	nodes.TryEnqueue(e, aggregateFrame(bus, total))
 }
 
 // pushAggregateToAgents recomputes the union filter every connected
 // agent should apply, and pushes it to each one.
 func (s *ControlService) pushAggregateToAgents() {
-	frame := aggregateFrame(s.state.EventBus)
+	frame := aggregateFrame(s.state.EventBus, s.state.PeerDemand())
 	s.state.Nodes.ForEach(func(e *nodes.Entry) {
 		nodes.TryEnqueue(e, frame)
 	})

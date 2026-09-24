@@ -248,6 +248,10 @@ func (s *DataStudioService) dispatch(ctx context.Context, nodeID, modelName stri
 	}
 
 	entry, ok := s.pickAgent(nodeID, modelName)
+	if ok && entry.Remote() {
+		return nil, "", connect.NewError(connect.CodeFailedPrecondition,
+			fmt.Errorf("admin server: node %q is connected to server %q; open the Data Studio there", entry.NodeID, entry.Info.Via))
+	}
 	if !ok {
 		if nodeID != "" {
 			return nil, "", connect.NewError(connect.CodeNotFound,

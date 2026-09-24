@@ -110,6 +110,53 @@ type Dialer struct {
 	mu             sync.Mutex
 	currentBackoff time.Duration
 	lastWarnAt     time.Time
+	preferred      string // the endpoint a Redirect named; tried first while it answers
+}
+
+// Prefer makes endpoint the first one Dial tries, when it is one of the
+// configured endpoints. A server that redirects an agent names the server
+// that owns it (ADR-014); an endpoint the operator did not configure is
+// refused — the server is authoritative about the fleet, the operator
+// about where the agent may connect. Returns whether it was accepted.
+func (d *Dialer) Prefer(endpoint string) bool {
+	if d == nil {
+		return false
+	}
+	endpoint = strings.TrimSpace(endpoint)
+	for _, ep := range d.cfg.Endpoints {
+		if strings.TrimSpace(ep) == endpoint {
+			d.mu.Lock()
+			d.preferred = endpoint
+			d.mu.Unlock()
+			return true
+		}
+	}
+	return false
+}
+
+// Preferred returns the endpoint a Redirect named, or "".
+func (d *Dialer) Preferred() string {
+	if d == nil {
+		return ""
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.preferred
+}
+
+// ordered returns the configured endpoints with the preferred one first.
+func (d *Dialer) ordered() []string {
+	pref := d.Preferred()
+	out := make([]string, 0, len(d.cfg.Endpoints))
+	if pref != "" {
+		out = append(out, pref)
+	}
+	for _, ep := range d.cfg.Endpoints {
+		if strings.TrimSpace(ep) != pref {
+			out = append(out, ep)
+		}
+	}
+	return out
 }
 
 // NewDialer constructs a Dialer.
@@ -146,7 +193,7 @@ func (d *Dialer) Dial(ctx context.Context) (*Result, error) {
 	if d == nil {
 		return nil, errors.New("admin agent: nil dialer")
 	}
-	endpoints := d.cfg.Endpoints
+	endpoints := d.ordered()
 	if len(endpoints) == 0 {
 		return nil, errors.New("admin agent: no admin endpoints configured")
 	}

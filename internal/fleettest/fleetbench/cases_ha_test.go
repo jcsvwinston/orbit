@@ -13,23 +13,24 @@ func controlsHA() []control {
 		{id: "HA-01", family: "ha", title: "an agent fails over to the next endpoint when the first is unreachable",
 			want: present, probe: probeEndpointFailover},
 		{id: "HA-02", family: "ha", title: "two servers share the node registry: an agent connected to A is listed by B",
-			want: absent, note: "each server keeps its own in-memory node registry (server/nodes/registry.go); server B lists " +
-				"nothing about an agent connected to A. server/doc.go states active-active is not implemented.",
+			want: present, note: "servers configured as peers (server.Config.PeerAddrs) keep one stream to each other and announce " +
+				"their nodes; B lists A's node as remote with the origin in the label orbit.server, and refuses a Data Studio " +
+				"request for it naming the owner (ADR-014).",
 			probe: probeSharedRegistry},
 		{id: "HA-03", family: "ha", title: "a UI subscribed on server B receives events from an agent connected to A",
-			want: absent, note: "events fan out inside the server that received them (server/routing/eventbus.go) and the server " +
-				"never talks to another server: a subscriber on B sees nothing an agent sends to A.",
+			want: present, note: "an event a local agent sends is relayed to every peer, which publishes it to its own UI " +
+				"subscribers and its replay ring; while a peer is connected the agents ship everything, since the mesh carries " +
+				"events, not the peers' filters (ADR-014).",
 			probe: probeCrossServerEvents},
 		{id: "HA-04", family: "ha", title: "agents are assigned across servers deterministically",
-			want: absent, note: "no shard, peer, cluster or assignment field in server.Config or agent.Config and nothing about it " +
-				"on the wire: an agent connects to the first endpoint in its list that answers /healthz.",
+			want: present, note: "with server.Config.AssignNodes each node is owned by one server, chosen by rendezvous hashing over " +
+				"this server and the peers it reaches; an agent that registers elsewhere is sent Command.redirect and reconnects to " +
+				"its owner, which it accepts only for an endpoint it is configured for.",
 			probe: probeAgentSharding},
 		{id: "HA-05", family: "ha", title: "a reconnect under the same node_id supersedes the previous stream: one node, no duplicates",
-			want: partial, note: "the registry keeps one entry: Registry.Add (server/nodes/registry.go) evicts the old entry and " +
-				"cancels its context, which stops the server's writer. The old stream itself is not ended: AgentService.Stream's " +
-				"reader loop (server/services/agent_service.go:106-117) blocks in stream.Receive() and only checks streamCtx.Err() " +
-				"after Receive returns an error, so the superseded peer sees no error and a frame it sends after the takeover is " +
-				"still published as the node — a UI subscriber receives it. The old stream lives until its peer closes it.",
+			want: present, note: "the registry keeps one entry and the superseded stream is ENDED: the handler waits on its context " +
+				"as well as on Receive, returns Aborted to the old peer when a newer registration evicts it, and drops a frame that " +
+				"raced in after (OR-56).",
 			probe: probeSameNodeIDSupersedes},
 	}
 }
