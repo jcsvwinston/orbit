@@ -2,7 +2,9 @@ package admin
 
 import (
 	"embed"
+
 	"fmt"
+	orbitui "github.com/jcsvwinston/orbit/ui"
 	"html"
 	"io/fs"
 	"os"
@@ -15,14 +17,12 @@ const adminUIDirEnv = "NUCLEUS_ADMIN_UI_DIR"
 //go:embed ui_fallback/*
 var fallbackUIFS embed.FS
 
-// builtUIFS is the real admin SPA, embedded from internal/admin/ui/dist at build
-// time. orbit commits the built dist so a consumer that mounts the module gets
-// the full admin out of the box — no separate asset deployment (ADR-019: the
-// admin ships as a normal Go dependency, closing fleetdesk finding #9). The
-// `all:` prefix includes asset files whose names begin with `_` or `.`.
-//
-//go:embed all:ui/dist
-var builtUIFS embed.FS
+// The real admin SPA is the panel entry of the one frontend project
+// (ADR-015), embedded by the ui module: orbit commits the built dist so a
+// consumer that mounts the module gets the full admin out of the box — no
+// separate asset deployment (ADR-019: the admin ships as a normal Go
+// dependency). The fleet's admin server embeds the same dist and serves
+// its other entry.
 
 // adminUIContentFS resolves the admin SPA filesystem, in order:
 //  1. NUCLEUS_ADMIN_UI_DIR — a dev override pointing at a built dist on disk;
@@ -32,7 +32,7 @@ func adminUIContentFS() fs.FS {
 	if dir := strings.TrimSpace(os.Getenv(adminUIDirEnv)); dir != "" && adminUIBuildDirUsable(dir) {
 		return os.DirFS(dir)
 	}
-	if sub, err := fs.Sub(builtUIFS, "ui/dist"); err == nil && adminUIFSHasIndex(sub) {
+	if sub := orbitui.Panel(); sub != nil && adminUIFSHasIndex(sub) {
 		return sub
 	}
 	if fsys, err := fs.Sub(fallbackUIFS, "ui_fallback"); err == nil {

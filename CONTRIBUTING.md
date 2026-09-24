@@ -35,8 +35,7 @@ React SPAs:
 | `server/` | Standalone fleet admin-server binary. |
 | `quarkbridge/` | Opt-in Quark ORM → live SQL feed bridge. |
 | `quarkdatasource/` | Opt-in Quark backend for Data Studio. |
-| `internal/admin/ui/` | SPA of the in-process panel (**built `dist/` is committed**). |
-| `ui/` | SPA of the fleet admin server (embedded via `server/ui/embed.go`). |
+| `ui/` | The one frontend project (ADR-015): the in-process panel (`src/`, entry `index.html`) and the fleet plane (`src/fleet/`, entry `fleet/index.html`), built into `dist/panel` and `dist/fleet`; a Go module that embeds the **committed** dist, required by the root and by `server/`. |
 
 Each module under `proto/`, `agent/` and `server/` releases with its own
 component tag (`proto/vX`, `agent/vX`, `server/vX`).
@@ -136,13 +135,16 @@ distinction is the thing you will want back.
 
 There are two SPAs and they follow **different rules**:
 
-- **`internal/admin/ui/` (in-process panel).** The built `dist/` is
-  **committed** and embedded, so consumers need no Node toolchain. If you
-  touch its source you must rebuild and commit the dist in the same PR:
+- **`ui/` (the one frontend project).** The built `dist/` is committed and
+  embedded by the `ui` Go module, which the panel and the admin server both
+  require: change a source and rebuild, or the binaries ship the old
+  frontend. CI fails when the committed dist differs from what it builds.
 
   ```bash
-  cd internal/admin/ui
-  npm ci && npm run build
+  cd ui
+  npm ci
+  npm test
+  npm run build      # both entries: dist/panel and dist/fleet
   git add dist
   ```
 
@@ -156,7 +158,7 @@ There are two SPAs and they follow **different rules**:
 
 ## Protobuf changes
 
-Generated stubs (`proto/gen/go`, `ui/src/gen`) are committed. After editing
+Generated stubs (`proto/gen/go`, `ui/src/fleet/gen`) are committed. After editing
 a `.proto` file:
 
 ```bash

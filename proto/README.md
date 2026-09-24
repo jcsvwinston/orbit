@@ -22,7 +22,7 @@ make proto-breaking
 
 * `gen/go/nucleus/admin/v1/` — Go message structs and Connect-RPC
   service stubs. Imported by `orbit/agent` and `orbit/server`.
-* `../ui/src/gen/nucleus/admin/v1/` — TypeScript stubs consumed by the
+* `../ui/src/fleet/gen/nucleus/admin/v1/` — TypeScript stubs consumed by the
   Connect-Web client in the UI.
 
 Both are committed so a fresh checkout compiles without `buf`

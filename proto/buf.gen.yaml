@@ -29,14 +29,14 @@ plugins:
   # API surface. Mixing protobuf-es v2 stubs with connect-es v1 stubs
   # fails at type-check time.
   - remote: buf.build/bufbuild/es:v1.10.0
-    out: ../ui/src/gen
+    out: ../ui/src/fleet/gen
     opt:
       - target=ts
       - import_extension=.js
 
   # Connect-Web TypeScript bindings (client only; UI never serves).
   - remote: buf.build/connectrpc/es:v1.6.1
-    out: ../ui/src/gen
+    out: ../ui/src/fleet/gen
     opt:
       - target=ts
       - import_extension=.js

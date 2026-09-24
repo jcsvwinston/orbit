@@ -1,55 +1,64 @@
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import autoprefixer from 'autoprefixer'
+import tailwindcss from 'tailwindcss'
+import path from 'path'
+import { fileURLToPath } from 'url'
+import { stripUnusedGridThemes } from './tools/postcss-strip-unused-grid-themes.ts'
 
-const here = path.dirname(fileURLToPath(import.meta.url))
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-// Build pipeline:
-//
-//   * `npm run dev` (or `make ui-dev`) starts Vite on :5173 with a proxy
-//     to the admin server on :8080. The proxy injects an X-Auth-User
-//     header so the UI listener (which trusts 127.0.0.1) accepts the
-//     request without an explicit reverse-proxy in front.
-//
-//   * `npm run build` (or `make ui-build`) writes the production bundle
-//     directly into ../server/ui/dist so admin/server/ui/embed.go's
-//     //go:embed all:dist picks it up. `make build` then produces a
-//     single binary that serves the UI at "/" alongside the Connect-RPC
-//     routes.
+// https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
+  base: './',
   resolve: {
     alias: {
-      '@': path.join(here, 'src'),
+      '@': path.join(__dirname, './src'),
     },
   },
-  server: {
-    port: 5173,
-    proxy: {
-      '/nucleus.admin.v1.': {
-        target: 'http://127.0.0.1:8080',
-        changeOrigin: false,
-        configure: (proxy) => {
-          proxy.on('proxyReq', (proxyReq) => {
-            proxyReq.setHeader('X-Auth-User', 'dev')
-            proxyReq.setHeader('X-Auth-Email', 'dev@local')
-          })
-        },
-      },
-      '/healthz': {
-        target: 'http://127.0.0.1:8080',
-        changeOrigin: false,
-      },
+  css: {
+    // Inline PostCSS setup (Vite skips postcss.config.js when this is set):
+    // Tailwind and autoprefixer as before, plus the pass that drops the AG
+    // Grid theme variant the panel never applies (tools/).
+    postcss: {
+      plugins: [tailwindcss(), autoprefixer(), stripUnusedGridThemes()],
     },
   },
   build: {
-    // Direct output into the Go server's embed path. emptyOutDir is set
-    // because we override the project default (admin/server/ui/dist/);
-    // Vite needs explicit confirmation that wiping outside of project
-    // root is intentional.
-    outDir: path.resolve(here, '../server/ui/dist'),
+    // The panel's entry of the one frontend project (ADR-015): dist/panel,
+    // next to the fleet entry's dist/fleet; both Go binaries embed the
+    // whole dist through the ui module and serve their subtree.
+    outDir: 'dist/panel',
     emptyOutDir: true,
     sourcemap: false,
+    rolldownOptions: {
+      output: {
+        // Feature pages are dynamic imports (src/routes.ts), so each one is
+        // already its own chunk and Recharts lands in System Pulse's without
+        // a group. Groups capture a module's dependencies too, which is why
+        // there is no `charts` group any more: it used to take `clsx` and a
+        // React helper along and the entry then imported the whole chunk
+        // for them. `vendor` keeps React and the router in one stable file;
+        // `icons` folds the lucide glyphs shared by several pages into one
+        // request instead of a 200-byte chunk per icon.
+        codeSplitting: {
+          groups: [
+            {
+              name: 'vendor',
+              test: /node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler)[\\/]/,
+              priority: 2,
+            },
+            { name: 'icons', test: /node_modules[\\/]lucide-react[\\/]/, priority: 1 },
+          ],
+        },
+      },
+    },
+  },
+  test: {
+    environment: 'jsdom',
+    setupFiles: ['./src/test/setup.ts'],
+    include: ['src/**/*.test.{ts,tsx}', 'tools/**/*.test.ts'],
+    css: false,
   },
 })

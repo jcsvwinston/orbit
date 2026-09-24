@@ -1,0 +1,163 @@
+// App shell for the redesigned admin (design handoff "Orbit Admin"):
+// grouped hash-based navigation (Observe / Fleet / Manage), node-detail
+// sub-route (#/nodes/<id>), and the two-theme token system (data-theme on
+// <html>, persisted; prototype default is light).
+import { useCallback, useEffect, useState } from 'react'
+import { Layout, type NavGroup, type ThemeName } from '@/fleet/components/Layout'
+import { t } from '@/fleet/lib/i18n'
+import { onUnauthorized } from '@/fleet/lib/transport'
+import { NotAuthorizedPage } from '@/fleet/pages/NotAuthorizedPage'
+import { useNodes } from '@/fleet/hooks/useNodes'
+import { useSelf } from '@/fleet/hooks/useSelf'
+import { OverviewPage } from '@/fleet/pages/OverviewPage'
+import { MetricsPage } from '@/fleet/pages/MetricsPage'
+import { HTTPStreamPage } from '@/fleet/pages/HTTPStreamPage'
+import { SQLStreamPage } from '@/fleet/pages/SQLStreamPage'
+import { HealthPage } from '@/fleet/pages/HealthPage'
+import { NodesPage } from '@/fleet/pages/NodesPage'
+import { NodeDetailPage } from '@/fleet/pages/NodeDetailPage'
+import { SessionsPage } from '@/fleet/pages/SessionsPage'
+import { DataStudioPage } from '@/fleet/pages/DataStudioPage'
+import { AccessControlPage } from '@/fleet/pages/AccessControlPage'
+import { AuditLogPage } from '@/fleet/pages/AuditLogPage'
+
+type PageID =
+  | 'overview'
+  | 'metrics'
+  | 'http'
+  | 'sql'
+  | 'health'
+  | 'nodes'
+  | 'sessions'
+  | 'data-studio'
+  | 'access'
+  | 'audit'
+
+interface Route {
+  page: PageID
+  nodeId: string | null
+}
+
+const PAGE_IDS: ReadonlySet<string> = new Set([
+  'overview',
+  'metrics',
+  'http',
+  'sql',
+  'health',
+  'nodes',
+  'sessions',
+  'data-studio',
+  'access',
+  'audit',
+])
+
+function routeFromHash(): Route {
+  const raw = window.location.hash.replace(/^#\/?/, '')
+  const nodeMatch = /^nodes\/(.+)$/.exec(raw)
+  if (nodeMatch) {
+    return { page: 'nodes', nodeId: decodeURIComponent(nodeMatch[1]) }
+  }
+  return { page: PAGE_IDS.has(raw) ? (raw as PageID) : 'overview', nodeId: null }
+}
+
+const THEME_KEY = 'orbit.theme'
+
+function initialTheme(): ThemeName {
+  const stored = window.localStorage.getItem(THEME_KEY)
+  return stored === 'dark' || stored === 'light' ? stored : 'light'
+}
+
+function App(): React.JSX.Element {
+  const [route, setRoute] = useState<Route>(routeFromHash)
+  const [theme, setTheme] = useState<ThemeName>(initialTheme)
+  const [unauthorized, setUnauthorized] = useState(false)
+  const { nodes, isError } = useNodes()
+  const { self } = useSelf()
+
+  useEffect(() => {
+    const onHash = (): void => setRoute(routeFromHash())
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+
+  // Any Unauthenticated RPC flips the whole shell to the not-authorized
+  // screen instead of leaking a raw network error on each page.
+  useEffect(() => onUnauthorized(() => setUnauthorized(true)), [])
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    window.localStorage.setItem(THEME_KEY, theme)
+  }, [theme])
+
+  const navigate = useCallback((id: string): void => {
+    window.location.hash = `#/${id}`
+  }, [])
+
+  const groups: NavGroup[] = [
+    {
+      name: t.app.navObserve,
+      items: [
+        { id: 'overview', label: t.app.navOverview },
+        { id: 'metrics', label: t.app.navMetrics },
+        { id: 'http', label: t.app.navHTTP },
+        { id: 'sql', label: t.app.navSQL },
+        { id: 'health', label: t.app.navHealth },
+      ],
+    },
+    {
+      name: t.app.navFleet,
+      items: [
+        { id: 'nodes', label: t.app.navNodes, badge: nodes.length },
+        { id: 'sessions', label: t.app.navSessions },
+      ],
+    },
+    {
+      name: t.app.navManage,
+      items: [
+        { id: 'data-studio', label: t.app.navDataStudio },
+        { id: 'access', label: t.app.navAccess },
+        { id: 'audit', label: t.app.navAudit },
+      ],
+    },
+  ]
+
+  const { page, nodeId } = route
+
+  if (unauthorized) {
+    return <NotAuthorizedPage onRetry={() => window.location.reload()} />
+  }
+
+  // Footer: the real server version + the operator identity actions are
+  // audited under (OR-UX-P1-6).
+  const version = self?.serverVersion ? t.app.footerVersion(self.serverVersion) : ''
+  const identity = self?.subject
+    ? `${self.subject}${self.readOnly ? t.app.viewerSuffix : ''}`
+    : ''
+
+  return (
+    <Layout
+      current={page}
+      groups={groups}
+      onNavigate={navigate}
+      serverHealthy={!isError}
+      version={version}
+      identity={identity}
+      theme={theme}
+      onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+    >
+      {page === 'overview' && <OverviewPage />}
+      {page === 'metrics' && <MetricsPage />}
+      {page === 'http' && <HTTPStreamPage />}
+      {page === 'sql' && <SQLStreamPage />}
+      {page === 'health' && <HealthPage />}
+      {page === 'nodes' && nodeId === null && <NodesPage />}
+      {page === 'nodes' && nodeId !== null && <NodeDetailPage nodeId={nodeId} />}
+      {page === 'sessions' && <SessionsPage />}
+      {page === 'data-studio' && <DataStudioPage />}
+      {page === 'access' && <AccessControlPage />}
+      {page === 'audit' && <AuditLogPage />}
+    </Layout>
+  )
+}
+
+export default App

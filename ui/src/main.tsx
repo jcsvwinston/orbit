@@ -1,34 +1,45 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import App from '@/App'
-import { ToastProvider } from '@/components/Toast'
-import '@/index.css'
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App.tsx'
+import { getAdminTitle } from './config'
+import { applyBranding } from './lib/branding'
+import { useMessages } from './stores/messagesStore'
+import { installPreloadErrorReload } from './lib/chunk-recovery'
+import './index.css'
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      // Real-time observability: don't refetch idle queries automatically.
-      // Streaming RPCs handle their own cadence; cached snapshots are short-
-      // lived and revalidated on focus.
-      refetchOnWindowFocus: true,
-      staleTime: 5_000,
-      retry: 1,
-    },
-  },
-})
+// Reflect the configured panel title (injected by the backend as a meta tag)
+// in the browser tab. The static <title> only covers a build served without
+// the backend injection.
+document.title = getAdminTitle();
 
-const rootEl = document.getElementById('root')
-if (!rootEl) {
-  throw new Error('Could not find #root element to mount the admin UI.')
-}
+// The application's logo, colour and favicon, painted before React renders so
+// the first frame is already the product's (src/lib/branding.ts).
+applyBranding()
 
-createRoot(rootEl).render(
-  <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <ToastProvider>
-        <App />
-      </ToastProvider>
-    </QueryClientProvider>
-  </StrictMode>,
+// The chrome's phrases in the declared language. The fetch is not awaited:
+// an English panel renders immediately and re-renders translated when the
+// catalogue lands (src/stores/messagesStore.ts).
+void useMessages.getState().load();
+
+// Initialize theme before React renders (avoids CSP inline script issue)
+(function () {
+  let theme = localStorage.getItem('gf-theme')
+  if (!theme) {
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+    theme = prefersDark ? 'dark' : 'light'
+  }
+  localStorage.setItem('gf-theme', theme)
+  if (theme === 'dark') document.documentElement.classList.add('dark')
+  else document.documentElement.classList.remove('dark')
+})()
+
+// A chunk or stylesheet that fails to load (the tab predates the binary now
+// serving it) reloads the page once, when the server answers; see
+// src/lib/chunk-recovery.ts.
+installPreloadErrorReload()
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
 )

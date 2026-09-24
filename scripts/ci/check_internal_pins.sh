@@ -21,7 +21,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../.."
 
-MODULES=(. datasource proto agent server quarkbridge quarkdatasource)
+MODULES=(. datasource ui proto agent server quarkbridge quarkdatasource)
 MODULE_ROOT="github.com/jcsvwinston/orbit"
 
 # Since ADR-012 no module requires the root: the `datasource` contract that

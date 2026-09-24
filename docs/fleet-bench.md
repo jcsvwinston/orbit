@@ -60,7 +60,7 @@ place for a capability, not the capability.
 
 ## The result
 
-**42 of 50 controls present. 1 partial. 7 absent.**
+**47 of 50 controls present. 1 partial. 2 absent.**
 
 | family | present | partial | absent |
 |---|---|---|---|
@@ -259,20 +259,37 @@ history in order. Three mutations turned probes red: an engine that
 evaluates nothing (`ALR-01`), a webhook that does not send (`ALR-02`), a
 history that answers empty (`RET-03`).
 
-### ui — 2 present · 1 partial · 7 absent
+### ui — 7 present · 1 partial · 2 absent
 
 | id | control | verdict | what is missing |
 |---|---|---|---|
-| `UI-01` | one frontend project serves both planes: the server and the panel embed the same dist | **absent** | two projects: ui/package.json builds into server/ui/dist (embedded by server/ui/embed.go) and internal/admin/ui/package.json builds into internal/admin/ui/dist (embedded by internal/admin/ui_fallback.go). |
-| `UI-02` | the two planes share design tokens: one token source imported by both, or one project | **absent** | ui/src/index.css declares numbered --t0…--t53 custom properties and internal/admin/ui/src/index.css declares HSL shadcn-style ones; neither stylesheet nor tailwind config imports a file the other one does, relative or through a package that resolves inside the repository. |
-| `UI-03` | the fleet UI has automated tests: a runner, a test script and at least one spec | **absent** | ui/package.json has no test script and no test runner among its devDependencies, and no *.test.* or *.spec.* file exists under ui/; the panel has vitest and a test suite. |
-| `UI-04` | CI checks that the fleet UI's committed dist is fresh, as the panel's lane does | **absent** | the ui job in .github/workflows/ci.yml runs typecheck, lint and build in ui/ and never diffs server/ui/dist afterwards; the admin-ui job does exactly that for internal/admin/ui/dist. |
-| `UI-05` | a bundle-size budget covers the fleet UI (a test constant, a size-limit configuration or a CI step) | **absent** | server/ui has no test file naming a byte budget (a constant like `<name>Budget = N * 1024`), ui/package.json has no size-limit configuration or tooling, and no CI job in ui/ enforces a size; the only budget in the repository is the panel's (internal/admin/ui_embed_test.go). |
+| `UI-01` | one frontend project serves both planes: the server and the panel embed the same dist | **present** | one project (ui/package.json) with two entries builds into one dist that the ui module embeds (ui/embed.go, ADR-015); the admin server serves dist/fleet and the panel dist/panel, both through that module, and neither embeds a dist of its own. |
+| `UI-02` | the two planes share design tokens: one token source imported by both, or one project | **present** | one project: both entries' stylesheets import src/shared/tokens.css, the design system's tokens. The fleet's screens still read their numbered palette (src/fleet/index.css) until they are re-skinned onto the shared names; the source is one. |
+| `UI-03` | the fleet UI has automated tests: a runner, a test script and at least one spec | **present** | the one project runs vitest (npm test) over the panel's suite and the fleet's specs (src/fleet/lib/*.test.ts); the CI lane runs it before building. |
+| `UI-04` | CI checks that the fleet UI's committed dist is fresh, as the panel's lane does | **present** | the ui job in .github/workflows/ci.yml typechecks, lints, tests and builds the one project and fails when the committed ui/dist — the one both binaries embed — differs from what it built. |
+| `UI-05` | a bundle-size budget covers the fleet UI (a test constant, a size-limit configuration or a CI step) | **present** | ui/embed_test.go names a budget per entry (panel and fleet initial JS and CSS) and fails the ui module's tests when the embedded dist exceeds it; the fleet's is its whole bundle today, a ceiling for the re-skin. |
 | `UI-06` | the fleet UI's generated stubs are connect-es 2 / protobuf-es 2, in the dependencies and in the generators | **absent** | ui/package.json pins @connectrpc/connect ^1.6.1, @connectrpc/connect-web ^1.7.0 and @bufbuild/protobuf ^1.10.0, and proto/buf.gen.yaml pins the generators bufbuild/es:v1.10.0 and connectrpc/es:v1.6.1. |
 | `UI-07` | the browser instrument covers the fleet UI: a Playwright spec navigates to a path outside /admin | **absent** | the only Playwright spec (internal/adminbench/browser/specs/panel.spec.ts) navigates to /admin paths only; nothing opens the fleet UI in a browser. |
 | `UI-08` | the fleet UI is told the operator's role: GetSelf says read-only for a viewer | **present** | — |
 | `UI-09` | the fleet UI has a tenant notion: a message on the wire carries one and the SPA sends or shows it | **partial** | the wire carries one since A9 S3 (OperatorIdentity.tenant on DataStudioRequest, server to agent), but nothing the fleet SPA sends (ui/src, outside src/gen) names a tenant and no screen shows which tenant an operator or a row belongs to: the Control surface still has no tenant field at all. S10 puts the tenant in the UI. |
 | `UI-10` | the panel's initial load stays within its budget, and the budget is a test constant | **present** | — |
+
+
+`UI-01` to `UI-05` are **present** since A9 `S9`, decided with the numbers
+in the table of ADR-015: the panel's project (10 318 lines, 116 tests,
+routed chunks, a budget, a freshness lane) is the base and the fleet's
+(5 306 lines, none of that) becomes its second entry. One project in `ui/`,
+two entries (`src/` with `index.html`, `src/fleet/` with `fleet/index.html`),
+one dist (`dist/panel`, `dist/fleet`) embedded by one Go module the root and
+the server require — the only way two Go modules embed the same dist, since
+a `//go:embed` cannot leave its module. Shared by construction: the tokens
+(`src/shared/tokens.css`, imported by both stylesheets), the TypeScript and
+ESLint configuration, Vitest (the fleet gained its first specs), the CI lane
+that fails on a stale dist, and `embed_test.go` with a budget per entry. The
+fleet's screens keep their numbered palette over the shared tokens until
+they are re-skinned. `UI-01`, `UI-04`, `UI-05` and `UI-10` read the new
+layout: the module both planes import, the one lane that diffs `ui/dist`,
+the budget constants in the module's test.
 
 ## What the shape of it says
 

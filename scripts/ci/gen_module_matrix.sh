@@ -27,8 +27,8 @@ rule from the [upgrade guide](../operations/upgrade.md): as a consumer you
 only ever choose two versions — the root (with your app) and the
 server/agent pair (with your fleet).
 
-| orbit (root) | datasource | proto | agent | server | quarkbridge | quarkdatasource |
-| --- | --- | --- | --- | --- | --- | --- |
+| orbit (root) | datasource | ui | proto | agent | server | quarkbridge | quarkdatasource |
+| --- | --- | --- | --- | --- | --- | --- | --- |
 HDR
 # NOTA sobre la ventana rancia (y sobre un arreglo que NO funciona).
 #
@@ -66,7 +66,7 @@ for tag in $(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V -r)
     # A module that did not exist at that release (datasource before ADR-012).
     printf '%s' "${declared:-—}"
   }
-  echo "| \`$tag\` | \`$(get datasource)\` | \`$(get proto)\` | \`$(get agent)\` | \`$(get server)\` | \`$(get quarkbridge)\` | \`$(get quarkdatasource)\` |"
+  echo "| \`$tag\` | \`$(get datasource)\` | \`$(get ui)\` | \`$(get proto)\` | \`$(get agent)\` | \`$(get server)\` | \`$(get quarkbridge)\` | \`$(get quarkdatasource)\` |"
 done
 cat <<'FTR'
 
