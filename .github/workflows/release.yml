@@ -80,10 +80,19 @@ jobs:
       # is cut from, and the release build compiles it the same way. Proving it
       # green in workspace mode would prove something no consumer, and no
       # release, ever gets.
+      #
+      # -mod=mod, because a consumer resolves the module the way `go get`
+      # does: when a sibling module is BORN in the same cut (ui/v1.0.0 in
+      # v1.17.0), the server requires a tag that did not exist when its go.sum
+      # was last tidied, so the frozen tree carries no checksum for it and a
+      # read-only build refuses to start — that release published no assets.
+      # The tidy lane on every pull request is what keeps go.sum honest; this
+      # step verifies the module builds and passes, which is its job.
       - name: Build, vet and test the server module standalone
         working-directory: server
         env:
           GOWORK: "off"
+          GOFLAGS: "-mod=mod"
         run: |
           go build ./...
           go vet ./...

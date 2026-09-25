@@ -632,12 +632,20 @@ func cloneFilters(in map[string]string) map[string]string {
 }
 
 func modelToProto(m datasource.ModelInfo) *adminv1.ModelInfo {
+	// The contract names the tenant field the adapter's way (the Nucleus
+	// adapter uses the column); the wire carries field NAMES, which is what
+	// the UI matches its columns by. Translate as the handler does elsewhere.
+	tenantField := m.TenantField
+	if f, ok := m.Field(m.TenantField); ok && m.TenantField != "" {
+		tenantField = f.Name
+	}
 	return &adminv1.ModelInfo{
 		Name:          m.Name,
 		Plural:        m.Plural,
 		Table:         m.Table,
 		DatabaseAlias: m.DatabaseAlias,
 		PrimaryKey:    m.PrimaryKey,
+		TenantField:   tenantField,
 		RecordCount:   -1,
 	}
 }

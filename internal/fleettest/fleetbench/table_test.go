@@ -64,7 +64,22 @@ func TestFleetBenchTable(t *testing.T) {
 	header := fmt.Sprintf("**%d of %d controls present. %d partial. %d absent.**\n",
 		total[present], len(cases), total[partial], total[absent])
 
-	if err := os.WriteFile("bench-table.md", []byte(header+b.String()), 0o644); err != nil {
+	// The per-family summary the page opens with. It used to be retyped
+	// by hand and was three sessions stale while the headline above it was
+	// current; the umbrella's fleet-posture guard now compares both with
+	// the catalogue, so it is generated here with the rest.
+	var summary strings.Builder
+	summary.WriteString("\n| family | present | partial | absent |\n|---|---|---|---|\n")
+	for _, f := range families {
+		count := map[verdict]int{}
+		for _, c := range byFamily[f] {
+			count[c.want]++
+		}
+		summary.WriteString(fmt.Sprintf("| %s | %d | %d | %d |\n", f, count[present], count[partial], count[absent]))
+	}
+	summary.WriteString(fmt.Sprintf("| **total** | **%d** | **%d** | **%d** |\n", total[present], total[partial], total[absent]))
+
+	if err := os.WriteFile("bench-table.md", []byte(header+summary.String()+b.String()), 0o644); err != nil {
 		t.Fatalf("write the table: %v", err)
 	}
 	t.Logf("wrote bench-table.md: %s", strings.TrimSpace(header))

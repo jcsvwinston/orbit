@@ -93,6 +93,8 @@ github.com/jcsvwinston/nucleus/drivers/sqlite v0.1.7 h1:iGpq6y9we1/1VrMaGt9PI7c5
 github.com/jcsvwinston/nucleus/drivers/sqlite v0.1.7/go.mod h1:U6QFD+5G0c0HoCPGQ3uW85mTPQgIDMGEh5GhCMrCdoM=
 github.com/jcsvwinston/orbit/datasource v1.0.0 h1:EJvdJrVhjShqzALGlv04lXoH4v+VAT9EAujWI4MNpc8=
 github.com/jcsvwinston/orbit/datasource v1.0.0/go.mod h1:gQBzMvpdON3cKcGsYHJfw1QvC56tWl10OoopkOiXZO8=
+github.com/jcsvwinston/orbit/ui v1.0.0 h1:J+vlA7NEQpBa0OcOLxCcSCow7d2sMob831iraJsWi+E=
+github.com/jcsvwinston/orbit/ui v1.0.0/go.mod h1:3EZJvFYfjA6HQttmEfUw7m/6/KNMFM3ENH7Cq3Xttqg=
 github.com/klauspost/cpuid/v2 v2.2.10 h1:tBs3QSyvjDyFTq3uoc/9xFpCuOsJQFNPiAhYdw2skhE=
 github.com/klauspost/cpuid/v2 v2.2.10/go.mod h1:hqwkgyIinND0mEev00jJYCxPNVRVXFQeu1XKlok6oO0=
 github.com/knadh/koanf/maps v0.1.2 h1:RBfmAW5CnZT+PJ1CVc1QSJKf4Xu9kxfQgYVQSu8hpbo=

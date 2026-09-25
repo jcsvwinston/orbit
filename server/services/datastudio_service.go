@@ -83,11 +83,16 @@ func (s *DataStudioService) ListModels(ctx context.Context, req *connect.Request
 	}
 
 	wrapped := &adminv1.DataStudioRequest{Body: &adminv1.DataStudioRequest_ListModels{ListModels: body}}
-	resp, _, err := s.dispatch(ctx, body.GetNodeId(), "", wrapped)
+	resp, node, err := s.dispatch(ctx, body.GetNodeId(), "", wrapped)
 	if err != nil {
 		return nil, err
 	}
 	if list := resp.GetListModels(); list != nil {
+		// The wire says which agent answered; with more than one node the
+		// UI cannot tell otherwise, and the agent does not name itself.
+		if list.GetNodeId() == "" {
+			list.NodeId = node
+		}
 		return connect.NewResponse(list), nil
 	}
 	return nil, connect.NewError(connect.CodeUnknown, errors.New("admin server: empty list_models response"))
@@ -109,11 +114,14 @@ func (s *DataStudioService) GetSchema(ctx context.Context, req *connect.Request[
 func (s *DataStudioService) ListRecords(ctx context.Context, req *connect.Request[adminv1.ListRecordsRequest]) (*connect.Response[adminv1.PaginatedRecords], error) {
 	body := req.Msg
 	wrapped := &adminv1.DataStudioRequest{Body: &adminv1.DataStudioRequest_ListRecords{ListRecords: body}}
-	resp, _, err := s.dispatch(ctx, body.GetNodeId(), body.GetModelName(), wrapped)
+	resp, node, err := s.dispatch(ctx, body.GetNodeId(), body.GetModelName(), wrapped)
 	if err != nil {
 		return nil, err
 	}
 	if page := resp.GetRecordsPage(); page != nil {
+		if page.GetNodeId() == "" {
+			page.NodeId = node
+		}
 		return connect.NewResponse(page), nil
 	}
 	return nil, connect.NewError(connect.CodeUnknown, errors.New("admin server: empty list_records response"))

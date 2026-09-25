@@ -13,9 +13,13 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 
+	"github.com/jcsvwinston/nucleus/pkg/db"
+
+	"github.com/jcsvwinston/orbit/agent"
 	adminv1 "github.com/jcsvwinston/orbit/proto/gen/go/nucleus/admin/v1"
 	server "github.com/jcsvwinston/orbit/server"
 )
@@ -594,7 +598,44 @@ func probeFleetTenantNotion(t *testing.T, e *env) verdict {
 		t.Logf("the SPA reads SelfInfo.tenant but the server answers %q for an operator the proxy scoped to acme: the server fills it once it pins the protocol that carries it", self.Msg.GetTenant())
 		return partial
 	}
-	return present
+	// And the other property the SPA reads — which column scopes a model —
+	// is filled by the agent: a model registered with a tenant field names
+	// it on the wire, and the name is one of the model's own fields.
+	d, reg := e.agentDB(t, true)
+	ag := e.startAgent(t, agent.Config{
+		Endpoints: []string{"http://" + srv.AgentAddr()},
+		Registry:  reg,
+		Databases: map[string]*db.DB{"default": d},
+	})
+	if !waitRegistered(srv.Server, ag.NodeID(), 4*time.Second) {
+		t.Fatal("the agent did not register")
+	}
+	models, err := e.dataStudio(srv.Server).ListModels(ctxFor(t), connect.NewRequest(&adminv1.ListModelsRequest{NodeId: ag.NodeID()}))
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	for _, m := range models.Msg.GetModels() {
+		if m.GetName() != "TestTenantArticle" {
+			continue
+		}
+		if m.GetTenantField() == "" {
+			t.Log("the SPA reads ModelInfo.tenant_field but the agent leaves it empty for a model registered with a tenant field")
+			return partial
+		}
+		schema, err := e.dataStudio(srv.Server).GetSchema(ctxFor(t), connect.NewRequest(&adminv1.GetSchemaRequest{NodeId: ag.NodeID(), ModelName: m.GetName()}))
+		if err != nil {
+			t.Fatalf("GetSchema: %v", err)
+		}
+		for _, f := range schema.Msg.GetFields() {
+			if f.GetName() == m.GetTenantField() {
+				return present
+			}
+		}
+		t.Logf("ModelInfo.tenant_field names %q, which is not one of the model's fields", m.GetTenantField())
+		return partial
+	}
+	t.Fatal("the agent did not list TestTenantArticle")
+	return absent
 }
 
 // UI-10: the panel's initial load stays within its budget, and the budget

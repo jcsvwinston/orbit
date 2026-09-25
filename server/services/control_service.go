@@ -82,6 +82,7 @@ func (s *ControlService) GetSelf(ctx context.Context, _ *connect.Request[adminv1
 		Email:         id.Email,
 		Role:          id.Role,
 		ReadOnly:      id.ReadOnly,
+		Tenant:        id.Tenant,
 		ServerVersion: serverVersion(),
 	}), nil
 }

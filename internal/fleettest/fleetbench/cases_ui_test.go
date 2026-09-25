@@ -46,9 +46,10 @@ func controlsUI() []control {
 		{id: "UI-08", family: "ui", title: "the fleet UI is told the operator's role: GetSelf says read-only for a viewer",
 			want: present, probe: probeUIKnowsRole},
 		{id: "UI-09", family: "ui", title: "the fleet UI has a tenant notion: a message on the wire carries one and the SPA sends or shows it",
-			want: partial, note: "the SPA shows the operator's tenant (SelfInfo.tenant, in the footer line) and marks a tenant-scoped " +
-				"model and its column (ModelInfo.tenant_field) — both additive fields of this session — but the server and the agent " +
-				"fill them once they pin the protocol that carries them; until then the UI reads fields the wire leaves empty.",
+			want: present, note: "the SPA shows the operator's tenant (SelfInfo.tenant, beside who they are audited as) and marks a " +
+				"tenant-scoped model and its column (ModelInfo.tenant_field); the server fills the first from the trusted proxy's tenant " +
+				"header and the agent the second from the model's tenant field, both since they pin proto v0.8.0. The probe checks the " +
+				"fields are filled, not declared: a declared field left empty kept this control partial for one release.",
 			probe: probeFleetTenantNotion},
 		{id: "UI-10", family: "ui", title: "the panel's initial load stays within its budget, and the budget is a test constant",
 			want: present, probe: probePanelBudgetEnforced},

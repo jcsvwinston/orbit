@@ -28,10 +28,9 @@ go 1.26.6
 //
 // ui/ is the one frontend project (ADR-015): the panel and the fleet plane,
 // two entries built into one dist the module embeds. The root and server/
-// require it BY TAG; until the cut that creates ui/v1.0.0, the versioned
-// replace below resolves the requirement from this tree (same mechanics as
-// datasource's birth: link_unpublished_siblings.sh covers the standalone
-// lanes, and the cut removes the replace).
+// require it BY TAG. Between its birth and ui/v1.0.0 this file carried a
+// versioned replace to this tree, as it did for datasource; the cut that
+// published the tag removed it.
 //
 // internal/fleettest/ is a test-only module (ADR-006): the integration tests
 // that drive a real agent against the server live there so server/ does not
@@ -47,5 +46,3 @@ use (
 	./server
 	./ui
 )
-
-replace github.com/jcsvwinston/orbit/ui v1.0.0 => ./ui
