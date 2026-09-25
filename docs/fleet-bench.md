@@ -77,14 +77,18 @@ surface appears (a new field, a new configuration knob) turns its probe red
 against the recorded verdict, and the probe then grows the behaviour check the
 new surface makes possible.
 
-A declaration is not a surface. `FDS-09` is **absent** although the protocol
-declares `total` and `total_estimated` on every page: the server never
-produces a number in them, filtered or not, so what the wire declares is a
-place for a capability, not the capability.
+A declaration is not a surface. On the day of the baseline `FDS-09` was
+**absent** although the protocol declared `total` and `total_estimated` on
+every page: the server never produced a number in them, filtered or not, so
+what the wire declared was a place for a capability, not the capability. The
+same rule kept `UI-09` partial for a release after its two fields were
+declared and before the server and the agent filled them, and it is why the
+cluster test's finding — `node_id` declared as "which agent answered" and
+left empty — counted as a gap and not as a detail.
 
 ## The result
 
-**49 of 50 controls present. 1 partial. 0 absent.**
+**50 of 50 controls present. 0 partial. 0 absent.**
 
 | family | present | partial | absent |
 |---|---|---|---|
@@ -93,8 +97,8 @@ place for a capability, not the capability.
 | ha | 5 | 0 | 0 |
 | identity | 10 | 0 | 0 |
 | retention | 7 | 0 | 0 |
-| ui | 9 | 1 | 0 |
-| **total** | **49** | **1** | **0** |
+| ui | 10 | 0 | 0 |
+| **total** | **50** | **0** | **0** |
 
 ### alerts — 6 present · 0 partial · 0 absent
 
@@ -138,8 +142,9 @@ tenant stamped on a create, ownership confirmed before an update or delete.
 The tenant reaches the server through the trusted proxy's `X-Auth-Tenant`
 header (`--ui-tenant-header`). A request without an operator — an older
 server — behaves as before, with no identity, no policy and no tenant.
-`UI-09` stays partial: the wire carries a tenant, the SPA still neither
-sends nor shows one. `FDS-08` and `FDS-09` are **present** too: operator
+`UI-09` is **present** since `S11`: the wire carries the operator's tenant
+and the model's tenant column, the server and the agent fill them, and the
+SPA shows both. `FDS-08` and `FDS-09` are **present** too: operator
 filters are applied through the contract (an unknown operator is refused,
 never dropped) and every list carries an exact total.
 
@@ -283,7 +288,7 @@ history in order. Three mutations turned probes red: an engine that
 evaluates nothing (`ALR-01`), a webhook that does not send (`ALR-02`), a
 history that answers empty (`RET-03`).
 
-### ui — 9 present · 1 partial · 0 absent
+### ui — 10 present · 0 partial · 0 absent
 
 | id | control | verdict | what is missing |
 |---|---|---|---|
@@ -295,7 +300,7 @@ history that answers empty (`RET-03`).
 | `UI-06` | the fleet UI's generated stubs are connect-es 2 / protobuf-es 2, in the dependencies and in the generators | **present** | ui/package.json pins @connectrpc/connect ^2, @connectrpc/connect-web ^2 and @bufbuild/protobuf ^2, and proto/buf.gen.yaml generates the fleet's stubs with bufbuild/es v2 alone: messages and service descriptors from one generator, created with create(Schema) and called through createClient. |
 | `UI-07` | the browser instrument covers the fleet UI: a Playwright spec navigates to a path outside /admin | **present** | internal/adminbench/browser/specs/fleet.spec.ts is the fleet project of the same instrument: driven from internal/fleettest (TestFleetBrowserBench), which boots an admin server and an agent, it opens the fleet UI at / and measures six UIF controls (instrument, overview lists the node, contrast, names, landmarks, keyboard). |
 | `UI-08` | the fleet UI is told the operator's role: GetSelf says read-only for a viewer | **present** | — |
-| `UI-09` | the fleet UI has a tenant notion: a message on the wire carries one and the SPA sends or shows it | **partial** | the SPA shows the operator's tenant (SelfInfo.tenant, in the footer line) and marks a tenant-scoped model and its column (ModelInfo.tenant_field) — both additive fields of this session — but the server and the agent fill them once they pin the protocol that carries them; until then the UI reads fields the wire leaves empty. |
+| `UI-09` | the fleet UI has a tenant notion: a message on the wire carries one and the SPA sends or shows it | **present** | the SPA shows the operator's tenant (SelfInfo.tenant, beside who they are audited as) and marks a tenant-scoped model and its column (ModelInfo.tenant_field); the server fills the first from the trusted proxy's tenant header and the agent the second from the model's tenant field, both since they pin proto v0.8.0. The probe checks the fields are filled, not declared: a declared field left empty kept this control partial for one release. |
 | `UI-10` | the panel's initial load stays within its budget, and the budget is a test constant | **present** | — |
 
 
@@ -327,13 +332,18 @@ test-only module that may boot an admin server and an agent
 its reason: the light theme's small muted text on the overview sits below
 4.5:1, the sidebar's labels and two light tokens were raised, and the rest is
 the re-skin onto the shared tokens (OR-59), not another token nudged in
-isolation. `UI-09` stays **partial** for the reason `FDS-11` did for one
-release: the SPA now shows the operator's tenant (`SelfInfo.tenant`) and
-marks a tenant-scoped model and its column (`ModelInfo.tenant_field`), both
-additive fields of this session, and the probe checks the server fills the
-tenant it was sent — which it does once it pins the protocol that carries
-the field. The Data Studio blurb that promised "tenant filters apply" since
-before any wire field existed says what happens now (OR-58).
+isolation. `UI-09` was **partial** for one release, for the reason
+`FDS-11` had been: `S10` declared `SelfInfo.tenant` and
+`ModelInfo.tenant_field` and made the SPA show them, and the probe checked
+the server filled the tenant it was sent — which it could not until it
+pinned the protocol that carries the field. `S11` closed it after the
+`proto/v0.8.0` cut: `GetSelf` answers the trusted proxy's tenant, and the
+agent names the model's tenant field by its wire name (the contract names it
+the adapter's way, by column; the UI matches field names). The probe now
+checks both fills, and a model registered with a tenant field that came back
+without one would turn it partial again. The Data Studio blurb that promised
+"tenant filters apply" since before any wire field existed says what happens
+now (OR-58).
 
 ## What the shape of it says
 
@@ -389,7 +399,7 @@ The fleet plane **moves bytes safely and keeps nothing**.
 - **The fleet pager never has a total.** The reconnaissance expected the
   unfiltered page to carry an exact count and only the filtered one to answer
   "unknown". Measured, both answer `-1` / estimated: the agent never asks the
-  model layer to count (`FDS-09` is absent, not partial). For context, not as
+  model layer to count (`FDS-09` was absent, not partial, until `S3`). For context, not as
   a measurement of this bench: the panel's pager had the same gap and closed
   it in its own arc.
 - **A superseded stream is not ended.** The reconnaissance read the

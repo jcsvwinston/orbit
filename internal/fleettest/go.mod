@@ -8,10 +8,10 @@ require (
 	github.com/jcsvwinston/nucleus/drivers/mysql v0.1.0
 	github.com/jcsvwinston/nucleus/drivers/postgres v0.1.0
 	github.com/jcsvwinston/nucleus/drivers/sqlite v0.1.7
-	github.com/jcsvwinston/orbit/agent v0.12.0
-	github.com/jcsvwinston/orbit/proto v0.7.0
+	github.com/jcsvwinston/orbit/agent v0.14.0
+	github.com/jcsvwinston/orbit/proto v0.8.0
 	github.com/jcsvwinston/orbit/quarkdatasource v1.12.0
-	github.com/jcsvwinston/orbit/server v0.17.0
+	github.com/jcsvwinston/orbit/server v0.19.0
 	github.com/jcsvwinston/quark v1.15.0
 	github.com/jcsvwinston/quark/drivers/sqlite v0.2.2
 	google.golang.org/protobuf v1.36.12
@@ -47,6 +47,7 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jcsvwinston/orbit/datasource v1.0.0 // indirect
+	github.com/jcsvwinston/orbit/ui v1.0.0 // indirect
 	github.com/knadh/koanf/maps v0.1.2 // indirect
 	github.com/knadh/koanf/parsers/yaml v1.1.1 // indirect
 	github.com/knadh/koanf/providers/env v1.1.0 // indirect
