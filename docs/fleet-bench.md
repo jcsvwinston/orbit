@@ -17,9 +17,33 @@ ORBIT_FLEET_BENCH_TABLE=1 go test ./fleetbench/ -run TestFleetBenchTable   # wri
 ```
 
 The last command writes `internal/fleettest/fleetbench/bench-table.md`, a
-generated file that is not committed; the tables under "The result" are
-pasted from it by hand when a verdict moves, so the page and the catalogue
-say the same thing.
+generated file that is not committed; the tables under "The result" — the
+per-family summary and the catalogue — are pasted from it when a verdict
+moves, so the page and the catalogue say the same thing. (The summary was
+retyped by hand until it sat three sessions stale under a current headline;
+now it is generated too, and the suite's own guard compares both with the
+catalogue.)
+
+## The cluster
+
+The controls measure one server and one or two agents. The gate of the arc
+asks one more thing: that what the panel does for one application, the fleet
+does for a cluster, from either server. `TestFleetParityThreeAgents` in
+`internal/fleettest/fleetbench/cluster_test.go` boots two peered servers and
+three agents with a database each — two behind the first server, one behind
+the second — and asks both servers the operator's questions: the inventory
+(all three nodes, each naming the server it is connected through), the events
+(a subscriber on either server hears every agent), Data Studio (each node's
+models and records through its own server, a refusal naming the owner on the
+other), the audit (a mutation attributed to its node), and liveness (an agent
+that stops is not connected on either server). It runs with the rest of
+`internal/fleettest` in the CI test lane.
+
+Writing it found one gap the fifty controls could not see, because none of
+them puts two nodes behind one server: `ListModelsResponse.node_id` and
+`PaginatedRecords.node_id` — "which agent answered" — were declared on the
+wire and left empty by the server, so a UI in front of several nodes could
+not tell whose page it was reading. The server fills them now.
 
 The bench is not prose. Every control is a Go probe in
 `internal/fleettest/fleetbench/` that boots a real admin server and a real
@@ -64,13 +88,13 @@ place for a capability, not the capability.
 
 | family | present | partial | absent |
 |---|---|---|---|
+| alerts | 6 | 0 | 0 |
+| datasource | 12 | 0 | 0 |
+| ha | 5 | 0 | 0 |
 | identity | 10 | 0 | 0 |
-| datasource | 10 | 1 | 1 |
-| retention | 1 | 0 | 6 |
-| alerts | 2 | 0 | 4 |
-| ha | 1 | 1 | 3 |
-| ui | 2 | 1 | 7 |
-| **total** | **26** | **3** | **21** |
+| retention | 7 | 0 | 0 |
+| ui | 9 | 1 | 0 |
+| **total** | **49** | **1** | **0** |
 
 ### alerts — 6 present · 0 partial · 0 absent
 
