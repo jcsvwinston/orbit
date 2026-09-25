@@ -12,7 +12,8 @@
 //   - State persists to localStorage per page, like the theme toggle.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Filter, EventType } from '@/fleet/gen/nucleus/admin/v1/admin_pb'
+import { create } from '@bufbuild/protobuf'
+import { FilterSchema, EventType, type Filter } from '@/fleet/gen/nucleus/admin/v1/admin_pb'
 
 export type FilterKind = 'http' | 'sql' | 'session'
 
@@ -89,7 +90,7 @@ export function useStreamFilters(kind: FilterKind): UseStreamFiltersResult {
   const { type, sampleKey } = EVENT_TYPE_KEY[kind]
 
   const filter = useMemo(() => {
-    const f = new Filter({ types: [type] })
+    const f = create(FilterSchema, { types: [type] })
     if (kind === 'http') {
       if (applied.methods.length > 0) f.httpMethods = applied.methods
       if (applied.pathGlob.trim() !== '') f.httpPathGlobs = [applied.pathGlob.trim()]

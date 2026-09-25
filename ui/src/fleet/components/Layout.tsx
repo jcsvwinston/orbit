@@ -61,13 +61,13 @@ export function Layout(props: LayoutProps) {
           <OrbitGlyph />
           <div>
             <div className="text-[13.5px] font-[650] tracking-[.01em] text-t46">{t.app.productName}</div>
-            <div className="text-[10px] uppercase tracking-[.09em] text-t27">{t.app.productTagline}</div>
+            <div className="text-[10px] uppercase tracking-[.09em] text-t33">{t.app.productTagline}</div>
           </div>
         </div>
         <nav className="flex-1 overflow-y-auto px-2.5 pb-2.5">
           {props.groups.map((g) => (
             <div key={g.name} className="mt-3.5">
-              <div className="px-2.5 pb-[5px] text-[10px] font-semibold uppercase tracking-[.11em] text-t24">
+              <div className="px-2.5 pb-[5px] text-[10px] font-semibold uppercase tracking-[.11em] text-t33">
                 {g.name}
               </div>
               <div className="flex flex-col gap-px">

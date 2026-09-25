@@ -575,14 +575,25 @@ func probeFleetTenantNotion(t *testing.T, e *env) verdict {
 		return nil
 	})
 	if len(spa) == 0 {
-		// The word alone does not count: ui/src/lib/i18n.ts has said
-		// "tenant filters apply" in the Data Studio blurb since before any
-		// wire field existed. Prose is not a notion; a property the SPA
-		// reads or sets is.
+		// The word alone does not count: the Data Studio blurb said
+		// "tenant filters apply" since before any wire field existed.
+		// Prose is not a notion; a property the SPA reads or sets is.
 		t.Log("the SPA's own source never reads or sets a tenant property: the wire declares one the UI neither sends nor shows")
 		return partial
 	}
 	t.Logf("SPA files naming a tenant: %v", spa)
+	// And the property the SPA reads is FILLED: GetSelf answers the tenant
+	// the trusted proxy sent. A UI that shows a field the server leaves
+	// empty shows nothing — declaring is not doing, on this side too.
+	srv := e.startServer(t, server.Config{})
+	self, err := e.controlAs(srv.Server, map[string]string{"X-Auth-Tenant": "acme"}).GetSelf(ctxFor(t), connect.NewRequest(&adminv1.GetSelfRequest{}))
+	if err != nil {
+		t.Fatalf("GetSelf: %v", err)
+	}
+	if self.Msg.GetTenant() != "acme" {
+		t.Logf("the SPA reads SelfInfo.tenant but the server answers %q for an operator the proxy scoped to acme: the server fills it once it pins the protocol that carries it", self.Msg.GetTenant())
+		return partial
+	}
 	return present
 }
 

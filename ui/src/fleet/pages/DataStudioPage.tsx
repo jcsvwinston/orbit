@@ -50,6 +50,10 @@ export function DataStudioPage() {
   const { readOnly } = useSelf()
   const models = useModels(true, nodeId)
   const activeModel = selectedModel ?? models.data?.[0]?.name ?? null
+  // The field that scopes the active model to a tenant (ModelInfo.tenant_field):
+  // an operator with a tenant sees and writes only that tenant's rows through
+  // the fleet, and the page says so on the model and on the column.
+  const tenantField = models.data?.find((m) => m.name === activeModel)?.tenantField ?? ''
 
   const schema = useSchema(activeModel, nodeId)
   const records = useRecords(
@@ -234,6 +238,15 @@ export function DataStudioPage() {
                     <h2 className="m-0 truncate text-[15px] font-semibold text-t46">
                       {activeModel}
                     </h2>
+                    {tenantField && (
+                      <span
+                        className="rounded border border-t18 px-1.5 py-0.5 text-[10.5px] text-t32"
+                        title={t.dataStudio.tenantScoped(tenantField)}
+                        data-testid="tenant-scope"
+                      >
+                        {t.dataStudio.tenantScoped(tenantField)}
+                      </span>
+                    )}
                     <Segmented
                       options={TABS}
                       value={tab}
@@ -298,6 +311,7 @@ export function DataStudioPage() {
                     )}
                     <RecordsTable
                       fields={listFields}
+                      tenantField={tenantField}
                       loading={records.isLoading || schema.isLoading}
                       error={
                         records.isError
@@ -438,6 +452,7 @@ function recordId(rec: PBRecord): string {
 
 function RecordsTable(props: {
   fields: ModelField[]
+  tenantField: string
   records: PBRecord[]
   loading: boolean
   error: string | null
@@ -479,6 +494,11 @@ function RecordsTable(props: {
         {props.fields.map((f) => (
           <span role="columnheader" key={f.name} className="truncate pr-2">
             {f.label || f.name}
+            {props.tenantField !== '' && (f.name === props.tenantField || f.column === props.tenantField) && (
+              <span className="ml-1 rounded bg-t10 px-1 text-[9px] normal-case tracking-normal text-t32">
+                {t.dataStudio.tenantColumnTag}
+              </span>
+            )}
           </span>
         ))}
         {!props.readOnly && <span role="columnheader" className="text-right">{t.dataStudio.colActions}</span>}
@@ -824,7 +844,7 @@ function FieldEditor(props: { field: ModelField; value: string; onChange: (v: st
 
   return (
     <label className="block">
-      <span className="mb-[5px] block text-[10px] font-semibold uppercase tracking-[.09em] text-t28">
+      <span className="mb-[5px] block text-[10px] font-semibold uppercase tracking-[.09em] text-t33">
         {f.label || f.name}
         {f.isRequired && <span className="text-t51"> *</span>}
       </span>

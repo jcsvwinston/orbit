@@ -2,13 +2,13 @@
 // changes hit one file. User-visible copy (including the relative-time words
 // these formatters emit) lives in the central catalog, lib/i18n.ts.
 
-import type { Duration, Timestamp } from '@bufbuild/protobuf'
+import type { Duration, Timestamp } from '@bufbuild/protobuf/wkt'
 
 import { t } from './i18n'
 
 export function timestampToDate(ts: Timestamp | undefined): Date | undefined {
   if (!ts) return undefined
-  // Timestamp.seconds is bigint in protobuf-es 1.x.
+  // Timestamp.seconds is bigint in protobuf-es.
   return new Date(Number(ts.seconds) * 1000 + Math.floor(ts.nanos / 1_000_000))
 }
 
