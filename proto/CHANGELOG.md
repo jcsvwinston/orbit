@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.0](https://github.com/jcsvwinston/orbit/compare/proto/v0.7.0...proto/v0.8.0) (2026-09-25)
+
+
+### Added
+
+* **ui:** connect-es 2 from proto, the browser instrument over the fleet, and the tenant in the UI (A9 S10) ([#526](https://github.com/jcsvwinston/orbit/issues/526)) ([8b49256](https://github.com/jcsvwinston/orbit/commit/8b492562d44facf34e457757f1ec6fe0270a7b3a))
+* **ui:** one frontend project — the panel as the base, the fleet as its second entry, one dist embedded by a ui module both binaries require (A9 S9) ([#524](https://github.com/jcsvwinston/orbit/issues/524)) ([d596ca1](https://github.com/jcsvwinston/orbit/commit/d596ca16a9bec5f6730179d6dce733d8df8f9b23))
+
 ## [0.7.0](https://github.com/jcsvwinston/orbit/compare/proto/v0.6.0...proto/v0.7.0) (2026-09-24)
 
 

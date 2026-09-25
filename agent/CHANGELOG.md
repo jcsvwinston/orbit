@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/jcsvwinston/orbit/compare/agent/v0.13.0...agent/v0.14.0) (2026-09-25)
+
+
+### Added
+
+* **fleet:** a fleet of servers — shared registry, relayed events and node assignment, and the superseded stream ends (A9 S8) ([#522](https://github.com/jcsvwinston/orbit/issues/522)) ([a3c9d6a](https://github.com/jcsvwinston/orbit/commit/a3c9d6a4c8d2458902455202721d041147f04e02))
+
 ## [0.13.0](https://github.com/jcsvwinston/orbit/compare/agent/v0.12.0...agent/v0.13.0) (2026-09-24)
 
 
