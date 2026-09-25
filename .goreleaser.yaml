@@ -35,6 +35,11 @@ builds:
       # the pins server/go.mod actually declares. This is the same reason the
       # `standalone` job in CI sets it.
       - GOWORK=off
+      # And -mod=mod, so the build resolves the pins the way `go install`
+      # does: a sibling module born in the same cut (ui/v1.0.0 in v1.17.0)
+      # has no checksum in server/go.sum yet — the tag did not exist when the
+      # tree was tidied — and a read-only build refuses to start.
+      - GOFLAGS=-mod=mod
     goos:
       - linux
       - darwin
