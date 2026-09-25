@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.0](https://github.com/jcsvwinston/orbit/compare/agent/v0.14.0...agent/v0.15.0) (2026-09-25)
+
+
+### Added
+
+* **fleet:** the three-agent cluster, the tenant filled on the wire, and the modules pinned to the v1.17.0 tags (A9 S11) ([#527](https://github.com/jcsvwinston/orbit/issues/527)) ([47dece4](https://github.com/jcsvwinston/orbit/commit/47dece4561bfab9d28017074c05df38342f65e86))
+
 ## [0.14.0](https://github.com/jcsvwinston/orbit/compare/agent/v0.13.0...agent/v0.14.0) (2026-09-25)
 
 
