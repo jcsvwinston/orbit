@@ -162,4 +162,76 @@ test.describe('UIX', () => {
     await page.keyboard.press('Escape')
     await expect(dialog).toBeHidden({ timeout: 5_000 })
   })
+
+  /*
+   * UIX-07 and UIX-08 are the browser half of the extension family (A11).
+   * Both were recorded ABSENT at the arc's baseline, and an absent browser
+   * control has a weakness the present ones do not: it fails, and a spec
+   * that broke for any other reason fails too. So each one checks its own
+   * precondition first, with a message of its own, and the Go side
+   * (browserbench_test.go, failsWith) only accepts the failure the control
+   * is about.
+   */
+
+  test('UIX-07 the login screen draws the logo the application declared', async ({ page }) => {
+    // What the login screen draws, before anyone has signed in.
+    await page.goto('/admin/login')
+    await page.locator('input[type="password"]').first().waitFor({ timeout: 15_000 })
+    const logo = await page.locator('meta[name="nucleus-admin-logo"]').getAttribute('content')
+    if (!logo) throw new Error('UIX-07 precondition: the document declares no logo (CUST-02 should be red too)')
+    const onLogin = await page.locator(`img[src="${logo}"]`).count()
+
+    // The instrument can see a logo where the panel does draw one: the
+    // sidebar. Without this, a locator that matched nothing anywhere would
+    // record the login screen as logo-less.
+    await signIn(page)
+    await expect(
+      page.locator(`img[src="${logo}"]`),
+      'UIX-07 precondition: the sidebar draws no logo either, so this locator sees nothing',
+    ).toHaveCount(1, { timeout: 10_000 })
+
+    expect(onLogin, `UIX-07: the login screen draws no logo — ${logo} travels on the document and nothing renders it`).toBeGreaterThan(0)
+  })
+
+  test('UIX-08 the record view offers the action the application declared', async ({ page }) => {
+    await signIn(page)
+    // A row of its own to open: the bench's application starts empty. The
+    // call is made from the page, the way the SPA makes it — the session
+    // belongs to this browser, and a request from outside it (page.request)
+    // is refused with a 401.
+    const status = await page.evaluate(async () => {
+      const r = await fetch('/admin/api/models/Note', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ title: 'uix-08 record', status: 'draft' }),
+      })
+      return r.status
+    })
+    expect(status < 300, `UIX-08 precondition: creating a note answered ${status}`).toBe(true)
+
+    await page.goto('/admin/data-studio')
+    await page.waitForLoadState('networkidle')
+    await page.getByRole('button', { name: /^Notes/ }).first().click({ timeout: 15_000 })
+
+    // The schema the screen loads offers the action to this operator —
+    // DS-09's surface, and the precondition here: an action nobody offers
+    // would make this control measure the declaration, not the record view.
+    const offered = await page.evaluate(async () => {
+      const r = await fetch('/admin/api/models/Note/schema', { credentials: 'same-origin' })
+      const schema = await r.json()
+      return (schema.actions ?? []).some((a: { name: string }) => a.name === 'publish')
+    })
+    expect(offered, 'UIX-08 precondition: the schema offers no publish action (DS-09 should be red too)').toBe(true)
+
+    await page.getByRole('button', { name: /^Edit record/ }).first().waitFor({ timeout: 15_000 })
+    await page.getByRole('button', { name: /^Edit record/ }).first().click()
+    const dialog = page.getByRole('dialog').first()
+    await expect(dialog, 'UIX-08 precondition: the record view did not open').toBeVisible({ timeout: 10_000 })
+
+    await expect(
+      dialog.getByRole('button', { name: /publish/i }),
+      'UIX-08: the record view offers no action of the application — publish is declared on Note and the open record has no button for it',
+    ).toHaveCount(1, { timeout: 5_000 })
+  })
 })
