@@ -8,7 +8,8 @@ number needs something that produces it.
 
 **Measured on 2026-09-12 against the panel at v1.9.6, and kept current as the
 arc closes its gaps; the extension family was recorded on 2026-10-04 against
-v1.18.0. The numbers below are what the suite produced on its last run.** Run
+v1.18.0 and is kept current as A11 closes it. The numbers below are what
+the suite produced on its last run.** Run
 it with:
 
 ```bash
@@ -47,7 +48,7 @@ A control that cannot be probed does not belong in the bench.
 
 ## The result
 
-**63 of 72 controls present. 1 partial. 8 absent.**
+**65 of 72 controls present. 0 partial. 7 absent.**
 
 | family | present | partial | absent |
 |---|---|---|---|
@@ -57,14 +58,14 @@ A control that cannot be probed does not belong in the bench.
 | operations | 17 | 0 | 0 |
 | customization | 7 | 0 | 0 |
 | interface | 2 | 0 | 0 |
-| extension | 4 | 1 | 8 |
-| **total** | **63** | **1** | **8** |
+| extension | 6 | 0 | 7 |
+| **total** | **65** | **0** | **7** |
 
 The six families A6 measured are complete as of that arc's eighth session:
 59 of 59. The seventh, `extension`, was recorded at the baseline of A11 and
 is that arc's gap ([below](#what-an-application-adds-at-the-baseline-of-a11)):
 1 present at the baseline, 4 after the arc's first session in this
-repository (O1).
+repository (O1), 6 after its second (O2).
 The number is not
 the end of the work: what this bench measures is a list of controls somebody
 wrote down, and a control that is present is one whose probe exercised it —
@@ -163,10 +164,14 @@ cd internal/adminbench/browser && npm ci && npx playwright install chromium
 go test ./internal/adminbench/ -run TestBrowserBench -v
 ```
 
-**7 of 8 controls present**, plus the one that measures the instrument. The
-last two were recorded absent at the baseline of A11 and belong to the
-extension family ([below](#what-an-application-adds-at-the-baseline-of-a11));
-`UIX-07` closed in the arc's first session (O1):
+**8 of 9 controls present**, plus the one that measures the instrument. The
+last three belong to the extension family
+([below](#what-an-application-adds-at-the-baseline-of-a11)): `UIX-07` and
+`UIX-08` were recorded absent at the baseline of A11 and `UIX-07` closed in
+the arc's first session (O1); `UIX-10` was added, present, in its second
+(O2). There is no `UIX-09` on this page yet: that number belongs to the
+control of the arc's third session (O3), measured on a stack of its own that
+joins this one later:
 
 | control | what it asks |
 |---|---|
@@ -179,6 +184,7 @@ extension family ([below](#what-an-application-adds-at-the-baseline-of-a11));
 | **UIX-06** | a dialog can be opened and dismissed from the keyboard |
 | **UIX-07** | the login screen draws the logo the application declared — and the browser loaded it |
 | **UIX-08** | the record view offers the action the application declared — **absent** |
+| **UIX-10** | the first frame wears the theme the application configured, and the operator's own choice wins on reload |
 
 Three things worth keeping about how it is built:
 
@@ -547,9 +553,9 @@ properties every extension point should have: a declaration the panel cannot
 honour stops the application, and what the configuration accepts reaches the
 browser. It is A11's numerator on this side of the suite. It was recorded
 before the arc changed anything at 1 present, 3 partial and 9 absent; the
-table is the reading after the arc's first session (O1, below):
+table is the reading after the arc's second session (O2, below):
 
-### extension — 4 present · 1 partial · 8 absent (HTTP)
+### extension — 6 present · 0 partial · 7 absent (HTTP)
 
 | id | control | verdict | what is missing |
 |---|---|---|---|
@@ -561,17 +567,19 @@ table is the reading after the arc's first session (O1, below):
 | `EXT-06` | the application's own script runs in the panel (a client-side hook), declared and allowed by the CSP | **absent** | no knob declares a script; the document loads only the panel's bundle under script-src 'self' |
 | `EXT-07` | a field drawn by a renderer the application provides | **absent** | the widget vocabulary is closed (json, richtext, file, image); a field declared with another widget refuses to start (EXT-08), and nothing registers a renderer |
 | `EXT-08` | a field widget the panel cannot draw refuses to start | **present** | — |
-| `EXT-09` | a default theme (dark, light, system) set by configuration decides the first frame | **absent** | no knob and no hint on the document: the first frame is the operator's last toggle kept in localStorage or, before one, the browser's prefers-color-scheme |
-| `EXT-10` | a palette by configuration, each colour validated | **partial** | one colour, branding.primary_color, validated as hex with a computed foreground; no surface, text, border or per-theme value |
+| `EXT-09` | a default theme (dark, light, system) set by configuration decides the first frame | **present** | — |
+| `EXT-10` | a palette by configuration, each colour validated | **present** | — |
 | `EXT-11` | branding the configuration accepts is loadable under the panel's own CSP | **present** | — |
 | `EXT-12` | the configuration reference documents every key an application can bind | **present** | — |
 | `EXT-13` | what an application adds answers to the panel's RBAC: card, screen and verb withheld without a grant | **present** | — |
 
-Two controls of the same family can only be measured in a browser and are
-recorded in the browser half, with their own numerator: `UIX-07` (the login
-screen draws the declared logo — **present** since O1) and `UIX-08` (the
+Three controls of the same family can only be measured in a browser and
+are recorded in the browser half, with their own numerator: `UIX-07` (the
+login screen draws the declared logo — **present** since O1), `UIX-08` (the
 record view offers the declared action — **absent**, the drawing half of
-`EXT-02`).
+`EXT-02`) and `UIX-10` (the first frame is in the configured theme, and the
+operator's choice wins on reload — **present** since O2, the painting half
+of `EXT-09`).
 
 ### What the shape of it says
 
@@ -588,10 +596,10 @@ record view offers the declared action — **absent**, the drawing half of
   (`EXT-06`), and the field widgets are the four the panel ships (`EXT-07`).
   Both are the same missing piece seen from two sides: a client-side
   registration the CSP allows.
-- **The theme belongs to each operator.** The first frame follows the
-  browser's preference, then the operator's last toggle; the application
-  cannot say "this control room opens dark" (`EXT-09`), and its palette is
-  one accent colour (`EXT-10`).
+- **The theme belonged to each operator** (closed in O2, below). The first
+  frame followed the browser's preference, then the operator's last toggle;
+  the application could not say "this control room opens dark" (`EXT-09`),
+  and its palette was one accent colour (`EXT-10`).
 - **What an application adds answers to the panel's RBAC** (`EXT-13`,
   present): an operator with no grant is not shown the card, the screen or
   the verb, the screen refuses them, and the grant opens each one. Every
@@ -733,3 +741,123 @@ Every change was verified by breaking it: without the check at mount,
 that refuses everything, partial; the policy without the branding origins,
 `EXT-11` partial; the reference without `locale`, `EXT-12` partial; the login
 screen without the logo, or the bench without its file, `UIX-07` absent.
+
+## The theme it opens in and a palette per theme, after A11's second session
+
+The second session of the arc in this repository (O2) closed `EXT-09` and
+`EXT-10` and added `UIX-10`, the browser half of the first: the HTTP bench
+reads 65 of 72, the browser half 8 of 9.
+
+- **A theme by configuration, decided before the first frame.**
+  `branding.theme` is `dark`, `light` or `system`. The document carries it
+  and loads, in `<head>`, after the value and ahead of the bundle, a classic
+  script from the panel's own origin (`<prefix>/theme.js`, served before
+  sign-in like the bundle's assets). The parser stops for it before there is
+  a body to paint, so the first frame is already in the theme the panel
+  keeps, and `script-src` stays `'self'`: no inline script, no nonce, no
+  hash. With no theme configured, nothing is injected and the document is
+  the one the panel served before, byte for byte.
+- **The operator's own choice wins.** The toggle now records the choice in
+  a key of its own, and the script applies it over the configured theme on
+  every load.
+- **A palette per theme, checked against its own ground.**
+  `branding.light` and `branding.dark` each take `primary_color`,
+  `surface_color` and `text_color`. Every one that is set is checked at
+  startup against the colours that theme will actually draw with — the
+  configured ones over the panel's own: text on the surface and the panel's
+  secondary text on the surface at 4.5:1, the accent against the surface at
+  3:1, and the text the panel draws on the accent at 4.5:1. The palette is
+  written into the document as the custom properties the stylesheet
+  already reads, one rule per theme, so it is in the first frame too.
+
+Four decisions worth keeping:
+
+- **A per-theme colour that falls short is refused; `primary_color` that
+  falls short is warned about.** The per-theme keys are new, so no
+  application that started yesterday carries one, and the panel can be
+  strict from their first day: the error names the theme, the keys and the
+  ratio. `branding.primary_color` was accepted on any hex colour, in both
+  themes, before anything checked it per theme, and a dark navy that reads
+  at 18:1 on white is 1.1:1 on the dark ground. Refusing it now would stop an
+  application that changed nothing — the break QADR-0010 keeps for the
+  major — so it starts, and the panel logs a warning naming the theme and
+  the `branding.<theme>.primary_color` that fixes it. `EXT-10` measures both
+  halves: the per-theme navy refused, the old-key navy started.
+- **A theme stored before this version is not a choice.** The panel used to
+  write the browser's preference into its theme key (`gf-theme`) on every
+  first visit, and the toggle wrote the same key, so a stored value cannot
+  say whether anybody chose it. Honouring it over a configured theme would
+  make the setting invisible to every operator who had ever opened the
+  panel; ignoring it overrides, once, an operator who did toggle before this
+  version and has not toggled since. The second is the smaller harm and it
+  happens only when the application opts in; from the first toggle on, the
+  choice is kept. Without a configured theme, the old key is read exactly as
+  before.
+- **The script that decides the first frame lives in the root, not in the
+  bundle.** The server already writes the document; putting the script next
+  to it means the HTTP half can measure the whole server side in every lane,
+  including the one that builds the root against the `ui` module by tag.
+  The script also leaves the theme it applied where every bundle looks for
+  the last one, so an older bundle does not switch it after the first frame.
+- **No border colour.** The baseline's note listed a border among what a
+  palette lacks. There is no contrast rule for it that the panel's own
+  border passes — about 1.2:1 on white, a separator rather than the edge of
+  a control — and a colour the panel cannot check would contradict "each
+  colour validated". `EXT-10` asks for the accent, the surface and the text
+  of each theme.
+
+### What the work found that was not on the plan
+
+- **The text drawn on a brand colour was chosen by lightness, and the docs
+  promised more.** The features page said the panel picks the foreground so
+  that "white on a pale yellow button" cannot happen; by lightness alone a
+  saturated yellow, cyan or green (all at 50%) got white text, at 1.07, 1.25
+  and 1.37 to 1. The bundle and the server now draw whichever of the two
+  inks reads better on the colour — never worse than before, since the old
+  choice is one of the two — and the palette check uses the same rule.
+- **The login page wore branding the panel had refused.** The panel
+  validates its branding and ignores one that does not validate; the login
+  page received it raw. Through `orbit.Module` an invalid branding stops the
+  application first, so only a hand-wired panel could show it, and it now
+  validates the same way.
+- **The bench measures contrast in the light theme only.** `UIX-01` and
+  `UIX-02` run against the bench's own application, which opens light. A
+  one-off run of the same engine over the themed application of `UIX-10`
+  (dark, with a surface of its own) found no contrast violation on the
+  login, overview, Data Studio and audit screens; it is not a control.
+
+### What the bench got wrong about itself, the tenth time
+
+- **The first version of `UIX-10` passed a script that does not stop the
+  parser.** Held at the network, the bundle cannot decide the first frame,
+  so the spec read the frame while it waited — and with the theme script
+  turned into a module, or deferred, it still passed: on a fast loopback the
+  script arrived before Chromium painted. The race was won by the network,
+  not by the document. `UIX-10` now delays every script the document loads
+  except the bundle and its chunks by 400 ms, so a script that does not stop
+  the parser loses to the first paint and the frame shows it. The HTTP half
+  (`EXT-09`) refuses such a script on sight; the browser half now sees it
+  too.
+
+Every change was verified by breaking it:
+
+| mutation | control |
+|---|---|
+| a theme that is not one accepted | EXT-09 → partial |
+| no theme script on the document | EXT-09 → partial; UIX-10 → absent |
+| the script ahead of the value it reads | EXT-09 → partial |
+| the script deferred | EXT-09 → partial; UIX-10 → absent |
+| the script a module | EXT-09 → partial; UIX-10 → absent |
+| the login page, or the panel's document, without it | EXT-09 → partial |
+| injected with no theme configured | EXT-09 → partial |
+| `script-src` loosened with `'unsafe-inline'` | EXT-09 → partial |
+| no per-theme contrast refusal | EXT-10 → partial |
+| `primary_color` refused like the per-theme keys | EXT-10 → partial |
+| one rule for both themes (the dark ground) | EXT-10 → partial |
+| the palette not written | EXT-10 → partial; UIX-10 → absent |
+| the palette's selectors swapped | EXT-10 → partial |
+| per-theme colours not checked as hex | EXT-10 → partial |
+| the head script ignoring the operator's choice | UIX-10 → absent |
+| the toggle recording no choice (dist rebuilt) | UIX-10 → absent |
+| the bundle deciding again after the head script (dist rebuilt) | UIX-10 → absent |
+| the root's head script with O1's bundle | UIX-10 → absent (first frame right; the choice lost on reload) |

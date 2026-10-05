@@ -60,11 +60,19 @@ func adminUIBuildDirUsable(dir string) bool {
 // builds), a closed synthetic head is prepended so the output stays valid.
 func injectHeadMeta(content []byte, name, value string) []byte {
 	meta := fmt.Sprintf(`<meta name="%s" content="%s">`, html.EscapeString(name), html.EscapeString(value))
+	return injectHeadFragment(content, meta)
+}
+
+// injectHeadFragment inserts markup the panel wrote right after the
+// document's opening <head>, the way injectHeadMeta inserts a meta tag: each
+// insertion lands ahead of the previous ones. The fragment is inserted as
+// is, so it must never carry a value that was not escaped or computed.
+func injectHeadFragment(content []byte, fragment string) []byte {
 	contentStr := string(content)
 	if strings.Contains(contentStr, "<head>") {
-		return []byte(strings.Replace(contentStr, "<head>", "<head>"+meta, 1))
+		return []byte(strings.Replace(contentStr, "<head>", "<head>"+fragment, 1))
 	}
-	return []byte("<head>" + meta + "</head>\n" + contentStr)
+	return []byte("<head>" + fragment + "</head>\n" + contentStr)
 }
 
 func injectAdminPrefix(content []byte, prefix string) []byte {

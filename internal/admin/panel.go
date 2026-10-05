@@ -579,6 +579,10 @@ func (p *Panel) mountRoutes(r *router.Mux) {
 	// the bundle already ships — and carries no application data.
 	r.Get("/ui/messages.json", p.handleUIMessages)
 
+	// The script that applies a configured theme before the first frame
+	// (appearance.go), for the same reason: the login screen loads it.
+	r.Get("/theme.js", router.FromHTTP(serveThemeScript))
+
 	// API routes and SPA fallback.
 	//
 	// When an admin auth provider is configured — every framework-wired
@@ -916,6 +920,7 @@ func (p *Panel) handleSPA(fsys fs.FS) router.Handler {
 		content = injectAdminPrefix(content, NormalizePrefix(p.config.Prefix))
 		content = injectAdminTitle(content, p.config.Title)
 		content = injectBranding(content, p.branding)
+		content = injectAppearance(content, p.branding, p.config.Prefix)
 		content = injectLocale(content, p.locale)
 
 		http.ServeContent(w, r, "index.html", time.Time{}, bytes.NewReader(content))

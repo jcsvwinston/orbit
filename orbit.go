@@ -203,9 +203,10 @@ type Config struct {
 	Pages []Page `yaml:"-" koanf:"-"`
 
 	// Branding is how the panel wears the application's clothes: the logo
-	// on the sidebar and the login screen, the icon in the browser tab and
-	// the accent colour. Empty fields keep Orbit's own. Unlike Actions and
-	// Pages it is plain configuration, so it binds from nucleus.yml too.
+	// on the sidebar and the login screen, the icon in the browser tab, the
+	// accent colour, the theme the panel opens in and the palette of each
+	// theme. Empty fields keep Orbit's own. Unlike Actions and Pages it is
+	// plain configuration, so it binds from nucleus.yml too.
 	Branding Branding `yaml:"branding" koanf:"branding"`
 
 	// Widgets are the cards this application puts on the panel's overview:
@@ -283,8 +284,14 @@ type Page = admin.Page
 type Operator = admin.Operator
 
 // Branding is the logo, favicon and accent colour an application gives the
-// panel (CUST-02). Every field is optional.
+// panel (CUST-02), the theme it opens in and the palette of each theme
+// (EXT-09, EXT-10). Every field is optional.
 type Branding = admin.Branding
+
+// Palette is the colours of one theme of the panel — its accent, its surface
+// and its text — as Branding.Light and Branding.Dark declare them. Each is
+// checked at startup against the ground it is drawn on in that theme.
+type Palette = admin.Palette
 
 // Widget is one card an application puts on the panel's overview (CUST-03):
 // a title and the function that reads the value. The panel supplies the
@@ -490,6 +497,11 @@ func (m *module) start(ctx context.Context) error {
 	}
 	if err := admin.ValidateBranding(m.cfg.Branding); err != nil {
 		return fmt.Errorf("orbit: %w", err)
+	}
+	// What the panel will paint and does not keep its contrast, but was
+	// accepted before the palette was checked per theme: said, not refused.
+	for _, warning := range admin.BrandingWarnings(m.cfg.Branding) {
+		rt.Logger().Warn("orbit: " + warning)
 	}
 	if err := admin.ValidateLocaleConfig(m.cfg.Locale, m.cfg.Messages); err != nil {
 		return fmt.Errorf("orbit: %w", err)

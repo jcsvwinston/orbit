@@ -63,13 +63,43 @@ export function hexToHsl(hex: string): string | null {
   return `${round(h * 360)} ${round(s * 100)}% ${round(l * 100)}%`
 }
 
-/** foregroundFor picks the text colour drawn on the brand colour. A brand is
- * chosen to look like a brand, not to contrast with white: a pale yellow
- * button with white text is unreadable, and that is a contrast failure the
- * panel would have introduced on the application's behalf. */
+/** The two inks the panel draws on an accent: white, and the dark ink of its
+ * light theme. The backend checks a palette with the same two
+ * (internal/admin/appearance.go). */
+const INK_ON_DARK = '0 0% 100%'
+const INK_ON_LIGHT = '222.2 47.4% 11.2%'
+
+/** hslToRgb reads a `H S% L%` triple back into channels in [0, 1]. */
+function hslToRgb(hsl: string): [number, number, number] {
+  const [h, s, l] = hsl.split(' ').map((part) => Number(part.replace('%', '')))
+  const sat = s / 100
+  const light = l / 100
+  const k = (n: number) => (n + h / 30) % 12
+  const a = sat * Math.min(light, 1 - light)
+  const f = (n: number) => light - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1))
+  return [f(0), f(8), f(4)]
+}
+
+/** luminance is WCAG's relative luminance of a `H S% L%` triple. */
+function luminance(hsl: string): number {
+  const lin = (v: number) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
+  const [r, g, b] = hslToRgb(hsl).map(lin)
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+function contrast(a: string, b: string): number {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x)
+  return (hi + 0.05) / (lo + 0.05)
+}
+
+/** foregroundFor picks the text colour drawn on the brand colour: whichever
+ * of the panel's two inks reads better on it. A brand is chosen to look like
+ * a brand, not to contrast with white: a pale yellow button with white text
+ * is unreadable, and that is a contrast failure the panel would have
+ * introduced on the application's behalf. Chosen by lightness alone, a
+ * saturated yellow (lightness 50%) still got white text at 1.07:1. */
 export function foregroundFor(hsl: string): string {
-  const lightness = Number(hsl.split(' ')[2]?.replace('%', '') ?? '0')
-  return lightness > 60 ? '222.2 47.4% 11.2%' : '0 0% 100%'
+  return contrast(hsl, INK_ON_LIGHT) > contrast(hsl, INK_ON_DARK) ? INK_ON_LIGHT : INK_ON_DARK
 }
 
 /** applyBranding paints what the application declared. It is called before
@@ -77,7 +107,12 @@ export function foregroundFor(hsl: string): string {
 export function applyBranding(branding: Branding = readBranding()): void {
   if (typeof document === 'undefined') return
 
-  if (branding.primaryColor) {
+  // When the application declared a palette per theme, the document already
+  // carries the accent of each theme (a <style id="orbit-palette"> the
+  // backend wrote); an inline property here would paint one accent over
+  // both themes again.
+  const perTheme = document.getElementById('orbit-palette') !== null
+  if (branding.primaryColor && !perTheme) {
     const hsl = hexToHsl(branding.primaryColor)
     if (hsl) {
       const root = document.documentElement

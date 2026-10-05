@@ -364,32 +364,87 @@ func probeFieldWidgetRefusal(t *testing.T, e *env) verdict {
 // the application and honoured on the FIRST frame, before any operator has
 // toggled anything. A control room whose screens open dark is a
 // configuration, not a preference each operator rediscovers.
+//
+// This probe measures the server's half: what the document carries, and
+// what it loads before the bundle runs. Whether the browser paints the
+// first frame in that theme — and keeps the operator's own choice over it on
+// reload — is UIX-10's question, which only a browser can answer.
 func probeDefaultTheme(t *testing.T, e *env) verdict {
-	if hits := knobsNamed("theme", "color_scheme", "colour_scheme", "appearance", "dark"); len(hits) > 0 {
-		t.Logf("the mount surface grew %v: grow this probe to set it, read the document and check the bundle's first frame reads it", knobPaths(hits))
+	knobs := knobsNamed("theme", "color_scheme", "colour_scheme", "appearance")
+	if len(knobs) == 0 {
+		doc := e.get(t, "/admin/")
+		if doc.code != http.StatusOK {
+			t.Fatalf("GET /admin/ answered %d", doc.code)
+		}
+		if hints := themeHints(doc.raw()); len(hints) > 0 {
+			t.Logf("no knob, but the document carries %v: grow this probe", hints)
+			return partial
+		}
+		t.Logf("no knob, and the document carries no theme hint (meta: %v): the first frame is decided by the browser's preference and the operator's last toggle", metaNames(doc.raw()))
+		return absent
+	}
+	if len(knobs) != 1 || !knobs[0].bindable || knobs[0].typ.Kind() != reflect.String {
+		t.Logf("theme knobs %v: grow this probe to set each one", knobPaths(knobs))
 		return partial
 	}
+	k := knobs[0]
+
+	// Nothing configured, nothing changed (QADR-0010): the document the
+	// bench's application serves carries no theme and loads no script but
+	// the bundle.
 	doc := e.get(t, "/admin/")
 	if doc.code != http.StatusOK {
 		t.Fatalf("GET /admin/ answered %d", doc.code)
 	}
-	for _, name := range metaNames(doc.raw()) {
-		lower := strings.ToLower(name)
-		if strings.Contains(lower, "theme") || strings.Contains(lower, "color-scheme") {
-			t.Logf("the document carries meta %q: grow this probe", name)
+	if hints := themeHints(doc.raw()); len(hints) > 0 {
+		t.Logf("no theme configured, and the document carries %v", hints)
+		return partial
+	}
+
+	// A value that is not a theme stops the application, by name.
+	bad := orbit.Config{Title: "Admin Bench (theme: blue)"}
+	setKnob(&bad, k, "blue")
+	if _, err := tryStart(t, extensionApp(t, bad)); err == nil {
+		t.Logf("%s: blue started", k.path)
+		return partial
+	} else if !strings.Contains(err.Error(), k.path) {
+		t.Logf("%s: blue was refused, but the error does not name the key: %v", k.path, err)
+		return partial
+	}
+
+	// A configured theme reaches the first screen — the login page, before
+	// there is a session — and the panel's own document.
+	cfg := orbit.Config{Title: "Admin Bench (theme: dark)"}
+	setKnob(&cfg, k, "dark")
+	app, err := tryStart(t, extensionApp(t, cfg))
+	if err != nil {
+		t.Fatalf("%s: dark refused to start: %v", k.path, err)
+	}
+	pages := []struct {
+		name   string
+		client *http.Client
+		path   string
+	}{
+		{"the login page", &http.Client{}, "/admin/login"},
+		{"the panel's document", signInAt(t, app, "admin", bootstrapPassword), "/admin/"},
+	}
+	for _, page := range pages {
+		body, header := fetch(t, page.client, app.URL(page.path))
+		if body.code != http.StatusOK {
+			t.Fatalf("%s answered %d", page.name, body.code)
+		}
+		if problem := firstFrameProblem(t, page.client, app, body.raw(), header, "dark"); problem != "" {
+			t.Logf("%s: %s", page.name, problem)
 			return partial
 		}
 	}
-	if strings.Contains(doc.raw(), `<html class="dark"`) {
-		t.Log("the document opens with the dark class: grow this probe")
-		return partial
-	}
-	t.Logf("no knob, and the document carries no theme hint (meta: %v): the first frame is decided by the browser's preference and the operator's last toggle", metaNames(doc.raw()))
-	return absent
+	return present
 }
 
 // EXT-10: a palette and not one accent — the colours a product's own design
-// system names, each validated the way the accent is.
+// system names, each validated the way the accent is, and each checked
+// against the ground it is drawn on in ITS theme: a dark navy accent reads
+// on white and disappears on the dark ground.
 func probePaletteTokens(t *testing.T, e *env) verdict {
 	colours := knobsNamed("color", "colour", "palette", "design_token")
 	if len(colours) == 0 {
@@ -420,9 +475,79 @@ func probePaletteTokens(t *testing.T, e *env) verdict {
 		t.Logf("the declared accent does not reach the document; CUST-02 measures that and should be red too")
 		return partial
 	}
-	if len(colours) < 3 {
-		t.Logf("%d colour knob(s) %v, each validated: an accent, not a palette — no surface, text, border or per-theme value", len(colours), knobPaths(colours))
+
+	// A palette: an accent, a surface and a text colour, for each theme.
+	palette, missing := paletteKnobs(colours)
+	if len(missing) > 0 {
+		t.Logf("%d colour knob(s) %v, each validated: no %v", len(colours), knobPaths(colours), missing)
 		return partial
+	}
+
+	// Checked per theme. The same navy accent is about 1.1:1 on the dark
+	// ground and 18:1 on the light one: refused in the first, by theme and
+	// by key, and accepted in the second — a check that refused it in both
+	// would be one rule for the palette, not one per theme.
+	const navy = "#0b1530"
+	darkAccent := palette["dark"]["accent"]
+	onDark := orbit.Config{Title: "Admin Bench (palette: navy on dark)"}
+	setKnob(&onDark, darkAccent, navy)
+	_, err := tryStart(t, extensionApp(t, onDark))
+	if err == nil {
+		t.Logf("%s = %s, about 1.1:1 on the dark ground, started", darkAccent.path, navy)
+		return partial
+	}
+	if !strings.Contains(err.Error(), darkAccent.path) || !strings.Contains(err.Error(), "dark") {
+		t.Logf("%s = %s was refused, but the error names neither the key nor the theme: %v", darkAccent.path, navy, err)
+		return partial
+	}
+	onLight := orbit.Config{Title: "Admin Bench (palette: navy on light)"}
+	setKnob(&onLight, palette["light"]["accent"], navy)
+	if _, err := tryStart(t, extensionApp(t, onLight)); err != nil {
+		t.Logf("%s = %s reads at 18:1 on the light ground and was refused: the check is not per theme: %v", palette["light"]["accent"].path, navy, err)
+		return partial
+	}
+	// The accent an application could set before the palette existed takes
+	// any hex colour. One that falls short in a theme still starts: refusing
+	// it would stop an application that changed nothing (QADR-0010).
+	legacy := orbit.Config{Title: "Admin Bench (palette: the old accent)", Branding: orbit.Branding{PrimaryColor: navy}}
+	if _, err := tryStart(t, extensionApp(t, legacy)); err != nil {
+		t.Logf("branding.primary_color = %s started before the palette was checked per theme and is refused now: %v", navy, err)
+		return partial
+	}
+
+	// What the configuration accepts reaches the stylesheet, per theme: the
+	// first document a browser opens carries each theme's colours as the
+	// custom properties the panel's stylesheet reads, scoped to that theme.
+	declared := map[string]map[string]string{
+		"light": {"accent": "#0b5fff", "surface": "#fafafa", "text": "#111827"},
+		"dark":  {"accent": "#60a5fa", "surface": "#111827", "text": "#e5e7eb"},
+	}
+	cfg := orbit.Config{Title: "Admin Bench (palette: both themes)"}
+	for theme, roles := range declared {
+		for role, value := range roles {
+			setKnob(&cfg, palette[theme][role], value)
+		}
+	}
+	app, err := tryStart(t, extensionApp(t, cfg))
+	if err != nil {
+		t.Logf("a palette that reads in both themes was refused: %v", err)
+		return partial
+	}
+	login, _ := fetch(t, &http.Client{}, app.URL("/admin/login"))
+	painted := paletteOnDocument(login.raw())
+	property := map[string]string{"accent": "--primary", "surface": "--background", "text": "--foreground"}
+	for theme, roles := range declared {
+		for role, value := range roles {
+			got, ok := painted[theme][property[role]]
+			if !ok {
+				t.Logf("the %s theme's %s (%s) does not reach the document's stylesheet as %s: %v", theme, role, value, property[role], painted)
+				return partial
+			}
+			if want := hexRGB(t, value); !sameColour(got, want) {
+				t.Logf("the %s theme's %s is %s in the configuration and %v on the document", theme, role, value, got)
+				return partial
+			}
+		}
 	}
 	return present
 }

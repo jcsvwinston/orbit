@@ -41,13 +41,30 @@ type Branding struct {
 	// colours the buttons, the active navigation entry and the focus ring
 	// together rather than one of them.
 	PrimaryColor string `yaml:"primary_color" koanf:"primary_color"`
+
+	// Theme is the theme the panel opens in before an operator has chosen
+	// one: "dark", "light", or "system" for the operator's system
+	// preference. It decides the first frame — the document applies it
+	// before the bundle runs — and an operator who uses the panel's toggle
+	// keeps their choice over it. Empty keeps the panel's own behaviour:
+	// the operator's last theme, or else the browser's preference
+	// (appearance.go).
+	Theme string `yaml:"theme" koanf:"theme"`
+	// Light and Dark are the palette of each theme: the accent, the
+	// surface and the text. Each colour is checked at startup against the
+	// ground it is drawn on in THAT theme, and one that falls short of the
+	// contrast it needs refuses to start, naming the theme and the key.
+	Light Palette `yaml:"light" koanf:"light"`
+	Dark  Palette `yaml:"dark" koanf:"dark"`
 }
 
 // declared reports whether anything was set at all.
 func (b Branding) declared() bool {
 	return strings.TrimSpace(b.LogoURL) != "" ||
 		strings.TrimSpace(b.FaviconURL) != "" ||
-		strings.TrimSpace(b.PrimaryColor) != ""
+		strings.TrimSpace(b.PrimaryColor) != "" ||
+		strings.TrimSpace(b.Theme) != "" ||
+		b.Light.trimmed().declared() || b.Dark.trimmed().declared()
 }
 
 // hexColor is the whole of what PrimaryColor may be. The value is injected
@@ -76,7 +93,7 @@ func validateBranding(b Branding) (Branding, error) {
 	if b.PrimaryColor != "" && !hexColor.MatchString(b.PrimaryColor) {
 		return b, fmt.Errorf("branding.primary_color: %q is not a CSS hex colour (#0b5fff or #05f)", b.PrimaryColor)
 	}
-	return b, nil
+	return validateAppearance(b)
 }
 
 // validateAssetURL accepts what a browser may safely be asked to load from

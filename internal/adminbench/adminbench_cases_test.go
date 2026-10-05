@@ -158,7 +158,8 @@ func controls() []control {
 		// What an application adds to the panel beyond the four extension
 		// points A6 shipped (DS-09, CUST-02, CUST-03, CUST-04). Recorded at
 		// the baseline of A11 (S0); probes_extension_test.go says what each
-		// one reads. EXT-08, EXT-11 and EXT-12 closed in O1.
+		// one reads. EXT-08, EXT-11 and EXT-12 closed in O1; EXT-09 and
+		// EXT-10 in O2.
 		{id: "EXT-01", family: "extension", title: "an action asks the operator for input before it runs (a form)",
 			want: absent, note: "ModelAction declares no input and the action descriptor publishes none; an input posted with the call is dropped before Run",
 			probe: probeActionInput},
@@ -183,11 +184,9 @@ func controls() []control {
 		{id: "EXT-08", family: "extension", title: "a field widget the panel cannot draw refuses to start",
 			want: present, probe: probeFieldWidgetRefusal},
 		{id: "EXT-09", family: "extension", title: "a default theme (dark, light, system) set by configuration decides the first frame",
-			want: absent, note: "no knob and no hint on the document: the first frame is the operator's last toggle kept in localStorage or, before one, the browser's prefers-color-scheme",
-			probe: probeDefaultTheme},
+			want: present, probe: probeDefaultTheme},
 		{id: "EXT-10", family: "extension", title: "a palette by configuration, each colour validated",
-			want: partial, note: "one colour, branding.primary_color, validated as hex with a computed foreground; no surface, text, border or per-theme value",
-			probe: probePaletteTokens},
+			want: present, probe: probePaletteTokens},
 		{id: "EXT-11", family: "extension", title: "branding the configuration accepts is loadable under the panel's own CSP",
 			want: present, probe: probeBrandingUnderCSP},
 		{id: "EXT-12", family: "extension", title: "the configuration reference documents every key an application can bind",

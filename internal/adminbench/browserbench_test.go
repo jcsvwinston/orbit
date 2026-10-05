@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/jcsvwinston/orbit"
 )
 
 // The browser half of the bench.
@@ -65,7 +67,20 @@ func browserCases() []browserCase {
 		{id: "UIX-08", title: "the record view offers the action the application declared", want: absent,
 			note:      "the grid offers an application action over a selection (DS-09); the record view's dialog has no button for it (EXT-02 is the contract half)",
 			failsWith: "UIX-08: the record view offers no action"},
+		// The browser half of EXT-09, added in O2: the server's half
+		// says what the document carries; this says what the browser
+		// paints with it. (Numbered UIX-10: UIX-09 belongs to O3, which
+		// was measured on a stack of its own and lands after this one.)
+		{id: "UIX-10", title: "the first frame wears the theme the application configured, and the operator's own choice wins on reload", want: present},
 	}
+}
+
+// themedBranding is the second application UIX-10 opens: one that says its
+// panel opens dark, with a dark surface of its own, so the spec can tell the
+// configured theme from the panel's default dark and from the browser's
+// preference (which the spec sets to light).
+func themedBranding() orbit.Branding {
+	return orbit.Branding{Theme: "dark", Dark: orbit.Palette{SurfaceColor: "#111827"}}
 }
 
 // TestBrowserBench runs the browser instrument against the bench's own
@@ -95,10 +110,20 @@ func TestBrowserBench(t *testing.T) {
 		t.Fatalf("the bench application is not serving: %d", r.code)
 	}
 
+	// UIX-10 needs an application that configured a theme, and the one the
+	// rest of the bench measures must keep the panel's default: the
+	// contrast controls read it as an operator opens it today.
+	themed, err := tryStart(t, extensionApp(t, orbit.Config{Title: "Admin Bench (themed)", Branding: themedBranding()}))
+	if err != nil {
+		t.Fatalf("the themed application refused to start: %v", err)
+	}
+
 	cmd := exec.Command("npx", "playwright", "test", "--project=panel", "--reporter=json")
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
 		"ORBIT_BENCH_URL="+srv.URL(""),
+		"ORBIT_BENCH_THEMED_URL="+themed.URL(""),
+		"ORBIT_BENCH_THEMED_SURFACE="+themedBranding().Dark.SurfaceColor,
 		"ORBIT_BENCH_USER=admin",
 		"ORBIT_BENCH_PASSWORD="+bootstrapPassword,
 		// Playwright writes its browsers here in CI; keep the default on a

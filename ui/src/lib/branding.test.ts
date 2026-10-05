@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { foregroundFor, hexToHsl } from './branding'
+import { afterEach, describe, expect, it } from 'vitest'
+import { applyBranding, foregroundFor, hexToHsl } from './branding'
 
 describe('hexToHsl', () => {
   it('converts both hex forms to the property triple', () => {
@@ -28,5 +28,36 @@ describe('foregroundFor', () => {
 
   it('keeps it white on a dark one', () => {
     expect(foregroundFor('220.5 100% 52.5%')).toBe('0 0% 100%')
+  })
+
+  // Chosen by lightness, these got white text: a saturated yellow, cyan or
+  // green sits at 50% and reads at 1.07, 1.25 and 1.37 to 1 under white.
+  it('picks the ink that reads, not the one the lightness suggests', () => {
+    expect(foregroundFor('60 100% 50%')).toBe('222.2 47.4% 11.2%')
+    expect(foregroundFor('180 100% 50%')).toBe('222.2 47.4% 11.2%')
+    expect(foregroundFor('120 100% 50%')).toBe('222.2 47.4% 11.2%')
+  })
+})
+
+describe('applyBranding', () => {
+  afterEach(() => {
+    document.documentElement.removeAttribute('style')
+    document.getElementById('orbit-palette')?.remove()
+  })
+
+  it('paints the accent on the document', () => {
+    applyBranding({ logo: '', favicon: '', primaryColor: '#0b5fff' })
+    expect(document.documentElement.style.getPropertyValue('--primary')).toBe('219.3 100% 52.2%')
+  })
+
+  // A palette per theme arrives as a stylesheet the backend wrote, which
+  // already carries the accent of each theme: an inline property would paint
+  // one accent over both again.
+  it('leaves the accent to a palette per theme', () => {
+    const style = document.createElement('style')
+    style.id = 'orbit-palette'
+    document.head.appendChild(style)
+    applyBranding({ logo: '', favicon: '', primaryColor: '#0b5fff' })
+    expect(document.documentElement.style.getPropertyValue('--primary')).toBe('')
   })
 })

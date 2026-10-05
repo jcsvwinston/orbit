@@ -5,6 +5,7 @@ import { getAdminTitle } from './config'
 import { applyBranding } from './lib/branding'
 import { useMessages } from './stores/messagesStore'
 import { installPreloadErrorReload } from './lib/chunk-recovery'
+import { applyInitialTheme, useTheme } from './stores/themeStore'
 import './index.css'
 
 // Reflect the configured panel title (injected by the backend as a meta tag)
@@ -21,17 +22,12 @@ applyBranding()
 // catalogue lands (src/stores/messagesStore.ts).
 void useMessages.getState().load();
 
-// Initialize theme before React renders (avoids CSP inline script issue)
-(function () {
-  let theme = localStorage.getItem('gf-theme')
-  if (!theme) {
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-    theme = prefersDark ? 'dark' : 'light'
-  }
-  localStorage.setItem('gf-theme', theme)
-  if (theme === 'dark') document.documentElement.classList.add('dark')
-  else document.documentElement.classList.remove('dark')
-})()
+// The theme of the first frame, before React renders. When the application
+// configured one, the document already applied it — or the operator's own
+// choice — ahead of this bundle, and this leaves it alone; otherwise it is
+// decided here as it always was (src/stores/themeStore.ts).
+applyInitialTheme()
+useTheme.getState().initTheme()
 
 // A chunk or stylesheet that fails to load (the tab predates the binary now
 // serving it) reloads the page once, when the server answers; see

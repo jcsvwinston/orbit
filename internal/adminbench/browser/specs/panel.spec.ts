@@ -27,6 +27,16 @@ async function signIn(page: Page): Promise<void> {
   await page.waitForURL(/\/admin\/?$/, { timeout: 15_000 })
 }
 
+/** signInAt signs in to another application than the bench's own, through
+ * its login form. */
+async function signInAt(page: Page, base: string): Promise<void> {
+  await page.goto(`${base}/admin/login`)
+  await page.locator('input[name="username"]').first().fill(USERNAME)
+  await page.locator('input[type="password"]').first().fill(PASSWORD)
+  await page.locator('button[type="submit"], input[type="submit"]').first().click()
+  await page.waitForURL(`${base}/admin/`, { timeout: 15_000 })
+}
+
 /** axeViolations runs the accessibility engine over the current page and
  * returns the violations of the rules this control is about. */
 async function axeViolations(page: Page, rules: string[]) {
@@ -36,6 +46,120 @@ async function axeViolations(page: Page, rules: string[]) {
     impact: v.impact,
     nodes: v.nodes.slice(0, 3).map((n) => n.target.join(' ')),
   }))
+}
+
+type Painted = { dark: boolean; background: string; rendered: number; at: number }
+type ThemeChange = { t: number; dark: boolean }
+type Frame = { held: number; before: Painted; after: Painted; changes: ThemeChange[]; firstPaint: number | null }
+
+/** recordThemeChanges keeps, from before each document exists, every change
+ * of the root between dark and light, with the time it happened. */
+async function recordThemeChanges(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const changes: { t: number; dark: boolean }[] = []
+    ;(window as unknown as { __themeChanges: typeof changes }).__themeChanges = changes
+    let last: boolean | null = null
+    const record = () => {
+      const root = document.documentElement
+      if (!root) return
+      const dark = root.classList.contains('dark')
+      if (dark !== last) {
+        changes.push({ t: performance.now(), dark })
+        last = dark
+      }
+    }
+    new MutationObserver(record).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] })
+    record()
+  })
+}
+
+/** firstFrame opens url with the panel's bundle held at the network, reads
+ * what the browser can paint before it runs, lets it through, and reads what
+ * the panel shows once it has rendered. */
+async function firstFrame(page: Page, url: string, rendered: () => Promise<unknown>): Promise<Frame> {
+  let held = 0
+  let release: () => void = () => {}
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const bundle = /\/assets\/index-[^/]+\.js$/
+  await page.route(bundle, async (route) => {
+    held++
+    await gate
+    await route.continue()
+  })
+  // Every other script the document loads — anything that is not the
+  // bundle and its chunks — arrives late. One that stops the parser keeps
+  // the browser from painting until it has run; one that does not (a module,
+  // async, defer) loses the race to the first paint, and the frame shows it.
+  const late = (url: URL) => url.pathname.endsWith('.js') && !url.pathname.includes('/assets/')
+  await page.route(late, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    await route.continue()
+  })
+  const painted = () => ({
+    dark: document.documentElement.classList.contains('dark'),
+    background: getComputedStyle(document.body).backgroundColor,
+    rendered: document.getElementById('root')?.childElementCount ?? 0,
+    at: performance.now(),
+  })
+  await page.goto(url, { waitUntil: 'commit' })
+  // Parsed and styled: the body exists and the panel's stylesheet applies.
+  await page.waitForFunction(
+    () =>
+      document.readyState !== 'loading' &&
+      Array.from(document.styleSheets).some((sheet) => (sheet.href ?? '').includes('/assets/index-')),
+    undefined,
+    { polling: 50, timeout: 15_000 },
+  )
+  const before = await page.evaluate(painted)
+  release()
+  await rendered()
+  await page.unroute(bundle)
+  await page.unroute(late)
+  const after = await page.evaluate(painted)
+  const changes = await page.evaluate(() => (window as unknown as { __themeChanges: { t: number; dark: boolean }[] }).__themeChanges ?? [])
+  const firstPaint = await page.evaluate(
+    () => performance.getEntriesByType('paint').find((entry) => entry.name === 'first-paint')?.startTime ?? null,
+  )
+  return { held, before, after, changes, firstPaint }
+}
+
+function rgbOf(css: string): number[] {
+  if (css.startsWith('#')) {
+    return [1, 3, 5].map((i) => parseInt(css.slice(i, i + 2), 16))
+  }
+  return (css.match(/\d+(\.\d+)?/g) ?? []).slice(0, 3).map(Number)
+}
+
+function sameColour(a: string, b: string): boolean {
+  const [x, y] = [rgbOf(a), rgbOf(b)]
+  return x.length === 3 && y.length === 3 && x.every((v, i) => Math.abs(v - y[i]) <= 2)
+}
+
+/** expectFrame: the frame the browser could paint before the bundle ran is
+ * in the theme wanted and on its surface, the panel the bundle rendered is
+ * still in it, and nothing switched it in between. */
+function expectFrame(frame: Frame, want: { dark: boolean; surface: string }, where: string): void {
+  const name = (dark: boolean) => (dark ? 'dark' : 'light')
+  expect(frame.held, `UIX-10 precondition: ${where}: the bundle was never held, so nothing was measured before it ran`).toBeGreaterThan(0)
+  expect(frame.before.rendered, `UIX-10 precondition: ${where}: the panel rendered while its bundle was held`).toBe(0)
+  expect(frame.firstPaint, `UIX-10 precondition: ${where}: the browser reported no first paint`).not.toBeNull()
+
+  expect(frame.before.dark, `UIX-10: ${where}: before the bundle ran the document is ${name(frame.before.dark)}, and should be ${name(want.dark)}`).toBe(want.dark)
+  expect(
+    sameColour(frame.before.background, want.surface),
+    `UIX-10: ${where}: before the bundle ran the browser paints ${frame.before.background}, the ${name(want.dark)} surface is ${want.surface}`,
+  ).toBe(true)
+  const atFirstPaint = frame.changes.filter((c) => c.t <= (frame.firstPaint ?? 0)).pop()
+  expect(atFirstPaint?.dark, `UIX-10: ${where}: the first paint was ${name(atFirstPaint?.dark ?? false)}, and should be ${name(want.dark)}`).toBe(want.dark)
+  const switched = frame.changes.filter((c) => c.t >= (frame.firstPaint ?? 0) && c.dark !== want.dark)
+  expect(switched, `UIX-10: ${where}: the theme switched after the first paint: ${JSON.stringify(frame.changes)}`).toEqual([])
+  expect(frame.after.dark, `UIX-10: ${where}: once the panel rendered it is ${name(frame.after.dark)}, and should be ${name(want.dark)}`).toBe(want.dark)
+  expect(
+    sameColour(frame.after.background, want.surface),
+    `UIX-10: ${where}: once the panel rendered the browser paints ${frame.after.background}, the surface is ${want.surface}`,
+  ).toBe(true)
 }
 
 test.describe('UIX', () => {
@@ -245,5 +369,51 @@ test.describe('UIX', () => {
       dialog.getByRole('button', { name: /publish/i }),
       'UIX-08: the record view offers no action of the application — publish is declared on Note and the open record has no button for it',
     ).toHaveCount(1, { timeout: 5_000 })
+  })
+
+  /*
+   * UIX-10 is the browser half of EXT-09 (A11 O2): the server says what the
+   * document carries, and this says what the browser paints with it.
+   *
+   * "The first frame" is measured, not inferred from a tag. The panel's
+   * bundle is held at the network while the document is parsed and styled,
+   * so whatever the browser can paint before the bundle runs is decided by
+   * the document and what the document loads ahead of it — and that is read
+   * off the page: the root's class and the body's painted background. Then
+   * the bundle is let through, and a record of every change to the theme,
+   * kept from before the document existed, shows whether anything switched
+   * it afterwards.
+   */
+  test("UIX-10 the first frame wears the theme the application configured, and the operator's own choice wins on reload", async ({ page }) => {
+    const base = process.env.ORBIT_BENCH_THEMED_URL ?? ''
+    const surface = process.env.ORBIT_BENCH_THEMED_SURFACE ?? ''
+    if (!base || !surface) throw new Error('UIX-10 precondition: the driver passed no themed application (ORBIT_BENCH_THEMED_URL, ORBIT_BENCH_THEMED_SURFACE)')
+
+    // The browser says light; the application says dark. A first frame that
+    // followed the browser would be light.
+    await page.emulateMedia({ colorScheme: 'light' })
+    await recordThemeChanges(page)
+    const toggle = page.getByRole('button', { name: /switch to (light|dark) theme/i }).first()
+    const password = page.locator('input[type="password"]').first()
+
+    // The login screen: the first screen, before anyone is anybody.
+    const login = await firstFrame(page, `${base}/admin/login`, () => password.waitFor({ timeout: 15_000 }))
+    expectFrame(login, { dark: true, surface }, 'the login screen')
+
+    // The panel's own document, which the server writes on another path.
+    await signInAt(page, base)
+    const panel = await firstFrame(page, `${base}/admin/`, () => toggle.waitFor({ timeout: 15_000 }))
+    expectFrame(panel, { dark: true, surface }, 'the panel')
+
+    // The operator chooses light, and it is theirs to keep: the reload opens
+    // light, over the application's dark.
+    await toggle.click()
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.classList.contains('dark')), {
+        message: 'UIX-10 precondition: the toggle did not switch the panel to light',
+      })
+      .toBe(false)
+    const reloaded = await firstFrame(page, `${base}/admin/`, () => toggle.waitFor({ timeout: 15_000 }))
+    expectFrame(reloaded, { dark: false, surface: '#ffffff' }, 'the panel, reloaded after the operator chose light')
   })
 })
