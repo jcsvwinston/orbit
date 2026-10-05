@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { checkSession, getDashboard, getUIExtensions, runModelAction } from './api'
+import { ApiError, checkSession, fieldErrors, getDashboard, getUIExtensions, runModelAction } from './api'
 
 // What an application adds to the panel, from the SPA's side: a verb it
 // posts to the same bulk endpoint the built-in ones use, and the navigation
@@ -23,6 +23,40 @@ describe('runModelAction', () => {
     expect(url).toBe('/admin/api/models/Post/bulk')
     expect(JSON.parse(init.body as string)).toEqual({ action: 'publish', ids: ['7', 'b1c2d3e4'] })
     expect(result.message).toBe('2 published')
+  })
+
+  // An action with a form posts what the form collected beside the
+  // selection; one without posts exactly what it posted before forms.
+  it('posts the form input when there is one', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ action: 'schedule', ran: true, requested: 1, affected: 1, failed: 0 }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await runModelAction('Post', 'schedule', [7], { reason: 'late', priority: 2, notify: false })
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(JSON.parse(init.body as string)).toEqual({
+      action: 'schedule', ids: ['7'], input: { reason: 'late', priority: 2, notify: false },
+    })
+  })
+})
+
+describe('fieldErrors', () => {
+  it('reads the field each problem belongs to from a 422', () => {
+    const err = new ApiError(422, 'Schedule: reason is required', {
+      error: { code: 'VALIDATION_FAILED', message: 'Schedule: reason is required', details: { reason: 'is required' } },
+    })
+    expect(fieldErrors(err)).toEqual({ reason: 'is required' })
+  })
+
+  // Anything that is not a per-field refusal is shown as a message.
+  it('finds no field in any other error', () => {
+    expect(fieldErrors(new ApiError(400, 'bad', { error: { code: 'BAD_REQUEST', message: 'bad' } }))).toEqual({})
+    expect(fieldErrors(new ApiError(403, 'no', { error: { code: 'FORBIDDEN', message: 'no', details: { reason: 'x' } } }))).toEqual({})
+    expect(fieldErrors(new Error('boom'))).toEqual({})
   })
 })
 

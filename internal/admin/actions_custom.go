@@ -5,6 +5,7 @@ package admin
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"sort"
@@ -65,6 +66,14 @@ type ModelAction struct {
 	// index"). The zero value requires a selection, which is what a button
 	// on a grid means.
 	AllowEmptySelection bool
+	// Fields are the inputs the action asks for before it runs — the
+	// reason for a refund, the date to publish on. The UI draws them as a
+	// form in place of the plain confirmation; the panel checks what comes
+	// back against them and refuses the call, naming the field, before Run
+	// is called; Run reads the values, already typed, from
+	// ActionRequest.Input. An action without fields runs exactly as one
+	// did before actions could ask.
+	Fields []ActionField
 	// Run performs the action. Returning an error refuses it: the message
 	// reaches the operator, so it should say what a person can do about it.
 	Run func(ctx context.Context, req ActionRequest) (ActionResult, error)
@@ -86,6 +95,10 @@ type ActionRequest struct {
 	// Database is the alias of the database the grid was reading, so an
 	// action on a model that lives on another handle writes where it read.
 	Database string
+	// Input is what the operator entered in the action's form, checked
+	// against its Fields and typed by them. Nil for an action that declares
+	// no fields.
+	Input ActionInput
 }
 
 // ActionResult is what an action reports back. Everything in it is
@@ -152,6 +165,11 @@ func validateModelActions(actions []ModelAction, modelExists func(string) (strin
 		if _, dup := table[key]; dup {
 			return nil, fmt.Errorf("actions[%d]: %s already declares an action named %q", i, canonical, name)
 		}
+		fields, err := validateActionFields(fmt.Sprintf("actions[%d] (%s.%s)", i, canonical, name), action.Fields)
+		if err != nil {
+			return nil, err
+		}
+		action.Fields = fields
 		action.Name = name
 		action.Model = canonical
 		if strings.TrimSpace(action.Label) == "" {
@@ -189,6 +207,9 @@ type actionDescriptor struct {
 	// RequiresSelection is the positive form of AllowEmptySelection: a UI
 	// asks "do I need rows for this?", not "may I run it without any?".
 	RequiresSelection bool `json:"requires_selection"`
+	// Fields are the inputs to ask for first; absent when there are none,
+	// which is the UI's cue to keep the plain confirmation.
+	Fields []actionFieldDescriptor `json:"fields,omitempty"`
 }
 
 // actionDescriptorsFor lists the actions of a model that this operator may
@@ -210,6 +231,7 @@ func (p *Panel) actionDescriptorsFor(r *http.Request, mi datasource.ModelInfo) [
 			Name: action.Name, Label: action.Label, Description: action.Description,
 			Confirm: action.Confirm, Destructive: action.Destructive,
 			RequiresSelection: !action.AllowEmptySelection,
+			Fields:            actionFieldDescriptors(action.Fields),
 		})
 	}
 	if len(out) == 0 {
@@ -222,7 +244,7 @@ func (p *Panel) actionDescriptorsFor(r *http.Request, mi datasource.ModelInfo) [
 // endpoint. It is the default branch of handleBulkAction: a verb that is
 // neither delete nor export is either a declared action or, as before, a
 // bad request.
-func (p *Panel) runModelAction(c *router.Context, mi datasource.ModelInfo, verb string, ids []string, databaseAlias string) error {
+func (p *Panel) runModelAction(c *router.Context, mi datasource.ModelInfo, verb string, ids []string, rawInput json.RawMessage, databaseAlias string) error {
 	r := c.Request
 	action, ok := p.modelActions[actionKey{model: mi.Name, name: verb}]
 	if !ok {
@@ -241,6 +263,13 @@ func (p *Panel) runModelAction(c *router.Context, mi datasource.ModelInfo, verb 
 	}
 	if len(ids) == 0 && !action.AllowEmptySelection {
 		return gferrors.BadRequest("ids are required for the " + action.Name + " action")
+	}
+	// What the operator entered is checked before a row is read, and a
+	// value the declaration refuses never reaches Run: the form is a
+	// rendering of this check, not a substitute for it.
+	input, err := parseActionInput(action, rawInput)
+	if err != nil {
+		return err
 	}
 
 	// Same confinement as a bulk delete, and for the same reason: a row
@@ -304,6 +333,7 @@ func (p *Panel) runModelAction(c *router.Context, mi datasource.ModelInfo, verb 
 		Actor:    p.auditActor(r),
 		Tenant:   tenant,
 		Database: databaseAlias,
+		Input:    input,
 	})
 
 	// The trail records the attempt either way. An action that failed
@@ -315,6 +345,11 @@ func (p *Panel) runModelAction(c *router.Context, mi datasource.ModelInfo, verb 
 		"failed":    len(failures),
 		"ids":       allowed,
 		"ran":       true,
+	}
+	// What the operator entered is part of what happened: "refunded,
+	// because the parcel never arrived" is the entry an auditor reads.
+	if entered := auditableInput(input); entered != nil {
+		recorded["input"] = entered
 	}
 	if runErr != nil {
 		recorded["error"] = runErr.Error()

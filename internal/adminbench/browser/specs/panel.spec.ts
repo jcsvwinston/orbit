@@ -382,6 +382,78 @@ test.describe('UIX', () => {
   })
 
   /*
+   * UIX-09 is the browser half of EXT-01: an action that declared fields
+   * (the bench's "schedule" on Note) opens a form instead of the plain
+   * confirmation, a submit the server refuses lands on the field it names,
+   * and a submit it accepts runs the action and shows what it said. The
+   * form does no checking of its own, so the refusal this control reads is
+   * the server's: break the server's check and the action runs on the
+   * first, empty submit, and this control fails.
+   */
+  test('UIX-09 an action that asks first draws its form and shows the refusal on the field', async ({ page }) => {
+    const title = `uix-09 note ${Date.now()}`
+    const marker = 'uix-09 typed this reason'
+    await signIn(page)
+    const status = await page.evaluate(async (noteTitle) => {
+      const r = await fetch('/admin/api/models/Note', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ title: noteTitle, status: 'draft' }),
+      })
+      return r.status
+    }, title)
+    expect(status < 300, `UIX-09 precondition: creating a note answered ${status}`).toBe(true)
+
+    await page.goto('/admin/data-studio')
+    await page.waitForLoadState('networkidle')
+    await page.getByRole('button', { name: /^Notes/ }).first().click({ timeout: 15_000 })
+
+    // One row on screen, the one this control created, and it selected.
+    await page.getByRole('textbox', { name: 'Search records' }).fill(title)
+    await page.keyboard.press('Enter')
+    const rowBox = page.getByRole('checkbox', { name: /toggle row selection/i })
+    await expect(rowBox, 'UIX-09 precondition: the search did not narrow the grid to the new note').toHaveCount(1, { timeout: 10_000 })
+    await rowBox.check()
+
+    await page.getByRole('button', { name: /^Schedule/ }).click({ timeout: 10_000 })
+    const dialog = page.getByRole('dialog', { name: 'Schedule' })
+    await expect(dialog, 'UIX-09: the action declares fields and no form opened').toBeVisible({ timeout: 5_000 })
+    const reason = dialog.getByLabel(/^Reason/)
+    await expect(reason).toBeVisible()
+    await expect(dialog.getByLabel(/^Channel/)).toBeVisible()
+    await expect(dialog.getByLabel(/^Publish on/)).toHaveAttribute('type', 'date')
+
+    // Submitted empty: the server refuses, naming the fields, and the
+    // refusal is on the input — announced as its description — while the
+    // dialog stays open with what was entered.
+    await dialog.getByRole('button', { name: 'Schedule', exact: true }).click()
+    await expect(reason, 'UIX-09: an empty required field was not marked invalid after the submit').toHaveAttribute('aria-invalid', 'true', { timeout: 5_000 })
+    await expect(reason).toHaveAccessibleDescription(/is required/)
+    await expect(dialog).toBeVisible()
+
+    // The form with its errors showing is still a form everybody can read.
+    const violations = (await new AxeBuilder({ page }).include('[role="dialog"]')
+      .withRules(['label', 'aria-valid-attr-value', 'color-contrast']).analyze()).violations
+      .map((v) => ({ id: v.id, nodes: v.nodes.slice(0, 3).map((n) => n.target.join(' ')) }))
+    expect(violations, JSON.stringify(violations, null, 2)).toEqual([])
+
+    // Filled in: it runs, the dialog closes, and the action's own message
+    // says what it did with what was typed.
+    await reason.fill(marker)
+    await dialog.getByLabel(/^Priority/).fill('3')
+    await dialog.getByLabel(/^Notify subscribers/).check()
+    await dialog.getByLabel(/^Channel/).selectOption('email')
+    await dialog.getByLabel(/^Publish on/).fill('2026-10-05')
+    await dialog.getByRole('button', { name: 'Schedule', exact: true }).click()
+    await expect(dialog).toBeHidden({ timeout: 10_000 })
+    await expect(
+      page.getByRole('status').filter({ hasText: marker }),
+      'UIX-09: the valid submit did not show the action\'s result',
+    ).toContainText(`1 note(s) scheduled on email for 2026-10-05: ${marker}`, { timeout: 10_000 })
+  })
+
+  /*
    * UIX-10 is the browser half of EXT-09 (A11 O2): the server says what the
    * document carries, and this says what the browser paints with it.
    *

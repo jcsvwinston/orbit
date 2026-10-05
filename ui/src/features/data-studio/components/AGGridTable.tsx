@@ -11,9 +11,10 @@ import { ErrorState } from '@/components/ui/error-state'
 import { useToast } from '@/components/ui/use-toast'
 import { useTheme } from '@/stores/themeStore'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
-import type { ModelSchema, ModelActionSpec, Record as AppRecord, SavedView } from '@/types'
+import type { ModelSchema, ModelActionSpec, ActionInputValues, Record as AppRecord, SavedView } from '@/types'
 import * as api from '@/services/api'
 import RecordForm from './RecordForm'
+import ActionFormDialog from './ActionFormDialog'
 import RecordHistoryDialog from './RecordHistoryDialog'
 import ImportDialog from './ImportDialog'
 import { formatCellValue } from '../lib/fieldValues'
@@ -45,6 +46,9 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
   // it is pending confirmation or running.
   const [pendingAction, setPendingAction] = useState<ModelActionSpec | null>(null)
   const [runningAction, setRunningAction] = useState(false)
+  // The action whose form is open: one that declared fields asks for them
+  // here instead of in the plain confirmation.
+  const [formAction, setFormAction] = useState<ModelActionSpec | null>(null)
 
   // Query state
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE)
@@ -177,9 +181,18 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
     } as ColDef]),
   ], [listFields, canUpdate, canDelete, pkColumn, handleEdit])
 
+  // Actions the application declared for this model. The schema only
+  // carries the ones this operator may run, so a button here is a button
+  // they hold — the enforcer is asked again on the call regardless.
+  const declaredActions: ModelActionSpec[] = useMemo(() => schema.actions ?? [], [schema])
+
+  // Rows can be selected when something can be done with a selection: a
+  // delete, or an action that runs over one. An operator who may publish
+  // but not delete still has to be able to pick what to publish.
+  const selectable = canDelete || declaredActions.some((action) => action.requires_selection)
   const rowSelection = useMemo<RowSelectionOptions | undefined>(
-    () => (canDelete ? { mode: 'multiRow', checkboxes: true, headerCheckbox: true, enableClickSelection: false } : undefined),
-    [canDelete],
+    () => (selectable ? { mode: 'multiRow', checkboxes: true, headerCheckbox: true, enableClickSelection: false } : undefined),
+    [selectable],
   )
 
   const rowKey = useCallback((row: AppRecord) => {
@@ -281,29 +294,35 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
     }
   }
 
-  // Actions the application declared for this model. The schema only
-  // carries the ones this operator may run, so a button here is a button
-  // they hold — the enforcer is asked again on the call regardless.
-  const declaredActions: ModelActionSpec[] = schema.actions ?? []
+  const selectedIds = (): RecordId[] => {
+    const selected = (gridApi?.getSelectedRows() ?? []) as AppRecord[]
+    return selected.map((row) => recordId(row, pkColumn)).filter((id): id is RecordId => id !== null)
+  }
+
+  // performAction makes the call and reports it. It throws when the server
+  // refuses, so each flow decides where the refusal is shown: a toast for
+  // the plain confirmation, the fields for a form.
+  const performAction = async (action: ModelActionSpec, ids: RecordId[], input?: ActionInputValues) => {
+    const result = await api.runModelAction(modelName, action.name, ids.map(toApiId), input)
+    // The application's own message is the one worth showing: it knows
+    // what it did, the panel only knows that it ran.
+    toast({
+      variant: result.failed > 0 || !result.ran ? 'destructive' : 'default',
+      title: result.message ?? `${action.label}: ${result.affected} record${result.affected === 1 ? '' : 's'}`,
+      description: result.failed > 0 ? `${result.failed} row${result.failed === 1 ? '' : 's'} were out of scope` : undefined,
+    })
+    gridApi?.deselectAll()
+    setSelectedCount(0)
+    reload()
+  }
 
   const runAction = async (action: ModelActionSpec) => {
-    const selected = (gridApi?.getSelectedRows() ?? []) as AppRecord[]
-    const ids = selected.map((row) => recordId(row, pkColumn)).filter((id): id is RecordId => id !== null)
+    const ids = selectedIds()
     if (ids.length === 0 && action.requires_selection) return
     setRunningAction(true)
     try {
-      const result = await api.runModelAction(modelName, action.name, ids.map(toApiId))
-      // The application's own message is the one worth showing: it knows
-      // what it did, the panel only knows that it ran.
-      toast({
-        variant: result.failed > 0 || !result.ran ? 'destructive' : 'default',
-        title: result.message ?? `${action.label}: ${result.affected} record${result.affected === 1 ? '' : 's'}`,
-        description: result.failed > 0 ? `${result.failed} row${result.failed === 1 ? '' : 's'} were out of scope` : undefined,
-      })
+      await performAction(action, ids)
       setPendingAction(null)
-      gridApi?.deselectAll()
-      setSelectedCount(0)
-      reload()
     } catch (err) {
       toast({ variant: 'destructive', title: `${action.label} failed`, description: api.errorMessage(err) })
     } finally {
@@ -311,9 +330,26 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
     }
   }
 
-  // An action with a confirmation asks first; one without runs on the
-  // click. Both end in the same call.
+  // The form's submit: a refusal propagates to the dialog, which puts it
+  // on the fields, and the dialog closes only when the action ran.
+  const submitActionForm = async (action: ModelActionSpec, input: ActionInputValues) => {
+    setRunningAction(true)
+    try {
+      await performAction(action, selectedIds(), input)
+      setFormAction(null)
+    } finally {
+      setRunningAction(false)
+    }
+  }
+
+  // An action that declared fields asks for them in a form; one with a
+  // confirmation asks that; one with neither runs on the click. All of them
+  // end in the same call.
   const startAction = (action: ModelActionSpec) => {
+    if (action.fields && action.fields.length > 0) {
+      setFormAction(action)
+      return
+    }
     if (action.confirm) {
       setPendingAction(action)
       return
@@ -766,6 +802,16 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+      )}
+
+      {/* An application action that asks for something before it runs */}
+      {formAction && (
+        <ActionFormDialog
+          action={formAction}
+          selectedCount={selectedCount}
+          onCancel={() => setFormAction(null)}
+          onSubmit={(input) => submitActionForm(formAction, input)}
+        />
       )}
 
       {/* Bulk delete confirmation */}

@@ -281,6 +281,36 @@ type ActionRequest = admin.ActionRequest
 // get. Every field is optional.
 type ActionResult = admin.ActionResult
 
+// ActionField is one input a ModelAction asks for before it runs (EXT-01): a
+// name, a label, a type, whether it is required and, for a select, its
+// options. The panel draws the fields as a form, refuses a call whose input
+// does not match them — naming the field — before the function runs, and
+// hands the function the values typed in ActionRequest.Input. A field the
+// panel cannot draw (an unknown type, a select with no options) refuses to
+// start.
+type ActionField = admin.ActionField
+
+// ActionFieldType is what an ActionField asks for.
+type ActionFieldType = admin.ActionFieldType
+
+// ActionOption is one choice of a select ActionField: the value posted and
+// the label read.
+type ActionOption = admin.ActionOption
+
+// ActionInput is what the operator entered in an action's form, typed by its
+// fields: text and select as string, number as float64, boolean as bool,
+// date as time.Time.
+type ActionInput = admin.ActionInput
+
+// The types an ActionField may declare.
+const (
+	ActionFieldText    = admin.ActionFieldText
+	ActionFieldNumber  = admin.ActionFieldNumber
+	ActionFieldBoolean = admin.ActionFieldBoolean
+	ActionFieldSelect  = admin.ActionFieldSelect
+	ActionFieldDate    = admin.ActionFieldDate
+)
+
 // Page is a screen of the application's own, mounted inside the panel
 // (CUST-04). The handler is ordinary net/http; the panel authenticates the
 // request, authorizes it against admin:page:<id>, puts the operator on the

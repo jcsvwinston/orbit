@@ -6,6 +6,7 @@ package adminbench
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
 	"net/url"
@@ -41,14 +42,15 @@ import (
 // to grow it into the behaviour check the new surface makes possible. An
 // absence is never decided by the missing name alone.
 
-// The members of the contract types as A6 left them. A field outside these
-// sets is a surface that moved. (The widget and page lists went when EXT-04
-// and EXT-05 became behaviour checks in O5.)
+// The members of the contract types as A6 left them, plus what A11 has
+// added since (ModelAction.Fields, EXT-01). A field outside these sets is a
+// surface that moved. (The widget and page lists went when EXT-04 and
+// EXT-05 became behaviour checks in O5.)
 var (
-	knownModelAction  = []string{"Name", "Model", "Label", "Description", "Confirm", "Destructive", "AllowEmptySelection", "Run"}
+	knownModelAction  = []string{"Name", "Model", "Label", "Description", "Confirm", "Destructive", "AllowEmptySelection", "Fields", "Run"}
 	knownActionResult = []string{"Message", "Affected", "Data"}
 
-	knownActionDescriptor = []string{"name", "label", "description", "confirm", "destructive", "requires_selection"}
+	knownActionDescriptor = []string{"name", "label", "description", "confirm", "destructive", "requires_selection", "fields"}
 	knownActionResponse   = []string{"action", "ran", "requested", "affected", "failed", "errors", "message", "data"}
 )
 
@@ -56,60 +58,136 @@ var (
 // it to the superuser.
 func publishDescriptor(t *testing.T, e *env) map[string]any {
 	t.Helper()
+	d, ok := noteActionDescriptor(t, e, "publish")
+	if !ok {
+		t.Fatalf("the schema offers no publish action; DS-09 measures that and should be red too")
+	}
+	return d
+}
+
+// noteActionDescriptor returns one of Note's actions as its schema offers it
+// to the superuser.
+func noteActionDescriptor(t *testing.T, e *env, name string) (map[string]any, bool) {
+	t.Helper()
 	schema := e.get(t, "/admin/api/models/Note/schema")
 	if schema.code != http.StatusOK {
 		t.Fatalf("Note schema answered %d: %s", schema.code, schema.text())
 	}
 	actions, _ := schema.json(t)["actions"].([]any)
 	for _, entry := range actions {
-		if d, ok := entry.(map[string]any); ok && d["name"] == "publish" {
-			return d
+		if d, ok := entry.(map[string]any); ok && d["name"] == name {
+			return d, true
 		}
 	}
-	t.Fatalf("the schema offers no publish action; DS-09 measures that and should be red too: %s", schema.text())
-	return nil
+	return nil, false
 }
 
 // EXT-01: an action asks the operator for something before it runs — the
 // reason for a refund, the date to publish on. Django's intermediate pages
 // and Filament's action forms both do it; a verb with no input is the half
 // of an action that needs nothing from the person running it.
+//
+// Measured as four things an author relies on, each by effect: the form a
+// UI draws is in the schema (every type the panel offers, with the select's
+// options); a field the panel cannot draw stops the application, naming the
+// field; what the declaration refuses is answered as a 4xx naming each field
+// at fault and never reaches the function; and what it accepts reaches the
+// function with the type its field declared. The browser half — the dialog
+// that draws the form and shows the error on the field — is UIX-09.
 func probeActionInput(t *testing.T, e *env) verdict {
-	if hits := fieldsBeyond(reflect.TypeOf(orbit.ModelAction{}), knownModelAction,
-		"input", "field", "form", "param", "prompt", "arg"); len(hits) > 0 {
-		t.Logf("orbit.ModelAction grew %v: grow this probe to declare an input, check the descriptor publishes it and that Run receives what was posted", hits)
-		return partial
+	d, ok := noteActionDescriptor(t, e, "schedule")
+	if !ok {
+		t.Fatalf("the schema offers no schedule action, which the bench's application declares; DS-09 should be red too")
 	}
-	if hits := keysBeyond(publishDescriptor(t, e), knownActionDescriptor,
-		"input", "field", "form", "param", "prompt", "arg"); len(hits) > 0 {
-		t.Logf("the action descriptor grew %v: a UI could draw a form from it; grow this probe", hits)
+	fields, _ := d["fields"].([]any)
+	if len(fields) == 0 {
+		t.Logf("the schedule action declares five fields and its descriptor publishes none (%v): nothing for a UI to draw", topLevelKeys(d))
+		return absent
+	}
+
+	// 1. The form, as a UI reads it.
+	types := map[string]string{}
+	var options []any
+	for _, entry := range fields {
+		f, _ := entry.(map[string]any)
+		types[fmt.Sprint(f["name"])] = fmt.Sprint(f["type"])
+		if f["name"] == "channel" {
+			options, _ = f["options"].([]any)
+		}
+	}
+	want := map[string]string{"reason": "text", "priority": "number", "notify": "boolean", "channel": "select", "publish_on": "date"}
+	if !reflect.DeepEqual(types, want) || len(options) != 2 {
+		t.Logf("the descriptor publishes %v with %d option(s); the declaration is %v with 2", types, len(options), want)
 		return partial
 	}
 
-	// The behaviour: what an operator would type, posted the way a form
-	// would post it, under every name a contract might choose. If it reaches
-	// the application's function at all, the server half exists.
-	const marker = "ext01-operator-typed-this"
+	// 2. A field the panel cannot draw refuses to start, naming it.
+	for label, bad := range map[string]orbit.ActionField{
+		"an unknown type":         {Name: "when", Type: "datetime"},
+		"a select with no option": {Name: "when", Type: orbit.ActionFieldSelect},
+	} {
+		action := scheduleAction()
+		action.Fields = []orbit.ActionField{bad}
+		_, err := tryStart(t, extensionApp(t, orbit.Config{Title: "Admin Bench (action fields)", Actions: []orbit.ModelAction{action}}))
+		if err == nil {
+			t.Logf("the application started with %s on an action field: the form would be one nobody can fill", label)
+			return partial
+		}
+		if !strings.Contains(err.Error(), `"when"`) {
+			t.Logf("the panel refused %s without naming the field: %v", label, err)
+			return partial
+		}
+	}
+
+	// 3. What the declaration refuses never reaches the function, and the
+	// answer names every field at fault.
 	id := e.createNote(t, map[string]any{"title": "action-input", "status": "draft"})
 	_, before := benchExtensions.lastRequest()
-	r := e.do(t, http.MethodPost, "/admin/api/models/Note/bulk", map[string]any{
-		"action": "publish", "ids": []string{id},
-		"input": map[string]any{"reason": marker}, "fields": map[string]any{"reason": marker},
-		"params": map[string]any{"reason": marker}, "form": map[string]any{"reason": marker},
+	refused := e.do(t, http.MethodPost, "/admin/api/models/Note/bulk", map[string]any{
+		"action": "schedule", "ids": []string{id},
+		"input": map[string]any{"priority": "high", "channel": "fax", "publish_on": "tomorrow"},
 	})
-	if r.code >= 400 {
-		t.Fatalf("publish with an input answered %d: %s", r.code, r.text())
+	if _, after := benchExtensions.lastRequest(); after != before {
+		t.Logf("an input with four mistakes reached the action (answered %d): the check, if any, runs after the function", refused.code)
+		return partial
+	}
+	if refused.code < 400 || refused.code >= 500 {
+		t.Logf("an input with four mistakes answered %d: %s", refused.code, refused.text())
+		return partial
+	}
+	errBody, _ := refused.json(t)["error"].(map[string]any)
+	details, _ := errBody["details"].(map[string]any)
+	for _, field := range []string{"reason", "priority", "channel", "publish_on"} {
+		if _, named := details[field]; !named {
+			t.Logf("the refusal (%d) does not name %s: %s", refused.code, field, refused.text())
+			return partial
+		}
+	}
+
+	// 4. What it accepts reaches the function typed.
+	const marker = "ext01-operator-typed-this"
+	ran := e.do(t, http.MethodPost, "/admin/api/models/Note/bulk", map[string]any{
+		"action": "schedule", "ids": []string{id},
+		"input": map[string]any{"reason": marker, "priority": "3", "notify": true, "channel": "email", "publish_on": "2026-10-05"},
+	})
+	if ran.code != http.StatusOK {
+		t.Logf("a valid input answered %d: %s", ran.code, ran.text())
+		return partial
 	}
 	call, after := benchExtensions.lastRequest()
 	if after == before {
-		t.Fatalf("the action did not run, so the probe cannot ask what it received: %s", r.text())
-	}
-	if containsValue(reflect.ValueOf(call), marker) {
-		t.Logf("the posted input reached the action (%+v) with no declaration to say it may: grow this probe", call)
+		t.Logf("a valid input did not reach the action: %s", ran.text())
 		return partial
 	}
-	t.Logf("the action ran and received %+v: the descriptor names no input, and what was posted with the call is dropped", call)
-	return absent
+	in := call.Input
+	day, isDate := in.Date("publish_on")
+	priority, isNumber := in.Number("priority")
+	if in.String("reason") != marker || in.String("channel") != "email" || !in.Bool("notify") ||
+		!isNumber || priority != 3 || !isDate || day.Format("2006-01-02") != "2026-10-05" {
+		t.Logf("the action received %#v: not the values posted, in their declared types", in)
+		return partial
+	}
+	return present
 }
 
 // EXT-02: the action is offered on the record it is about. Selecting one

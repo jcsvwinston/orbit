@@ -159,10 +159,9 @@ func controls() []control {
 		// points A6 shipped (DS-09, CUST-02, CUST-03, CUST-04). Recorded at
 		// the baseline of A11 (S0); probes_extension_test.go says what each
 		// one reads. EXT-08, EXT-11 and EXT-12 closed in O1; EXT-09 and
-		// EXT-10 in O2; EXT-04 and EXT-05 in O5.
+		// EXT-10 in O2; EXT-04 and EXT-05 in O5; EXT-01 in O3.
 		{id: "EXT-01", family: "extension", title: "an action asks the operator for input before it runs (a form)",
-			want: absent, note: "ModelAction declares no input and the action descriptor publishes none; an input posted with the call is dropped before Run",
-			probe: probeActionInput},
+			want: present, probe: probeActionInput},
 		{id: "EXT-02", family: "extension", title: "an action is offered on the record view, for that one record",
 			want: absent, note: "the bulk endpoint runs an action over one id, but nothing says which actions belong on one record and the record payload names none — the record view has no action surface",
 			probe: probeActionOnRecord},
