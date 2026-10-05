@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jcsvwinston/nucleus/pkg/nucleus"
 
@@ -209,6 +210,159 @@ func benchWidgets() []orbit.Widget {
 	}
 }
 
+// trendsDashboard is the bench application's second screen of cards (A11
+// O5): the one an operator granted view on admin:dashboard:trends opens,
+// and nobody else sees.
+const trendsDashboard = "trends"
+
+// seriesDays is how many days the bench's series covers, today included.
+const seriesDays = 7
+
+// benchDashboards declares that screen the way an author writes one: each
+// card a kind and the function its kind reads, all of them reading the
+// application's own table. Nothing on it is synthetic — the series counts
+// the notes a probe creates, so a probe can tell a chart fed by the
+// function from a chart drawn from a constant.
+func benchDashboards() []orbit.Dashboard {
+	return []orbit.Dashboard{{
+		ID:          trendsDashboard,
+		Title:       "Bench Trends",
+		Description: "How the notes move",
+		Columns:     2,
+		Widgets: []orbit.Widget{
+			{
+				ID:     "notes-per-day",
+				Title:  "Notes per day",
+				Kind:   orbit.WidgetLine,
+				Span:   2,
+				Series: notesPerDay,
+			},
+			{
+				ID:    "published-notes",
+				Title: "Published notes",
+				Kind:  orbit.WidgetStat,
+				Stat:  publishedNotes,
+			},
+			{
+				ID:    "notes-by-status",
+				Title: "Notes by status",
+				Kind:  orbit.WidgetTable,
+				Span:  1,
+				Table: notesByStatus,
+			},
+			{
+				ID:      "recent-notes",
+				Title:   "Recent notes",
+				Kind:    orbit.WidgetRecords,
+				Records: orbit.RecordList{Model: "Note", Fields: []string{"title", "status"}, Limit: 5},
+			},
+		},
+	}}
+}
+
+// seriesLabels are the last seriesDays days, oldest first, in UTC: the
+// day a note's created_at falls on.
+func seriesLabels(now time.Time) []string {
+	labels := make([]string, seriesDays)
+	for i := range labels {
+		labels[i] = now.UTC().AddDate(0, 0, i-(seriesDays-1)).Format("2006-01-02")
+	}
+	return labels
+}
+
+// noteDay is the SQL for the UTC day a note was created on. It is a prefix
+// of the text and not SQLite's date(): the driver writes a timestamp as Go
+// prints one ("2026-10-04 22:30:06.67 +0000 UTC"), which date() does not
+// parse — it answers NULL, and the first version of this series was a flat
+// line of zeros that the probe caught by creating a note and watching
+// nothing move.
+const noteDay = "substr(created_at, 1, 10)"
+
+// notesPerDay counts the notes created on each of the last seven days.
+func notesPerDay(ctx context.Context) (orbit.SeriesValue, error) {
+	handle := benchExtensions.handle()
+	if handle == nil {
+		return orbit.SeriesValue{}, fmt.Errorf("no database handle")
+	}
+	labels := seriesLabels(time.Now())
+	rows, err := handle.QueryContext(ctx,
+		"SELECT "+noteDay+", COUNT(*) FROM notes WHERE deleted_at IS NULL AND "+noteDay+" >= ? GROUP BY "+noteDay,
+		labels[0])
+	if err != nil {
+		return orbit.SeriesValue{}, err
+	}
+	defer func() { _ = rows.Close() }()
+	counts := map[string]float64{}
+	for rows.Next() {
+		var day sql.NullString
+		var n float64
+		if err := rows.Scan(&day, &n); err != nil {
+			return orbit.SeriesValue{}, err
+		}
+		counts[day.String] = n
+	}
+	if err := rows.Err(); err != nil {
+		return orbit.SeriesValue{}, err
+	}
+	values := make([]float64, len(labels))
+	for i, day := range labels {
+		values[i] = counts[day]
+	}
+	return orbit.SeriesValue{
+		Labels: labels,
+		Series: []orbit.Series{{Name: "Created", Values: values}},
+	}, nil
+}
+
+// publishedNotes is a figure and how it moved: the published notes, and
+// how many of them were created today.
+func publishedNotes(ctx context.Context) (orbit.StatValue, error) {
+	handle := benchExtensions.handle()
+	if handle == nil {
+		return orbit.StatValue{}, fmt.Errorf("no database handle")
+	}
+	var total, today int
+	if err := handle.QueryRowContext(ctx,
+		"SELECT COUNT(*), COALESCE(SUM(CASE WHEN "+noteDay+" = ? THEN 1 ELSE 0 END), 0) FROM notes WHERE status = 'published' AND deleted_at IS NULL",
+		time.Now().UTC().Format("2006-01-02")).Scan(&total, &today); err != nil {
+		return orbit.StatValue{}, err
+	}
+	trend := "flat"
+	if today > 0 {
+		trend = "up"
+	}
+	return orbit.StatValue{
+		Value:     fmt.Sprintf("%d", total),
+		Delta:     fmt.Sprintf("+%d today", today),
+		Trend:     trend,
+		Sentiment: "good",
+	}, nil
+}
+
+// notesByStatus is a table the application formats itself.
+func notesByStatus(ctx context.Context) (orbit.TableValue, error) {
+	handle := benchExtensions.handle()
+	if handle == nil {
+		return orbit.TableValue{}, fmt.Errorf("no database handle")
+	}
+	rows, err := handle.QueryContext(ctx,
+		"SELECT COALESCE(NULLIF(status, ''), '(none)'), COUNT(*) FROM notes WHERE deleted_at IS NULL GROUP BY 1 ORDER BY 1 LIMIT 20")
+	if err != nil {
+		return orbit.TableValue{}, err
+	}
+	defer func() { _ = rows.Close() }()
+	table := orbit.TableValue{Columns: []string{"Status", "Notes"}}
+	for rows.Next() {
+		var status string
+		var n int
+		if err := rows.Scan(&status, &n); err != nil {
+			return orbit.TableValue{}, err
+		}
+		table.Rows = append(table.Rows, []string{status, fmt.Sprintf("%d", n)})
+	}
+	return table, rows.Err()
+}
+
 // benchMessages is an application adding to the panel's own phrases — and
 // translating one of its own words, in a locale the panel ships.
 func benchMessages() map[string]map[string]string {
@@ -233,12 +387,13 @@ func benchOrbitConfig() orbit.Config {
 			"Note.Cover": "image",
 			"Note.Meta":  "json",
 		},
-		Actions:  []orbit.ModelAction{publishAction()},
-		Pages:    []orbit.Page{reportsPage()},
-		Branding: benchBranding(),
-		Widgets:  benchWidgets(),
-		Locale:   "es",
-		Messages: benchMessages(),
+		Actions:    []orbit.ModelAction{publishAction()},
+		Pages:      []orbit.Page{reportsPage()},
+		Branding:   benchBranding(),
+		Widgets:    benchWidgets(),
+		Dashboards: benchDashboards(),
+		Locale:     "es",
+		Messages:   benchMessages(),
 	}
 }
 

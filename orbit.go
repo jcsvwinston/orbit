@@ -211,8 +211,19 @@ type Config struct {
 
 	// Widgets are the cards this application puts on the panel's overview:
 	// its own numbers, which the panel cannot discover. Go-only wiring;
-	// each widget carries the function that reads its value.
+	// each widget carries the function that reads its value, and its Kind
+	// says what the card draws — a value, a figure and its change, a line
+	// or bar chart, a table, or the newest rows of a model.
 	Widgets []Widget `yaml:"-" koanf:"-"`
+
+	// Dashboards are screens of cards beside the overview — the finance
+	// numbers, the support queue — each listed in the navigation and gated
+	// as a whole by its own permission (view on admin:dashboard:<id>). The
+	// overview is not one of them and does not change. Go-only wiring,
+	// like Widgets. A declaration the panel cannot draw — an unknown kind,
+	// a kind without its function, a dashboard with no cards — refuses to
+	// start, naming it.
+	Dashboards []Dashboard `yaml:"-" koanf:"-"`
 
 	// Locale is the language the panel's own chrome opens in ("es",
 	// "pt-BR"). It covers the panel's words — navigation, buttons, empty
@@ -305,6 +316,44 @@ type WidgetValue = admin.WidgetValue
 
 // WidgetItem is one row of a list widget.
 type WidgetItem = admin.WidgetItem
+
+// The kinds of card a Widget draws (Widget.Kind). An empty Kind is the value
+// card A6 shipped, read from Load.
+const (
+	// WidgetStat reads Widget.Stat: a headline figure and its change.
+	WidgetStat = admin.WidgetKindStat
+	// WidgetLine reads Widget.Series and draws a line chart.
+	WidgetLine = admin.WidgetKindLine
+	// WidgetBar reads Widget.Series and draws a bar chart.
+	WidgetBar = admin.WidgetKindBar
+	// WidgetTable reads Widget.Table: columns and rows of text.
+	WidgetTable = admin.WidgetKindTable
+	// WidgetRecords lists the newest rows of the model Widget.Records
+	// names, read by the panel as the operator who is looking.
+	WidgetRecords = admin.WidgetKindRecords
+)
+
+// StatValue is what a "stat" card shows: a figure, its change as the
+// application formats it, which way it went, and whether that is good news.
+type StatValue = admin.StatValue
+
+// SeriesValue is what a "line" or "bar" card draws: labels along the
+// horizontal axis and one value per label for each Series.
+type SeriesValue = admin.SeriesValue
+
+// Series is one named sequence of a chart.
+type Series = admin.Series
+
+// TableValue is what a "table" card shows: columns and rows of text.
+type TableValue = admin.TableValue
+
+// RecordList names the model a "records" card lists, its columns, its order
+// and how many rows.
+type RecordList = admin.RecordList
+
+// Dashboard is a screen of cards beside the overview, listed in the
+// navigation and gated by its own permission on admin:dashboard:<id>.
+type Dashboard = admin.Dashboard
 
 // OperatorFromContext returns the panel operator a Page request was
 // authenticated as.
@@ -492,7 +541,7 @@ func (m *module) start(ctx context.Context) error {
 	if err := admin.ValidatePages(m.cfg.Pages); err != nil {
 		return fmt.Errorf("orbit: %w", err)
 	}
-	if err := admin.ValidateWidgets(m.cfg.Widgets); err != nil {
+	if err := admin.ValidateDashboards(src, m.cfg.Widgets, m.cfg.Dashboards); err != nil {
 		return fmt.Errorf("orbit: %w", err)
 	}
 	if err := admin.ValidateBranding(m.cfg.Branding); err != nil {
@@ -549,12 +598,13 @@ func (m *module) start(ctx context.Context) error {
 		// What this application adds to the panel: its own verbs on its
 		// own models, its own screens, its own clothes and its own
 		// language.
-		Actions:  m.cfg.Actions,
-		Pages:    m.cfg.Pages,
-		Branding: m.cfg.Branding,
-		Widgets:  m.cfg.Widgets,
-		Locale:   m.cfg.Locale,
-		Messages: m.cfg.Messages,
+		Actions:    m.cfg.Actions,
+		Pages:      m.cfg.Pages,
+		Branding:   m.cfg.Branding,
+		Widgets:    m.cfg.Widgets,
+		Dashboards: m.cfg.Dashboards,
+		Locale:     m.cfg.Locale,
+		Messages:   m.cfg.Messages,
 
 		// The delivery half of the email view (OR-50). Both are taken from
 		// the runtime rather than declared in Config: the framework owns

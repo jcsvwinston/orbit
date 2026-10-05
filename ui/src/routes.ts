@@ -28,4 +28,7 @@ export const lazyRoutes: readonly LazyRoute[] = [
   { path: 'operators', load: () => import('@/features/operators/pages/OperatorsPage') },
   { path: 'rbac', load: () => import('@/features/rbac/pages/RBACPage') },
   { path: 'audit', load: () => import('@/features/audit/pages/AuditLogPage') },
+  // The dashboards an application added beside the overview: one route for
+  // all of them, and the cards' code arrives with it.
+  { path: 'dashboards/:id', load: () => import('@/features/dashboards/pages/DashboardPage') },
 ]

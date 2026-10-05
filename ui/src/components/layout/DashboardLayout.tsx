@@ -6,7 +6,7 @@ import { getAdminTitle } from '@/config'
 import * as api from '@/services/api'
 import { readBranding } from '@/lib/branding'
 import { useTranslate } from '@/stores/messagesStore'
-import type { UIExtensionPage } from '@/services/api'
+import type { UIExtensionDashboard, UIExtensionPage } from '@/services/api'
 import { RouteFallback } from '@/components/ui/route-fallback'
 import { RouteErrorBoundary } from '@/components/layout/route-error-boundary'
 import {
@@ -27,6 +27,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ExternalLink,
+  LayoutGrid,
 } from 'lucide-react'
 
 // The English label is written here and travels with the key: it is the last
@@ -55,6 +56,9 @@ export default function DashboardLayout() {
   // application, under the panel's prefix and its session, and the panel
   // refuses to be framed — so it is navigated to, not embedded.
   const [extensions, setExtensions] = useState<UIExtensionPage[]>([])
+  // And its dashboards, which ARE routes of the panel: their cards are drawn
+  // by the panel from what the application's functions return.
+  const [dashboards, setDashboards] = useState<UIExtensionDashboard[]>([])
   const t = useTranslate()
   const branding = readBranding()
 
@@ -62,14 +66,18 @@ export default function DashboardLayout() {
     let cancelled = false
     api
       .getUIExtensions()
-      .then((pages) => {
-        if (!cancelled) setExtensions(pages)
+      .then(({ pages, dashboards }) => {
+        if (cancelled) return
+        setExtensions(pages)
+        setDashboards(dashboards)
       })
       .catch(() => {
         // An application with no screens of its own is the common case,
         // and a panel whose extension list fails to load still works:
         // the section simply does not appear.
-        if (!cancelled) setExtensions([])
+        if (cancelled) return
+        setExtensions([])
+        setDashboards([])
       })
     return () => {
       cancelled = true
@@ -166,6 +174,28 @@ export default function DashboardLayout() {
                     >
                       <item.icon className="h-5 w-5 shrink-0" />
                       {sidebarOpen && <span className="truncate">{label}</span>}
+                    </Link>
+                  </li>
+                )
+              })}
+              {dashboards.map((dashboard) => {
+                const path = `/dashboards/${dashboard.id}`
+                const isActive = location.pathname === path
+                return (
+                  <li key={`dashboard-${dashboard.id}`}>
+                    <Link
+                      to={path}
+                      aria-current={isActive ? 'page' : undefined}
+                      aria-label={sidebarOpen ? undefined : dashboard.title}
+                      title={sidebarOpen ? dashboard.description : dashboard.title}
+                      className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${isActive
+                          ? 'bg-primary text-primary-foreground'
+                          : 'hover:bg-accent'
+                        }`}
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      <LayoutGrid className="h-5 w-5 shrink-0" />
+                      {sidebarOpen && <span className="truncate">{dashboard.title}</span>}
                     </Link>
                   </li>
                 )

@@ -479,16 +479,26 @@ func TestPanel_UIAssetsServedUnderCustomPrefix(t *testing.T) {
 	if !strings.Contains(indexStr, `content="/nucleus-admin"`) {
 		t.Fatalf("index is missing injected admin prefix: %s", indexStr)
 	}
-	if !strings.Contains(indexStr, `./assets/`) {
-		t.Fatalf("index is missing Vite asset references: %s", indexStr)
+	// The build names its files relative to the document; the panel serves
+	// them from its own root, so a screen two segments deep loads them too.
+	if strings.Contains(indexStr, `./assets/`) {
+		t.Fatalf("index still names its assets relative to the document: %s", indexStr)
 	}
-
-	assetPath := firstMatch(indexStr, `\./assets/[^"]+\.js`)
+	assetPath := firstMatch(indexStr, `/nucleus-admin/assets/[^"]+\.js`)
 	if assetPath == "" {
-		t.Fatalf("index is missing a JavaScript asset path: %s", indexStr)
+		t.Fatalf("index is missing a JavaScript asset path under the prefix: %s", indexStr)
+	}
+	nested, err := http.Get(srv.URL + "/nucleus-admin/dashboards/finance")
+	if err != nil {
+		t.Fatalf("nested SPA request failed: %v", err)
+	}
+	nestedBody, _ := io.ReadAll(nested.Body)
+	_ = nested.Body.Close()
+	if !strings.Contains(string(nestedBody), assetPath) {
+		t.Fatalf("a two-segment screen is served a document that does not name %s: %s", assetPath, nestedBody)
 	}
 
-	componentsRes, err := http.Get(srv.URL + "/nucleus-admin/" + strings.TrimPrefix(assetPath, "./"))
+	componentsRes, err := http.Get(srv.URL + assetPath)
 	if err != nil {
 		t.Fatalf("asset request failed: %v", err)
 	}

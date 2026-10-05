@@ -129,12 +129,18 @@ export async function logout(): Promise<void> {
 // checkSession reports whether the session cookie is still accepted. The
 // panel has no identity endpoint (no /api/me): the SPA knows it is signed
 // in, not who it is, and must not invent a username.
+//
+// A 403 is a session that was accepted and then refused this one reading —
+// an operator whose role opens a dashboard and not the model list. Reading
+// it as "not signed in" sent that operator back to the login screen after
+// every successful sign-in, with nothing saying why; it is signed in, and
+// each screen says what it may not show.
 export async function checkSession(): Promise<boolean> {
   try {
     const response = await fetch(buildAdminPath('/api/models'), {
       credentials: 'same-origin',
     })
-    return !isRedirectToLogin(response) && response.ok
+    return !isRedirectToLogin(response) && (response.ok || response.status === 403)
   } catch {
     return false
   }
@@ -263,14 +269,33 @@ export async function runModelAction(
   })
 }
 
+// The kinds of card the panel draws (internal/admin/dashboard.go). A card
+// with no kind is the value card A6 shipped.
+export type WidgetKind = 'value' | 'stat' | 'line' | 'bar' | 'table' | 'records'
+
 export interface DashboardWidget {
   id: string
+  kind?: WidgetKind
   title: string
   description?: string
   link?: string
+  // span is how many columns of the grid the card takes; absent is one.
+  span?: number
   value?: string
   detail?: string
   items?: Array<{ label: string; value?: string; link?: string }>
+  // A stat's change, as the application formatted it, which way it went
+  // and whether that is good news.
+  delta?: string
+  trend?: 'up' | 'down' | 'flat'
+  sentiment?: 'good' | 'bad'
+  // A chart: one value per label for each series.
+  labels?: string[]
+  series?: Array<{ name?: string; values: number[] }>
+  // A table, or the newest rows of a model.
+  columns?: string[]
+  rows?: string[][]
+  model?: string
   // error is the widget's own failure. The card is still drawn saying it
   // could not be read: dropping it would report a broken query as "nothing
   // to see".
@@ -284,6 +309,29 @@ export async function getDashboardWidgets(): Promise<DashboardWidget[]> {
   return response.widgets ?? []
 }
 
+export interface Dashboard {
+  id: string
+  title: string
+  description?: string
+  // columns is how many columns its grid has on a wide screen (1 to 4).
+  columns: number
+  widgets: DashboardWidget[]
+}
+
+// getDashboard loads one of the dashboards this application added beside
+// the overview. An operator who may not open it gets the API's 403 as an
+// ApiError, and an unknown one its 404.
+export async function getDashboard(id: string): Promise<Dashboard> {
+  const response = await fetchAPI<Partial<Dashboard>>(`/api/ui/dashboards/${encodeURIComponent(id)}`)
+  return {
+    id: response.id ?? id,
+    title: response.title ?? id,
+    description: response.description,
+    columns: response.columns ?? 4,
+    widgets: response.widgets ?? [],
+  }
+}
+
 export interface UIExtensionPage {
   id: string
   title: string
@@ -294,11 +342,24 @@ export interface UIExtensionPage {
   url: string
 }
 
+export interface UIExtensionDashboard {
+  id: string
+  title: string
+  description?: string
+  url: string
+}
+
+export interface UIExtensions {
+  pages: UIExtensionPage[]
+  dashboards: UIExtensionDashboard[]
+}
+
 // getUIExtensions lists the screens this application added to the panel, as
-// the navigation needs them. Only the ones this operator may open come back.
-export async function getUIExtensions(): Promise<UIExtensionPage[]> {
-  const response = await fetchAPI<{ pages?: UIExtensionPage[] }>('/api/ui/extensions')
-  return response.pages ?? []
+// the navigation needs them: its own pages, and its dashboards. Only the ones
+// this operator may open come back.
+export async function getUIExtensions(): Promise<UIExtensions> {
+  const response = await fetchAPI<{ pages?: UIExtensionPage[]; dashboards?: UIExtensionDashboard[] }>('/api/ui/extensions')
+  return { pages: response.pages ?? [], dashboards: response.dashboards ?? [] }
 }
 
 // ── Sessions ──

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { Activity, Boxes, Database, Network, PackageCheck, Table } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
@@ -8,6 +8,11 @@ import * as api from '@/services/api'
 import type { ModelsResponse, SystemSnapshot } from '@/types'
 import type { DashboardWidget } from '@/services/api'
 import { useTranslate } from '@/stores/messagesStore'
+
+// The application's cards are drawn by the dashboards' grid, which is a
+// chunk of its own: the overview is in the panel's first load, and an
+// application that declared no card never fetches the code that draws them.
+const WidgetGrid = lazy(() => import('@/features/dashboards/components/WidgetGrid'))
 
 function formatTimestamp(value?: string): string {
   if (!value) return 'Not available'
@@ -149,49 +154,12 @@ export default function OverviewPage() {
       </div>
 
       {widgets.length > 0 && (
-        <div className="space-y-2">
-          <h2 className="text-lg font-semibold">{t('dashboard.widgets', 'Your application')}</h2>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {widgets.map((widget) => {
-              const body = (
-                <>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium">{widget.title}</CardTitle>
-                    {widget.description && <CardDescription>{widget.description}</CardDescription>}
-                  </CardHeader>
-                  <CardContent>
-                    {widget.error ? (
-                      <p className="text-sm text-muted-foreground">
-                        {t('dashboard.unavailable', 'This card could not be read')}
-                      </p>
-                    ) : widget.items && widget.items.length > 0 ? (
-                      <ul className="space-y-1 text-sm">
-                        {widget.items.map((item, index) => (
-                          <li key={`${widget.id}-${index}`} className="flex items-center justify-between gap-3">
-                            <span className="truncate">{item.label}</span>
-                            {item.value && <span className="text-muted-foreground">{item.value}</span>}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <>
-                        <div className="text-3xl font-semibold">{widget.value}</div>
-                        {widget.detail && <p className="mt-1 text-xs text-muted-foreground">{widget.detail}</p>}
-                      </>
-                    )}
-                  </CardContent>
-                </>
-              )
-              return widget.link ? (
-                <a key={widget.id} href={widget.link} className="block">
-                  <Card className="h-full transition-colors hover:border-primary">{body}</Card>
-                </a>
-              ) : (
-                <Card key={widget.id}>{body}</Card>
-              )
-            })}
+        <Suspense fallback={null}>
+          <div className="space-y-2">
+            <h2 className="text-lg font-semibold">{t('dashboard.widgets', 'Your application')}</h2>
+            <WidgetGrid widgets={widgets} columns={4} />
           </div>
-        </div>
+        </Suspense>
       )}
 
       <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">

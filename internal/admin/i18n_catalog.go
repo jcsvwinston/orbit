@@ -63,6 +63,10 @@ var panelMessages = map[string]map[string]string{
 		"state.no_access":       "You do not have access to this",
 		"dashboard.widgets":     "Your application",
 		"dashboard.unavailable": "This card could not be read",
+		"dashboard.trend_up":    "up",
+		"dashboard.trend_down":  "down",
+		"dashboard.trend_flat":  "no change",
+		"dashboard.chart":       "chart",
 	},
 	"es": {
 		"nav.overview":          "Resumen",
@@ -106,5 +110,9 @@ var panelMessages = map[string]map[string]string{
 		"state.no_access":       "No tienes acceso a esto",
 		"dashboard.widgets":     "Tu aplicación",
 		"dashboard.unavailable": "No se ha podido leer esta tarjeta",
+		"dashboard.trend_up":    "sube",
+		"dashboard.trend_down":  "baja",
+		"dashboard.trend_flat":  "sin cambios",
+		"dashboard.chart":       "gráfico",
 	},
 }

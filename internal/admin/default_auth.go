@@ -308,6 +308,7 @@ func (a *DatabaseAdminAuth) renderLoginPage(w http.ResponseWriter, status int, n
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(status)
 		out := injectAdminPrefix(content, adminPrefix)
+		out = absoluteAssetPaths(out, adminPrefix)
 		out = injectAdminTitle(out, a.loginTitle())
 		out = injectBranding(out, a.branding)
 		out = injectAppearance(out, a.branding, adminPrefix)

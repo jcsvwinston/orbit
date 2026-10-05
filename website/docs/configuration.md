@@ -73,6 +73,17 @@ with a message naming the key.
 | `locale` | string | English | The language the panel's own words open in (`es`, `pt-BR`), which also sets the document's `lang`. The panel ships English and Spanish; in another language, what `messages` does not translate reads in English. It never translates your data: model names, field labels and your errors stay as you wrote them. A value that is not a language tag is refused. |
 | `messages` | map[string]map[string]string | — | Phrases that add to or replace the panel's, by language tag and then key (`es: {nav.data_studio: Catálogo}`). They merge: yours win over the panel's translation, which wins over its English, and a phrase nobody translated reads in English rather than as its key. A language key that is not a language tag is refused. |
 
+## Wired in Go
+
+What an application adds to the panel that carries a function cannot be
+written in `nucleus.yml`, so it has no key here: `Actions`, `Pages`,
+`Widgets` and `Dashboards`, and the `Cache` and `DataSource` an application
+hands the panel, are set on `orbit.Config` in Go (see
+[What your application adds to the panel](./features.md#what-your-application-adds-to-the-panel)
+and [More than one dashboard](./features.md#more-than-one-dashboard)). An
+action, a page, a card or a dashboard the panel cannot draw stops the
+application at startup, naming it, like a key above.
+
 ## The live feed
 
 | Key (`modules.orbit.*`) | Type | Default | Description |
