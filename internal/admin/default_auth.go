@@ -65,8 +65,16 @@ type DatabaseAdminAuth struct {
 
 // WithBranding gives the login page the application's logo, colour and
 // favicon. Returns the receiver for chaining.
+//
+// The branding is validated and normalised the way the panel's is, and one
+// that does not validate is ignored here as the panel ignores it: the login
+// screen and the panel behind it wear the same clothes.
 func (a *DatabaseAdminAuth) WithBranding(b Branding) *DatabaseAdminAuth {
-	a.branding = b
+	if nb, err := validateBranding(b); err == nil {
+		a.branding = nb
+	} else {
+		a.branding = Branding{}
+	}
 	return a
 }
 
@@ -302,6 +310,7 @@ func (a *DatabaseAdminAuth) renderLoginPage(w http.ResponseWriter, status int, n
 		out := injectAdminPrefix(content, adminPrefix)
 		out = injectAdminTitle(out, a.loginTitle())
 		out = injectBranding(out, a.branding)
+		out = injectAppearance(out, a.branding, adminPrefix)
 		out = injectLocale(out, a.locale)
 		out = injectLoginMessage(out, errorMsg, infoMsg)
 		_, _ = w.Write(out)

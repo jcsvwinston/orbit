@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
@@ -18,6 +19,7 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -476,4 +478,219 @@ func documentedKeys(t *testing.T, rel string) map[string]bool {
 		}
 	}
 	return out
+}
+
+// ---- the theme and the palette (EXT-09, EXT-10) ---------------------------
+
+// headOf is the document's <head>, where whatever decides the first frame
+// has to be: the body is parsed after it, and painted after it.
+func headOf(doc string) string {
+	if i := strings.Index(doc, "</head>"); i >= 0 {
+		return doc[:i]
+	}
+	return doc
+}
+
+var (
+	scriptTag = regexp.MustCompile(`<script\b([^>]*)>`)
+	srcAttr   = regexp.MustCompile(`\bsrc="([^"]+)"`)
+	themeMeta = regexp.MustCompile(`<meta[^>]*\bname="([^"]*(?:theme|color-scheme)[^"]*)"[^>]*\bcontent="([^"]*)"`)
+)
+
+// themeHints lists what in a document's head could set the first frame's
+// theme: a meta tag naming a theme, a dark class on the root, or a script
+// that is not the bundle. The panel without a configured theme carries none.
+func themeHints(doc string) []string {
+	head := headOf(doc)
+	var hints []string
+	for _, m := range themeMeta.FindAllStringSubmatch(head, -1) {
+		hints = append(hints, "meta "+m[1])
+	}
+	if strings.Contains(doc, `<html class="dark"`) {
+		hints = append(hints, "a dark class on <html>")
+	}
+	for _, m := range scriptTag.FindAllStringSubmatch(head, -1) {
+		if !strings.Contains(m[1], `type="module"`) {
+			hints = append(hints, "a classic script "+strings.TrimSpace(m[1]))
+		}
+	}
+	return hints
+}
+
+// firstFrameProblem says what in a served document keeps the configured
+// theme from deciding the first frame, or "" when nothing does: the value
+// travels in the head, and a script that can apply it runs before the bundle
+// and before the body exists — a classic script (not a module, not async,
+// not deferred, so the parser stops for it), placed after the value and
+// ahead of the bundle, from the panel's own origin, under a script-src that
+// is still 'self' alone, and served as JavaScript.
+func firstFrameProblem(t *testing.T, client *http.Client, app startedApp, doc string, header http.Header, want string) string {
+	t.Helper()
+	head := headOf(doc)
+	meta := themeMeta.FindStringSubmatchIndex(head)
+	if meta == nil {
+		return "the document carries no theme"
+	}
+	if value := head[meta[4]:meta[5]]; value != want {
+		return fmt.Sprintf("the document carries the theme %q, the configuration %q", value, want)
+	}
+	bundle, classic, classicSrc := -1, -1, ""
+	for _, m := range scriptTag.FindAllStringSubmatchIndex(head, -1) {
+		attrs := head[m[2]:m[3]]
+		src := srcAttr.FindStringSubmatch(attrs)
+		switch {
+		case strings.Contains(attrs, `type="module"`):
+			if bundle < 0 {
+				bundle = m[0]
+			}
+		case src == nil:
+			return "an inline script, which script-src 'self' refuses to run"
+		case strings.Contains(attrs, "async") || strings.Contains(attrs, "defer"):
+			return fmt.Sprintf("the script %s does not stop the parser, so the browser may paint before it runs", src[1])
+		case classic < 0:
+			classic, classicSrc = m[0], src[1]
+		}
+	}
+	switch {
+	case classic < 0:
+		return "nothing ahead of the bundle can apply it: the head loads no classic script"
+	case bundle >= 0 && classic > bundle:
+		return fmt.Sprintf("the script %s comes after the bundle", classicSrc)
+	case classic < meta[0]:
+		return fmt.Sprintf("the script %s comes before the value it would read", classicSrc)
+	}
+	policy := header.Get("Content-Security-Policy")
+	scriptSources := cspSources(policy, "script-src")
+	if len(scriptSources) != 1 || scriptSources[0] != "'self'" {
+		return fmt.Sprintf("script-src is %v, not 'self' alone", scriptSources)
+	}
+	host := mustHost(t, app.URL(""))
+	if !cspAllows(scriptSources, classicSrc, host) {
+		return fmt.Sprintf("script-src %v refuses %s", scriptSources, classicSrc)
+	}
+	target := classicSrc
+	if strings.HasPrefix(target, "/") {
+		target = app.URL(target)
+	}
+	script, scriptHeader := fetch(t, client, target)
+	if script.code != http.StatusOK || !strings.Contains(scriptHeader.Get("Content-Type"), "javascript") {
+		return fmt.Sprintf("%s answers %d %q, which the browser will not run under nosniff", classicSrc, script.code, scriptHeader.Get("Content-Type"))
+	}
+	return ""
+}
+
+// paletteKnobs finds, among the colour knobs, an accent, a surface and a
+// text colour for each theme, and lists what is missing.
+func paletteKnobs(colours []knob) (map[string]map[string]knob, []string) {
+	roles := map[string][]string{
+		"accent":  {"primary", "accent"},
+		"surface": {"surface", "background"},
+		"text":    {"text", "foreground"},
+	}
+	out := map[string]map[string]knob{}
+	var missing []string
+	for _, theme := range []string{"light", "dark"} {
+		out[theme] = map[string]knob{}
+		for role, fragments := range roles {
+			for _, k := range colours {
+				path := strings.ToLower(k.path)
+				if !strings.Contains(path, theme) {
+					continue
+				}
+				for _, fragment := range fragments {
+					if strings.Contains(path, fragment) {
+						out[theme][role] = k
+					}
+				}
+			}
+			if _, ok := out[theme][role]; !ok {
+				missing = append(missing, theme+" "+role)
+			}
+		}
+	}
+	sort.Strings(missing)
+	return out, missing
+}
+
+var (
+	styleBlock = regexp.MustCompile(`(?s)<style\b[^>]*>(.*?)</style>`)
+	cssRule    = regexp.MustCompile(`([^{}]+)\{([^{}]*)\}`)
+)
+
+// paletteOnDocument reads the custom properties the document's own <style>
+// elements set, by theme: a rule whose selector names .dark (and not
+// :not(.dark)) is the dark theme's, one on :root otherwise is the light
+// theme's. Values are the stylesheet's "H S% L%" triples, read as colours.
+func paletteOnDocument(doc string) map[string]map[string][3]float64 {
+	out := map[string]map[string][3]float64{"light": {}, "dark": {}}
+	for _, block := range styleBlock.FindAllStringSubmatch(headOf(doc), -1) {
+		for _, rule := range cssRule.FindAllStringSubmatch(block[1], -1) {
+			selector := strings.TrimSpace(rule[1])
+			theme := ""
+			switch {
+			case strings.Contains(selector, ".dark") && !strings.Contains(selector, ":not(.dark)"):
+				theme = "dark"
+			case strings.Contains(selector, ":root"):
+				theme = "light"
+			default:
+				continue
+			}
+			for _, decl := range strings.Split(rule[2], ";") {
+				name, value, ok := strings.Cut(decl, ":")
+				if !ok {
+					continue
+				}
+				if c, ok := hslTriple(strings.TrimSpace(value)); ok {
+					out[theme][strings.TrimSpace(name)] = c
+				}
+			}
+		}
+	}
+	return out
+}
+
+// hslTriple reads "H S% L%" into channels in [0, 1].
+func hslTriple(v string) ([3]float64, bool) {
+	parts := strings.Fields(v)
+	if len(parts) != 3 {
+		return [3]float64{}, false
+	}
+	var n [3]float64
+	for i, p := range parts {
+		f, err := strconv.ParseFloat(strings.TrimSuffix(p, "%"), 64)
+		if err != nil {
+			return [3]float64{}, false
+		}
+		n[i] = f
+	}
+	h, s, l := n[0], n[1]/100, n[2]/100
+	k := func(m float64) float64 { return math.Mod(m+h/30, 12) }
+	a := s * math.Min(l, 1-l)
+	f := func(m float64) float64 {
+		return l - a*math.Max(-1, math.Min(math.Min(k(m)-3, 9-k(m)), 1))
+	}
+	return [3]float64{f(0), f(8), f(4)}, true
+}
+
+func hexRGB(t *testing.T, hex string) [3]float64 {
+	t.Helper()
+	var out [3]float64
+	for i := 0; i < 3; i++ {
+		v, err := strconv.ParseUint(hex[1+2*i:3+2*i], 16, 8)
+		if err != nil {
+			t.Fatalf("parse %s: %v", hex, err)
+		}
+		out[i] = float64(v) / 255
+	}
+	return out
+}
+
+// sameColour allows the rounding a triple written to a tenth carries.
+func sameColour(a, b [3]float64) bool {
+	for i := range a {
+		if math.Abs(a[i]-b[i])*255 > 1.5 {
+			return false
+		}
+	}
+	return true
 }

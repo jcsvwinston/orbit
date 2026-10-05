@@ -52,8 +52,8 @@ relay.
 
 ## How the panel looks and reads
 
-The panel in your product's clothes: its logo, icon and colour, and the
-language its own words are in (see
+The panel in your product's clothes: its logo, icon and colours, the theme
+it opens in, and the language its own words are in (see
 [Features](./features.md#the-panel-in-your-products-clothes)). Every value is
 checked when the panel mounts, and one it cannot honour stops the application
 with a message naming the key.
@@ -62,7 +62,14 @@ with a message naming the key.
 |---|---|---|---|
 | `branding.logo_url` | string | — | The image in the sidebar, in place of the title (which becomes its alternative text), and on the login screen, above it. An absolute `http(s)` URL or a path your application already serves; the panel does not serve the file. Its origin is added to the `img-src` of the panel's Content-Security-Policy, so the browser loads it. A `javascript:` or `data:` URL, a protocol-relative one, or a host the policy cannot name (an IPv6 address, a wildcard) is refused. |
 | `branding.favicon_url` | string | — | The icon in the browser tab. Same rules as `branding.logo_url`. |
-| `branding.primary_color` | string | — | The accent colour as a CSS hex colour (`#0b5fff` or `#05f`): the buttons, the active navigation entry and the focus ring. The text drawn on it is chosen from its lightness. Anything else is refused. |
+| `branding.primary_color` | string | — | The accent colour as a CSS hex colour (`#0b5fff` or `#05f`): the buttons, the active navigation entry and the focus ring, in both themes. The text drawn on it is whichever of white or dark reads better on it. Anything else is refused. One that falls short of 3:1 against a theme's surface, or that no text reads on at 4.5:1, still starts — it was accepted before the palette was checked per theme — and the panel logs a warning naming the theme and the `branding.<theme>.primary_color` that fixes it. |
+| `branding.theme` | string | — | The theme the panel opens in before an operator has chosen one: `dark`, `light`, or `system` (the operator's system preference, read each time the panel opens). It decides the first frame: the document applies it before the panel's bundle runs, so nothing switches after the page appears. An operator who uses the panel's theme toggle keeps their choice over it, on every reload. Unset, the panel opens as it always has: in the operator's last theme, or else the browser's preference. Anything else is refused. |
+| `branding.light.primary_color` | string | `branding.primary_color` | The accent in the light theme only. Checked against that theme's surface: below 3:1, or with no text that reads on it at 4.5:1, the application does not start, and the message names the theme and the key. |
+| `branding.light.surface_color` | string | white | The ground the light theme draws on: the page, the cards and the menus. The light theme's text, the panel's secondary text and the accent must each keep their contrast on it (4.5:1, 4.5:1 and 3:1), or the application does not start. |
+| `branding.light.text_color` | string | the panel's ink | The text the light theme draws on its surface. Below 4.5:1 against it, the application does not start. |
+| `branding.dark.primary_color` | string | `branding.primary_color` | The accent in the dark theme only, with the same check against the dark surface. A dark brand colour that reads on white usually needs its own lighter shade here. |
+| `branding.dark.surface_color` | string | the panel's dark ground | The ground the dark theme draws on. Same checks as `branding.light.surface_color`, against the dark theme's colours. |
+| `branding.dark.text_color` | string | the panel's light ink | The text the dark theme draws on its surface. Below 4.5:1 against it, the application does not start. |
 | `locale` | string | English | The language the panel's own words open in (`es`, `pt-BR`), which also sets the document's `lang`. The panel ships English and Spanish; in another language, what `messages` does not translate reads in English. It never translates your data: model names, field labels and your errors stay as you wrote them. A value that is not a language tag is refused. |
 | `messages` | map[string]map[string]string | — | Phrases that add to or replace the panel's, by language tag and then key (`es: {nav.data_studio: Catálogo}`). They merge: yours win over the panel's translation, which wins over its English, and a phrase nobody translated reads in English rather than as its key. A language key that is not a language tag is refused. |
 

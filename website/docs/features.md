@@ -821,9 +821,9 @@ entry and the focus ring together.
 Three things the panel decides for you:
 
 - **The text drawn on your colour.** A brand colour is chosen to look like a
-  brand, not to contrast with white, so the panel computes the foreground from
-  its lightness. White on a pale yellow button is a contrast failure the panel
-  would otherwise have introduced on your behalf.
+  brand, not to contrast with white, so the panel draws whichever of white or
+  dark text reads better on it. White on a yellow button is a contrast
+  failure the panel would otherwise have introduced on your behalf.
 - **What a URL may be.** An absolute `http(s)` URL or a path your application
   already serves. A `javascript:` or `data:` URL would be script execution on
   every page of the panel, granted by a line of YAML, so it is refused at
@@ -834,6 +834,74 @@ Three things the panel decides for you:
   your application serves needs nothing, and must be reachable before sign-in:
   the login screen draws it. A host the policy cannot name — an IPv6 address,
   a wildcard — is refused at startup, since the browser would never load it.
+
+### The theme it opens in, and a palette for each
+
+```yaml
+modules:
+  orbit:
+    branding:
+      theme: dark              # dark, light or system
+      primary_color: "#1d4ed8"
+      dark:
+        primary_color: "#60a5fa"
+        surface_color: "#111827"
+        text_color: "#e5e7eb"
+```
+
+```go
+Branding: orbit.Branding{
+    Theme:        "dark",
+    PrimaryColor: "#1d4ed8",
+    Dark: orbit.Palette{
+        PrimaryColor: "#60a5fa",
+        SurfaceColor: "#111827",
+        TextColor:    "#e5e7eb",
+    },
+},
+```
+
+**The theme decides the first frame.** A control room whose screens open
+dark is a configuration, not a preference each operator rediscovers. The
+document carries the theme and loads, ahead of the panel's bundle, a small
+script from the panel's own origin that applies it before the browser has
+anything to paint — so the page never appears in one theme and switches to
+the other, and the Content-Security-Policy's `script-src` stays `'self'`.
+`system` follows the operator's system preference each time the panel opens.
+
+**The operator's choice wins.** The theme toggle records what the operator
+chose, and that choice wins over the configured theme on every reload. A
+theme kept by a panel from before this setting existed does not count as a
+choice: the panel used to store the browser's preference on every first
+visit, so it cannot tell one from the other, and honouring it would make the
+setting invisible to everyone who has opened the panel before. Leave
+`theme` unset and nothing changes: the panel opens in the operator's last
+theme, or else the browser's preference, as it always has.
+
+**Each theme has its own palette, checked against its own ground.** A dark
+navy accent reads on white and is close to invisible on the dark surface;
+one colour for both themes is how that happens. `light` and `dark` each take
+an accent, a surface and a text colour, and every one you set is checked
+when the panel mounts, against the colours that theme will actually draw
+with — yours where you set them, the panel's where you did not:
+
+| pair | needs |
+|---|---|
+| your text on your surface | 4.5:1 |
+| the panel's secondary text on your surface | 4.5:1 |
+| the accent against the surface | 3:1 |
+| the text the panel draws on the accent | 4.5:1 |
+
+A pair that falls short stops the application, and the message names the
+theme, the keys and the ratio. The one exception is `primary_color`: it was
+accepted on any hex colour before the palette was checked per theme, so a
+value that falls short in one theme still starts, and the panel logs a
+warning that names the theme and the per-theme key that fixes it.
+
+The palette is written into the document as the custom properties the
+panel's stylesheet already reads, one rule per theme, so the first frame is
+in your colours too. The values are numbers the panel computed from colours
+it parsed; nothing is copied into the stylesheet as typed.
 
 ### The overview's cards
 
