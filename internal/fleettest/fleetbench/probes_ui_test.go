@@ -215,11 +215,13 @@ func jobNames(lines []string, path string) bool {
 var (
 	// A navigation, not any path-looking string: page.route('/api/*') or a
 	// unit test's '/login' would otherwise count as a visit.
-	specGoto      = regexp.MustCompile(`\.goto\(\s*['"` + "`" + `](/[^'"` + "`" + `\s]*)['"` + "`" + `]`)
-	budgetJS      = regexp.MustCompile(`initialJSBudget\s*=\s*(\d+)\s*\*\s*1024`)
-	budgetCSS     = regexp.MustCompile(`initialCSSBudget\s*=\s*(\d+)\s*\*\s*1024`)
-	budgetJSUsed  = regexp.MustCompile(`>\s*initialJSBudget`)
-	budgetCSSUsed = regexp.MustCompile(`>\s*initialCSSBudget`)
+	specGoto = regexp.MustCompile(`\.goto\(\s*['"` + "`" + `](/[^'"` + "`" + `\s]*)['"` + "`" + `]`)
+	// The panel's budget (ui/embed_test.go): one constant, in gzip bytes,
+	// and the comparison that makes it a budget rather than a number.
+	compressedBudgetConst = regexp.MustCompile(`compressedBudget\s*=\s*(\d+)\s*\*\s*1024`)
+	compressedBudgetUsed  = regexp.MustCompile(`>\s*compressedBudget\b`)
+	// A chunk's static imports, as the bundler writes them.
+	chunkStaticImport = regexp.MustCompile(`(?:\bfrom|\bimport)\s*["']\./([^"'` + "`" + `]+)["']`)
 	// Any byte budget a test names: `fooBudget = 512 * 1024`, `budgetBytes = 400_000`.
 	anyBudget     = regexp.MustCompile(`(?i)budget\w*\s*=\s*\d[\d_]*(\s*\*\s*1024)?`)
 	indexAssetRef = regexp.MustCompile(`(?:src|href)="\.?/assets/([^"]+)"`)
@@ -426,17 +428,6 @@ func probeFleetBundleBudget(t *testing.T, e *env) verdict {
 	return absent
 }
 
-func budgetConstants(src string) (js, css int64, ok bool) {
-	mj := budgetJS.FindStringSubmatch(src)
-	mc := budgetCSS.FindStringSubmatch(src)
-	if mj == nil || mc == nil {
-		return 0, 0, false
-	}
-	j, _ := strconv.ParseInt(mj[1], 10, 64)
-	c, _ := strconv.ParseInt(mc[1], 10, 64)
-	return j * 1024, c * 1024, true
-}
-
 // UI-06: the fleet UI's generated stubs are connect-es 2 / protobuf-es 2:
 // the runtime dependencies AND the generators that emit the stubs. In the
 // second generation the services come out of bufbuild/es itself, so the
@@ -638,41 +629,61 @@ func probeFleetTenantNotion(t *testing.T, e *env) verdict {
 	return absent
 }
 
-// UI-10: the panel's initial load stays within its budget, and the budget
-// is a test constant the test COMPARES against — a constant nothing reads
-// is a number in a document with a Go extension.
+// UI-10: the panel's download stays within a compressed budget, and the
+// budget is a test constant the test COMPARES against — a constant nothing
+// reads is a number in a document with a Go extension. Since A12 O1 the
+// budget is one constant in gzip bytes over what an operator downloads to
+// open the panel and take its heaviest navigation (ui/embed_test.go, which
+// walks the whole graph); this probe re-measures the part it can read
+// without the bundler's preload map — the initial load, as the encodings
+// the build wrote — and holds it to the same constant.
 func probePanelBudgetEnforced(t *testing.T, e *env) verdict {
-	// The budget test moved with the dist to the ui module (ADR-015).
 	src := e.readFile(t, "ui/embed_test.go")
-	js, css, ok := budgetConstants(src)
-	if !ok {
-		t.Log("ui/embed_test.go names no initial JS/CSS budget for the panel entry")
+	m := compressedBudgetConst.FindStringSubmatch(src)
+	if m == nil {
+		t.Log("ui/embed_test.go names no compressedBudget constant")
 		return absent
 	}
-	if !budgetJSUsed.MatchString(src) || !budgetCSSUsed.MatchString(src) {
-		t.Logf("the budget constants exist but the test does not compare against both: js compared=%v css compared=%v", budgetJSUsed.MatchString(src), budgetCSSUsed.MatchString(src))
+	n, _ := strconv.ParseInt(m[1], 10, 64)
+	budget := n * 1024
+	if !compressedBudgetUsed.MatchString(src) {
+		t.Log("compressedBudget exists but the test does not compare against it")
 		return partial
 	}
-	index := e.readFile(t, "ui/dist/panel/index.html")
-	refs := indexAssetRef.FindAllStringSubmatch(index, -1)
-	if len(refs) == 0 {
+	const dist = "ui/dist/panel/"
+	index := e.readFile(t, dist+"index.html")
+	var queue []string
+	for _, ref := range indexAssetRef.FindAllStringSubmatch(index, -1) {
+		queue = append(queue, "assets/"+ref[1])
+	}
+	if len(queue) == 0 {
 		t.Fatal("the panel's index.html references no ./assets/*")
 	}
-	var sumJS, sumCSS int64
-	for _, m := range refs {
-		size := e.fileSize("ui/dist/panel/assets/" + m[1])
-		if size < 0 {
-			t.Fatalf("index.html references assets/%s, which is not in the dist", m[1])
+	seen := map[string]bool{}
+	var gz int64
+	for len(queue) > 0 {
+		name := queue[0]
+		queue = queue[1:]
+		if seen[name] {
+			continue
 		}
-		switch path.Ext(m[1]) {
-		case ".js":
-			sumJS += size
-		case ".css":
-			sumCSS += size
+		seen[name] = true
+		size := e.fileSize(dist + name + ".gz")
+		if size < 0 {
+			size = e.fileSize(dist + name)
+		}
+		if size < 0 {
+			t.Fatalf("the initial load names %s, which is not in the dist", name)
+		}
+		gz += size
+		if strings.HasSuffix(name, ".js") {
+			for _, imp := range chunkStaticImport.FindAllStringSubmatch(e.readFile(t, dist+name), -1) {
+				queue = append(queue, path.Join(path.Dir(name), imp[1]))
+			}
 		}
 	}
-	t.Logf("initial load: js=%d/%d css=%d/%d", sumJS, js, sumCSS, css)
-	if sumJS <= js && sumCSS <= css {
+	t.Logf("initial load: %d files, %d bytes gzip, budget %d (initial plus heaviest navigation, measured whole by ui/embed_test.go)", len(seen), gz, budget)
+	if gz <= budget {
 		return present
 	}
 	return partial

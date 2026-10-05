@@ -39,14 +39,16 @@ func browserCases() []browserCase {
 	return []browserCase{
 		{id: "UIF-00", title: "the instrument bites: a planted violation is caught", want: present},
 		{id: "UIF-01", title: "the overview loads and lists the connected agent", want: present},
-		{id: "UIF-02", title: "the fleet screens are legible: text meets contrast", want: absent,
-			note: "the overview carries small muted text below 4.5:1 in the light theme (the default): the tagline and a " +
-				"stat value on the --t5 cards among them. The sidebar's labels were raised to a passing token and the light " +
-				"--t27/--t32 tokens raised as --t26 once was (A9 S10), and the rest is the re-skin onto the shared tokens " +
-				"(OR-59), not another token nudged in isolation."},
+		// UIF-02 present since A12 O1 (OR-59): the light palette held to AA
+		// as a whole, not one token at a time (ui/tools/fleet-palette.test.ts).
+		{id: "UIF-02", title: "the fleet screens are legible: text meets contrast", want: present},
 		{id: "UIF-03", title: "every control says what it is: names, roles and labels", want: present},
 		{id: "UIF-04", title: "the document says what it is: language, landmarks, one main heading", want: present},
 		{id: "UIF-05", title: "the keyboard reaches the navigation, and the focus is visible", want: present},
+		// Added in A12 O1: the dark theme the palette fix covers too
+		// (OR-59), and the fleet's files travelling compressed (OR-61).
+		{id: "UIF-06", title: "the fleet screens are legible in the dark theme too", want: present},
+		{id: "UIF-07", title: "the fleet's scripts and stylesheets reach the browser compressed", want: present},
 	}
 }
 

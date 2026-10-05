@@ -16,6 +16,13 @@ import { readFileSync } from 'node:fs'
  */
 
 const USERNAME = process.env.ORBIT_BENCH_USER ?? 'admin'
+
+/** Data Studio's grid, by its role: AG Grid 36 says `grid`, the 32 line the
+ * panel drew before A12 O1 said `treegrid`. */
+const GRID = ':is([role="grid"], [role="treegrid"])'
+/** Its data rows: AG Grid marks each with the id the panel gives it
+ * (getRowId). */
+const GRID_ROWS = `${GRID} [row-id]`
 const PASSWORD = process.env.ORBIT_BENCH_PASSWORD ?? ''
 
 /** signIn goes through the panel's own login form, because that is how an
@@ -720,10 +727,14 @@ test.describe('UIX', () => {
     // The grid holds the two notes and nothing else — the search has
     // landed — and has stopped moving them: a row read mid-animation is
     // read at an opacity it does not keep.
-    await expect(page.locator('.ag-center-cols-container [row-id]'), 'UIX-12 precondition: the search did not narrow the grid to the two notes')
+    // Rows are read by the grid's role and the id the panel gives each row
+    // (getRowId), not by AG Grid's own container classes: those changed
+    // when A12 O1 moved the grid to AG Grid 36, and say nothing the control
+    // is about.
+    await expect(page.locator(GRID_ROWS), 'UIX-12 precondition: the search did not narrow the grid to the two notes')
       .toHaveCount(2, { timeout: 10_000 })
     await page.waitForFunction(() => document.getAnimations().length === 0, undefined, { timeout: 10_000 })
-    const cell = (id: string, column: string) => page.locator(`.ag-center-cols-container [row-id="${id}"] [col-id="${column}"]`)
+    const cell = (id: string, column: string) => page.locator(`${GRID} [row-id="${id}"] [col-id="${column}"]`)
     await expect(cell(drawnId, 'title'), 'UIX-12 precondition: the search did not bring the two notes to the grid').toHaveText(drawnTitle, { timeout: 10_000 })
     await expect(cell(brokenId, 'title'), 'UIX-12 precondition: the search did not bring the two notes to the grid').toHaveText(brokenTitle, { timeout: 10_000 })
 
@@ -742,7 +753,7 @@ test.describe('UIX', () => {
     await expect(cell(brokenId, 'title')).toHaveText(brokenTitle)
 
     // Both are legible, by the rule the panel's own screens are held to.
-    const gridViolations = (await new AxeBuilder({ page }).include('.ag-center-cols-container').withRules(['color-contrast']).analyze()).violations
+    const gridViolations = (await new AxeBuilder({ page }).include(GRID).withRules(['color-contrast']).analyze()).violations
       .map((v) => ({ id: v.id, nodes: v.nodes.slice(0, 3).map((n) => n.target.join(' ')) }))
     expect(gridViolations, `UIX-12: the grid: ${JSON.stringify(gridViolations, null, 2)}`).toEqual([])
 
@@ -767,14 +778,180 @@ test.describe('UIX', () => {
     // violation of the script or style policy and none naming its files, no
     // digest the browser rejected, no error the page did not catch. The
     // renderer's own failure is reported by the panel on purpose; nothing
-    // else is. (The panel's own grid trips font-src with the icon font its
-    // stylesheet carries as a data: URL — a defect of the panel's, not of
-    // the application's code, recorded in docs/admin-bench.md.)
+    // else is. (The grid's own icon font, refused by font-src until A12 O1,
+    // is UIX-14's to count.)
     const violations = (await page.evaluate(() => (window as unknown as { __violations: string[] }).__violations))
       .filter((v) => /^(script|style)-src/.test(v) || v.includes('/admin/client/'))
     expect(violations, `UIX-12: the policy refused something: ${JSON.stringify(violations)}`).toEqual([])
     const refused = consoleErrors.filter((m) => /integrity/i.test(m) || m.includes('/admin/client/') || /directive: "(script|style)-src/.test(m))
     expect(refused, `UIX-12: the browser refused the application's files: ${JSON.stringify(refused)}`).toEqual([])
     expect(pageErrors, `UIX-12: an error the page did not catch: ${JSON.stringify(pageErrors)}`).toEqual([])
+  })
+  /*
+   * UIX-13 is the browser half of OR-62 (A12 O1): an error the panel writes
+   * — a field's and the form's — is legible in both themes. UIX-09 reads
+   * the form an ACTION declares; this one reads the record form every model
+   * has, in the light theme and in the dark one, with its errors showing.
+   * The errors are the form's own (a document field that is not JSON), so
+   * what is read is the panel's drawing of them, not a server's message.
+   */
+  test('UIX-13 a form with its errors showing is legible, in the light theme and in the dark one', async ({ page }) => {
+    await signIn(page)
+    for (const theme of ['light', 'dark'] as const) {
+      // The operator's own choice, the way the toggle records it (UIX-10).
+      await page.evaluate((t) => {
+        localStorage.setItem('gf-theme', t)
+        localStorage.setItem('orbit-theme-choice', t)
+      }, theme)
+      await page.goto('/admin/data-studio')
+      await page.waitForLoadState('networkidle')
+      expect(
+        await page.evaluate(() => document.documentElement.classList.contains('dark')),
+        `UIX-13 precondition: the panel did not open in the ${theme} theme`,
+      ).toBe(theme === 'dark')
+
+      await page.getByRole('button', { name: /^Notes/ }).first().click({ timeout: 15_000 })
+      await page.getByRole('button', { name: /new record/i }).first().click({ timeout: 15_000 })
+      const dialog = page.getByRole('dialog').first()
+      await expect(dialog, 'UIX-13 precondition: the record form did not open').toBeVisible()
+      await dialog.locator('#field-title').fill(`uix-13 ${theme}`)
+      const meta = dialog.locator('#field-meta')
+      await expect(meta, 'UIX-13 precondition: the form has no document field to get wrong').toBeVisible()
+      await meta.fill('{ "not": json')
+      await dialog.getByRole('button', { name: 'Create', exact: true }).click()
+
+      await expect(meta, `UIX-13 precondition (${theme}): the field that is not JSON was not marked invalid`).toHaveAttribute('aria-invalid', 'true', { timeout: 5_000 })
+      await expect(dialog.locator('#field-meta-error'), `UIX-13 precondition (${theme}): the field shows no error`).toContainText('Invalid JSON')
+      await expect(dialog.getByRole('alert'), `UIX-13 precondition (${theme}): the form shows no alert`).toContainText('Fix the highlighted fields')
+
+      const violations = (await new AxeBuilder({ page }).include('[role="dialog"]').withRules(['color-contrast']).analyze()).violations
+        .map((v) => ({ id: v.id, nodes: v.nodes.slice(0, 4).map((n) => `${n.target.join(' ')} — ${n.any[0]?.message ?? ''}`) }))
+      expect(violations, `UIX-13: the form's errors in the ${theme} theme: ${JSON.stringify(violations, null, 2)}`).toEqual([])
+
+      await page.keyboard.press('Escape')
+      await expect(dialog).toBeHidden({ timeout: 5_000 })
+    }
+  })
+
+  /*
+   * UIX-14 is the browser half of OR-63 (A12 O1): Data Studio's grid draws
+   * its icons, and nothing it loads is refused by the panel's own policy.
+   * Until O1 the quartz stylesheet carried the grid's icon font as a data:
+   * URL, font-src 'self' refused it, document.fonts reported the face in
+   * error and every icon drawn in it was drawn in nothing — UIX-12 found it
+   * and could only exclude it. Every violation is recorded from before the
+   * document exists; an icon counts as drawn when an image paints it (a
+   * mask, the way the grid's quartz icons are drawn now) or a font the
+   * document LOADED does.
+   */
+  test("UIX-14 Data Studio's grid draws its icons, and the panel's own policy refuses nothing it loads", async ({ page }) => {
+    await page.addInitScript(() => {
+      const seen: string[] = []
+      ;(window as unknown as { __violations: string[] }).__violations = seen
+      document.addEventListener('securitypolicyviolation', (e) => seen.push(`${e.violatedDirective} ${e.blockedURI}`))
+    })
+    await signIn(page)
+    const created = await page.evaluate(async () => {
+      const r = await fetch('/admin/api/models/Note', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ title: `uix-14 ${Date.now()}`, status: 'draft' }),
+      })
+      return r.status
+    })
+    expect(created < 300, `UIX-14 precondition: creating a note answered ${created}`).toBe(true)
+
+    await page.goto('/admin/data-studio')
+    await page.waitForLoadState('networkidle')
+    await page.getByRole('button', { name: /^Notes/ }).first().click({ timeout: 15_000 })
+    await expect(page.locator(GRID_ROWS).first(), 'UIX-14 precondition: the grid drew no row').toBeVisible({ timeout: 10_000 })
+    // A sorted column draws its sort icon beside the header's name.
+    await page.getByRole('columnheader', { name: /^Title/ }).click()
+    await page.waitForLoadState('networkidle')
+
+    const icons = await page.evaluate(async (grid) => {
+      await document.fonts.ready
+      const loaded = new Set(Array.from(document.fonts).filter((f) => f.status === 'loaded').map((f) => f.family.replace(/["']/g, '')))
+      return Array.from(document.querySelectorAll(`${grid} .ag-icon`))
+        .filter((icon) => {
+          const box = icon.getBoundingClientRect()
+          return box.width > 0 && box.height > 0 && getComputedStyle(icon).visibility !== 'hidden'
+        })
+        .map((icon) => {
+          const own = getComputedStyle(icon)
+          const before = getComputedStyle(icon, '::before')
+          const mask = (style: CSSStyleDeclaration) => style.maskImage || style.getPropertyValue('-webkit-mask-image')
+          const image = [own, before].some((style) => /url\(/.test(mask(style) ?? '') || /url\(/.test(style.backgroundImage))
+          const glyph = before.content !== 'none' && before.content !== 'normal' && before.content !== '""'
+          const family = before.fontFamily.split(',')[0].trim().replace(/["']/g, '')
+          return { icon: icon.className, image, glyph, family, fontLoaded: loaded.has(family) }
+        })
+    }, GRID)
+    expect(icons.length, 'UIX-14 precondition: the grid shows no icon (the sort mark, the selection boxes)').toBeGreaterThan(0)
+    const undrawn = icons.filter((i) => !i.image && !(i.glyph && i.fontLoaded))
+    expect(undrawn, `UIX-14: icons the grid draws in nothing: ${JSON.stringify(undrawn, null, 2)}`).toEqual([])
+
+    const failedFonts = await page.evaluate(() => Array.from(document.fonts).filter((f) => f.status === 'error').map((f) => f.family))
+    expect(failedFonts, 'UIX-14: a font face the document could not load').toEqual([])
+    const violations = await page.evaluate(() => (window as unknown as { __violations: string[] }).__violations)
+    expect(violations.filter((v) => v.startsWith('font-src')), 'UIX-14: font-src refused a font').toEqual([])
+    expect(violations, `UIX-14: the panel's policy refused something on Data Studio: ${JSON.stringify(violations)}`).toEqual([])
+  })
+
+  /*
+   * UIX-15 is the browser half of OR-61 (A12 O1): the panel's own scripts
+   * and stylesheets reach the browser compressed ONCE, by the build — in
+   * Brotli when the browser accepts it, with their length, and saying the
+   * answer varies on what was asked. Compressed on the way out is not the
+   * same thing: an application on Nucleus's default middleware already
+   * gzipped the panel per request (this bench's does), streamed without a
+   * length and never in Brotli, while a panel mounted on any other router,
+   * and the admin server, sent the bytes as they were. A file too small to
+   * be worth an encoding (under 1 KiB) travels as it is.
+   */
+  test("UIX-15 the panel's own scripts and stylesheets reach the browser compressed once, by the build", async ({ page }) => {
+    const fetched: { path: string; encoding: string; vary: string; length: number; size: number; asked: string }[] = []
+    page.on('response', async (res) => {
+      const url = new URL(res.url())
+      if (!/\/admin\/assets\/[^/]+\.(js|css)$/.test(url.pathname)) return
+      const headers = await res.allHeaders()
+      const asked = (await res.request().allHeaders())['accept-encoding'] ?? ''
+      fetched.push({
+        path: url.pathname,
+        encoding: headers['content-encoding'] ?? '',
+        vary: headers['vary'] ?? '',
+        length: Number(headers['content-length'] ?? -1),
+        // The file's own size, decoded: what decides whether the build
+        // encoded it (1 KiB or more).
+        size: (await res.body().catch(() => Buffer.alloc(0))).length,
+        asked,
+      })
+    })
+    await signIn(page)
+    await page.goto('/admin/data-studio')
+    await page.waitForLoadState('networkidle')
+    await page.getByRole('button', { name: /^Notes/ }).first().click({ timeout: 15_000 })
+    await page.waitForLoadState('networkidle')
+
+    expect(fetched.length, 'UIX-15 precondition: the browser fetched none of the panel\'s files').toBeGreaterThan(3)
+    expect(fetched.some((f) => /\/DataStudioPage-[^/]+\.js$/.test(f.path)), `UIX-15 precondition: Data Studio's chunk was not fetched: ${JSON.stringify(fetched.map((f) => f.path))}`).toBe(true)
+    // What was negotiated, for the report: the instrument's browser decides.
+    test.info().annotations.push({ type: 'encodings', description: [...new Set(fetched.map((f) => f.encoding || 'identity'))].sort().join(', ') })
+    const built = fetched.filter((f) => f.size >= 1024)
+    expect(built.length, 'UIX-15 precondition: no file the browser fetched measured 1 KiB or more').toBeGreaterThan(3)
+    const plain = built.filter((f) => f.encoding === '')
+    expect(plain, `UIX-15: files of 1 KiB or more that travelled uncompressed: ${JSON.stringify(plain, null, 2)}`).toEqual([])
+    const unasked = fetched.filter((f) => f.encoding !== '' && !f.asked.includes(f.encoding))
+    expect(unasked, `UIX-15: an encoding the browser did not ask for: ${JSON.stringify(unasked, null, 2)}`).toEqual([])
+    const unvaried = fetched.filter((f) => f.encoding !== '' && !/accept-encoding/i.test(f.vary))
+    expect(unvaried, `UIX-15: an encoded answer that does not say it varies: ${JSON.stringify(unvaried, null, 2)}`).toEqual([])
+    // Compressed by the build, not on the way out: Brotli to a browser that
+    // accepts it, and an encoded answer whose length is known before it is
+    // sent (a per-request compressor streams it without one).
+    const notBrotli = built.filter((f) => /\bbr\b/.test(f.asked) && f.encoding !== 'br')
+    expect(notBrotli, `UIX-15: the browser accepts Brotli and was sent another encoding: ${JSON.stringify(notBrotli, null, 2)}`).toEqual([])
+    const streamed = built.filter((f) => f.encoding !== '' && !(f.length > 0))
+    expect(streamed, `UIX-15: encoded answers without a length, compressed as they were sent: ${JSON.stringify(streamed, null, 2)}`).toEqual([])
   })
 })

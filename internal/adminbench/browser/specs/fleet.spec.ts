@@ -101,4 +101,63 @@ test.describe('UIF', () => {
     })
     expect(visible, 'the focused navigation item has no visible focus').toBe(true)
   })
+  /**
+   * UIF-06 the same screens in the dark theme. UIF-02 reads the theme the
+   * fleet opens in (light); the palette is held to AA as a whole in both
+   * (OR-59, ui/tools/fleet-palette.test.ts), and this reads the dark one off
+   * the screens.
+   */
+  test('UIF-06 the fleet screens are legible in the dark theme too', async ({ page }) => {
+    await page.goto('/')
+    await page.evaluate(() => window.localStorage.setItem('orbit.theme', 'dark'))
+    for (const path of ['/', '/#/nodes', '/#/data-studio', '/#/audit']) {
+      await page.goto(path)
+      await expect(page.locator('#root')).not.toBeEmpty()
+      await expect(page.locator('html'), 'UIF-06 precondition: the fleet did not open in the dark theme').toHaveAttribute('data-theme', 'dark')
+      const violations = await axeViolations(page, ['color-contrast'])
+      expect(violations, `${path}: ${JSON.stringify(violations)}`).toEqual([])
+    }
+  })
+
+  /**
+   * UIF-07 the fleet's scripts and stylesheets reach the browser compressed
+   * (OR-61): an encoding the browser asked for, an answer that says it
+   * varies, and nothing of 1 KiB or more as it is.
+   */
+  test("UIF-07 the fleet's scripts and stylesheets reach the browser compressed", async ({ page }) => {
+    const fetched: { path: string; encoding: string; vary: string; length: number; size: number; asked: string }[] = []
+    page.on('response', async (res) => {
+      const url = new URL(res.url())
+      if (!/\/assets\/[^/]+\.(js|css)$/.test(url.pathname)) return
+      const headers = await res.allHeaders()
+      fetched.push({
+        path: url.pathname,
+        encoding: headers['content-encoding'] ?? '',
+        vary: headers['vary'] ?? '',
+        length: Number(headers['content-length'] ?? -1),
+        size: (await res.body().catch(() => Buffer.alloc(0))).length,
+        asked: (await res.request().allHeaders())['accept-encoding'] ?? '',
+      })
+    })
+    await page.goto('/')
+    await expect(page.locator('#root')).not.toBeEmpty()
+    // The overview streams for as long as it is open, so the network never
+    // goes idle: wait for the document's own script and stylesheet instead.
+    await expect
+      .poll(() => fetched.map((f) => f.path.split('.').pop()).sort().join(','), {
+        message: "UIF-07 precondition: the browser fetched the fleet's script and stylesheet",
+      })
+      .toBe('css,js')
+    // What was negotiated, for the report: the instrument's browser decides.
+    test.info().annotations.push({ type: 'encodings', description: [...new Set(fetched.map((f) => f.encoding || 'identity'))].sort().join(', ') })
+    const built = fetched.filter((f) => f.size >= 1024)
+    expect(built.length, 'UIF-07 precondition: no file the browser fetched measured 1 KiB or more').toBeGreaterThan(1)
+    const plain = built.filter((f) => f.encoding === '')
+    expect(plain, `UIF-07: files of 1 KiB or more that travelled uncompressed: ${JSON.stringify(plain)}`).toEqual([])
+    const wrong = fetched.filter((f) => f.encoding !== '' && (!f.asked.includes(f.encoding) || !/accept-encoding/i.test(f.vary)))
+    expect(wrong, `UIF-07: an encoding not asked for, or an answer that does not vary: ${JSON.stringify(wrong)}`).toEqual([])
+    // Compressed by the build: Brotli to a browser that accepts it, with a length.
+    const once = built.filter((f) => (/\bbr\b/.test(f.asked) && f.encoding !== 'br') || !(f.length > 0))
+    expect(once, `UIF-07: not the build's encoding (Brotli when accepted, with a length): ${JSON.stringify(once)}`).toEqual([])
+  })
 })

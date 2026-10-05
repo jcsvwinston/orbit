@@ -121,7 +121,7 @@ export default function HealthPage() {
                     <div>
                       <p className="font-medium">{check.name}</p>
                       {check.error && (
-                        <p className="text-sm text-destructive">{check.error}</p>
+                        <p className="text-sm text-destructive-text">{check.error}</p>
                       )}
                     </div>
                   </div>

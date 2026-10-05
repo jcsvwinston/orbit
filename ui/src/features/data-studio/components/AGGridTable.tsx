@@ -2,8 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AgGridReact } from 'ag-grid-react'
 import type { ColDef, GridApi, GridReadyEvent, RowSelectionOptions, SortChangedEvent, ICellRendererParams, GetRowIdParams, PostSortRowsParams } from 'ag-grid-community'
-import 'ag-grid-community/styles/ag-grid.css'
-import 'ag-grid-community/styles/ag-theme-quartz.css'
+import { gridThemeDark, gridThemeLight } from '../lib/grid'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -223,7 +222,7 @@ export default function AGGridTable({ modelName, schema, dbAlias, focusRecord, o
                 type="button"
                 onClick={() => id !== null && setDeleteId(id)}
                 disabled={id === null}
-                className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive disabled:opacity-40"
+                className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive-text disabled:opacity-40"
                 title="Delete"
                 aria-label={`Delete record ${id ?? ''}`}
               >
@@ -659,7 +658,7 @@ export default function AGGridTable({ modelName, schema, dbAlias, focusRecord, o
               <button
                 type="button"
                 onClick={() => void removeView(view)}
-                className="ml-1 text-muted-foreground hover:text-destructive"
+                className="ml-1 text-muted-foreground hover:text-destructive-text"
                 aria-label={`Remove the view ${view.name}`}
               >
                 <X className="h-3 w-3" />
@@ -793,8 +792,9 @@ export default function AGGridTable({ modelName, schema, dbAlias, focusRecord, o
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-label="Loading" />
           </div>
         ) : (
-          <div className={theme === 'dark' ? 'ag-theme-quartz-dark' : 'ag-theme-quartz'} style={{ height: '100%', width: '100%' }}>
+          <div style={{ height: '100%', width: '100%' }}>
             <AgGridReact
+              theme={theme === 'dark' ? gridThemeDark : gridThemeLight}
               columnDefs={columnDefs}
               rowData={rows}
               getRowId={getRowId}
@@ -804,8 +804,6 @@ export default function AGGridTable({ modelName, schema, dbAlias, focusRecord, o
               postSortRows={postSortRows}
               onSelectionChanged={(e) => setSelectedCount(e.api.getSelectedRows().length)}
               autoSizeStrategy={{ type: 'fitGridWidth' }}
-              pagination={false}
-              suppressPaginationPanel={true}
               domLayout="autoHeight"
               loading={loading}
             />

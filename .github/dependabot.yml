@@ -119,10 +119,12 @@ updates:
   # It moves by hand when typescript-eslint widens its range.
   # Majors that are MIGRATIONS, not bumps, stay out of the groups and move
   # by hand in their own arc (suite plan, arcs A6/A9): Tailwind 4 moves the
-  # PostCSS plugin to @tailwindcss/postcss, AG Grid 33+ replaces the CSS
-  # themes with the Theming API, Recharts 3 and tailwind-merge 3 change
-  # their APIs, lucide 1.x renames icons. Grouped, they made the build fail
-  # and blocked every patch behind them (#406).
+  # PostCSS plugin to @tailwindcss/postcss, AG Grid 33+ replaced the CSS
+  # themes with the Theming API and its features with modules to register
+  # (the panel moved from 32 to 36 by hand in A12 O1, and the next majors
+  # move the same way), Recharts 3 and tailwind-merge 3 change their APIs,
+  # lucide 1.x renames icons. Grouped, they made the build fail and blocked
+  # every patch behind them (#406).
   # ui/ is the one frontend project since ADR-015 (the panel and the fleet
   # plane): the majors below are migrations, not bumps, on either entry.
   - package-ecosystem: npm

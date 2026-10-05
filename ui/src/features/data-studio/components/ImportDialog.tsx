@@ -127,7 +127,7 @@ export default function ImportDialog({ open, onClose, modelName, onImported }: P
                 </span>
               </div>
               {validation.errors.length > 0 && (
-                <ul className="max-h-40 overflow-y-auto space-y-1 text-xs font-mono text-destructive">
+                <ul className="max-h-40 overflow-y-auto space-y-1 text-xs font-mono text-destructive-text">
                   {validation.errors.slice(0, 50).map((e, i) => (
                     <li key={`${e.row}-${e.field ?? ''}-${i}`}>
                       row {e.row}{e.field ? ` · ${e.field}` : ''}: {e.message}
@@ -142,7 +142,7 @@ export default function ImportDialog({ open, onClose, modelName, onImported }: P
           )}
 
           {error && (
-            <div role="alert" className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-sm text-destructive">
+            <div role="alert" className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-sm text-destructive-text">
               {error}
             </div>
           )}
