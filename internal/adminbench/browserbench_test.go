@@ -64,9 +64,10 @@ func browserCases() []browserCase {
 		// The browser half of the extension family (A11), recorded at the
 		// arc's baseline. UIX-07 closed in O1.
 		{id: "UIX-07", title: "the login screen draws the logo the application declared", want: present},
-		{id: "UIX-08", title: "the record view offers the action the application declared", want: absent,
-			note:      "the grid offers an application action over a selection (DS-09); the record view's dialog has no button for it (EXT-02 is the contract half)",
-			failsWith: "UIX-08: the record view offers no action"},
+		// The drawing half of EXT-02 and EXT-03 (A11 O4): the record view
+		// and the row's menu offer the record's actions, the redirect is
+		// followed through the router and the file is saved.
+		{id: "UIX-08", title: "an action on one record is offered where the record is, and its page and its file arrive", want: present},
 		// The browser half of EXT-01 (A11 O3): the form an action declared,
 		// the server's refusal on the field it names, then the result.
 		{id: "UIX-09", title: "an action that asks first draws its form and shows the refusal on the field", want: present},

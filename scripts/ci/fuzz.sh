@@ -56,6 +56,7 @@ TARGETS=$(
 .	./internal/admin	FuzzDataStudioQuery
 .	./internal/admin	FuzzRecordIDBoundary
 .	./internal/admin	FuzzImportValidation
+.	./internal/admin	FuzzPanelRedirect
 quarkdatasource	.	FuzzEscapeLike
 server	./routing	FuzzEventFilterMatches
 datasource	./nucleus	FuzzStoreParseID

@@ -64,8 +64,17 @@ type ModelAction struct {
 	// AllowEmptySelection lets the action run with no rows selected, for
 	// the ones whose subject is the table and not a selection ("rebuild the
 	// index"). The zero value requires a selection, which is what a button
-	// on a grid means.
+	// on a grid means. An action offered only on a record always has one,
+	// so declaring both refuses to start.
 	AllowEmptySelection bool
+	// Placement is where the panel offers the action: on the grid's
+	// selection (ActionOnSelection, the zero value and what every action
+	// did before it could say), on one record — its record view and its
+	// row's menu — (ActionOnRecord), or on both
+	// (ActionOnSelectionAndRecord). It is enforced, not only drawn: an
+	// action offered only on a record is refused at the bulk endpoint, and
+	// one offered only on a selection at the record endpoint.
+	Placement ActionPlacement
 	// Fields are the inputs the action asks for before it runs — the
 	// reason for a refund, the date to publish on. The UI draws them as a
 	// form in place of the plain confirmation; the panel checks what comes
@@ -103,18 +112,40 @@ type ActionRequest struct {
 
 // ActionResult is what an action reports back. Everything in it is
 // optional: an action that only needs to say "done" returns the zero value.
+//
+// An action answers in one of three ways. With neither Redirect nor
+// Download it answers with a message, as every action did before it could
+// do anything else. With Redirect it takes the operator to a page of the
+// panel; with Download it hands them a file. It may not set both: the
+// panel refuses that answer, and the operator is told the action ran and
+// its answer could not be sent.
 type ActionResult struct {
-	// Message is shown to the operator ("3 posts published").
+	// Message is shown to the operator ("3 posts published"). It is shown
+	// with a message and with a redirect; a download's answer is the file.
 	Message string
 	// Affected is how many rows the action changed, for the audit entry and
 	// the toast. It is the action's own count, not the size of the
 	// selection.
 	Affected int
-	// Data carries anything else the UI should get (a URL to follow, a
-	// summary). It is echoed in the response and NOT audited: an action
+	// Data carries anything else the UI should get (a summary). It is
+	// echoed in a message or redirect answer and NOT audited: an action
 	// decides what it returns to the screen, the trail keeps the fact that
 	// it ran.
 	Data map[string]any
+	// Redirect is a page of the panel to take the operator to after the
+	// action ran: "/data-studio?model=Invoice&record=42", or
+	// "/x/reports/batch/7" for a screen of the application's own. It is a
+	// path relative to the panel's root, never a URL: an absolute URL, a
+	// scheme, a host, a "//" start, a backslash, a control character or a
+	// "." or ".." segment is refused when the action answers, because a
+	// redirect an operator's input can steer is how a panel becomes an
+	// open redirect.
+	Redirect string
+	// Download is a file the action produced, sent to the operator as an
+	// attachment. The panel sends the bytes the action hands it and
+	// nothing else: it never opens a path, so there is no file it can be
+	// told to read.
+	Download *ActionDownload
 }
 
 // reservedActionNames are the verbs the panel owns. An application action
@@ -165,11 +196,17 @@ func validateModelActions(actions []ModelAction, modelExists func(string) (strin
 		if _, dup := table[key]; dup {
 			return nil, fmt.Errorf("actions[%d]: %s already declares an action named %q", i, canonical, name)
 		}
-		fields, err := validateActionFields(fmt.Sprintf("actions[%d] (%s.%s)", i, canonical, name), action.Fields)
+		where := fmt.Sprintf("actions[%d] (%s.%s)", i, canonical, name)
+		fields, err := validateActionFields(where, action.Fields)
 		if err != nil {
 			return nil, err
 		}
 		action.Fields = fields
+		placement, err := validateActionPlacement(where, action)
+		if err != nil {
+			return nil, err
+		}
+		action.Placement = placement
 		action.Name = name
 		action.Model = canonical
 		if strings.TrimSpace(action.Label) == "" {
@@ -210,6 +247,10 @@ type actionDescriptor struct {
 	// Fields are the inputs to ask for first; absent when there are none,
 	// which is the UI's cue to keep the plain confirmation.
 	Fields []actionFieldDescriptor `json:"fields,omitempty"`
+	// Placement is where a UI offers the button: "selection",
+	// "record" or "selection_and_record". Always present, so a UI never
+	// has to guess what a missing value meant.
+	Placement ActionPlacement `json:"placement"`
 }
 
 // actionDescriptorsFor lists the actions of a model that this operator may
@@ -232,6 +273,7 @@ func (p *Panel) actionDescriptorsFor(r *http.Request, mi datasource.ModelInfo) [
 			Confirm: action.Confirm, Destructive: action.Destructive,
 			RequiresSelection: !action.AllowEmptySelection,
 			Fields:            actionFieldDescriptors(action.Fields),
+			Placement:         action.Placement,
 		})
 	}
 	if len(out) == 0 {
@@ -245,11 +287,37 @@ func (p *Panel) actionDescriptorsFor(r *http.Request, mi datasource.ModelInfo) [
 // neither delete nor export is either a declared action or, as before, a
 // bad request.
 func (p *Panel) runModelAction(c *router.Context, mi datasource.ModelInfo, verb string, ids []string, rawInput json.RawMessage, databaseAlias string) error {
-	r := c.Request
 	action, ok := p.modelActions[actionKey{model: mi.Name, name: verb}]
 	if !ok {
 		return gferrors.BadRequest("unknown action: " + verb)
 	}
+	return p.performModelAction(c, mi, actionCall{
+		action: action, from: ActionOnSelection,
+		ids: ids, rawInput: rawInput, database: databaseAlias,
+	})
+}
+
+// actionCall is one invocation of a declared action, from either place the
+// panel offers it: the grid's selection (the bulk endpoint) or one record
+// (the record endpoint). Both run through performModelAction, so the
+// authorization, the confinement, the input check and the audit entry are
+// the same code and cannot drift apart.
+type actionCall struct {
+	action ModelAction
+	// from is where the call came from: ActionOnSelection or
+	// ActionOnRecord, never both.
+	from     ActionPlacement
+	ids      []string
+	rawInput json.RawMessage
+	database string
+}
+
+// performModelAction authorizes, confines, runs and audits one call of a
+// declared action, and sends its answer.
+func (p *Panel) performModelAction(c *router.Context, mi datasource.ModelInfo, call actionCall) error {
+	r := c.Request
+	action, ids := call.action, call.ids
+	onRecord := call.from == ActionOnRecord
 
 	// The verb IS the permission: a policy that grants publish on
 	// admin:Post is what lets this run, and an #own grant confines it the
@@ -257,6 +325,13 @@ func (p *Panel) runModelAction(c *router.Context, mi datasource.ModelInfo, verb 
 	rowScope, err := p.authorizeRecordAction(c, mi, action.Name)
 	if err != nil {
 		return err
+	}
+	// Where an action is offered is part of its declaration, and the
+	// server holds it to it: an action written for one record is not
+	// handed a selection of fifty, and one written for a selection is not
+	// reachable from a record it was never offered on.
+	if !action.Placement.offers(call.from) {
+		return actionPlacementRefusal(mi, action, call.from)
 	}
 	if action.Destructive && mi.ReadOnly {
 		return gferrors.Forbidden("model is read-only")
@@ -267,7 +342,7 @@ func (p *Panel) runModelAction(c *router.Context, mi datasource.ModelInfo, verb 
 	// What the operator entered is checked before a row is read, and a
 	// value the declaration refuses never reaches Run: the form is a
 	// rendering of this check, not a substitute for it.
-	input, err := parseActionInput(action, rawInput)
+	input, err := parseActionInput(action, call.rawInput)
 	if err != nil {
 		return err
 	}
@@ -284,24 +359,37 @@ func (p *Panel) runModelAction(c *router.Context, mi datasource.ModelInfo, verb 
 	scope := p.requestTenantScope(r, mi)
 	allowed := make([]string, 0, len(ids))
 	failures := make([]actionError, 0)
+	var refusal error
 	if len(ids) > 0 {
-		st, err := p.src.Store(mi.Name, databaseAlias)
+		st, err := p.src.Store(mi.Name, call.database)
 		if err != nil {
 			return err
 		}
 		for _, id := range ids {
-			if scope.Enforced() {
+			// A record action is about a row that exists: it is read
+			// whatever the scope, so a missing id is the 404 the record
+			// view would get and not a call over a row that is not there.
+			if scope.Enforced() || onRecord {
 				if _, err := scopedRecord(r.Context(), st, mi, id, scope); err != nil {
 					failures = append(failures, actionError{ID: id, Error: err.Error()})
+					refusal = err
 					continue
 				}
 			}
 			if err := scopedOwnedRecord(r.Context(), st, mi, id, rowScope); err != nil {
 				failures = append(failures, actionError{ID: id, Error: err.Error()})
+				refusal = err
 				continue
 			}
 			allowed = append(allowed, id)
 		}
+	}
+
+	// The audit entry of a record action names the record, so the row's
+	// own history (DS-16) shows what was done to it and by whom.
+	recordID := ""
+	if onRecord && len(ids) == 1 {
+		recordID = ids[0]
 	}
 
 	// A selection that was entirely refused does not reach Run: an action
@@ -312,10 +400,18 @@ func (p *Panel) runModelAction(c *router.Context, mi datasource.ModelInfo, verb 
 		p.recordAuditEntry(r, AuditEntry{
 			Action:    actionAuditVerb(action.Name),
 			ModelName: mi.Name,
+			RecordID:  recordID,
 			NewValue: map[string]any{
 				"requested": len(ids), "affected": 0, "failed": len(failures), "ran": false,
+				"on": string(call.from),
 			},
 		})
+		// One record is one answer: the record the operator may not reach
+		// is the 404 the record view would give them, not a 200 that says
+		// nothing ran.
+		if onRecord && refusal != nil {
+			return refusal
+		}
 		return c.JSON(http.StatusOK, map[string]any{
 			"action": action.Name, "ran": false,
 			"requested": len(ids), "affected": 0, "failed": len(failures), "errors": failures,
@@ -332,9 +428,18 @@ func (p *Panel) runModelAction(c *router.Context, mi datasource.ModelInfo, verb 
 		IDs:      allowed,
 		Actor:    p.auditActor(r),
 		Tenant:   tenant,
-		Database: databaseAlias,
+		Database: call.database,
 		Input:    input,
 	})
+
+	// What the action answered is checked before anything is sent: a
+	// redirect out of the panel or a download the panel will not send is
+	// refused here, and the entry below says so.
+	var answer actionAnswer
+	var answerErr error
+	if runErr == nil {
+		answer, answerErr = prepareActionAnswer(result)
+	}
 
 	// The trail records the attempt either way. An action that failed
 	// halfway still touched rows, so "it errored" is not the same as "it
@@ -345,18 +450,29 @@ func (p *Panel) runModelAction(c *router.Context, mi datasource.ModelInfo, verb 
 		"failed":    len(failures),
 		"ids":       allowed,
 		"ran":       true,
+		"on":        string(call.from),
 	}
 	// What the operator entered is part of what happened: "refunded,
 	// because the parcel never arrived" is the entry an auditor reads.
 	if entered := auditableInput(input); entered != nil {
 		recorded["input"] = entered
 	}
-	if runErr != nil {
+	if runErr == nil {
+		// Which kind of answer the action gave — a message, a page of the
+		// panel, a file — and what it named, so "who downloaded the
+		// export of these invoices" has an answer.
+		answer.audit(recorded)
+	}
+	switch {
+	case runErr != nil:
 		recorded["error"] = runErr.Error()
+	case answerErr != nil:
+		recorded["error"] = answerErr.Error()
 	}
 	p.recordAuditEntry(r, AuditEntry{
 		Action:    actionAuditVerb(action.Name),
 		ModelName: mi.Name,
+		RecordID:  recordID,
 		NewValue:  recorded,
 	})
 
@@ -370,13 +486,31 @@ func (p *Panel) runModelAction(c *router.Context, mi datasource.ModelInfo, verb 
 			StatusCode: http.StatusBadRequest,
 		}
 	}
+	if answerErr != nil {
+		// The action ran — its rows are changed — and what it answered
+		// is not something the panel will send. That is the
+		// application's mistake, not the operator's, and the message says
+		// both halves so nobody runs it twice thinking it did nothing.
+		return &gferrors.DomainError{
+			Code:       "ACTION_ANSWER_REFUSED",
+			Message:    fmt.Sprintf("%s ran, and its answer was refused: %v", action.Label, answerErr),
+			StatusCode: http.StatusInternalServerError,
+		}
+	}
+	if answer.download != nil {
+		return answer.download.write(c.Writer)
+	}
 	payload := map[string]any{
 		"action": action.Name, "ran": true,
 		"requested": len(ids), "affected": result.Affected,
 		"failed": len(failures), "errors": failures,
+		"result": answer.kind,
 	}
 	if result.Message != "" {
 		payload["message"] = result.Message
+	}
+	if answer.redirect != "" {
+		payload["redirect"] = answer.redirect
 	}
 	if len(result.Data) > 0 {
 		payload["data"] = result.Data

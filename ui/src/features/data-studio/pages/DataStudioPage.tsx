@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ErrorState } from '@/components/ui/error-state'
@@ -20,11 +21,17 @@ export default function DataStudioPage() {
   const [modelsError, setModelsError] = useState<unknown>(null)
   const [modelsReloadKey, setModelsReloadKey] = useState(0)
 
-  const [selectedModel, setSelectedModel] = useState<string | null>(null)
+  // What the screen shows lives in its URL — the model, the database and
+  // the record whose view is open — so a link can name it: an action's
+  // redirect to "/data-studio?model=Invoice&record=42" lands on that
+  // record, and the browser's back button returns to the model before.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const selectedModel = searchParams.get('model')
+  const dbAlias = searchParams.get('db') ?? undefined
+  const focusRecord = searchParams.get('record')
   const [schema, setSchema] = useState<ModelSchema | null>(null)
   const [loadingSchema, setLoadingSchema] = useState(false)
   const [schemaError, setSchemaError] = useState<unknown>(null)
-  const [dbAlias, setDbAlias] = useState<string | undefined>(undefined)
   const [fieldConfigOpen, setFieldConfigOpen] = useState(false)
 
   // Load models on mount
@@ -86,9 +93,27 @@ export default function DataStudioPage() {
   }, [selectedModel, models, runtime])
 
   const handleSelectModel = (name: string, alias?: string) => {
-    setSelectedModel(name)
-    setDbAlias(alias)
+    setSearchParams(alias ? { model: name, db: alias } : { model: name })
   }
+
+  const setDbAlias = (alias: string) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      next.set('db', alias)
+      next.delete('record')
+      return next
+    })
+  }
+
+  // The record view a link opened has closed: the URL stops naming it,
+  // without a history entry of its own.
+  const clearFocusRecord = useCallback(() => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      next.delete('record')
+      return next
+    }, { replace: true })
+  }, [setSearchParams])
 
   const handleFieldConfigSaved = () => {
     toast({ title: 'Field configuration updated' })
@@ -227,6 +252,8 @@ export default function DataStudioPage() {
                 modelName={selectedModel}
                 schema={schema}
                 dbAlias={dbAlias}
+                focusRecord={focusRecord}
+                onFocusDone={clearFocusRecord}
               />
 
               {/* Field Configuration Dialog */}

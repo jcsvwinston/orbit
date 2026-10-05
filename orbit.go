@@ -186,8 +186,9 @@ type Config struct {
 
 	// Actions are the verbs this application defines for its own models —
 	// "publish these three drafts", "retry these payments" — which the
-	// panel draws on the model's grid and runs under the same
-	// authorization, tenant and row confinement as its own bulk verbs.
+	// panel draws on the model's grid, on one record's view, or both (see
+	// ActionPlacement), and runs under the same authorization, tenant and
+	// row confinement as its own bulk verbs.
 	// Nothing here can be discovered: the panel cannot know that a column
 	// called status makes "publish" meaningful, so the application names
 	// the verb and supplies the function. Go-only wiring; not bindable
@@ -278,7 +279,10 @@ type ActionRequest = admin.ActionRequest
 
 // ActionResult is what a ModelAction reports back — a message for the
 // operator, how many rows it changed, and anything else the screen should
-// get. Every field is optional.
+// get. Every field is optional. Besides a message, an action can answer
+// with a page of the panel to go to (Redirect, a path relative to the
+// panel; anything else is refused when it answers) or a file to download
+// (Download).
 type ActionResult = admin.ActionResult
 
 // ActionField is one input a ModelAction asks for before it runs (EXT-01): a
@@ -310,6 +314,27 @@ const (
 	ActionFieldSelect  = admin.ActionFieldSelect
 	ActionFieldDate    = admin.ActionFieldDate
 )
+
+// ActionPlacement says where the panel offers a ModelAction (EXT-02): over
+// the grid's selection, on one record — its record view and its row's menu
+// — or both. The zero value is the selection, where every action was
+// offered before it could say. The placement is enforced by the server,
+// not only drawn: an action offered only on a record receives exactly that
+// record's id.
+type ActionPlacement = admin.ActionPlacement
+
+// The places a ModelAction can be offered.
+const (
+	ActionOnSelection          = admin.ActionOnSelection
+	ActionOnRecord             = admin.ActionOnRecord
+	ActionOnSelectionAndRecord = admin.ActionOnSelectionAndRecord
+)
+
+// ActionDownload is a file a ModelAction answers with (EXT-03): a name, a
+// declared media type and the bytes the action produced. The panel sends it
+// as an attachment, refuses one over its size ceiling rather than sending it
+// truncated, and never opens a path on the action's behalf.
+type ActionDownload = admin.ActionDownload
 
 // Page is a screen of the application's own, mounted inside the panel
 // (CUST-04). The handler is ordinary net/http; the panel authenticates the

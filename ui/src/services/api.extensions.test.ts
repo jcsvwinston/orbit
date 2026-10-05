@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, checkSession, fieldErrors, getDashboard, getUIExtensions, runModelAction } from './api'
+import { ApiError, checkSession, fieldErrors, getDashboard, getRecord, getUIExtensions, runModelAction, runRecordAction } from './api'
 
 // What an application adds to the panel, from the SPA's side: a verb it
 // posts to the same bulk endpoint the built-in ones use, and the navigation
@@ -22,7 +22,7 @@ describe('runModelAction', () => {
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
     expect(url).toBe('/admin/api/models/Post/bulk')
     expect(JSON.parse(init.body as string)).toEqual({ action: 'publish', ids: ['7', 'b1c2d3e4'] })
-    expect(result.message).toBe('2 published')
+    expect(result).toEqual({ kind: 'answer', result: expect.objectContaining({ message: '2 published' }) })
   })
 
   // An action with a form posts what the form collected beside the
@@ -41,6 +41,89 @@ describe('runModelAction', () => {
     expect(JSON.parse(init.body as string)).toEqual({
       action: 'schedule', ids: ['7'], input: { reason: 'late', priority: 2, notify: false },
     })
+  })
+})
+
+// An action on one record (EXT-02), and the two answers that are not a
+// message (EXT-03): a page of the panel, and a file.
+describe('runRecordAction', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('posts to the record endpoint, with the input when there is one', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ action: 'refund', ran: true, requested: 1, affected: 1, failed: 0, result: 'message' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await runRecordAction('Order', 'refund', 'a/b 7', { reason: 'lost' })
+    await runRecordAction('Order', 'refund', 7)
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('/admin/api/models/Order/actions/refund/a%2Fb%207')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body as string)).toEqual({ input: { reason: 'lost' } })
+    const [, bare] = fetchMock.mock.calls[1] as unknown as [string, RequestInit]
+    expect(JSON.parse(bare.body as string)).toEqual({})
+  })
+
+  it('reads a redirect as part of the answer', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () =>
+      new Response(JSON.stringify({ action: 'duplicate', ran: true, requested: 1, affected: 1, failed: 0, result: 'redirect', redirect: '/data-studio?model=Note&record=9' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })))
+
+    const outcome = await runRecordAction('Note', 'duplicate', 3)
+    expect(outcome.kind === 'answer' && outcome.result.redirect).toBe('/data-studio?model=Note&record=9')
+  })
+
+  // A file is not a JSON answer: it comes back as the bytes and the name
+  // the server put in Content-Disposition — the exact one, not the ASCII
+  // fallback.
+  it('reads an attachment as a file to save', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () =>
+      new Response('the note', {
+        status: 200,
+        headers: {
+          'content-type': 'text/plain; charset=utf-8',
+          'content-disposition': `attachment; filename="R_sum_.txt"; filename*=UTF-8''R%C3%A9sum%C3%A9.txt`,
+        },
+      })))
+
+    const outcome = await runRecordAction('Note', 'download_text', 3)
+    expect(outcome.kind).toBe('download')
+    if (outcome.kind !== 'download') return
+    expect(outcome.filename).toBe('Résumé.txt')
+    expect(await outcome.blob.text()).toBe('the note')
+  })
+
+  it('throws the server refusal, as any call does', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () =>
+      new Response(JSON.stringify({ error: { code: 'ACTION_ANSWER_REFUSED', message: 'Open ran, and its answer was refused' } }), {
+        status: 500,
+        headers: { 'content-type': 'application/json' },
+      })))
+
+    await expect(runRecordAction('Note', 'open', 3)).rejects.toThrow('Open ran, and its answer was refused')
+  })
+})
+
+describe('getRecord', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('reads one record by its id', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ id: 9, title: 'Copy' }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    expect(await getRecord('Note', 9)).toEqual({ id: 9, title: 'Copy' })
+    expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe('/admin/api/models/Note/9')
   })
 })
 

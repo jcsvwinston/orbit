@@ -4,6 +4,7 @@ import type {
   Operator, OperatorsResponse, AuditRetention, SavedView, ActionInputValues,
 } from '@/types'
 import { buildAdminPath } from '@/config'
+import { filenameFromDisposition, isAttachment } from '@/lib/actionAnswer'
 
 // ApiError carries the HTTP status and the decoded error body so pages can
 // tell a 403 (no permission) from a 500 (something broke) and show the
@@ -252,6 +253,44 @@ export interface ModelActionResult {
   message?: string
   errors?: Array<{ id: string; error: string }>
   data?: Record<string, unknown>
+  // result is the kind of answer the action gave: a message, or a page of
+  // the panel to go to (redirect, a path relative to the panel). A file is
+  // not a JSON answer at all — see ActionOutcome.
+  result?: 'message' | 'redirect'
+  redirect?: string
+}
+
+// ActionOutcome is what calling an action produced: the JSON answer (a
+// message, perhaps a redirect), or the file the action answered with.
+export type ActionOutcome =
+  | { kind: 'answer'; result: ModelActionResult }
+  | { kind: 'download'; filename: string; blob: Blob }
+
+// postAction posts to an action endpoint and reads whichever answer came
+// back. An attachment is a file to save; anything else is the JSON answer,
+// read and refused exactly as fetchAPI would.
+async function postAction(path: string, body: unknown): Promise<ActionOutcome> {
+  const response = await fetch(buildAdminPath(path), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify(body),
+  })
+  if (isRedirectToLogin(response)) {
+    redirectToLogin()
+  }
+  if (!response.ok) {
+    await throwApiError(response)
+  }
+  const disposition = response.headers.get('content-disposition')
+  if (isAttachment(disposition)) {
+    return { kind: 'download', filename: filenameFromDisposition(disposition) ?? 'download', blob: await response.blob() }
+  }
+  const contentType = response.headers.get('content-type') ?? ''
+  if (!contentType.includes('application/json')) {
+    throw new ApiError(response.status, `Unexpected content type: ${contentType || 'unknown'}`, null)
+  }
+  return { kind: 'answer', result: (await response.json()) as ModelActionResult }
 }
 
 // runModelAction posts a verb an application declared for its own model.
@@ -265,13 +304,31 @@ export async function runModelAction(
   action: string,
   ids: Array<string | number>,
   input?: ActionInputValues,
-): Promise<ModelActionResult> {
+): Promise<ActionOutcome> {
   const body: { action: string; ids: string[]; input?: ActionInputValues } = { action, ids: ids.map(String) }
   if (input !== undefined) body.input = input
-  return fetchAPI(`/api/models/${encodeURIComponent(name)}/bulk`, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
+  return postAction(`/api/models/${encodeURIComponent(name)}/bulk`, body)
+}
+
+// runRecordAction runs an action on one record, from its record view or its
+// row's menu. The server checks it exactly as it checks the bulk call — the
+// verb, the record's scope, the input — and refuses an action that is not
+// offered on a record.
+export async function runRecordAction(
+  name: string,
+  action: string,
+  id: string | number,
+  input?: ActionInputValues,
+): Promise<ActionOutcome> {
+  return postAction(
+    `/api/models/${encodeURIComponent(name)}/actions/${encodeURIComponent(action)}/${encodeURIComponent(String(id))}`,
+    input === undefined ? {} : { input },
+  )
+}
+
+// getRecord reads one record, as the record view shows it.
+export async function getRecord(name: string, id: string | number): Promise<AppRecord> {
+  return fetchAPI<AppRecord>(`/api/models/${encodeURIComponent(name)}/${encodeURIComponent(String(id))}`)
 }
 
 // fieldErrors reads the per-field answer of a refused form — a 422 whose

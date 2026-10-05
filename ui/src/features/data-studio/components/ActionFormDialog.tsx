@@ -10,9 +10,10 @@ import { Loader2 } from 'lucide-react'
 
 interface Props {
   action: ModelActionSpec
-  // selectedCount is how many rows the action runs over, said in the
-  // dialog so the operator knows the subject before they fill anything in.
-  selectedCount: number
+  // subject says what the action runs on — "2 records selected.", "Record
+  // 42." — in the dialog, so the operator knows it before they fill
+  // anything in. Empty for an action whose subject is the table.
+  subject: string
   onCancel: () => void
   // onSubmit runs the action with what the form collected. It throws when
   // the server refuses, and the dialog puts the refusal on the fields.
@@ -29,7 +30,7 @@ const selectClass = 'flex h-10 w-full rounded-md border border-input bg-backgrou
 // that could disagree with the first, and a client that skipped it would
 // reach the server anyway — so the browser's own constraint checking is off
 // (noValidate) and the one answer the operator reads is the server's.
-export default function ActionFormDialog({ action, selectedCount, onCancel, onSubmit }: Props) {
+export default function ActionFormDialog({ action, subject, onCancel, onSubmit }: Props) {
   const fields = action.fields ?? []
   const [values, setValues] = useState<ActionFormState>(() => initialActionForm(fields))
   const [errors, setErrors] = useState<{ [field: string]: string }>({})
@@ -67,9 +68,6 @@ export default function ActionFormDialog({ action, selectedCount, onCancel, onSu
     }
   }
 
-  const subject = action.requires_selection
-    ? `${selectedCount} record${selectedCount === 1 ? '' : 's'} selected.`
-    : ''
   const lead = action.confirm || action.description || ''
 
   return (

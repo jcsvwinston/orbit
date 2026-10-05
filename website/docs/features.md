@@ -815,6 +815,127 @@ or a name that is not a letter followed by letters, digits, `_` or `-`.
 An action without `Fields` is unchanged: it keeps the `Confirm` question, and
 an `input` posted to it is ignored.
 
+### An action on one record
+
+"Refund this order" and "open the reconciliation of this batch" are about
+one record, and the record view is where an operator is when they decide to
+do them. `Placement` says where the panel offers an action:
+
+| `Placement` | offered | runs on |
+|---|---|---|
+| `ActionOnSelection` (the default) | the grid's toolbar, once rows are selected | the selection |
+| `ActionOnRecord` | the record view, and the menu on the record's row | that one record |
+| `ActionOnSelectionAndRecord` | both | whichever it was started from |
+
+```go
+orbit.ModelAction{
+    Name:      "refund",
+    Model:     "Order",
+    Label:     "Refund",
+    Placement: orbit.ActionOnRecord,
+    Fields:    []orbit.ActionField{{Name: "reason", Label: "Reason", Required: true}},
+    Run: func(ctx context.Context, req orbit.ActionRequest) (orbit.ActionResult, error) {
+        // req.IDs is exactly one id: the record the operator was looking at.
+        return refund(ctx, req.IDs[0], req.Input.String("reason"))
+    },
+}
+```
+
+An action declared without a `Placement` is offered on the selection, where
+every action was before placements existed, and behaves exactly as it did.
+
+On the wire a record action has its own endpoint, `POST
+/admin/api/models/Order/actions/refund/{id}`, with `{"input":{…}}` when it
+declares fields. It runs through the same code as the bulk endpoint — the
+verb is the permission, the record is confined to the operator's tenant and
+rows, the input is checked before `Run` — over that one id. A record that is
+not there, or that the operator may not reach, is the `404` the record view
+would give them, and your function is not called.
+
+The placement is enforced, not only drawn: a record action posted to the
+bulk endpoint is refused, so it is never handed fifty ids it was not written
+for, and a selection action posted to the record endpoint is refused too. The
+`400` says where the action is offered.
+
+The audit entry of a record action names the record, so its history
+(`GET /admin/api/models/{model}/{id}/history`) shows what was done to it; the
+entry's `on` says which place the action ran from, `record` or `selection`.
+
+The row's menu is the way to a record action for an operator who may run it
+and may not edit the record — the record view is the edit form, which they
+are not offered. When they open a record through a link, they are shown it
+read-only.
+
+A `Placement` the panel does not know stops the application at startup, and
+so does `AllowEmptySelection` on an action offered only on a record, which
+always has one.
+
+### An action that answers with a page or a file
+
+An action answers in one of three ways:
+
+| the action returns | the operator gets | the audit entry records |
+|---|---|---|
+| `Message` (and nothing below) | the message, as before | `result: "message"` |
+| `Redirect: "/data-studio?model=Order&record=42"` | that page of the panel, after the message | `result: "redirect"` and the path |
+| `Download: &orbit.ActionDownload{…}` | a file to save | `result: "download"`, the file's name, type and size |
+
+```go
+// Copy the order and open the copy.
+return orbit.ActionResult{
+    Message:  "order copied",
+    Redirect: fmt.Sprintf("/data-studio?model=Order&record=%d", copyID),
+}, nil
+
+// Hand back the invoice as a PDF.
+return orbit.ActionResult{Download: &orbit.ActionDownload{
+    Filename:    fmt.Sprintf("invoice-%s.pdf", req.IDs[0]),
+    ContentType: "application/pdf",
+    Body:        bytes.NewReader(pdf),
+}}, nil
+```
+
+**A redirect is a page of the panel, and nothing else.** It is a path
+relative to the panel's root — `/data-studio?model=Order&record=42`, not
+`/admin/data-studio…` — and the panel refuses, when the action answers,
+anything that would take the browser off it: an absolute URL, a scheme, a
+host, a path that starts with `//`, a backslash, a control character, or a
+`.` or `..` segment, encoded or not. A redirect an operator's input can steer
+is how a panel becomes an open redirect, so the check is made on every
+answer and not on the declaration. The single-page app follows a redirect to
+one of its own screens without reloading the page; `/data-studio?model=…&record=…`
+opens that record's view. A redirect to a screen of your own (`/x/<id>/…`)
+loads it.
+
+**A download is the bytes your action produced.** `ActionDownload` carries a
+name, a media type and a body — never a path: the panel does not open a file
+on an action's behalf, so there is no file it can be steered into reading.
+It is sent as an attachment with:
+
+- `Content-Disposition: attachment`, carrying only the last element of
+  `Filename` (`reports/q3.pdf` is saved as `q3.pdf`), as an ASCII fallback
+  and as the exact UTF-8 name;
+- the `ContentType` you declared, which is required — the panel does not
+  guess what a file is — with `X-Content-Type-Options: nosniff`;
+- `Cache-Control: no-store` and a `Content-Security-Policy` of
+  `default-src 'none'; sandbox`, so a file opened from the browser's
+  downloads is not a page of the panel with the operator's session.
+
+The panel reads the body before it sends a byte, up to **32 MiB**, and
+closes it when it is an `io.Closer`. A body over that is refused whole rather
+than sent truncated: a file cut short looks like a file. `Message` is not
+shown with a download — the file is the answer.
+
+An answer the panel will not send — a redirect out of the panel, a download
+with no name or no type or over the ceiling, or a redirect and a download at
+once — is refused after your function ran. The operator gets a `500`
+(`ACTION_ANSWER_REFUSED`) whose message says the action ran and its answer
+was refused, so nobody runs it twice thinking it did nothing, and the audit
+entry records the attempt with the error.
+
+Each answer works from either placement: a selection can be exported as one
+file, and a record can be opened after it was changed.
+
 ### A screen of your own
 
 ```go

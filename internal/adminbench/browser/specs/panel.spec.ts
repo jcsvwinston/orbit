@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
+import { readFileSync } from 'node:fs'
 
 /**
  * What the panel does in a browser — the half the Go bench cannot measure.
@@ -304,8 +305,9 @@ test.describe('UIX', () => {
    * that broke for any other reason fails too. So each one checks its own
    * precondition first, with a message of its own, and the Go side
    * (browserbench_test.go, failsWith) only accepts the failure the control
-   * is about. UIX-07 is present since A11 O1; its preconditions stay, so a
-   * regression fails for the reason it is.
+   * is about. UIX-07 is present since A11 O1 and UIX-08 since its session
+   * O4; both keep their preconditions, so a regression fails for the reason
+   * it is.
    */
 
   test('UIX-07 the login screen draws the logo the application declared', async ({ page }) => {
@@ -339,46 +341,99 @@ test.describe('UIX', () => {
     expect(loaded, `UIX-07: the login screen draws ${logo} and the browser did not load it`).toBe(true)
   })
 
-  test('UIX-08 the record view offers the action the application declared', async ({ page }) => {
+  /*
+   * UIX-08 is the browser half of EXT-02 and EXT-03: an action offered on
+   * one record is drawn where the record is — its record view and its row's
+   * menu — and what it answers with is followed. The bench's "duplicate"
+   * answers with the copy's record view, which the SPA reaches through its
+   * router without reloading the document; its "download_text" answers with
+   * a file, which the browser saves under the name the action gave.
+   */
+  test('UIX-08 an action on one record is offered where the record is, and its page and its file arrive', async ({ page }) => {
+    const title = `uix-08 note ${Date.now()}`
     await signIn(page)
     // A row of its own to open: the bench's application starts empty. The
     // call is made from the page, the way the SPA makes it — the session
     // belongs to this browser, and a request from outside it (page.request)
     // is refused with a 401.
-    const status = await page.evaluate(async () => {
+    const created = await page.evaluate(async (noteTitle) => {
       const r = await fetch('/admin/api/models/Note', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
-        body: JSON.stringify({ title: 'uix-08 record', status: 'draft' }),
+        body: JSON.stringify({ title: noteTitle, body: 'uix-08 body', status: 'draft' }),
       })
-      return r.status
+      const body = await r.json().catch(() => ({}))
+      return { status: r.status, id: String(body?.data?.id ?? body?.id ?? '') }
+    }, title)
+    expect(created.status < 300 && created.id !== '', `UIX-08 precondition: creating a note answered ${created.status}`).toBe(true)
+    const id = created.id
+
+    // The schema the screen loads offers both actions on a record to this
+    // operator — the precondition: an action nobody offers would make this
+    // control measure the declaration, not the record view.
+    const placements = await page.evaluate(async () => {
+      const r = await fetch('/admin/api/models/Note/schema', { credentials: 'same-origin' })
+      const schema = await r.json()
+      return Object.fromEntries((schema.actions ?? []).map((a: { name: string; placement?: string }) => [a.name, a.placement ?? '']))
     })
-    expect(status < 300, `UIX-08 precondition: creating a note answered ${status}`).toBe(true)
+    expect(placements.duplicate === 'record' && placements.download_text === 'selection_and_record',
+      `UIX-08 precondition: the schema does not offer the record actions (${JSON.stringify(placements)}); EXT-02 should be red too`).toBe(true)
 
     await page.goto('/admin/data-studio')
     await page.waitForLoadState('networkidle')
     await page.getByRole('button', { name: /^Notes/ }).first().click({ timeout: 15_000 })
+    await page.getByRole('textbox', { name: 'Search records' }).fill(title)
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('button', { name: `Edit record ${id}` }), 'UIX-08 precondition: the search did not narrow the grid to the new note')
+      .toBeVisible({ timeout: 10_000 })
 
-    // The schema the screen loads offers the action to this operator —
-    // DS-09's surface, and the precondition here: an action nobody offers
-    // would make this control measure the declaration, not the record view.
-    const offered = await page.evaluate(async () => {
-      const r = await fetch('/admin/api/models/Note/schema', { credentials: 'same-origin' })
-      const schema = await r.json()
-      return (schema.actions ?? []).some((a: { name: string }) => a.name === 'publish')
-    })
-    expect(offered, 'UIX-08 precondition: the schema offers no publish action (DS-09 should be red too)').toBe(true)
-
-    await page.getByRole('button', { name: /^Edit record/ }).first().waitFor({ timeout: 15_000 })
-    await page.getByRole('button', { name: /^Edit record/ }).first().click()
-    const dialog = page.getByRole('dialog').first()
-    await expect(dialog, 'UIX-08 precondition: the record view did not open').toBeVisible({ timeout: 10_000 })
-
+    // 1. The record view offers the record's actions.
+    await page.getByRole('button', { name: `Edit record ${id}` }).click()
+    const view = page.getByRole('dialog').first()
+    await expect(view, 'UIX-08 precondition: the record view did not open').toBeVisible({ timeout: 10_000 })
+    const offered = view.getByRole('group', { name: 'Actions on this record' })
     await expect(
-      dialog.getByRole('button', { name: /publish/i }),
-      'UIX-08: the record view offers no action of the application — publish is declared on Note and the open record has no button for it',
+      offered.getByRole('button', { name: 'Duplicate' }),
+      'UIX-08: the record view offers no action of the application — duplicate is declared on one record and the open record has no button for it',
     ).toHaveCount(1, { timeout: 5_000 })
+
+    // 2. Pressed, it runs on this record, and the page it answers with is
+    // reached through the router: the document is the same one.
+    await page.evaluate(() => { (window as unknown as { uix08?: string }).uix08 = 'same document' })
+    await offered.getByRole('button', { name: 'Duplicate' }).click()
+    await expect(page, 'UIX-08: the redirect the action answered with was not followed')
+      .toHaveURL(/\/admin\/data-studio\?model=Note&record=\d+$/, { timeout: 10_000 })
+    const copyId = new URL(page.url()).searchParams.get('record')
+    expect(copyId, 'UIX-08: the redirect opened the record the action ran on, not the copy it made').not.toBe(id)
+    const copy = page.getByRole('dialog').first()
+    await expect(copy.getByLabel(/^Title/), 'UIX-08: the page the action named does not show the copy').toHaveValue(`Copy of ${title}`, { timeout: 10_000 })
+    expect(
+      await page.evaluate(() => (window as unknown as { uix08?: string }).uix08),
+      'UIX-08: the redirect reloaded the document instead of going through the router',
+    ).toBe('same document')
+    await page.keyboard.press('Escape')
+    await expect(copy).toBeHidden({ timeout: 5_000 })
+    await expect(page, 'UIX-08: the closed record view is still named by the URL').toHaveURL(/model=Note$/)
+
+    // 3. From the row's own menu, the file — saved under the name the
+    // action gave, holding what it wrote.
+    const rowMenu = page.getByRole('button', { name: `Actions for record ${id}` })
+    await expect(rowMenu, 'UIX-08: the row offers no menu of its record actions').toBeVisible({ timeout: 5_000 })
+    await rowMenu.click()
+    const menu = page.getByRole('menu')
+    await expect(menu, 'UIX-08: the row\'s menu did not open').toBeVisible({ timeout: 5_000 })
+    const menuViolations = (await new AxeBuilder({ page }).include('[role="menu"]')
+      .withRules(['color-contrast', 'aria-required-children', 'aria-valid-attr-value']).analyze()).violations
+      .map((v) => ({ id: v.id, nodes: v.nodes.slice(0, 3).map((n) => n.target.join(' ')) }))
+    expect(menuViolations, JSON.stringify(menuViolations, null, 2)).toEqual([])
+    const downloaded = page.waitForEvent('download', { timeout: 10_000 })
+      .catch(() => { throw new Error('UIX-08: the action answered with a file and the browser saved none') })
+    await menu.getByRole('menuitem', { name: 'Download as text' }).click()
+    const file = await downloaded
+    expect(file.suggestedFilename(), 'UIX-08: the file was not saved under the name the action gave').toBe(`note-${id}.txt`)
+    const path = await file.path()
+    expect(readFileSync(path, 'utf8'), 'UIX-08: the file does not hold what the action wrote').toContain(`${title}\nuix-08 body`)
   })
 
   /*
