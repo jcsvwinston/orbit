@@ -78,6 +78,10 @@ func browserCases() []browserCase {
 		{id: "UIX-10", title: "the first frame wears the theme the application configured, and the operator's own choice wins on reload", want: present},
 		// The browser half of EXT-04 and EXT-05, added in O5.
 		{id: "UIX-11", title: "a second dashboard draws a series to the operator granted it, and is neither listed nor served to one who is not", want: present},
+		// The browser half of EXT-06 and EXT-07, added in O6: the
+		// application's script runs under the policy and its renderer
+		// draws, and falls back when it throws.
+		{id: "UIX-12", title: "the application's own script loads under the policy and draws a field in the grid and the record view, and a renderer that throws falls back", want: present},
 	}
 }
 

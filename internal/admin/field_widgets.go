@@ -110,7 +110,13 @@ func fieldWidgetKeys(modelName string, f datasource.FieldInfo) []string {
 // too: declaredWidget takes the first spelling that matches, and when both
 // spellings are the same one the choice follows map order, so the form could
 // change between two requests.
-func ValidateFieldWidgets(src datasource.DataSource, widgets map[string]string) error {
+//
+// A value may also name a field renderer the application declared
+// (ClientCode.FieldRenderers, EXT-07): the check accepts exactly the names
+// declared, so a renderer field_widgets names and no script was declared to
+// register stops the application here, by name, rather than drawing the
+// field the panel's way in silence.
+func ValidateFieldWidgets(src datasource.DataSource, widgets map[string]string, client ClientCode) error {
 	if len(widgets) == 0 {
 		return nil
 	}
@@ -118,10 +124,10 @@ func ValidateFieldWidgets(src datasource.DataSource, widgets map[string]string) 
 	if src != nil {
 		models = src.All()
 	}
-	return validateFieldWidgets(widgets, models)
+	return validateFieldWidgets(widgets, models, clientRenderers(client))
 }
 
-func validateFieldWidgets(widgets map[string]string, models []datasource.ModelInfo) error {
+func validateFieldWidgets(widgets map[string]string, models []datasource.ModelInfo, renderers map[string]bool) error {
 	keys := make([]string, 0, len(widgets))
 	for key := range widgets {
 		keys = append(keys, key)
@@ -135,7 +141,16 @@ func validateFieldWidgets(widgets map[string]string, models []datasource.ModelIn
 		raw := widgets[key]
 		widget := normalizeWidget(raw)
 		if widget == "" {
-			problems = append(problems, fmt.Sprintf("field_widgets[%q]: %q is not a widget the panel draws (json, richtext, file or image)", key, raw))
+			if name := strings.ToLower(strings.TrimSpace(raw)); renderers[name] {
+				widget = "renderer " + name
+			}
+		}
+		if widget == "" {
+			declared := "client.field_renderers declares none"
+			if len(renderers) > 0 {
+				declared = "client.field_renderers declares " + strings.Join(sortedRenderers(renderers), ", ")
+			}
+			problems = append(problems, fmt.Sprintf("field_widgets[%q]: %q is not a widget the panel draws (json, richtext, file or image) nor a field renderer the application declared (%s)", key, raw, declared))
 			continue
 		}
 		model, field, found := resolveFieldWidgetKey(key, models)

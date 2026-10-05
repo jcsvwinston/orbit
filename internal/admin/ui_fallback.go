@@ -75,6 +75,18 @@ func injectHeadFragment(content []byte, fragment string) []byte {
 	return []byte("<head>" + fragment + "</head>\n" + contentStr)
 }
 
+// injectHeadEnd inserts markup the panel wrote at the END of the document's
+// <head>, after everything the build put there — the bundle's script and
+// stylesheet among it. Without a </head> the fragment is appended. The
+// fragment is inserted as is, under the same rule as injectHeadFragment.
+func injectHeadEnd(content []byte, fragment string) []byte {
+	contentStr := string(content)
+	if i := strings.Index(contentStr, "</head>"); i >= 0 {
+		return []byte(contentStr[:i] + fragment + contentStr[i:])
+	}
+	return []byte(contentStr + fragment)
+}
+
 func injectAdminPrefix(content []byte, prefix string) []byte {
 	return injectHeadMeta(content, "nucleus-admin-prefix", NormalizePrefix(prefix))
 }

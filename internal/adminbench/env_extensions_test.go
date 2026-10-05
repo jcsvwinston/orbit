@@ -6,7 +6,9 @@ package adminbench
 import (
 	"context"
 	"database/sql"
+	"embed"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"strings"
 	"sync"
@@ -495,14 +497,48 @@ func benchOrbitConfig() orbit.Config {
 			"Note.Body":  "richtext",
 			"Note.Cover": "image",
 			"Note.Meta":  "json",
+			// Drawn by the application's own renderer (EXT-07), which its
+			// own script registers (EXT-06).
+			"Note.Status": noteStatusRenderer,
 		},
 		Actions:    []orbit.ModelAction{publishAction(), scheduleAction(), duplicateAction(), downloadTextAction()},
 		Pages:      []orbit.Page{reportsPage()},
 		Branding:   benchBranding(),
 		Widgets:    benchWidgets(),
 		Dashboards: benchDashboards(),
+		Client:     benchClient(),
 		Locale:     "es",
 		Messages:   benchMessages(),
+	}
+}
+
+// The application's own client code (A11 O6: EXT-06, EXT-07, UIX-12), as an
+// application ships it: files embedded in its binary, declared by path, and
+// the renderer its script registers. client/ also holds a file the
+// application never declares, which the panel must not serve.
+//
+//go:embed client
+var benchClientFS embed.FS
+
+// noteStatusRenderer is the renderer client/note-status.js registers: a
+// note's status as a badge, for the statuses it knows, and a throw for any
+// other.
+const noteStatusRenderer = "note-status"
+
+func benchClientFiles() fs.FS {
+	files, err := fs.Sub(benchClientFS, "client")
+	if err != nil {
+		panic(err)
+	}
+	return files
+}
+
+func benchClient() orbit.ClientCode {
+	return orbit.ClientCode{
+		Files:          benchClientFiles(),
+		Scripts:        []string{"note-status.js"},
+		Stylesheets:    []string{"note-status.css"},
+		FieldRenderers: []string{noteStatusRenderer},
 	}
 }
 

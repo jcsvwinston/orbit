@@ -48,7 +48,7 @@ A control that cannot be probed does not belong in the bench.
 
 ## The result
 
-**70 of 72 controls present. 0 partial. 2 absent.**
+**72 of 72 controls present. 0 partial. 0 absent.**
 
 | family | present | partial | absent |
 |---|---|---|---|
@@ -58,15 +58,16 @@ A control that cannot be probed does not belong in the bench.
 | operations | 17 | 0 | 0 |
 | customization | 7 | 0 | 0 |
 | interface | 2 | 0 | 0 |
-| extension | 11 | 0 | 2 |
-| **total** | **70** | **0** | **2** |
+| extension | 13 | 0 | 0 |
+| **total** | **72** | **0** | **0** |
 
 The six families A6 measured are complete as of that arc's eighth session:
 59 of 59. The seventh, `extension`, was recorded at the baseline of A11 and
 is that arc's gap ([below](#what-an-application-adds-at-the-baseline-of-a11)):
 1 present at the baseline, 4 after the arc's first session in this
 repository (O1), 6 after its second (O2), 8 after its fifth (O5), 9 after
-its third (O3) and 11 after its fourth (O4), which joined after the fifth.
+its third (O3), 11 after its fourth (O4), which joined after the fifth, and
+13 after its sixth (O6), which completes it.
 The number is not
 the end of the work: what this bench measures is a list of controls somebody
 wrote down, and a control that is present is one whose probe exercised it —
@@ -165,14 +166,16 @@ cd internal/adminbench/browser && npm ci && npx playwright install chromium
 go test ./internal/adminbench/ -run TestBrowserBench -v
 ```
 
-**11 of 11 controls present**, plus the one that measures the instrument.
-The last five belong to the extension family
+**12 of 12 controls present**, plus the one that measures the instrument.
+The last six belong to the extension family
 ([below](#what-an-application-adds-at-the-baseline-of-a11)): `UIX-07` and
 `UIX-08` were recorded absent at the baseline of A11; `UIX-07` closed in the
 arc's first session (O1), and `UIX-08` turned present with the record
 actions and their answers in its fourth
 ([O4](#an-action-on-one-record-and-what-it-answers-after-a11s-session-o4)).
 `UIX-10` was added, present, in its second (O2), `UIX-11` in its fifth (O5),
+`UIX-12` in its sixth
+([O6](#the-applications-own-code-in-the-browser-after-a11s-session-o6)),
 and `UIX-09` arrived present with the form it measures in its third
 ([O3](#an-action-that-asks-before-it-runs-after-a11s-session-o3)). The third
 and fourth ran on a stack of their own and joined this one after the fifth.
@@ -193,6 +196,7 @@ the two stacks met, so the third session's kept its number.)
 | **UIX-09** | an action that asks first draws its form and shows the refusal on the field |
 | **UIX-10** | the first frame wears the theme the application configured, and the operator's own choice wins on reload |
 | **UIX-11** | a second dashboard draws a series to the operator granted it, and is neither listed nor served to one who is not |
+| **UIX-12** | the application's own script loads under the policy and draws a field in the grid and the record view, and a renderer that throws falls back |
 
 Three things worth keeping about how it is built:
 
@@ -563,7 +567,7 @@ browser. It is A11's numerator on this side of the suite. It was recorded
 before the arc changed anything at 1 present, 3 partial and 9 absent; the
 table is kept current as the arc closes its gaps, session by session (below):
 
-### extension — 11 present · 0 partial · 2 absent (HTTP)
+### extension — 13 present · 0 partial · 0 absent (HTTP)
 
 | id | control | verdict | what is missing |
 |---|---|---|---|
@@ -572,8 +576,8 @@ table is kept current as the arc closes its gaps, session by session (below):
 | `EXT-03` | an action answers with a file to download or a page to open | **present** | — |
 | `EXT-04` | a widget draws a series (a chart), not only a value or a list | **present** | — |
 | `EXT-05` | cards on a screen other than the overview: a second dashboard, or a page made of cards | **present** | — |
-| `EXT-06` | the application's own script runs in the panel (a client-side hook), declared and allowed by the CSP | **absent** | no knob declares a script; the document loads only the panel's bundle under script-src 'self' |
-| `EXT-07` | a field drawn by a renderer the application provides | **absent** | the widget vocabulary is closed (json, richtext, file, image); a field declared with another widget refuses to start (EXT-08), and nothing registers a renderer |
+| `EXT-06` | the application's own script runs in the panel (a client-side hook), declared and allowed by the CSP | **present** | — |
+| `EXT-07` | a field drawn by a renderer the application provides | **present** | — |
 | `EXT-08` | a field widget the panel cannot draw refuses to start | **present** | — |
 | `EXT-09` | a default theme (dark, light, system) set by configuration decides the first frame | **present** | — |
 | `EXT-10` | a palette by configuration, each colour validated | **present** | — |
@@ -581,7 +585,7 @@ table is kept current as the arc closes its gaps, session by session (below):
 | `EXT-12` | the configuration reference documents every key an application can bind | **present** | — |
 | `EXT-13` | what an application adds answers to the panel's RBAC: card, screen and verb withheld without a grant | **present** | — |
 
-Five controls of the same family can only be measured in a browser and
+Six controls of the same family can only be measured in a browser and
 are recorded in the browser half, with their own numerator: `UIX-07` (the
 login screen draws the declared logo — **present** since O1), `UIX-08` (the
 record view and the row's menu offer the record's actions, and the page and
@@ -592,7 +596,10 @@ server's refusal on the field — **present** since O3, the drawing half of
 operator's choice wins on reload — **present** since O2, the painting half
 of `EXT-09`) and `UIX-11` (a second dashboard draws a series for the
 operator granted it and is withheld from one who is not — **present** since
-O5, the drawing half of `EXT-04` and `EXT-05`).
+O5, the drawing half of `EXT-04` and `EXT-05`) and `UIX-12` (the
+application's script loads under the panel's policy, its renderer draws a
+field in the grid and on the record view, and one that throws falls back —
+**present** since O6, the drawing half of `EXT-06` and `EXT-07`).
 
 ### What the shape of it says
 
@@ -607,10 +614,11 @@ O5, the drawing half of `EXT-04` and `EXT-05`).
   a detail line or a list of rows, all on the overview (`EXT-04`, `EXT-05`). A screen of the
   application's own is an `http.Handler` that writes its own document; a
   page "declared in Go" that the panel draws from cards does not exist.
-- **The SPA is closed.** No script of the application's runs in it
-  (`EXT-06`), and the field widgets are the four the panel ships (`EXT-07`).
-  Both are the same missing piece seen from two sides: a client-side
-  registration the CSP allows.
+- **The SPA was closed** (opened in O6,
+  [below](#the-applications-own-code-in-the-browser-after-a11s-session-o6)).
+  No script of the application's ran in it (`EXT-06`), and the field widgets
+  were the four the panel ships (`EXT-07`). Both were the same missing piece
+  seen from two sides: a client-side registration the CSP allows.
 - **The theme belonged to each operator** (closed in O2, below). The first
   frame followed the browser's preference, then the operator's last toggle;
   the application could not say "this control room opens dark" (`EXT-09`),
@@ -1146,3 +1154,131 @@ How it is measured, and what that showed:
   method-free mux, and `/api/models/{name}/{id}/actions/{action}` conflicts
   there with `/api/models/{name}/fields/{field}/options`: the application did
   not start. Hence `/api/models/{name}/actions/{action}/{id}`.
+
+## The application's own code in the browser, after A11's session O6
+
+The sixth session of the arc in this repository (O6) closed `EXT-06` and
+`EXT-07` and added `UIX-12`, their browser half: the HTTP bench reads 72 of
+72 and the browser half 12 of 12. The extension family is complete.
+
+- **Files, not markup.** `Config.Client` (an `orbit.ClientCode`) names
+  scripts and stylesheets inside a file system of the application's — an
+  `embed.FS` in the bench — and the names of the field renderers those
+  scripts register. The panel reads each declared file once, when it
+  mounts, and serves those bytes at `<prefix>/client/<path>`, behind its
+  session, as JavaScript or CSS by what the declaration said. Its document
+  names them at the end of `<head>`, after the bundle — a script deferred,
+  so it runs once the bundle has — each with the SHA-384 digest of the
+  bytes read (`integrity`) and a version in the URL. `script-src` stays
+  `'self'`: the files are `'self'`. A file the application holds and did
+  not declare is a 404. With nothing declared there is no route, and the
+  document is the one the panel served before.
+- **At startup**, a declaration the panel cannot serve stops the
+  application, naming the entry: a file that cannot be read, a path that is
+  absolute, climbs out with `..`, has an empty or `.` segment, a backslash,
+  or a character outside letters, digits, `.`, `-` and `_`, a script that
+  does not end in `.js` or a stylesheet in `.css`, a path declared twice,
+  files with no file system to read them from, a renderer name that is not
+  lowercase letters, digits and dashes, a renderer named like one of the
+  panel's own widgets, and a renderer with no script declared to register
+  it. A `field_widgets` value that names neither a widget the panel draws
+  nor a renderer the application declared stops it too, and the message
+  lists the renderers that were declared.
+- **`window.orbit`, version 1**, is the whole client contract:
+  `version` and `registerFieldRenderer(name, render)`. The bundle installs
+  it, read-only, before anything else runs. A renderer is called with the
+  value and a context — the model, the field, its column, a frozen copy of
+  the record and where it draws (`list` or `record`) — and returns a DOM
+  node or a string, which is drawn as text.
+- **A field drawn the application's way.** The schema names the renderer
+  of a field (`renderer`) next to the panel's own widget (`html_type`), and
+  the SPA draws the value with it in the Data Studio grid and on the record
+  view: above the input that edits it, and in place of the value when the
+  record is shown read-only.
+
+Four decisions worth keeping:
+
+- **The digest is of what was read, and it was read once.** A file that
+  changed on disk after startup would otherwise be served under a digest the
+  browser refuses — or, with no digest, run as whatever arrived at that URL.
+  Reading at mount makes what the panel declared and what the browser runs
+  the same bytes, and a file that cannot be read stops the application
+  before anything is served.
+- **Behind the session, and not on the login screen.** The document that
+  names the files is served to signed-in operators, and so are the files.
+  Nothing on the login screen draws a record, so the application's code does
+  not run on the screen where the password is typed.
+- **A renderer draws; it does not edit.** The schema keeps the panel's
+  widget next to the renderer: the form edits with it, and it is what the
+  panel draws when the renderer fails. A renderer that replaced the input
+  would need the form's contract — validation, the payload, the error on the
+  field — handed to the application's code, a larger surface than version 1
+  needs to carry. A string a renderer returns is a text node: parsing it as
+  markup would make every value a renderer echoes an injection.
+- **A failure costs the value, not the screen.** The renderer runs inside a
+  try, in a layout effect, into an element React does not manage. A
+  renderer that throws, or returns anything but a node or a string, leaves
+  the panel's own drawing in that cell or field and a line that says the
+  renderer failed and why; the console has the rest. A renderer the schema
+  names and no script registered draws the panel's way, with a warning in
+  the console; one registered after the panel drew is applied when it is
+  registered.
+
+### What the work found that was not on the plan
+
+- **The grid's icons never loaded under the panel's own policy.** AG Grid's
+  quartz stylesheet carries its icon font as a `data:` URL, and the panel
+  sends `font-src 'self'`. The browser refuses the font, `document.fonts`
+  reports `agGridQuartz` in error, and the icons the grid draws in it — the
+  filter mark among them — are drawn in nothing. `UIX-12` found it: it
+  records every policy violation from before the document exists, and
+  nothing else in the bench listens for them. The violation is the panel's
+  and not the application's, so `UIX-12` counts only violations of the
+  script and style policy and those naming the application's files. It is
+  not fixed here: allowing `data:` in `font-src`, or serving the font as a
+  file, changes the policy of every panel, and wants a control of its own —
+  the panel's own screens raise no violation.
+- **Two layers refuse a path that climbs out.** The `io/fs` implementations
+  refuse a name with `..` themselves: with the panel's own check removed and
+  the path declared from the bench's `embed.FS`, the application still did
+  not start and `EXT-06` stayed present. The probe declares
+  `../client/note-status.js` from a file system that follows `..` instead,
+  as a hand-written adapter can; against that one only the panel's check
+  stands, and removing it reads partial. (Within the panel's check, the
+  segment rule and `fs.ValidPath` each refuse it, so removing either one
+  alone does not move the verdict either.)
+
+### What the bench got wrong about itself, the twelfth time
+
+- **`EXT-09` read every classic script as a theme.** Its "nothing
+  configured, nothing changed" check listed any classic script in `<head>`
+  as something that could set the first frame, so the bench application's
+  own deferred script turned the theme control partial. A deferred script
+  runs when the browser may already have painted — the rule `EXT-09` already
+  held the theme script to — so the check now counts only the scripts the
+  parser stops for.
+
+Every change was verified by breaking it:
+
+| mutation | control |
+|---|---|
+| the document names no file of the application's | EXT-06 → absent |
+| the files named at the start of `<head>`, before the bundle | EXT-06 → partial; UIX-12 → absent |
+| the script not deferred | EXT-06 → partial |
+| a digest that is not of the bytes read | EXT-06 → partial; UIX-12 → absent |
+| `script-src` loosened with `'unsafe-inline'` | EXT-06 → partial |
+| a file the application did not declare served | EXT-06 → partial |
+| the files served without a session | EXT-06 → partial |
+| the script served as `text/plain` | EXT-06 → partial |
+| a file that cannot be read accepted | EXT-06 → partial |
+| a path with `..` accepted (both layers removed) | EXT-06 → partial |
+| the schema without the field's renderer | EXT-07 → absent |
+| the panel's widget replaced by the renderer's name | EXT-07 → partial |
+| a renderer the application did not declare accepted | EXT-07 → partial |
+| a renderer named like one of the panel's widgets accepted | EXT-07 → partial |
+| a renderer with no script to register it accepted | EXT-07 → partial |
+| the grid drawing no renderer (dist rebuilt) | UIX-12 → absent |
+| the record view drawing no renderer (dist rebuilt) | UIX-12 → absent |
+| a renderer's throw not caught (dist rebuilt): the screen stops answering | UIX-12 → absent |
+| no `window.orbit` (dist rebuilt) | UIX-12 → absent |
+| the stylesheet served as other bytes than its digest | UIX-12 → absent |

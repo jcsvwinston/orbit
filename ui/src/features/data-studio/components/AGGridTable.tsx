@@ -18,6 +18,7 @@ import RecordForm from './RecordForm'
 import ActionFormDialog from './ActionFormDialog'
 import RecordActionsMenu from './RecordActionsMenu'
 import RecordHistoryDialog from './RecordHistoryDialog'
+import RenderedField from './RenderedField'
 import ImportDialog from './ImportDialog'
 import { formatCellValue } from '../lib/fieldValues'
 import { useRecordsLoader } from '../lib/useRecordsLoader'
@@ -161,10 +162,26 @@ export default function AGGridTable({ modelName, schema, dbAlias, focusRecord, o
       flex: 1,
       cellRenderer: (params: ICellRendererParams) => {
         const value = params.value
-        if (f.html_type === 'checkbox') {
-          return <Badge variant={value ? 'default' : 'outline'} className="text-xs">{value ? 'Yes' : 'No'}</Badge>
+        const builtIn = f.html_type === 'checkbox'
+          ? <Badge variant={value ? 'default' : 'outline'} className="text-xs">{value ? 'Yes' : 'No'}</Badge>
+          : formatCellValue(f, value)
+        // A field the application draws with its own renderer (EXT-07);
+        // the panel's drawing is what the cell shows when it fails.
+        if (f.renderer) {
+          return (
+            <RenderedField
+              renderer={f.renderer}
+              value={value}
+              model={modelName}
+              field={f.name}
+              column={f.column}
+              record={(params.data as AppRecord | undefined) ?? null}
+              where="list"
+              fallback={builtIn}
+            />
+          )
         }
-        return formatCellValue(f, value)
+        return builtIn
       },
     })),
     ...([{
@@ -225,7 +242,7 @@ export default function AGGridTable({ modelName, schema, dbAlias, focusRecord, o
         )
       },
     } as ColDef]),
-  ], [listFields, canUpdate, canDelete, pkColumn, handleEdit, recordActions])
+  ], [listFields, canUpdate, canDelete, pkColumn, handleEdit, recordActions, modelName])
 
   // Rows can be selected when something can be done with a selection: a
   // delete, or an action that runs over one. An operator who may publish

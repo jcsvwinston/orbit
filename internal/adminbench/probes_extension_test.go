@@ -9,10 +9,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"math"
 	"mime"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -755,66 +757,249 @@ func dashboardURLFor(payload map[string]any, id string) (string, bool) {
 }
 
 // EXT-06: the application's own script runs in the panel — a client-side
-// hook that adds a button, a renderer, a keyboard shortcut. The panel's CSP
+// hook that adds a renderer, a button, a keyboard shortcut. The panel's CSP
 // (script-src 'self') is what makes this a contract and not a tag anyone can
 // paste: a script has to be declared, served and allowed.
+//
+// Measured on the bench's application, which declares a script and a
+// stylesheet the way an application ships them (benchClient: files embedded
+// in its binary), and read the way a browser meets them: the document names
+// each one after the panel's bundle, so a script runs once the bundle has
+// (deferred, or a module) and a stylesheet wins a tie with the panel's; each
+// carries the digest of the declared bytes, and what the panel serves at
+// that URL is those bytes, as the kind the declaration said, to a session
+// only; script-src is still 'self' alone and covers it; a file the
+// application holds and did not declare is not served. And a declaration
+// the panel cannot serve stops the application, naming it. The browser half
+// — the script runs under the policy, with no violation, and draws — is
+// UIX-12.
 func probeClientScript(t *testing.T, e *env) verdict {
-	if hits := knobsNamed("script", "hook", "plugin", "client_extension", "uiextension"); len(hits) > 0 {
-		t.Logf("the mount surface grew %v: grow this probe to declare a script, read the tag the document carries and the CSP that allows it", knobPaths(hits))
-		return partial
-	}
+	declared := benchClient()
 	doc, header := fetch(t, e.operator(t), e.server().URL("/admin/"))
 	if doc.code != http.StatusOK {
 		t.Fatalf("GET /admin/ answered %d", doc.code)
 	}
-	scripts := scriptSources(doc.raw())
-	for _, src := range scripts {
-		if !strings.Contains(src, "/assets/") {
-			t.Logf("the document loads %q, which is not the panel's own bundle: grow this probe", src)
-			return partial
+	tags := headTags(headOf(doc.raw()))
+	bundle, bundleCSS := -1, -1
+	loaded := map[string]headTag{}
+	for _, tag := range tags {
+		ref := tag.ref()
+		switch {
+		case tag.name == "script" && tag.attrs["type"] == "module" && strings.Contains(ref, "/assets/index-"):
+			bundle = tag.at
+		case tag.name == "link" && tag.attrs["rel"] == "stylesheet" && strings.Contains(ref, "/assets/index-"):
+			bundleCSS = tag.at
+		case strings.HasPrefix(ref, "/admin/client/"):
+			loaded[strings.SplitN(strings.TrimPrefix(ref, "/admin/client/"), "?", 2)[0]] = tag
 		}
 	}
-	t.Logf("the document loads only the panel's bundle %v, under script-src %v", scripts,
-		cspSources(header.Get("Content-Security-Policy"), "script-src"))
-	return absent
+	if bundle < 0 || bundleCSS < 0 {
+		t.Fatalf("the document loads no bundle (script at %d, stylesheet at %d): the probe is reading the wrong document", bundle, bundleCSS)
+	}
+	if len(loaded) == 0 {
+		t.Logf("the application declares %v and %v, and the document loads neither (scripts: %v)", declared.Scripts, declared.Stylesheets, scriptSources(doc.raw()))
+		return absent
+	}
+
+	policy := header.Get("Content-Security-Policy")
+	if sources := cspSources(policy, "script-src"); len(sources) != 1 || sources[0] != "'self'" {
+		t.Logf("script-src is %v, not 'self' alone: the application's script was let in by widening the policy", sources)
+		return partial
+	}
+	host := mustHost(t, e.server().URL(""))
+	files := benchClientFiles()
+	for _, kind := range []struct {
+		paths     []string
+		tag       string
+		after     int
+		ctype     string
+		directive string
+	}{
+		{declared.Scripts, "script", bundle, "javascript", "script-src"},
+		{declared.Stylesheets, "link", bundleCSS, "text/css", "style-src"},
+	} {
+		for _, path := range kind.paths {
+			tag, ok := loaded[path]
+			if !ok || tag.name != kind.tag {
+				t.Logf("the application declares %s and the document loads %v", path, keysOf(loaded))
+				return partial
+			}
+			want, err := fs.ReadFile(files, path)
+			if err != nil {
+				t.Fatalf("the bench's own file %s: %v", path, err)
+			}
+			if problem := clientFileProblem(t, e, tag, kind.after, want, kind.ctype, cspSources(policy, kind.directive), host); problem != "" {
+				t.Logf("%s: %s", path, problem)
+				return partial
+			}
+		}
+	}
+
+	// What the application holds and did not declare is not served.
+	if r := e.get(t, "/admin/client/undeclared.js"); r.code != http.StatusNotFound {
+		t.Logf("a file the application holds and never declared answers %d: the panel serves its file system, not its declaration", r.code)
+		return partial
+	}
+
+	// A declaration the panel cannot serve stops the application, naming
+	// the entry — including a path that climbs out of a file system that
+	// would follow it (naiveDirFS joins the name to its root, as a
+	// hand-written fs.FS can): the panel's own check is what refuses it.
+	naive := naiveDirFS(filepath.Join(repoRoot(t), "internal", "adminbench", "client"))
+	var started []string
+	for label, c := range map[string]struct {
+		client orbit.ClientCode
+		names  string
+	}{
+		"a script that is not there":                    {orbit.ClientCode{Files: files, Scripts: []string{"missing.js"}}, "missing.js"},
+		"a path that climbs out of the files":           {orbit.ClientCode{Files: naive, Scripts: []string{"../client/note-status.js"}}, "../client/note-status.js"},
+		"an absolute path":                              {orbit.ClientCode{Files: files, Scripts: []string{"/etc/hosts.js"}}, "/etc/hosts.js"},
+		"a stylesheet declared as a script":             {orbit.ClientCode{Files: files, Scripts: []string{"note-status.css"}}, "note-status.css"},
+		"a script declared with no files to read it in": {orbit.ClientCode{Scripts: []string{"note-status.js"}}, "client.files"},
+	} {
+		_, err := tryStart(t, extensionApp(t, orbit.Config{Title: "Admin Bench (client code)", Client: c.client}))
+		switch {
+		case err == nil:
+			started = append(started, label)
+		case !strings.Contains(err.Error(), c.names):
+			t.Logf("%s: refused, but the error does not name %s: %v", label, c.names, err)
+			started = append(started, label+" (refused for another reason)")
+		}
+	}
+	if len(started) > 0 {
+		sort.Strings(started)
+		t.Logf("started with %v", started)
+		return partial
+	}
+	return present
+}
+
+// clientFileProblem says what keeps one of the application's files, as the
+// document names it, from being the declared bytes run or applied after the
+// panel's bundle under the panel's policy, or "" when nothing does.
+func clientFileProblem(t *testing.T, e *env, tag headTag, after int, want []byte, ctype string, sources []string, host string) string {
+	t.Helper()
+	ref := tag.ref()
+	if tag.at < after {
+		return "named before the panel's own bundle"
+	}
+	if tag.name == "script" {
+		_, deferred := tag.attrs["defer"]
+		if _, async := tag.attrs["async"]; async || (!deferred && tag.attrs["type"] != "module") {
+			return fmt.Sprintf("the script is neither deferred nor a module (%v): the parser runs it where it stands, before the bundle", tag.attrs)
+		}
+	}
+	if !cspAllows(sources, ref, host) {
+		return fmt.Sprintf("%v refuses %s", sources, ref)
+	}
+	integrity, ok := tag.attrs["integrity"]
+	if !ok {
+		return "no integrity: the browser runs whatever arrives at that URL"
+	}
+	if !sriMatches(integrity, want) {
+		return fmt.Sprintf("integrity %q is not the digest of the declared file", integrity)
+	}
+	served, header := fetch(t, e.operator(t), e.server().URL(ref))
+	if served.code != http.StatusOK || !strings.Contains(header.Get("Content-Type"), ctype) || header.Get("X-Content-Type-Options") != "nosniff" {
+		return fmt.Sprintf("served %d %q (nosniff %q)", served.code, header.Get("Content-Type"), header.Get("X-Content-Type-Options"))
+	}
+	if !bytes.Equal(served.body, want) {
+		return "served something other than the declared file"
+	}
+	anonymous := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	if r, _ := fetch(t, anonymous, e.server().URL(ref)); r.code == http.StatusOK && bytes.Equal(r.body, want) {
+		return "served without a session"
+	}
+	return ""
 }
 
 // EXT-07: a field drawn by a renderer the application provides — a colour,
 // a map pin, a money amount in its currency — beyond the four the panel
 // ships (json, richtext, file, image).
+//
+// This probe measures the server's half, on the bench's application, whose
+// script registers note-status and whose field_widgets names it for
+// Note.Status: the schema tells the SPA which renderer draws the field and
+// keeps the panel's own widget beside it — what the form edits with and
+// what is drawn when the renderer fails — and a field_widgets value naming a
+// renderer is checked at startup against what the application declared.
+// Whether the SPA draws with it in the grid and on the record view, and
+// falls back when it throws, is UIX-12's question.
 func probeCustomFieldRenderer(t *testing.T, e *env) verdict {
-	if hits := knobsNamed("renderer", "custom_widget", "widget_registry", "field_renderer"); len(hits) > 0 {
-		t.Logf("the mount surface grew %v: grow this probe to register a renderer and read the schema", knobPaths(hits))
-		return partial
-	}
-	app, err := tryStart(t, extensionApp(t, orbit.Config{
-		Title:        "Admin Bench (renderer)",
-		FieldWidgets: map[string]string{"Note.Status": "colour"},
-	}))
-	if err != nil {
-		t.Logf("the panel refused a widget it does not ship (%v) and offers nothing to register one", err)
-		return absent
-	}
-	client := signInAt(t, app, "admin", bootstrapPassword)
-	schema, _ := fetch(t, client, app.URL("/admin/api/models/Note/schema"))
+	schema := e.get(t, "/admin/api/models/Note/schema")
 	if schema.code != http.StatusOK {
 		t.Fatalf("Note schema answered %d: %s", schema.code, schema.text())
 	}
-	fields, _ := schema.json(t)["fields"].([]any)
-	for _, entry := range fields {
-		f, _ := entry.(map[string]any)
-		if f["column"] != "status" {
+	fields := map[string]map[string]any{}
+	list, _ := schema.json(t)["fields"].([]any)
+	for _, entry := range list {
+		if f, _ := entry.(map[string]any); f != nil {
+			fields[fmt.Sprint(f["column"])] = f
+		}
+	}
+	status, title := fields["status"], fields["title"]
+	if status == nil || title == nil {
+		t.Fatalf("the schema has no status or title field: %s", schema.text())
+	}
+	renderer, published := status["renderer"]
+	switch {
+	case !published:
+		t.Logf("Note.Status is declared with the application's renderer %q, and the schema publishes %v", noteStatusRenderer, status)
+		return absent
+	case renderer != noteStatusRenderer:
+		t.Logf("Note.Status is declared with %q, and the schema names the renderer %v", noteStatusRenderer, renderer)
+		return partial
+	case status["html_type"] != "text":
+		t.Logf("the schema replaced the panel's own widget for Note.Status with %v: the form has nothing to edit with, nor the panel to draw when the renderer fails", status["html_type"])
+		return partial
+	}
+	if r, ok := title["renderer"]; ok {
+		t.Logf("Note.Title, declared with no renderer, is published with %v", r)
+		return partial
+	}
+
+	// A renderer field_widgets names is one the application declared,
+	// with a script to register it — or the application does not start,
+	// and says which. The bench's own application, running with its
+	// declaration, is the other half: a check that refused every renderer
+	// would not have let it start.
+	files := benchClientFiles()
+	script := []string{"note-status.js"}
+	var started []string
+	for label, c := range map[string]struct {
+		cfg   orbit.Config
+		names []string
+	}{
+		"a renderer the application did not declare (Note.Status: colour)": {
+			orbit.Config{FieldWidgets: map[string]string{"Note.Status": "colour"}, Client: benchClient()},
+			[]string{"Note.Status", "colour"}},
+		"a renderer named like a widget the panel draws (json)": {
+			orbit.Config{Client: orbit.ClientCode{Files: files, Scripts: script, FieldRenderers: []string{"json"}}},
+			[]string{`"json"`}},
+		"a renderer no script was declared to register": {
+			orbit.Config{FieldWidgets: map[string]string{"Note.Status": "colour"}, Client: orbit.ClientCode{FieldRenderers: []string{"colour"}}},
+			[]string{`"colour"`, "no script"}},
+	} {
+		c.cfg.Title = "Admin Bench (field renderer)"
+		_, err := tryStart(t, extensionApp(t, c.cfg))
+		if err == nil {
+			started = append(started, label)
 			continue
 		}
-		if f["html_type"] == "colour" {
-			t.Log("the schema publishes the application's widget name: grow this probe to check the SPA has a renderer for it")
-			return partial
+		for _, name := range c.names {
+			if !strings.Contains(err.Error(), name) {
+				t.Logf("%s: refused, but the error does not say %s: %v", label, name, err)
+				started = append(started, label+" (refused for another reason)")
+				break
+			}
 		}
-		t.Logf("Note.status declared as \"colour\" is published as %q: the declaration was dropped", f["html_type"])
-		return absent
 	}
-	t.Fatalf("the schema has no status field: %s", schema.text())
-	return absent
+	if len(started) > 0 {
+		sort.Strings(started)
+		t.Logf("started with %v", started)
+		return partial
+	}
+	return present
 }
 
 // EXT-08: a field widget the panel cannot draw stops the application. The

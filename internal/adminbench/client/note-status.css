@@ -1,0 +1,16 @@
+/* The bench application's own stylesheet (A11: EXT-06, UIX-12): what
+   draws the badge note-status.js returns, in both themes, at a contrast
+   the panel's own screens are held to. */
+.bench-note-status {
+  display: inline-block;
+  padding: 0 0.5rem;
+  border: 1px solid currentColor;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+}
+.bench-note-status-draft { color: #92400e; background: #fffbeb; }
+.bench-note-status-published { color: #166534; background: #f0fdf4; }
+.dark .bench-note-status-draft { color: #fcd34d; background: #451a03; }
+.dark .bench-note-status-published { color: #86efac; background: #052e16; }

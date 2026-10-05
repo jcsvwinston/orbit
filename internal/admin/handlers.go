@@ -398,6 +398,12 @@ func (p *Panel) handleGetSchema(c *router.Context) error {
 		IsTenantField bool                `json:"is_tenant_field"`
 		ForeignModel  string              `json:"fk_model,omitempty"`
 		Choices       []datasource.Choice `json:"choices,omitempty"`
+		// Renderer names the application's field renderer that draws
+		// this field's value in the list and on the record view
+		// (client_code.go). HTMLType stays the panel's own widget: it is
+		// what the form edits with, and what the panel draws when the
+		// renderer fails.
+		Renderer string `json:"renderer,omitempty"`
 	}
 
 	// The payload says what this operator may do, so a form can disable an
@@ -428,6 +434,7 @@ func (p *Panel) handleGetSchema(c *router.Context) error {
 			IsExcluded: f.IsExcluded, IsForeignKey: f.IsForeignKey,
 			IsTenantField: f.IsTenantField,
 			ForeignModel:  f.ForeignModel, Choices: f.Choices,
+			Renderer: p.fieldRenderer(mi.Name, f),
 		})
 	}
 

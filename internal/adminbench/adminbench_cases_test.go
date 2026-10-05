@@ -160,7 +160,7 @@ func controls() []control {
 		// the baseline of A11 (S0); probes_extension_test.go says what each
 		// one reads. EXT-08, EXT-11 and EXT-12 closed in O1; EXT-09 and
 		// EXT-10 in O2; EXT-04 and EXT-05 in O5; EXT-01 in O3; EXT-02 and
-		// EXT-03 in O4.
+		// EXT-03 in O4; EXT-06 and EXT-07 in O6.
 		{id: "EXT-01", family: "extension", title: "an action asks the operator for input before it runs (a form)",
 			want: present, probe: probeActionInput},
 		{id: "EXT-02", family: "extension", title: "an action is offered on the record view, for that one record",
@@ -172,11 +172,9 @@ func controls() []control {
 		{id: "EXT-05", family: "extension", title: "cards on a screen other than the overview: a second dashboard, or a page made of cards",
 			want: present, probe: probeWidgetPlacement},
 		{id: "EXT-06", family: "extension", title: "the application's own script runs in the panel (a client-side hook), declared and allowed by the CSP",
-			want: absent, note: "no knob declares a script; the document loads only the panel's bundle under script-src 'self'",
-			probe: probeClientScript},
+			want: present, probe: probeClientScript},
 		{id: "EXT-07", family: "extension", title: "a field drawn by a renderer the application provides",
-			want: absent, note: "the widget vocabulary is closed (json, richtext, file, image); a field declared with another widget refuses to start (EXT-08), and nothing registers a renderer",
-			probe: probeCustomFieldRenderer},
+			want: present, probe: probeCustomFieldRenderer},
 		{id: "EXT-08", family: "extension", title: "a field widget the panel cannot draw refuses to start",
 			want: present, probe: probeFieldWidgetRefusal},
 		{id: "EXT-09", family: "extension", title: "a default theme (dark, light, system) set by configuration decides the first frame",

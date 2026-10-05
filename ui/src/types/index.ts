@@ -137,6 +137,11 @@ export interface SchemaField {
   // can_edit is false for one they may see and not write.
   can_read?: boolean
   can_edit?: boolean
+  // The application's field renderer that draws this field's value in the
+  // list and on the record view (EXT-07). html_type stays the panel's own
+  // widget: what the form edits with, and what is drawn when the renderer
+  // fails.
+  renderer?: string
 }
 
 // A stored query: a name, the model it belongs to and the query string the

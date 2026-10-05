@@ -53,7 +53,7 @@ func TestValidateFieldWidgetsRefusesWhatWouldBeDropped(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := validateFieldWidgets(tc.widgets, fieldWidgetModels())
+			err := validateFieldWidgets(tc.widgets, fieldWidgetModels(), nil)
 			if err == nil {
 				t.Fatalf("%v was accepted", tc.widgets)
 			}
@@ -76,14 +76,14 @@ func TestValidateFieldWidgetsAcceptsWhatTheSchemaApplies(t *testing.T) {
 		{"album.notes": "HTML", "ALBUM.COVER": "file"},
 		{"Album.Notes": "rich_text", "Album.notes": "richtext"},
 	} {
-		if err := validateFieldWidgets(widgets, fieldWidgetModels()); err != nil {
+		if err := validateFieldWidgets(widgets, fieldWidgetModels(), nil); err != nil {
 			t.Errorf("%v was refused: %v", widgets, err)
 		}
 	}
-	if err := ValidateFieldWidgets(nil, nil); err != nil {
+	if err := ValidateFieldWidgets(nil, nil, ClientCode{}); err != nil {
 		t.Errorf("no declaration on a panel with no source was refused: %v", err)
 	}
-	if err := ValidateFieldWidgets(nil, map[string]string{"Album.Notes": "json"}); err == nil {
+	if err := ValidateFieldWidgets(nil, map[string]string{"Album.Notes": "json"}, ClientCode{}); err == nil {
 		t.Error("a declaration on a panel with no models was accepted")
 	}
 }
@@ -95,7 +95,7 @@ func TestValidateFieldWidgetsAcceptsWhatTheSchemaApplies(t *testing.T) {
 // silent drop again, one step later.
 func TestValidateFieldWidgetsAgreesWithTheSchema(t *testing.T) {
 	panel, _, srv := formsPanel(t, nil)
-	if err := ValidateFieldWidgets(panel.src, panel.config.FieldWidgets); err != nil {
+	if err := ValidateFieldWidgets(panel.src, panel.config.FieldWidgets, panel.config.Client); err != nil {
 		t.Fatalf("the harness's own declaration is refused: %v", err)
 	}
 	schema := albumSchema(t, srv)
