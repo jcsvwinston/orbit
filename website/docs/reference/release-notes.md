@@ -17,6 +17,15 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.19.1 — 2026-10-05
+
+A patch that brings v1.19.0's screens to applications: the root and `server`
+(v0.20.2) now require `orbit/ui` v1.1.0, the module that carries the browser
+half of v1.19.0. With it, the action form and the record menu, the
+dashboards, the theme applied on the first frame and the application's field
+renderers are what an application installing the root serves. No Go code
+changes.
+
 ## v1.19.0 — 2026-10-05
 
 A minor that lets an application extend the panel without forking it:
@@ -28,11 +37,8 @@ v1.18 renders and behaves as before.
 
 **The browser half of these changes ships in the `ui` module (v1.1.0), and
 this root still requires `ui` v1.0.0.** The server side is here; the screens
-that use it (the action form and record menu, the dashboards, the theme
-script's first frame, the field renderers) reach an application through the
-root's next patch, which raises that requirement. Until then, an action that
-declares fields answers 422 for missing input, and the old screens keep
-working.
+that use it reach an application with v1.19.1, which raises that
+requirement.
 
 ### Added
 
