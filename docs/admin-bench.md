@@ -1,17 +1,26 @@
 # Admin bench — what an operator can and cannot do with the panel today
 
-This is the numerator of the A6 gate ("Orbit as an admin product"). It exists
-because that gate needs a number, and a number needs something that produces
-it.
+This is the numerator of the A6 gate ("Orbit as an admin product"), and from
+the baseline of A11 ("extensibility and catalog") it carries that arc's
+numerator on this side of the suite too: the extension family, what an
+application adds to the panel. It exists because a gate needs a number, and a
+number needs something that produces it.
 
 **Measured on 2026-09-12 against the panel at v1.9.6, and kept current as the
-arc closes its gaps: the numbers below are what the suite produced on its last
-run.** Run it with:
+arc closes its gaps; the extension family was recorded on 2026-10-04 against
+v1.18.0. The numbers below are what the suite produced on its last run.** Run
+it with:
 
 ```bash
 go test ./internal/adminbench/ -run TestAdminBench -v
-go test ./internal/adminbench/ -run TestAdminBenchSummary -v   # the table below
+go test ./internal/adminbench/ -run TestAdminBenchSummary -v                    # per-family counts
+ORBIT_ADMIN_BENCH_TABLE=1 go test ./internal/adminbench/ -run TestAdminBenchTable   # writes internal/adminbench/bench-table.md
 ```
+
+The last command writes `internal/adminbench/bench-table.md`, a generated
+file that is not committed: the headline, the per-family summary under "The
+result" and the extension family's table further down are pasted from it
+when a verdict moves, so the page and the catalogue say the same thing.
 
 The bench is not prose. Every control is a Go probe in
 `internal/adminbench/` that boots a Nucleus application with
@@ -38,19 +47,23 @@ A control that cannot be probed does not belong in the bench.
 
 ## The result
 
-**59 of 59 controls present. 0 partial. 0 absent.**
+**60 of 72 controls present. 3 partial. 9 absent.**
 
 | family | present | partial | absent |
 |---|---|---|---|
-| data studio | 17 | 0 | 0 |
+| data-studio | 17 | 0 | 0 |
 | permissions | 9 | 0 | 0 |
 | audit | 7 | 0 | 0 |
 | operations | 17 | 0 | 0 |
 | customization | 7 | 0 | 0 |
 | interface | 2 | 0 | 0 |
-| **total** | **59** | **0** | **0** |
+| extension | 1 | 3 | 9 |
+| **total** | **60** | **3** | **9** |
 
-Every family is complete as of the arc's eighth session. The number is not
+The six families A6 measured are complete as of that arc's eighth session:
+59 of 59. The seventh, `extension`, was recorded at the baseline of A11 and
+is that arc's gap ([below](#what-an-application-adds-at-the-baseline-of-a11)).
+The number is not
 the end of the work: what this bench measures is a list of controls somebody
 wrote down, and a control that is present is one whose probe exercised it —
 not one that is good. What it is for is that the next change to the panel
@@ -148,7 +161,9 @@ cd internal/adminbench/browser && npm ci && npx playwright install chromium
 go test ./internal/adminbench/ -run TestBrowserBench -v
 ```
 
-**6 of 6 controls present**, plus the one that measures the instrument:
+**6 of 8 controls present**, plus the one that measures the instrument. The
+two absent ones were recorded at the baseline of A11 and belong to the
+extension family ([below](#what-an-application-adds-at-the-baseline-of-a11)):
 
 | control | what it asks |
 |---|---|
@@ -159,6 +174,8 @@ go test ./internal/adminbench/ -run TestBrowserBench -v
 | **UIX-04** | the document says what it is: language, landmarks, one main heading |
 | **UIX-05** | the keyboard reaches the navigation, and the focus is visible |
 | **UIX-06** | a dialog can be opened and dismissed from the keyboard |
+| **UIX-07** | the login screen draws the logo the application declared — **absent** |
+| **UIX-08** | the record view offers the action the application declared — **absent** |
 
 Three things worth keeping about how it is built:
 
@@ -378,7 +395,9 @@ Three things a product needs and the panel could not be told (`CUST-02`,
   login screen, the icon in the browser tab, the accent colour. It travels on
   the document as meta tags, the same channel as the prefix and the title,
   which is what makes it available on the LOGIN page, before any API call
-  could carry it.
+  could carry it. (Measured at A11's baseline: the login screen does not
+  draw it. The document carries it and nothing renders it there — `UIX-07`,
+  below.)
 - **The landing screen** — `orbit.Config.Widgets`: cards the application
   declares, each with the function that reads its value. The panel supplies
   the screen, the authorization (`admin:dashboard`), a three-second bound and
@@ -511,3 +530,120 @@ package. That is why the contract asks the application to declare its cache
 instead of the panel discovering one. The finding was right about the
 symptom and wrong about the cause, which is the same trap A4 and A5 recorded
 from the other side: a comment is not a measurement, and neither is a note.
+
+## What an application adds, at the baseline of A11
+
+A6 left four extension points, each measured present: an action of the
+application's own over a selection (`DS-09`), the brand's logo, favicon and
+accent (`CUST-02`), cards on the overview (`CUST-03`) and a screen of the
+application's own (`CUST-04`). The extension family asks what an application
+that leans on those points asks next — a form before the action, the action
+on the record it is about, a chart, a second screen of cards, its own script
+and its own field renderer, the theme its operators open on — and two
+properties every extension point should have: a declaration the panel cannot
+honour stops the application, and what the configuration accepts reaches the
+browser. It is A11's numerator on this side of the suite, recorded before the
+arc changed anything:
+
+### extension — 1 present · 3 partial · 9 absent (HTTP)
+
+| id | control | verdict | what is missing |
+|---|---|---|---|
+| `EXT-01` | an action asks the operator for input before it runs (a form) | **absent** | ModelAction declares no input and the action descriptor publishes none; an input posted with the call is dropped before Run |
+| `EXT-02` | an action is offered on the record view, for that one record | **absent** | the bulk endpoint runs an action over one id, but nothing says which actions belong on one record and the record payload names none — the record view has no action surface |
+| `EXT-03` | an action answers with a file to download or a page to open | **absent** | ActionResult is a message, a count and an untyped Data map the panel echoes; no Location, no Content-Disposition, no typed member a screen could follow |
+| `EXT-04` | a widget draws a series (a chart), not only a value or a list | **absent** | WidgetValue is a value, a detail line or a list of rows; the card payload carries nothing a chart could be drawn from |
+| `EXT-05` | cards on a screen other than the overview: a second dashboard, or a page made of cards | **absent** | one dashboard, the overview; a Widget names no placement and a Page is an http.Handler that writes its own document |
+| `EXT-06` | the application's own script runs in the panel (a client-side hook), declared and allowed by the CSP | **absent** | no knob declares a script; the document loads only the panel's bundle under script-src 'self' |
+| `EXT-07` | a field drawn by a renderer the application provides | **absent** | the widget vocabulary is closed (json, richtext, file, image); a field declared with another widget is published as its column type |
+| `EXT-08` | a field widget the panel cannot draw refuses to start | **absent** | field_widgets is the one declaration not checked at startup: an unknown widget and a field that does not exist both start, and the declaration is dropped in silence |
+| `EXT-09` | a default theme (dark, light, system) set by configuration decides the first frame | **absent** | no knob and no hint on the document: the first frame is the operator's last toggle kept in localStorage or, before one, the browser's prefers-color-scheme |
+| `EXT-10` | a palette by configuration, each colour validated | **partial** | one colour, branding.primary_color, validated as hex with a computed foreground; no surface, text, border or per-theme value |
+| `EXT-11` | branding the configuration accepts is loadable under the panel's own CSP | **partial** | a same-site logo loads; an absolute https logo URL is accepted at startup and written into the login page, and img-src 'self' data: refuses it |
+| `EXT-12` | the configuration reference documents every key an application can bind | **partial** | branding.logo_url, branding.favicon_url, branding.primary_color, locale and messages bind from nucleus.yml and have no row in website/docs/configuration.md |
+| `EXT-13` | what an application adds answers to the panel's RBAC: card, screen and verb withheld without a grant | **present** | — |
+
+Two controls of the same family can only be measured in a browser and are
+recorded in the browser half, with their own numerator: `UIX-07` (the login
+screen draws the declared logo — **absent**) and `UIX-08` (the record view
+offers the declared action — **absent**, the drawing half of `EXT-02`).
+
+### What the shape of it says
+
+- **An action is a verb over a selection, and nothing more.** It asks the
+  operator nothing (`EXT-01`), it is not offered where the record is
+  (`EXT-02`, `UIX-08`), and it answers with a toast: `ActionResult.Data` is
+  echoed as an untyped map, so "export these as PDF" or "open the
+  reconciliation" has no contract to ride (`EXT-03`).
+- **The cards are one screen of numbers.** A value, a detail line or a list
+  of rows, all on the overview (`EXT-04`, `EXT-05`). A screen of the
+  application's own is an `http.Handler` that writes its own document; a
+  page "declared in Go" that the panel draws from cards does not exist.
+- **The SPA is closed.** No script of the application's runs in it
+  (`EXT-06`), and the field widgets are the four the panel ships (`EXT-07`).
+  Both are the same missing piece seen from two sides: a client-side
+  registration the CSP allows.
+- **The theme belongs to each operator.** The first frame follows the
+  browser's preference, then the operator's last toggle; the application
+  cannot say "this control room opens dark" (`EXT-09`), and its palette is
+  one accent colour (`EXT-10`).
+- **What an application adds answers to the panel's RBAC** (`EXT-13`,
+  present): an operator with no grant is not shown the card, the screen or
+  the verb, the screen refuses them, and the grant opens each one. Every
+  surface this arc adds is one more place to keep that true; the control is
+  there so that a new one cannot forget it in silence.
+
+### What the baseline found that was not on the plan
+
+- **`field_widgets` is the one declaration the panel does not check**
+  (`EXT-08`). Actions, pages, widgets, branding and the locale refuse at
+  startup what the panel cannot honour; a field widget the panel does not
+  ship, or one on a field that does not exist, starts — and the schema
+  publishes the field as its column type, as if nothing had been declared.
+- **The configuration accepts branding the panel's own CSP refuses**
+  (`EXT-11`). The validation accepts an absolute `https://` logo or favicon
+  explicitly; the panel sends `img-src 'self' data:`, so a browser fetches
+  neither. `CUST-02` reads the document, which carries the URL, and measured
+  present; the same-site logo the bench declares does load.
+- **The login screen draws no logo** (`UIX-07`). The section on the arc's
+  eighth session above says the logo is on the sidebar and the login screen;
+  the login document carries it as a meta tag and the login screen renders
+  nothing from it. The sidebar does — which is also what proves the
+  instrument can see a logo when one is drawn.
+- **The configuration reference is five keys short** (`EXT-12`):
+  `branding.logo_url`, `branding.favicon_url`, `branding.primary_color`,
+  `locale` and `messages` bind from `nucleus.yml` and have no row in
+  `website/docs/configuration.md`. The probe reads the keys from the binding
+  contract — the koanf tags, nested structs included — not from a list.
+- **The plan calls the type `orbit.Action`; what shipped is
+  `orbit.ModelAction`**, documented under that name. That is not a control:
+  a name is not a capability, and a probe that checked for one would measure
+  the name. An alias would add a second name for one type to a frozen
+  surface; the plan should use the name the product has.
+
+### How the family is measured
+
+- **A surface that appears turns the probe red.** Most of these controls are
+  absences, and an absence cannot be exercised. Each probe therefore reads
+  what the panel SERVES — a payload, a document, a header, whether the
+  application's own function received what was posted — and also the contract
+  types an application writes against (`ModelAction`, `ActionResult`,
+  `Widget`, `WidgetValue`, `Page`) and the whole mount surface. When one of
+  those grows a member that could carry the capability, the probe answers
+  `partial`, the suite goes red against the recorded `absent`, and that is
+  the moment to grow it into the behaviour check the new surface makes
+  possible. An absence is never decided by a missing name alone.
+- **A question of refusal boots its own application.** `EXT-08`, `EXT-10`
+  and `EXT-11` ask whether the panel refuses a declaration, which the
+  bench's usual boot cannot answer: it fails the test when an application
+  does not start. These boot through `tryStart`, which hands the refusal
+  back as a value.
+- **A browser absence must fail for its own reason.** A spec fails when the
+  capability is missing and also when it broke for any other reason — a
+  selector that no longer matches, a page that did not load — and both read
+  as absent. `UIX-07` and `UIX-08` check their preconditions first, with
+  messages of their own, and the Go side records the substring the failure
+  must carry (`failsWith`). Writing `UIX-08` showed why: its first run
+  failed on a precondition — a request made from outside the browser that
+  signed in is refused with a 401 — and would have been recorded as the
+  absence it was looking for.

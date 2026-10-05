@@ -31,3 +31,7 @@ internal/adminbench/browser/playwright-report/
 # The fleet bench table is regenerated from the cases (ORBIT_FLEET_BENCH_TABLE=1);
 # the published copy lives in docs/fleet-bench.md.
 internal/fleettest/fleetbench/bench-table.md
+
+# The admin bench table is regenerated from the cases (ORBIT_ADMIN_BENCH_TABLE=1);
+# the published copy lives in docs/admin-bench.md.
+internal/adminbench/bench-table.md

@@ -38,6 +38,14 @@ type browserCase struct {
 	// note explains a verdict that is not present, in the payload's own
 	// terms. An absence with no note is a bug in the bench.
 	note string
+	// failsWith is the failure an ABSENT control must fail with. A spec
+	// fails when the capability is missing and also when it broke for any
+	// other reason — a selector that no longer matches, a page that did not
+	// load — and both read as absent. The specs that record an absence
+	// check their preconditions first with messages of their own, and this
+	// is the substring that says the failure is the one the control is
+	// about.
+	failsWith string
 }
 
 // browserCases is the recorded state of what the panel does in a browser.
@@ -51,6 +59,14 @@ func browserCases() []browserCase {
 		{id: "UIX-04", title: "the document says what it is: language, landmarks, one main heading", want: present},
 		{id: "UIX-05", title: "the keyboard reaches the navigation, and the focus is visible", want: present},
 		{id: "UIX-06", title: "a dialog can be opened and dismissed from the keyboard", want: present},
+		// The browser half of the extension family (A11), recorded at the
+		// arc's baseline.
+		{id: "UIX-07", title: "the login screen draws the logo the application declared", want: absent,
+			note:      "the logo travels on the login document (CUST-02 reads it there) and the login screen renders no image for it; only the sidebar does",
+			failsWith: "UIX-07: the login screen draws no logo"},
+		{id: "UIX-08", title: "the record view offers the action the application declared", want: absent,
+			note:      "the grid offers an application action over a selection (DS-09); the record view's dialog has no button for it (EXT-02 is the contract half)",
+			failsWith: "UIX-08: the record view offers no action"},
 	}
 }
 
@@ -117,6 +133,11 @@ func TestBrowserBench(t *testing.T) {
 					c.id, c.title, got, c.want,
 					"If the control just gained ground, that is the point: update the recorded\nverdict in browserbench_test.go in the same change.",
 					tail(result.detail, 3000))
+				return
+			}
+			if got == absent && c.failsWith != "" && !strings.Contains(result.detail, c.failsWith) {
+				t.Errorf("control %s (%s) failed, but not with %q: the absence it records was not what was measured.\n\n%s",
+					c.id, c.title, c.failsWith, tail(result.detail, 3000))
 			}
 		})
 	}
