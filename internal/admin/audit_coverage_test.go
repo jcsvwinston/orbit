@@ -320,6 +320,36 @@ func auditProbes() map[string][]auditProbe {
 				wantNew:    true,
 			},
 		},
+		// An application action on one record: the entry names the
+		// record, the place it ran from and the kind of answer it gave.
+		"POST /api/models/{name}/actions/{action}/{id}": {{
+			name: "record action",
+			setup: func(t *testing.T, env *auditProbeEnv) {
+				table, err := validateModelActions([]ModelAction{{
+					Name: "refund", Model: "AdminUser", Placement: ActionOnRecord,
+					Run: func(context.Context, ActionRequest) (ActionResult, error) {
+						return ActionResult{Message: "refunded", Affected: 1}, nil
+					},
+				}}, modelResolver(env.panel.src))
+				if err != nil {
+					t.Fatalf("declare the record action: %v", err)
+				}
+				env.panel.modelActions = table
+				env.vars["record_action"] = env.createRecord(t, "RecordAction")
+			},
+			path: func(env *auditProbeEnv) string {
+				return "/api/models/AdminUser/actions/refund/" + env.vars["record_action"]
+			},
+			body:       literalBody(`{}`),
+			wantAction: "action.refund",
+			wantNew:    true,
+			wantRecord: true,
+			check: func(t *testing.T, env *auditProbeEnv, e AuditEntry) {
+				if e.RecordID != env.vars["record_action"] || e.NewValue["on"] != "record" || e.NewValue["result"] != "message" {
+					t.Errorf("record action entry = %+v, want the record, on=record and result=message", e)
+				}
+			},
+		}},
 		"GET /api/models/{name}/export": {{
 			name:       "export csv",
 			path:       literalPath("/api/models/AdminUser/export"),

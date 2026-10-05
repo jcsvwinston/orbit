@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { AgGridReact } from 'ag-grid-react'
 import type { ColDef, GridApi, GridReadyEvent, RowSelectionOptions, SortChangedEvent, ICellRendererParams, GetRowIdParams, PostSortRowsParams } from 'ag-grid-community'
 import 'ag-grid-community/styles/ag-grid.css'
@@ -15,6 +16,7 @@ import type { ModelSchema, ModelActionSpec, ActionInputValues, Record as AppReco
 import * as api from '@/services/api'
 import RecordForm from './RecordForm'
 import ActionFormDialog from './ActionFormDialog'
+import RecordActionsMenu from './RecordActionsMenu'
 import RecordHistoryDialog from './RecordHistoryDialog'
 import ImportDialog from './ImportDialog'
 import { formatCellValue } from '../lib/fieldValues'
@@ -24,6 +26,9 @@ import { primaryKeyColumn, recordId, toApiId, type RecordId } from '../lib/recor
 import { isSearchable } from '../lib/searchable'
 import { screenCapabilities } from '../lib/capabilities'
 import { gridQueryFromString, gridQueryToString } from '../lib/savedViews'
+import { offeredOnRecord, offeredOnSelection } from '../lib/actionPlacement'
+import { redirectDestination, saveFile } from '@/lib/actionAnswer'
+import { lazyRoutes } from '@/routes'
 import {
   Search, Plus, Pencil, Trash2, Loader2, History, Bookmark,
   Download, Upload, X, Filter, ChevronDown, Play,
@@ -33,10 +38,27 @@ interface Props {
   modelName: string
   schema: ModelSchema
   dbAlias?: string
+  // focusRecord is the record a link asked to open (?record= on the Data
+  // Studio URL — where an action's redirect lands): its record view opens
+  // once the grid is up. onFocusDone is told when that view closes, so the
+  // link stops asking.
+  focusRecord?: string | null
+  onFocusDone?: () => void
 }
 
-export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
+// The first path segments the SPA's own router draws. A redirect an action
+// answers with that starts with one of them is followed without reloading
+// the document; any other page of the panel (an application's /x/ screen)
+// is a document the server serves.
+const spaRoots = lazyRoutes.map((route) => route.path)
+
+// What an application action runs on: the grid's selection, or one record
+// (its record view, its row's menu).
+type ActionSubject = { kind: 'selection' } | { kind: 'record'; id: RecordId }
+
+export default function AGGridTable({ modelName, schema, dbAlias, focusRecord, onFocusDone }: Props) {
   const { toast } = useToast()
+  const navigate = useNavigate()
   // What this operator may do with this model (see lib/capabilities).
   const { canCreate, canUpdate, canDelete } = screenCapabilities(schema)
   const { theme } = useTheme()
@@ -49,6 +71,8 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
   // The action whose form is open: one that declared fields asks for them
   // here instead of in the plain confirmation.
   const [formAction, setFormAction] = useState<ModelActionSpec | null>(null)
+  // What the pending or open action runs on.
+  const [actionSubject, setActionSubject] = useState<ActionSubject>({ kind: 'selection' })
 
   // Query state
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE)
@@ -110,6 +134,20 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
     setFormOpen(true)
   }, [])
 
+  // Actions the application declared for this model. The schema only
+  // carries the ones this operator may run, so a button here is a button
+  // they hold — the enforcer is asked again on the call regardless. Each is
+  // drawn where it is offered: the toolbar for a selection, the record view
+  // and the row's menu for one record.
+  const declaredActions: ModelActionSpec[] = useMemo(() => schema.actions ?? [], [schema])
+  const selectionActions = useMemo(() => declaredActions.filter(offeredOnSelection), [declaredActions])
+  const recordActions = useMemo(() => declaredActions.filter(offeredOnRecord), [declaredActions])
+
+  // The row menu starts an action through whatever startAction is on this
+  // render; reading it through a ref keeps the column definitions — and
+  // the grid's own state — from being rebuilt on every render.
+  const startActionRef = useRef<(action: ModelActionSpec, subject: ActionSubject) => void>(() => {})
+
   // Build column definitions
   const columnDefs = useMemo<ColDef[]>(() => [
     ...listFields.map((f) => ({
@@ -132,7 +170,7 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
     ...([{
       headerName: 'Actions',
       colId: '__actions',
-      width: 100,
+      width: recordActions.length > 0 ? 128 : 100,
       sortable: false,
       filter: false,
       resizable: false,
@@ -175,21 +213,24 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
             )}
+            {recordActions.length > 0 && (
+              <RecordActionsMenu
+                actions={recordActions}
+                recordLabel={String(id ?? '')}
+                disabled={id === null}
+                onSelect={(action) => id !== null && startActionRef.current(action, { kind: 'record', id })}
+              />
+            )}
           </div>
         )
       },
     } as ColDef]),
-  ], [listFields, canUpdate, canDelete, pkColumn, handleEdit])
-
-  // Actions the application declared for this model. The schema only
-  // carries the ones this operator may run, so a button here is a button
-  // they hold — the enforcer is asked again on the call regardless.
-  const declaredActions: ModelActionSpec[] = useMemo(() => schema.actions ?? [], [schema])
+  ], [listFields, canUpdate, canDelete, pkColumn, handleEdit, recordActions])
 
   // Rows can be selected when something can be done with a selection: a
   // delete, or an action that runs over one. An operator who may publish
   // but not delete still has to be able to pick what to publish.
-  const selectable = canDelete || declaredActions.some((action) => action.requires_selection)
+  const selectable = canDelete || selectionActions.some((action) => action.requires_selection)
   const rowSelection = useMemo<RowSelectionOptions | undefined>(
     () => (selectable ? { mode: 'multiRow', checkboxes: true, headerCheckbox: true, enableClickSelection: false } : undefined),
     [selectable],
@@ -299,11 +340,30 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
     return selected.map((row) => recordId(row, pkColumn)).filter((id): id is RecordId => id !== null)
   }
 
-  // performAction makes the call and reports it. It throws when the server
-  // refuses, so each flow decides where the refusal is shown: a toast for
-  // the plain confirmation, the fields for a form.
-  const performAction = async (action: ModelActionSpec, ids: RecordId[], input?: ActionInputValues) => {
-    const result = await api.runModelAction(modelName, action.name, ids.map(toApiId), input)
+  // followRedirect takes the operator to the page an action answered with.
+  // A screen of the SPA's own is reached through the router; any other
+  // page of the panel is loaded as a document. A path that is not one of
+  // the panel's is not followed: the server refuses those, and this is the
+  // second lock on the same door.
+  const followRedirect = (path: string) => {
+    const destination = redirectDestination(path, spaRoots)
+    if (!destination) {
+      toast({ variant: 'destructive', title: 'Redirect not followed', description: `${path} is not a page of this panel.` })
+      return
+    }
+    if (destination.router) navigate(destination.to)
+    else window.location.assign(destination.href)
+  }
+
+  // answer shows what an action answered with: its message, the page it
+  // sends the operator to, or the file it handed back.
+  const answer = (action: ModelActionSpec, outcome: api.ActionOutcome) => {
+    if (outcome.kind === 'download') {
+      saveFile(outcome.blob, outcome.filename)
+      toast({ title: `${action.label}: ${outcome.filename}`, description: 'The file was downloaded.' })
+      return
+    }
+    const result = outcome.result
     // The application's own message is the one worth showing: it knows
     // what it did, the panel only knows that it ran.
     toast({
@@ -311,17 +371,29 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
       title: result.message ?? `${action.label}: ${result.affected} record${result.affected === 1 ? '' : 's'}`,
       description: result.failed > 0 ? `${result.failed} row${result.failed === 1 ? '' : 's'} were out of scope` : undefined,
     })
-    gridApi?.deselectAll()
-    setSelectedCount(0)
-    reload()
+    if (result.redirect) followRedirect(result.redirect)
   }
 
-  const runAction = async (action: ModelActionSpec) => {
-    const ids = selectedIds()
-    if (ids.length === 0 && action.requires_selection) return
+  // performAction makes the call and reports it. It throws when the server
+  // refuses, so each flow decides where the refusal is shown: a toast for
+  // the plain confirmation, the fields for a form.
+  const performAction = async (action: ModelActionSpec, subject: ActionSubject, input?: ActionInputValues) => {
+    const outcome = subject.kind === 'record'
+      ? await api.runRecordAction(modelName, action.name, toApiId(subject.id), input)
+      : await api.runModelAction(modelName, action.name, selectedIds().map(toApiId), input)
+    if (subject.kind === 'selection') {
+      gridApi?.deselectAll()
+      setSelectedCount(0)
+    }
+    reload()
+    answer(action, outcome)
+  }
+
+  const runAction = async (action: ModelActionSpec, subject: ActionSubject) => {
+    if (subject.kind === 'selection' && selectedIds().length === 0 && action.requires_selection) return
     setRunningAction(true)
     try {
-      await performAction(action, ids)
+      await performAction(action, subject)
       setPendingAction(null)
     } catch (err) {
       toast({ variant: 'destructive', title: `${action.label} failed`, description: api.errorMessage(err) })
@@ -335,7 +407,7 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
   const submitActionForm = async (action: ModelActionSpec, input: ActionInputValues) => {
     setRunningAction(true)
     try {
-      await performAction(action, selectedIds(), input)
+      await performAction(action, actionSubject, input)
       setFormAction(null)
     } finally {
       setRunningAction(false)
@@ -344,8 +416,9 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
 
   // An action that declared fields asks for them in a form; one with a
   // confirmation asks that; one with neither runs on the click. All of them
-  // end in the same call.
-  const startAction = (action: ModelActionSpec) => {
+  // end in the same call, on the subject they were started on.
+  const startAction = (action: ModelActionSpec, subject: ActionSubject) => {
+    setActionSubject(subject)
     if (action.fields && action.fields.length > 0) {
       setFormAction(action)
       return
@@ -354,8 +427,56 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
       setPendingAction(action)
       return
     }
-    void runAction(action)
+    void runAction(action, subject)
   }
+  useEffect(() => {
+    startActionRef.current = startAction
+  })
+
+  // What the dialogs say the action runs on.
+  const subjectText = (action: ModelActionSpec, subject: ActionSubject): string => {
+    if (subject.kind === 'record') return `Record ${String(subject.id)}.`
+    return action.requires_selection ? `${selectedCount} record${selectedCount === 1 ? '' : 's'} selected.` : ''
+  }
+
+  // The record view closes before an action started from it opens its own
+  // form or confirmation: one dialog at a time.
+  const startActionFromRecordView = (action: ModelActionSpec) => {
+    const id = editingRecord ? recordId(editingRecord, pkColumn) : null
+    closeForm()
+    if (id !== null) startAction(action, { kind: 'record', id })
+  }
+
+  const closeForm = () => {
+    setFormOpen(false)
+    if (focusRecord) onFocusDone?.()
+  }
+
+  // A link that names a record opens its view once the grid is up — the
+  // landing of an action's redirect to "/data-studio?model=…&record=…".
+  // The record is read once per link: the callback is read through a ref,
+  // so a parent that hands a new one on a render does not read it again
+  // and reset what the operator is typing.
+  const onFocusDoneRef = useRef(onFocusDone)
+  useEffect(() => {
+    onFocusDoneRef.current = onFocusDone
+  })
+  useEffect(() => {
+    if (!focusRecord || schema.name !== modelName) return
+    let cancelled = false
+    api.getRecord(modelName, focusRecord)
+      .then((record) => {
+        if (cancelled) return
+        setEditingRecord(record)
+        setFormOpen(true)
+      })
+      .catch((err) => {
+        if (cancelled) return
+        toast({ variant: 'destructive', title: 'Could not open the record', description: api.errorMessage(err) })
+        onFocusDoneRef.current?.()
+      })
+    return () => { cancelled = true }
+  }, [focusRecord, modelName, schema.name, toast])
 
   const reloadViews = useCallback(async () => {
     try {
@@ -478,7 +599,7 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
         {/* What this application added to the model. An action over a
             selection only appears once there is one, the same way Delete
             does; one whose subject is the table is always there. */}
-        {declaredActions
+        {selectionActions
           .filter((action) => selectedCount > 0 || !action.requires_selection)
           .map((action) => (
             <Button
@@ -487,7 +608,7 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
               size="sm"
               disabled={runningAction}
               title={action.description}
-              onClick={() => startAction(action)}
+              onClick={() => startAction(action, { kind: 'selection' })}
               className="gap-1.5"
             >
               <Play className="h-3.5 w-3.5" />
@@ -729,10 +850,13 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
       {/* Create/Edit Dialog */}
       <RecordForm
         open={formOpen}
-        onClose={() => setFormOpen(false)}
+        onClose={closeForm}
         schema={schema}
         record={editingRecord}
         onSave={handleSave}
+        readOnly={editingRecord !== null && !canUpdate}
+        actions={recordActions}
+        onAction={startActionFromRecordView}
       />
 
       {/* The record's own history, read from the audit trail */}
@@ -781,10 +905,7 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
             <DialogHeader>
               <DialogTitle>{pendingAction.label}</DialogTitle>
               <DialogDescription>
-                {pendingAction.confirm}
-                {pendingAction.requires_selection
-                  ? ` ${selectedCount} record${selectedCount === 1 ? '' : 's'} selected.`
-                  : ''}
+                {[pendingAction.confirm, subjectText(pendingAction, actionSubject)].filter(Boolean).join(' ')}
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
@@ -793,7 +914,7 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
               </Button>
               <Button
                 variant={pendingAction.destructive ? 'destructive' : 'default'}
-                onClick={() => void runAction(pendingAction)}
+                onClick={() => void runAction(pendingAction, actionSubject)}
                 disabled={runningAction}
               >
                 {runningAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -808,7 +929,7 @@ export default function AGGridTable({ modelName, schema, dbAlias }: Props) {
       {formAction && (
         <ActionFormDialog
           action={formAction}
-          selectedCount={selectedCount}
+          subject={subjectText(formAction, actionSubject)}
           onCancel={() => setFormAction(null)}
           onSubmit={(input) => submitActionForm(formAction, input)}
         />

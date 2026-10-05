@@ -4,15 +4,19 @@
 package adminbench
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
+	"mime"
 	"net/http"
 	"net/url"
 	"reflect"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -42,28 +46,12 @@ import (
 // to grow it into the behaviour check the new surface makes possible. An
 // absence is never decided by the missing name alone.
 
-// The members of the contract types as A6 left them, plus what A11 has
-// added since (ModelAction.Fields, EXT-01). A field outside these sets is a
-// surface that moved. (The widget and page lists went when EXT-04 and
-// EXT-05 became behaviour checks in O5.)
-var (
-	knownModelAction  = []string{"Name", "Model", "Label", "Description", "Confirm", "Destructive", "AllowEmptySelection", "Fields", "Run"}
-	knownActionResult = []string{"Message", "Affected", "Data"}
-
-	knownActionDescriptor = []string{"name", "label", "description", "confirm", "destructive", "requires_selection", "fields"}
-	knownActionResponse   = []string{"action", "ran", "requested", "affected", "failed", "errors", "message", "data"}
-)
-
-// publishDescriptor returns the publish action as the schema of Note offers
-// it to the superuser.
-func publishDescriptor(t *testing.T, e *env) map[string]any {
-	t.Helper()
-	d, ok := noteActionDescriptor(t, e, "publish")
-	if !ok {
-		t.Fatalf("the schema offers no publish action; DS-09 measures that and should be red too")
-	}
-	return d
-}
+// The members of the contract types as A6 left them. A field outside these
+// sets is a surface that moved. The action's own lists went when EXT-01,
+// EXT-02 and EXT-03 grew into behaviour checks (O3, O4), and the widget and
+// page lists when EXT-04 and EXT-05 did (O5); knownActionResult stays as A6
+// left it, because EXT-03 starts by asking what grew beyond it.
+var knownActionResult = []string{"Message", "Affected", "Data"}
 
 // noteActionDescriptor returns one of Note's actions as its schema offers it
 // to the superuser.
@@ -193,71 +181,312 @@ func probeActionInput(t *testing.T, e *env) verdict {
 // EXT-02: the action is offered on the record it is about. Selecting one
 // row in a grid to press a button is the workaround; the record view is
 // where an operator already is when they decide to refund this order.
+//
+// Measured as what the drawing half (UIX-08) relies on and what a UI cannot
+// fake: the schema says where each action belongs; a record action runs on
+// that record alone, through an endpoint of its own; that endpoint asks the
+// same questions as the bulk one — the verb, the input, the trail — and the
+// placement is enforced, so a record action is never handed a selection and
+// a selection action is not reachable from a record. An action declared
+// before placements existed keeps its place (publish).
 func probeActionOnRecord(t *testing.T, e *env) verdict {
-	if hits := fieldsBeyond(reflect.TypeOf(orbit.ModelAction{}), knownModelAction,
-		"record", "placement", "scope", "single", "detail", "where", "location", "view"); len(hits) > 0 {
-		t.Logf("orbit.ModelAction grew %v: grow this probe to declare a record action and read it where the record view reads", hits)
-		return partial
+	// 1. Where each action belongs, as the schema a UI reads says it.
+	schema := e.get(t, "/admin/api/models/Note/schema")
+	if schema.code != http.StatusOK {
+		t.Fatalf("Note schema answered %d: %s", schema.code, schema.text())
 	}
-	if hits := keysBeyond(publishDescriptor(t, e), knownActionDescriptor,
-		"record", "placement", "scope", "single", "detail", "where", "location", "view"); len(hits) > 0 {
-		t.Logf("the action descriptor grew %v: grow this probe", hits)
-		return partial
+	placements := map[string]string{}
+	actions, _ := schema.json(t)["actions"].([]any)
+	for _, entry := range actions {
+		if d, ok := entry.(map[string]any); ok {
+			if placement, ok := d["placement"].(string); ok {
+				placements[fmt.Sprint(d["name"])] = placement
+			}
+		}
 	}
-
-	// The record payload is what the record view loads; an action offered
-	// there would travel with it or be named by it.
-	id := e.createNote(t, map[string]any{"title": "action-on-record", "status": "draft"})
-	record := e.get(t, "/admin/api/models/Note/"+id)
-	if record.code != http.StatusOK {
-		t.Fatalf("reading the record answered %d: %s", record.code, record.text())
-	}
-	if hits := keysBeyond(record.json(t), []string{"data"}, "action"); len(hits) > 0 {
-		t.Logf("the record payload carries %v: grow this probe", hits)
-		return partial
-	}
-
-	// What does exist: the bulk endpoint runs an action over exactly one
-	// id. It is the grid's surface, reached by selecting that row there.
-	r := e.do(t, http.MethodPost, "/admin/api/models/Note/bulk",
-		map[string]any{"action": "publish", "ids": []string{id}})
-	if r.code >= 400 {
-		t.Logf("running the action over one id answered %d: %s", r.code, r.text())
+	if len(placements) == 0 {
+		t.Logf("no action descriptor says where it belongs (%d actions): a record view cannot tell which are its own", len(actions))
 		return absent
 	}
-	t.Logf("one id through the bulk endpoint runs (%s); nothing tells a record view which actions belong on one record, and the record payload names none", r.text())
-	return absent
+	want := map[string]string{"publish": "selection", "schedule": "selection_and_record", "duplicate": "record", "download_text": "selection_and_record"}
+	if !reflect.DeepEqual(placements, want) {
+		t.Logf("the schema places the actions %v; the application declared %v", placements, want)
+		return partial
+	}
+
+	// 2. A record action runs on that record, alone.
+	id := e.createNote(t, map[string]any{"title": "action-on-record", "status": "draft"})
+	_, before := benchExtensions.lastRequest()
+	ran := e.do(t, http.MethodPost, "/admin/api/models/Note/actions/duplicate/"+id, nil)
+	call, after := benchExtensions.lastRequest()
+	if ran.code != http.StatusOK || after == before {
+		t.Logf("the record endpoint answered %d and the action ran %d time(s): %s", ran.code, after-before, ran.text())
+		return partial
+	}
+	if len(call.IDs) != 1 || call.IDs[0] != id {
+		t.Logf("the record action was handed %v, not the record %s", call.IDs, id)
+		return partial
+	}
+
+	// 3. The placement is enforced both ways, and an action declared before
+	// placements existed is still a selection action.
+	_, before = benchExtensions.lastRequest()
+	onBulk := e.do(t, http.MethodPost, "/admin/api/models/Note/bulk", map[string]any{"action": "duplicate", "ids": []string{id}})
+	onRecord := e.do(t, http.MethodPost, "/admin/api/models/Note/actions/publish/"+id, nil)
+	if _, after := benchExtensions.lastRequest(); after != before || onBulk.code < 400 || onRecord.code < 400 {
+		t.Logf("a record action over a selection answered %d, a selection action on a record %d, and %d of them ran: the placement is drawn, not enforced",
+			onBulk.code, onRecord.code, after-before)
+		return partial
+	}
+	if published := e.do(t, http.MethodPost, "/admin/api/models/Note/bulk", map[string]any{"action": "publish", "ids": []string{id}}); published.code != http.StatusOK {
+		t.Logf("publish, declared with no placement, no longer runs over a selection (%d): %s", published.code, published.text())
+		return partial
+	}
+
+	// 4. The same input check: what the declaration refuses never reaches
+	// the function, and the answer names the fields.
+	_, before = benchExtensions.lastRequest()
+	refused := e.do(t, http.MethodPost, "/admin/api/models/Note/actions/schedule/"+id,
+		map[string]any{"input": map[string]any{"channel": "fax"}})
+	if _, after := benchExtensions.lastRequest(); after != before || refused.code != http.StatusUnprocessableEntity {
+		t.Logf("a bad input on the record endpoint answered %d and reached the action %d time(s): %s", refused.code, after-before, refused.text())
+		return partial
+	}
+	errBody, _ := refused.json(t)["error"].(map[string]any)
+	details, _ := errBody["details"].(map[string]any)
+	if _, named := details["channel"]; !named {
+		t.Logf("the record endpoint's refusal does not name the field: %s", refused.text())
+		return partial
+	}
+
+	// 5. The same verb: an operator without it is refused and the function
+	// never runs; the grant is what lets them.
+	op := e.operatorNamed(t, "record-action-operator")
+	_, before = benchExtensions.lastRequest()
+	denied := e.asOperator(t, op, http.MethodPost, "/admin/api/models/Note/actions/duplicate/"+id, nil)
+	if _, after := benchExtensions.lastRequest(); after != before || denied.code != http.StatusForbidden {
+		t.Logf("an operator with no grant ran a record action: answered %d, ran %d time(s)", denied.code, after-before)
+		return partial
+	}
+	e.grant(t, op.username, "admin:Note", "duplicate")
+	if granted := e.asOperator(t, op, http.MethodPost, "/admin/api/models/Note/actions/duplicate/"+id, nil); granted.code != http.StatusOK {
+		t.Logf("the grant did not open the record action (%d): %s", granted.code, granted.text())
+		return partial
+	}
+
+	// 6. The same trail, read where it matters: the record's own history
+	// says what was done to it, from where, and by whom.
+	history := e.get(t, "/admin/api/models/Note/"+id+"/history")
+	for _, raw := range historyEntries(t, history) {
+		if raw["action"] != "action.duplicate" {
+			continue
+		}
+		values, _ := raw["new_value"].(map[string]any)
+		if values["on"] == "record" && raw["record_id"] == id {
+			return present
+		}
+	}
+	t.Logf("the record's history has no entry for the action run on it: %s", history.text())
+	return partial
+}
+
+// historyEntries reads a record's history payload.
+func historyEntries(t *testing.T, r response) []map[string]any {
+	t.Helper()
+	if r.code != http.StatusOK {
+		t.Logf("the record's history answered %d: %s", r.code, r.text())
+		return nil
+	}
+	raw, _ := r.json(t)["entries"].([]any)
+	out := make([]map[string]any, 0, len(raw))
+	for _, item := range raw {
+		if entry, ok := item.(map[string]any); ok {
+			out = append(out, entry)
+		}
+	}
+	return out
 }
 
 // EXT-03: the action answers with something to download or a page to open —
 // "export these invoices as PDF", "open the reconciliation for this batch".
+//
+// Measured by effect, both ways. What an action is allowed to answer arrives:
+// the redirect is a page of the panel that exists (the copy the action
+// made), the file is an attachment with the declared name, type and bytes,
+// from one record and from a selection, and the trail records which kind of
+// answer each call gave. What it is not allowed to answer does not: a
+// redirect out of the panel, steered by what an operator typed, and a file
+// over the ceiling are refused — after the action ran, and saying so.
 func probeActionResultKinds(t *testing.T, e *env) verdict {
 	if hits := fieldsBeyond(reflect.TypeOf(orbit.ActionResult{}), knownActionResult,
-		"redirect", "download", "url", "file", "location", "navigate", "open", "link", "attachment"); len(hits) > 0 {
-		t.Logf("orbit.ActionResult grew %v: grow this probe to return one and read what the panel does with it", hits)
+		"redirect", "download", "url", "file", "location", "navigate", "open", "link", "attachment"); len(hits) == 0 {
+		t.Log("ActionResult is a message, a count and an untyped Data map: no member a screen could follow")
+		return absent
+	}
+	id := e.createNote(t, map[string]any{"title": "ext03-source", "body": "ext03 body", "status": "draft"})
+
+	// 1. A page of the panel: the copy the action made.
+	r := e.do(t, http.MethodPost, "/admin/api/models/Note/actions/duplicate/"+id, nil)
+	if r.code != http.StatusOK {
+		t.Logf("duplicate answered %d: %s", r.code, r.text())
 		return partial
 	}
-	id := e.createNote(t, map[string]any{"title": "action-result", "status": "draft"})
-	resp, header := fetchPost(t, e, "/admin/api/models/Note/bulk",
-		`{"action":"publish","ids":["`+id+`"]}`)
-	if resp.code >= 400 {
-		t.Fatalf("publish answered %d: %s", resp.code, resp.text())
-	}
-	if loc := header.Get("Location"); loc != "" {
-		t.Logf("the action's answer carries Location %q: grow this probe", loc)
+	answer := r.json(t)
+	target, _ := answer["redirect"].(string)
+	const page = "/data-studio?model=Note&record="
+	if answer["result"] != "redirect" || !strings.HasPrefix(target, page) {
+		t.Logf("the answer is %v: no redirect a screen could follow", answer)
 		return partial
 	}
-	if cd := header.Get("Content-Disposition"); cd != "" {
-		t.Logf("the action's answer carries Content-Disposition %q: grow this probe", cd)
+	copied := e.get(t, "/admin/api/models/Note/"+strings.TrimPrefix(target, page))
+	if copied.code != http.StatusOK || !strings.Contains(copied.raw(), "Copy of ext03-source") {
+		t.Logf("the redirect %q names no record the panel serves (%d): %s", target, copied.code, copied.text())
 		return partial
 	}
-	if hits := keysBeyond(resp.json(t), knownActionResponse,
-		"redirect", "download", "url", "file", "location", "navigate", "open", "link"); len(hits) > 0 {
-		t.Logf("the action's answer grew %v: grow this probe", hits)
+
+	// 2. A file, from the record and from a selection.
+	second := e.createNote(t, map[string]any{"title": "ext03-second", "status": "draft"})
+	for _, call := range []struct {
+		path, body, name string
+		holds            []string
+	}{
+		{"/admin/api/models/Note/actions/download_text/" + id, `{}`, "note-" + id + ".txt", []string{"ext03-source", "ext03 body"}},
+		{"/admin/api/models/Note/bulk", `{"action":"download_text","ids":["` + id + `","` + second + `"]}`, "notes.txt", []string{"ext03-source", "ext03-second"}},
+	} {
+		file, header := fetchPost(t, e, call.path, call.body)
+		disposition, params, err := mime.ParseMediaType(header.Get("Content-Disposition"))
+		if file.code != http.StatusOK || err != nil || disposition != "attachment" || params["filename"] != call.name {
+			t.Logf("%s answered %d with Content-Disposition %q: not the attachment %s", call.path, file.code, header.Get("Content-Disposition"), call.name)
+			return partial
+		}
+		if !strings.HasPrefix(header.Get("Content-Type"), "text/plain") || header.Get("X-Content-Type-Options") != "nosniff" {
+			t.Logf("the file is served as %q (nosniff %q): not the type the action declared", header.Get("Content-Type"), header.Get("X-Content-Type-Options"))
+			return partial
+		}
+		for _, want := range call.holds {
+			if !strings.Contains(file.raw(), want) {
+				t.Logf("the file does not hold %q: %s", want, file.text())
+				return partial
+			}
+		}
+	}
+
+	// 3. The trail records which kind of answer each call gave.
+	kinds := map[string]string{}
+	for _, entry := range historyEntries(t, e.get(t, "/admin/api/models/Note/"+id+"/history")) {
+		values, _ := entry["new_value"].(map[string]any)
+		if action, _ := entry["action"].(string); strings.HasPrefix(action, "action.") {
+			kinds[action] = fmt.Sprint(values["result"])
+		}
+	}
+	if kinds["action.duplicate"] != "redirect" || kinds["action.download_text"] != "download" {
+		t.Logf("the record's history records the answers as %v", kinds)
 		return partial
 	}
-	t.Logf("the answer is JSON with %v; Data is echoed as an untyped map the panel attaches no meaning to", topLevelKeys(resp.json(t)))
-	return absent
+
+	// 4. What the panel will not send, from an application that tries.
+	return refusedAnswers(t)
+}
+
+// refusedAnswers boots an application whose actions answer with what the
+// panel must not send — a redirect whose target the operator typed, and a
+// file over the ceiling — and checks each is refused after it ran, with
+// nothing of it reaching the client.
+func refusedAnswers(t *testing.T) verdict {
+	var ran atomic.Int32
+	steered := orbit.ModelAction{
+		Name: "open", Model: "Note", Label: "Open", Placement: orbit.ActionOnRecord,
+		Fields: []orbit.ActionField{{Name: "target", Required: true}},
+		Run: func(_ context.Context, req orbit.ActionRequest) (orbit.ActionResult, error) {
+			ran.Add(1)
+			return orbit.ActionResult{Redirect: req.Input.String("target")}, nil
+		},
+	}
+	oversized := orbit.ModelAction{
+		Name: "dump", Model: "Note", Label: "Dump", Placement: orbit.ActionOnRecord,
+		Run: func(context.Context, orbit.ActionRequest) (orbit.ActionResult, error) {
+			ran.Add(1)
+			return orbit.ActionResult{Download: &orbit.ActionDownload{
+				Filename: "dump.bin", ContentType: "application/octet-stream",
+				Body: io.LimitReader(zeroes{}, 32<<20+1),
+			}}, nil
+		},
+	}
+	app, err := tryStart(t, extensionApp(t, orbit.Config{Title: "Admin Bench (answers)", Actions: []orbit.ModelAction{steered, oversized}}))
+	if err != nil {
+		t.Fatalf("the application with two valid actions refused to start: %v", err)
+	}
+	client := signInAt(t, app, "admin", bootstrapPassword)
+	created, _ := postAt(t, client, app.URL("/admin/api/models/Note"), map[string]any{"title": "answers", "status": "draft"})
+	if created.code >= 300 {
+		t.Fatalf("create Note answered %d: %s", created.code, created.text())
+	}
+	id := recordID(t, created.json(t))
+
+	// "///host" is the one a URL parser and a browser disagree on: Go
+	// reads no host in it, a browser reads evil.example.
+	for _, target := range []string{"https://evil.example/login", "//evil.example/login", "///evil.example/login", `/\evil.example`, "/../../elsewhere"} {
+		before := ran.Load()
+		r, header := postAt(t, client, app.URL("/admin/api/models/Note/actions/open/"+id), map[string]any{"input": map[string]any{"target": target}})
+		if ran.Load() == before {
+			t.Fatalf("the open action did not run for %q (%d): %s", target, r.code, r.text())
+		}
+		if r.code < 500 || strings.Contains(r.raw(), `"redirect"`) || header.Get("Location") != "" {
+			t.Logf("a redirect to %q the operator typed answered %d: %s", target, r.code, r.text())
+			return partial
+		}
+		if !strings.Contains(r.raw(), "ran, and its answer was refused") {
+			t.Logf("the refusal of %q does not say the action ran: %s", target, r.text())
+			return partial
+		}
+	}
+	r, header := postAt(t, client, app.URL("/admin/api/models/Note/actions/dump/"+id), nil)
+	if r.code < 500 || header.Get("Content-Disposition") != "" || !strings.Contains(r.raw(), "larger than") {
+		t.Logf("a file over the ceiling answered %d with Content-Disposition %q (%d bytes)", r.code, header.Get("Content-Disposition"), len(r.body))
+		return partial
+	}
+	return present
+}
+
+// zeroes is an endless body that allocates nothing until it is read.
+type zeroes struct{}
+
+func (zeroes) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = 0
+	}
+	return len(p), nil
+}
+
+// postAt issues one JSON POST with the client it is given, against an
+// application tryStart booted, and keeps the headers.
+func postAt(t *testing.T, client *http.Client, target string, payload any) (response, http.Header) {
+	t.Helper()
+	var body io.Reader
+	if payload != nil {
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatalf("encode payload: %v", err)
+		}
+		body = bytes.NewReader(raw)
+	}
+	req, err := http.NewRequest(http.MethodPost, target, body)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("POST %s: %v", target, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	return response{code: resp.StatusCode, ctype: resp.Header.Get("Content-Type"), body: raw}, resp.Header
 }
 
 // EXT-04: a widget draws a series — signups per day, failed payments per

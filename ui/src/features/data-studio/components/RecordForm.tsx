@@ -3,7 +3,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
-import type { SchemaField, ModelSchema, Record as AppRecord } from '@/types'
+import type { SchemaField, ModelSchema, ModelActionSpec, Record as AppRecord } from '@/types'
 import { errorMessage } from '@/services/api'
 import { fieldToInput, inputToPayload, isJsonField, readField } from '../lib/fieldValues'
 import { isFieldEditable } from '../lib/capabilities'
@@ -11,7 +11,7 @@ import RelationSelect from './RelationSelect'
 import FileField from './FileField'
 import InlineEditor, { type InlineRow } from './InlineEditor'
 import { inlinePayload } from '../lib/inlinePayload'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Play } from 'lucide-react'
 
 interface Props {
   open: boolean
@@ -19,6 +19,17 @@ interface Props {
   schema: ModelSchema
   record: AppRecord | null
   onSave: (data: AppRecord) => Promise<void>
+  // actions are the application's actions offered on one record (EXT-02)
+  // that this operator may run. They are drawn on an existing record only:
+  // a record being created has no id to run them on.
+  actions?: ModelActionSpec[]
+  // onAction runs one of them on this record. The view closes first, so
+  // the action's own form or confirmation is the one dialog on screen.
+  onAction?: (action: ModelActionSpec) => void
+  // readOnly draws an existing record for an operator who may not update
+  // it — one who reached it through a link or an action's redirect: every
+  // field as a value, and no save to be refused.
+  readOnly?: boolean
 }
 
 function editableFields(schema: ModelSchema, isEdit: boolean): SchemaField[] {
@@ -190,10 +201,11 @@ function FieldInput({
   )
 }
 
-export default function RecordForm({ open, onClose, schema, record, onSave }: Props) {
+export default function RecordForm({ open, onClose, schema, record, onSave, actions, onAction, readOnly = false }: Props) {
   const isEdit = record !== null
-  const fields = editableFields(schema, isEdit)
-  const readonlyFields = displayFields(schema)
+  const viewOnly = isEdit && readOnly
+  const fields = viewOnly ? [] : editableFields(schema, isEdit)
+  const readonlyFields = viewOnly ? schema.fields.filter((f) => !f.is_excluded) : displayFields(schema)
   const [formData, setFormData] = useState<{ [column: string]: string }>({})
   // The children each inline collection is holding, keyed by the name a
   // payload calls the collection ("tracks").
@@ -280,11 +292,34 @@ export default function RecordForm({ open, onClose, schema, record, onSave }: Pr
     <Dialog open={true} onOpenChange={(val: boolean) => !val && onClose()}>
       <DialogContent className="max-w-xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{isEdit ? 'Edit' : 'Create'} {schema.name}</DialogTitle>
+          <DialogTitle>{viewOnly ? '' : isEdit ? 'Edit ' : 'Create '}{schema.name}</DialogTitle>
           <DialogDescription>
-            {isEdit ? 'Update the record details below.' : 'Fill in the details to create a new record.'}
+            {viewOnly
+              ? 'You may view this record, not change it.'
+              : isEdit ? 'Update the record details below.' : 'Fill in the details to create a new record.'}
           </DialogDescription>
         </DialogHeader>
+        {/* What the application offers on this record, where the operator
+            already is when they decide to do it. */}
+        {isEdit && onAction && actions && actions.length > 0 && (
+          <div role="group" aria-label="Actions on this record" className="flex flex-wrap gap-2 pb-3 border-b">
+            {actions.map((action) => (
+              <Button
+                key={action.name}
+                type="button"
+                size="sm"
+                variant={action.destructive ? 'destructive' : 'outline'}
+                title={action.description}
+                disabled={saving}
+                onClick={() => onAction(action)}
+                className="gap-1.5"
+              >
+                <Play className="h-3.5 w-3.5" />
+                {action.label}
+              </Button>
+            ))}
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="space-y-4 py-2" noValidate>
           {isEdit && readonlyFields.length > 0 && (
             <div className="space-y-2 pb-3 border-b">
@@ -330,7 +365,7 @@ export default function RecordForm({ open, onClose, schema, record, onSave }: Pr
           {/* The children, edited where the record is. On a create there is
               no parent id yet, so the rows start empty and are written right
               after the parent. */}
-          {(schema.inlines ?? []).map((spec) => (
+          {!viewOnly && (schema.inlines ?? []).map((spec) => (
             <InlineEditor
               key={spec.model}
               spec={spec}
@@ -347,9 +382,9 @@ export default function RecordForm({ open, onClose, schema, record, onSave }: Pr
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
-              Cancel
+              {viewOnly ? 'Done' : 'Cancel'}
             </Button>
-            <Button type="submit" disabled={saving || schema.read_only}>
+            {!viewOnly && <Button type="submit" disabled={saving || schema.read_only}>
               {saving ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -360,7 +395,7 @@ export default function RecordForm({ open, onClose, schema, record, onSave }: Pr
               ) : (
                 'Create'
               )}
-            </Button>
+            </Button>}
           </DialogFooter>
         </form>
       </DialogContent>

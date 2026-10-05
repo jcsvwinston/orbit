@@ -48,7 +48,7 @@ A control that cannot be probed does not belong in the bench.
 
 ## The result
 
-**68 of 72 controls present. 0 partial. 4 absent.**
+**70 of 72 controls present. 0 partial. 2 absent.**
 
 | family | present | partial | absent |
 |---|---|---|---|
@@ -58,15 +58,15 @@ A control that cannot be probed does not belong in the bench.
 | operations | 17 | 0 | 0 |
 | customization | 7 | 0 | 0 |
 | interface | 2 | 0 | 0 |
-| extension | 9 | 0 | 4 |
-| **total** | **68** | **0** | **4** |
+| extension | 11 | 0 | 2 |
+| **total** | **70** | **0** | **2** |
 
 The six families A6 measured are complete as of that arc's eighth session:
 59 of 59. The seventh, `extension`, was recorded at the baseline of A11 and
 is that arc's gap ([below](#what-an-application-adds-at-the-baseline-of-a11)):
 1 present at the baseline, 4 after the arc's first session in this
 repository (O1), 6 after its second (O2), 8 after its fifth (O5), 9 after
-its third (O3), which joined after the fifth.
+its third (O3) and 11 after its fourth (O4), which joined after the fifth.
 The number is not
 the end of the work: what this bench measures is a list of controls somebody
 wrote down, and a control that is present is one whose probe exercised it —
@@ -165,17 +165,19 @@ cd internal/adminbench/browser && npm ci && npx playwright install chromium
 go test ./internal/adminbench/ -run TestBrowserBench -v
 ```
 
-**10 of 11 controls present**, plus the one that measures the instrument.
+**11 of 11 controls present**, plus the one that measures the instrument.
 The last five belong to the extension family
 ([below](#what-an-application-adds-at-the-baseline-of-a11)): `UIX-07` and
-`UIX-08` were recorded absent at the baseline of A11 and `UIX-07` closed in
-the arc's first session (O1); `UIX-10` was added, present, in its second
-(O2), `UIX-11` in its fifth (O5), and `UIX-09` arrived present with the form
-it measures in its third
-([O3](#an-action-that-asks-before-it-runs-after-a11s-session-o3)), which ran
-on a stack of its own and joined this one after the fifth. (O2's own pull
-request numbered its control `UIX-09`; it became `UIX-10` when the two stacks
-met, so the third session's kept its number.)
+`UIX-08` were recorded absent at the baseline of A11; `UIX-07` closed in the
+arc's first session (O1), and `UIX-08` turned present with the record
+actions and their answers in its fourth
+([O4](#an-action-on-one-record-and-what-it-answers-after-a11s-session-o4)).
+`UIX-10` was added, present, in its second (O2), `UIX-11` in its fifth (O5),
+and `UIX-09` arrived present with the form it measures in its third
+([O3](#an-action-that-asks-before-it-runs-after-a11s-session-o3)). The third
+and fourth ran on a stack of their own and joined this one after the fifth.
+(O2's own pull request numbered its control `UIX-09`; it became `UIX-10` when
+the two stacks met, so the third session's kept its number.)
 
 | control | what it asks |
 |---|---|
@@ -187,7 +189,7 @@ met, so the third session's kept its number.)
 | **UIX-05** | the keyboard reaches the navigation, and the focus is visible |
 | **UIX-06** | a dialog can be opened and dismissed from the keyboard |
 | **UIX-07** | the login screen draws the logo the application declared — and the browser loaded it |
-| **UIX-08** | the record view offers the action the application declared — **absent** |
+| **UIX-08** | an action on one record is offered where the record is, and its page and its file arrive |
 | **UIX-09** | an action that asks first draws its form and shows the refusal on the field |
 | **UIX-10** | the first frame wears the theme the application configured, and the operator's own choice wins on reload |
 | **UIX-11** | a second dashboard draws a series to the operator granted it, and is neither listed nor served to one who is not |
@@ -561,13 +563,13 @@ browser. It is A11's numerator on this side of the suite. It was recorded
 before the arc changed anything at 1 present, 3 partial and 9 absent; the
 table is kept current as the arc closes its gaps, session by session (below):
 
-### extension — 9 present · 0 partial · 4 absent (HTTP)
+### extension — 11 present · 0 partial · 2 absent (HTTP)
 
 | id | control | verdict | what is missing |
 |---|---|---|---|
 | `EXT-01` | an action asks the operator for input before it runs (a form) | **present** | — |
-| `EXT-02` | an action is offered on the record view, for that one record | **absent** | the bulk endpoint runs an action over one id, but nothing says which actions belong on one record and the record payload names none — the record view has no action surface |
-| `EXT-03` | an action answers with a file to download or a page to open | **absent** | ActionResult is a message, a count and an untyped Data map the panel echoes; no Location, no Content-Disposition, no typed member a screen could follow |
+| `EXT-02` | an action is offered on the record view, for that one record | **present** | — |
+| `EXT-03` | an action answers with a file to download or a page to open | **present** | — |
 | `EXT-04` | a widget draws a series (a chart), not only a value or a list | **present** | — |
 | `EXT-05` | cards on a screen other than the overview: a second dashboard, or a page made of cards | **present** | — |
 | `EXT-06` | the application's own script runs in the panel (a client-side hook), declared and allowed by the CSP | **absent** | no knob declares a script; the document loads only the panel's bundle under script-src 'self' |
@@ -582,14 +584,15 @@ table is kept current as the arc closes its gaps, session by session (below):
 Five controls of the same family can only be measured in a browser and
 are recorded in the browser half, with their own numerator: `UIX-07` (the
 login screen draws the declared logo — **present** since O1), `UIX-08` (the
-record view offers the declared action — **absent**, the drawing half of
-`EXT-02`), `UIX-09` (the form an action declared, with the server's refusal
-on the field — **present** since O3, the drawing half of `EXT-01`), `UIX-10`
-(the first frame is in the configured theme, and the operator's choice wins
-on reload — **present** since O2, the painting half of `EXT-09`) and
-`UIX-11` (a second dashboard draws a series for the operator granted it and
-is withheld from one who is not — **present** since O5, the drawing half of
-`EXT-04` and `EXT-05`).
+record view and the row's menu offer the record's actions, and the page and
+the file they answer with arrive — **present** since O4, the drawing half of
+`EXT-02` and `EXT-03`), `UIX-09` (the form an action declared, with the
+server's refusal on the field — **present** since O3, the drawing half of
+`EXT-01`), `UIX-10` (the first frame is in the configured theme, and the
+operator's choice wins on reload — **present** since O2, the painting half
+of `EXT-09`) and `UIX-11` (a second dashboard draws a series for the
+operator granted it and is withheld from one who is not — **present** since
+O5, the drawing half of `EXT-04` and `EXT-05`).
 
 ### What the shape of it says
 
@@ -597,7 +600,9 @@ is withheld from one who is not — **present** since O5, the drawing half of
   operator nothing (`EXT-01`; it asks since O3, below), it is not offered
   where the record is (`EXT-02`, `UIX-08`), and it answers with a toast:
   `ActionResult.Data` is echoed as an untyped map, so "export these as PDF"
-  or "open the reconciliation" has no contract to ride (`EXT-03`).
+  or "open the reconciliation" has no contract to ride (`EXT-03`). Since O4
+  it is offered where it is declared and answers with a page or a file
+  ([below](#an-action-on-one-record-and-what-it-answers-after-a11s-session-o4)).
 - **The cards were one screen of numbers** (closed in O5, below). A value,
   a detail line or a list of rows, all on the overview (`EXT-04`, `EXT-05`). A screen of the
   application's own is an `http.Handler` that writes its own document; a
@@ -654,8 +659,9 @@ The first four were closed by the arc's first session (O1, below).
   absences, and an absence cannot be exercised. Each probe therefore reads
   what the panel SERVES — a payload, a document, a header, whether the
   application's own function received what was posted — and also the contract
-  types an application writes against (`ModelAction`, `ActionResult`, and
-  until O5 `Widget`, `WidgetValue` and `Page`) and the whole mount surface. When one of
+  types an application writes against (`ActionResult`; `ModelAction` until
+  O3 and O4, and `Widget`, `WidgetValue` and `Page` until O5) and the whole
+  mount surface. When one of
   those grows a member that could carry the capability, the probe answers
   `partial`, the suite goes red against the recorded `absent`, and that is
   the moment to grow it into the behaviour check the new surface makes
@@ -1014,10 +1020,10 @@ Every change was verified by breaking it:
 The third session of the arc in this repository (O3) ran on a stack of its
 own, from the baseline, and joined this one after the fifth. It closed
 `EXT-01` and added `UIX-09`, its browser half: on its own stack the HTTP
-bench read 61 of 72; joined to the others it reads 68 of 72, the browser
-half 10 of 11. An action declares the inputs it needs
-next to its verb — `ModelAction.Fields`, each one text, number, boolean,
-select (with its options) or date — and the panel does the rest:
+bench read 61 of 72; joined to the first, second and fifth it reads 68 of
+72, the browser half 10 of 11. An action declares the inputs it needs next
+to its verb — `ModelAction.Fields`, each one text, number, boolean, select
+(with its options) or date — and the panel does the rest:
 
 - **At startup**, a field it cannot draw stops the application, naming the
   action and the field: an unknown type, a select with no options, an
@@ -1063,3 +1069,80 @@ How it is measured, and what that showed:
   publish, and an action over a selection could never be offered to them.
   The checkboxes now appear when anything can be done with a selection. No
   control caught it: the browser half signs in as the superuser.
+
+## An action on one record, and what it answers, after A11's session O4
+
+The fourth session of the arc in this repository (O4) ran on the third's
+stack and joined this one with it. It closed `EXT-02` and `EXT-03` and
+turned `UIX-08` present: on its own stack the HTTP bench read 63 of 72;
+joined to the others it reads 70 of 72, the browser half 11 of 11.
+
+- **Where an action is offered** is part of its declaration:
+  `ModelAction.Placement` is the selection (the zero value, so an action
+  declared before O4 is offered and runs exactly where it was), one record —
+  its record view and its row's menu — or both. The schema publishes it on
+  every action, and the server holds the action to it: a record action has
+  its own endpoint (`POST /api/models/{name}/actions/{action}/{id}`), a record
+  action posted to the bulk endpoint is refused, and a selection action
+  posted to the record endpoint is refused too. Both endpoints run the same
+  function, so the verb, the tenant and row confinement, the input check and
+  the audit entry cannot drift apart; the record's entry names the record,
+  so its own history shows what was done to it.
+- **What an action answers** is a message, a page of the panel
+  (`ActionResult.Redirect`, a path relative to the panel) or a file
+  (`ActionResult.Download`: a name, a declared media type and the bytes the
+  action produced — never a path). Both are checked when the action answers,
+  not when it is declared: a redirect out of the panel, a file over 32 MiB,
+  with no type or no name, or both at once, is refused after the action ran,
+  with a message that says so, and the trail records which kind of answer
+  each call gave.
+- **In the SPA**, the record view (the edit dialog) draws the record's
+  actions and every row has a menu of them. A redirect to one of the SPA's
+  own screens goes through its router; Data Studio keeps its model, database
+  and open record in the URL, so `/data-studio?model=Note&record=42` lands on
+  that record's view. A file is saved under the name the action gave.
+
+How it is measured, and what that showed:
+
+- **The bench's own application declares the two answers an admin action
+  most often has.** `duplicate`, on one record, copies the note and answers
+  with the copy's record view; `download_text`, on both, answers with the
+  notes as a text file. `EXT-03` follows the redirect to a record the panel
+  then serves, reads both files with their headers, and reads the record's
+  history for the kind of each answer. The refusals are measured on a
+  second application whose action redirects wherever its form says — the
+  open redirect the check exists to prevent, built on purpose — and whose
+  other action hands back 32 MiB and one byte.
+- **`UIX-08` checks that the redirect did not reload the page**, by leaving a
+  marker on the window before the click and reading it after the copy's
+  view opened: a redirect followed by loading the document would also land
+  on the right URL and show the right record.
+- Verified by breaking it, one change at a time. With the placement not
+  enforced, with the descriptor not publishing it, with the record endpoint
+  gone, with the record's input unchecked, or with the audit entry not
+  naming the record, `EXT-02` reads partial or absent. With the redirect
+  unchecked, with a leading `//` allowed, with `..` segments or backslashes
+  allowed, with no ceiling, with the answer's kind missing from the trail,
+  with the file not sent as an attachment or without `nosniff`, `EXT-03`
+  reads partial. With the record view drawing no action, the row drawing no
+  menu, the redirect followed by a document load, the file not saved or the
+  record link ignored, `UIX-08` fails, each with its own message.
+- **A URL parser and a browser disagree about `///host`.** Go's `url.Parse`
+  reads no host in `///evil.example/login`, and a browser resolving it
+  against the panel's origin reads `evil.example`. The check refuses a
+  leading `//` before parsing for that reason, and the bench's list of
+  hostile targets carries `///…` because without it, removing that line did
+  not move the verdict: `//evil.example` alone is caught by the host check
+  either way.
+- **An operator who may run an action and may not edit the record had no
+  way to it.** The record view is the edit dialog, offered only with
+  `update`, so the record action needs a second door: the row's menu. And a
+  record reached through a link opens read-only for such an operator rather
+  than as a form whose save would be refused. No control measures either,
+  because the browser half signs in as the superuser — the same blind spot
+  O3 found with the selection checkboxes.
+- **The record endpoint's path is not the obvious one.** The panel's 404/405
+  catch-all (`mountAPINotFound`) rebuilds every `/api/` route in a
+  method-free mux, and `/api/models/{name}/{id}/actions/{action}` conflicts
+  there with `/api/models/{name}/fields/{field}/options`: the application did
+  not start. Hence `/api/models/{name}/actions/{action}/{id}`.

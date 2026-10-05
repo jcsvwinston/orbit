@@ -90,7 +90,14 @@ export interface ModelActionSpec {
   // fields, when present, are what the action asks for before it runs: the
   // grid draws them as a form in place of the plain confirmation.
   fields?: ActionFieldSpec[]
+  // placement is where the action is offered: over the grid's selection,
+  // on one record (its record view and its row's menu), or both. Absent
+  // from a server older than placements, which offered every action on the
+  // selection — and that is what an absent value means here.
+  placement?: ActionPlacement
 }
+
+export type ActionPlacement = 'selection' | 'record' | 'selection_and_record'
 
 // ActionFieldSpec is one input of an action's form, as the schema carries
 // it. The server checks what is posted against the same declaration, so the

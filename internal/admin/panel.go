@@ -688,6 +688,9 @@ func (p *Panel) mountAPIRoutes(m *router.Mux) {
 	m.Put("/api/models/{name}/{id}", p.handleUpdateRecord)
 	m.Delete("/api/models/{name}/{id}", p.handleDeleteRecord)
 	m.Post("/api/models/{name}/bulk", p.handleBulkAction)
+	// An application action on one record — the record view's entry
+	// point, through the same checks as the bulk one (actions_placement.go).
+	m.Post("/api/models/{name}/actions/{action}/{id}", p.handleRecordAction)
 	m.Get("/api/models/{name}/export", p.handleExportCSV)
 	// Relations, as a form needs them: what this model — or this field —
 	// may point at (see internal/admin/relations.go).

@@ -152,6 +152,10 @@ func scheduleAction() orbit.ModelAction {
 		Model:       "Note",
 		Label:       "Schedule",
 		Description: "Schedule the selected notes for publication",
+		// Offered on a selection and on one record, so the record
+		// endpoint's input check is measured against the same declaration
+		// as the bulk one (EXT-02).
+		Placement: orbit.ActionOnSelectionAndRecord,
 		Fields: []orbit.ActionField{
 			{Name: "reason", Label: "Reason", Required: true, Help: "Recorded with the audit entry"},
 			{Name: "priority", Label: "Priority", Type: orbit.ActionFieldNumber},
@@ -169,6 +173,79 @@ func scheduleAction() orbit.ModelAction {
 					len(req.IDs), req.Input.String("channel"), day.Format("2006-01-02"), req.Input.String("reason")),
 				Affected: len(req.IDs),
 			}, nil
+		},
+	}
+}
+
+// duplicateAction is an action about one record that answers with a page of
+// the panel (EXT-02, EXT-03): it copies the note and takes the operator to
+// the copy's record view, which is "open what this action made" — the most
+// ordinary redirect an admin action has.
+func duplicateAction() orbit.ModelAction {
+	return orbit.ModelAction{
+		Name:        "duplicate",
+		Model:       "Note",
+		Label:       "Duplicate",
+		Description: "Copy this note and open the copy",
+		Placement:   orbit.ActionOnRecord,
+		Run: func(ctx context.Context, req orbit.ActionRequest) (orbit.ActionResult, error) {
+			benchExtensions.record(req)
+			handle := benchExtensions.handle()
+			if handle == nil {
+				return orbit.ActionResult{}, fmt.Errorf("no database handle")
+			}
+			res, err := handle.ExecContext(ctx,
+				`INSERT INTO notes (title, body, status, views, cover, meta, created_at, updated_at)
+				 SELECT 'Copy of ' || title, body, 'draft', 0, cover, meta, created_at, updated_at FROM notes WHERE id = ?`,
+				req.IDs[0])
+			if err != nil {
+				return orbit.ActionResult{}, err
+			}
+			copyID, err := res.LastInsertId()
+			if err != nil {
+				return orbit.ActionResult{}, err
+			}
+			return orbit.ActionResult{
+				Message:  fmt.Sprintf("note %s copied as %d", req.IDs[0], copyID),
+				Affected: 1,
+				Redirect: fmt.Sprintf("/data-studio?model=Note&record=%d", copyID),
+			}, nil
+		},
+	}
+}
+
+// downloadTextAction answers with a file (EXT-03), from one record or from a
+// selection: the notes as plain text, named after what it holds.
+func downloadTextAction() orbit.ModelAction {
+	return orbit.ModelAction{
+		Name:        "download_text",
+		Model:       "Note",
+		Label:       "Download as text",
+		Description: "The notes as a text file",
+		Placement:   orbit.ActionOnSelectionAndRecord,
+		Run: func(ctx context.Context, req orbit.ActionRequest) (orbit.ActionResult, error) {
+			benchExtensions.record(req)
+			handle := benchExtensions.handle()
+			if handle == nil {
+				return orbit.ActionResult{}, fmt.Errorf("no database handle")
+			}
+			var text strings.Builder
+			for _, id := range req.IDs {
+				var title, body string
+				if err := handle.QueryRowContext(ctx, "SELECT title, body FROM notes WHERE id = ?", id).Scan(&title, &body); err != nil {
+					return orbit.ActionResult{}, err
+				}
+				fmt.Fprintf(&text, "%s\n%s\n\n", title, body)
+			}
+			name := "notes.txt"
+			if len(req.IDs) == 1 {
+				name = "note-" + req.IDs[0] + ".txt"
+			}
+			return orbit.ActionResult{Download: &orbit.ActionDownload{
+				Filename:    name,
+				ContentType: "text/plain; charset=utf-8",
+				Body:        strings.NewReader(text.String()),
+			}}, nil
 		},
 	}
 }
@@ -419,7 +496,7 @@ func benchOrbitConfig() orbit.Config {
 			"Note.Cover": "image",
 			"Note.Meta":  "json",
 		},
-		Actions:    []orbit.ModelAction{publishAction(), scheduleAction()},
+		Actions:    []orbit.ModelAction{publishAction(), scheduleAction(), duplicateAction(), downloadTextAction()},
 		Pages:      []orbit.Page{reportsPage()},
 		Branding:   benchBranding(),
 		Widgets:    benchWidgets(),

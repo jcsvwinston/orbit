@@ -19,7 +19,7 @@ const schedule: ModelActionSpec = {
 
 describe('ActionFormDialog', () => {
   it('draws one labelled input per declared field', () => {
-    render(<ActionFormDialog action={schedule} selectedCount={2} onCancel={() => {}} onSubmit={async () => {}} />)
+    render(<ActionFormDialog action={schedule} subject="2 records selected." onCancel={() => {}} onSubmit={async () => {}} />)
     expect(screen.getByRole('dialog')).toHaveTextContent('2 records selected.')
     expect(screen.getByLabelText(/^Reason/)).toHaveAttribute('type', 'text')
     expect(screen.getByLabelText(/^Notify subscribers/)).toHaveAttribute('type', 'checkbox')
@@ -35,7 +35,7 @@ describe('ActionFormDialog', () => {
         error: { code: 'VALIDATION_FAILED', message: 'Schedule: reason is required', details: { reason: 'is required' } },
       })
     })
-    render(<ActionFormDialog action={schedule} selectedCount={1} onCancel={() => {}} onSubmit={onSubmit} />)
+    render(<ActionFormDialog action={schedule} subject="1 record selected." onCancel={() => {}} onSubmit={onSubmit} />)
     fireEvent.click(screen.getByRole('button', { name: 'Schedule' }))
 
     await waitFor(() => expect(screen.getByLabelText(/^Reason/)).toHaveAttribute('aria-invalid', 'true'))
@@ -52,7 +52,7 @@ describe('ActionFormDialog', () => {
     const onSubmit = vi.fn(async () => {
       throw new ApiError(403, 'forbidden', { error: { code: 'FORBIDDEN', message: 'forbidden' } })
     })
-    render(<ActionFormDialog action={schedule} selectedCount={1} onCancel={() => {}} onSubmit={onSubmit} />)
+    render(<ActionFormDialog action={schedule} subject="1 record selected." onCancel={() => {}} onSubmit={onSubmit} />)
     fireEvent.click(screen.getByRole('button', { name: 'Schedule' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('forbidden')
   })
