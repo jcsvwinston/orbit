@@ -24,31 +24,43 @@ import (
 )
 
 // securityHeadersMiddleware stamps browser security headers on every
-// panel response. The SPA loads nothing from external origins, so a
-// strict CSP is cheap; 'unsafe-inline' is needed for style only (the
-// login page and the SPA set inline styles). connect-src lists ws:/wss:
-// explicitly because some browsers do not extend 'self' to WebSocket
-// upgrades (the live feed uses /api/live/ws).
-func securityHeadersMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h := w.Header()
-		// connect-src names the panel's own host for WebSocket upgrades
-		// instead of the bare `ws: wss:` schemes, which allowed a script to
-		// open a socket anywhere (OR-42). Some browsers do not extend
-		// 'self' to the ws scheme, hence the explicit host.
-		connect := "'self'"
-		if host := strings.TrimSpace(r.Host); host != "" {
-			connect += " ws://" + host + " wss://" + host
-		}
-		h.Set("Content-Security-Policy",
-			"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "+
-				"img-src 'self' data:; font-src 'self'; connect-src "+connect+"; "+
-				"frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
-		h.Set("X-Content-Type-Options", "nosniff")
-		h.Set("X-Frame-Options", "DENY")
-		h.Set("Referrer-Policy", "no-referrer")
-		next.ServeHTTP(w, r)
-	})
+// panel response. The panel's own bundle loads nothing from external
+// origins, so a strict CSP is cheap; 'unsafe-inline' is needed for style
+// only (the login page and the SPA set inline styles). connect-src lists
+// ws:/wss: explicitly because some browsers do not extend 'self' to
+// WebSocket upgrades (the live feed uses /api/live/ws).
+//
+// The one external origin is the application's own: a logo or favicon
+// declared as an absolute URL (branding.go). The configuration accepts it,
+// so the policy names its origin in img-src — only there, and only that
+// origin; without it the browser would refuse an image the panel had
+// agreed to show.
+func securityHeadersMiddleware(imageOrigins []string) func(http.Handler) http.Handler {
+	img := "'self' data:"
+	for _, origin := range imageOrigins {
+		img += " " + origin
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			h := w.Header()
+			// connect-src names the panel's own host for WebSocket upgrades
+			// instead of the bare `ws: wss:` schemes, which allowed a script to
+			// open a socket anywhere (OR-42). Some browsers do not extend
+			// 'self' to the ws scheme, hence the explicit host.
+			connect := "'self'"
+			if host := strings.TrimSpace(r.Host); host != "" {
+				connect += " ws://" + host + " wss://" + host
+			}
+			h.Set("Content-Security-Policy",
+				"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "+
+					"img-src "+img+"; font-src 'self'; connect-src "+connect+"; "+
+					"frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+			h.Set("X-Content-Type-Options", "nosniff")
+			h.Set("X-Frame-Options", "DENY")
+			h.Set("Referrer-Policy", "no-referrer")
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // csrfContentTypeMiddleware rejects write requests whose Content-Type a

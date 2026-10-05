@@ -313,23 +313,44 @@ func probeCustomFieldRenderer(t *testing.T, e *env) verdict {
 // handler, a widget with no loader and a logo with a javascript: URL — "a
 // declaration the panel cannot honour refuses to start". A field widget
 // misspelled, or on a field that does not exist, is the same mistake.
+//
+// A refusal counts only when it names the entry: an application that failed
+// to start for any other reason would otherwise read as one. And a
+// declaration the panel can draw has to start, or a check that refused every
+// field_widgets entry would read as present too.
 func probeFieldWidgetRefusal(t *testing.T, e *env) verdict {
 	refused := []string{}
 	started := []string{}
-	for label, widgets := range map[string]map[string]string{
-		"a widget the panel does not ship (Note.Status: colour)": {"Note.Status": "colour"},
-		"a field that does not exist (Note.Nothing: json)":       {"Note.Nothing": "json"},
+	for label, c := range map[string]struct {
+		widgets map[string]string
+		names   string
+	}{
+		"a widget the panel does not ship (Note.Status: colour)": {map[string]string{"Note.Status": "colour"}, "Note.Status"},
+		"a field that does not exist (Note.Nothing: json)":       {map[string]string{"Note.Nothing": "json"}, "Note.Nothing"},
 	} {
-		if _, err := tryStart(t, extensionApp(t, orbit.Config{Title: "Admin Bench (widgets)", FieldWidgets: widgets})); err != nil {
-			refused = append(refused, label)
+		_, err := tryStart(t, extensionApp(t, orbit.Config{Title: "Admin Bench (widgets)", FieldWidgets: c.widgets}))
+		if err == nil {
+			started = append(started, label)
 			continue
 		}
-		started = append(started, label)
+		if !strings.Contains(err.Error(), c.names) {
+			t.Logf("%s: the application did not start, but the error does not name the entry: %v", label, err)
+			started = append(started, label+" (refused for another reason)")
+			continue
+		}
+		refused = append(refused, label)
 	}
 	sort.Strings(refused)
 	sort.Strings(started)
 	switch {
 	case len(started) == 0:
+		if _, err := tryStart(t, extensionApp(t, orbit.Config{
+			Title:        "Admin Bench (drawable widget)",
+			FieldWidgets: map[string]string{"Note.Body": "richtext"},
+		})); err != nil {
+			t.Logf("both entries were refused, and so is one the panel can draw (Note.Body: richtext): %v", err)
+			return partial
+		}
 		return present
 	case len(refused) == 0:
 		t.Logf("the application started with %v: the declaration is dropped in silence", started)

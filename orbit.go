@@ -123,6 +123,8 @@ type Config struct {
 	// makes them here. A file field gets an upload route
 	// (POST /api/models/{model}/upload) that stores the bytes in the
 	// application's own storage and answers with the key the form writes.
+	// An entry the panel cannot apply — a widget outside those four, or a
+	// key that names no field of the application — refuses to start.
 	FieldWidgets map[string]string `yaml:"field_widgets" koanf:"field_widgets"`
 
 	// Environment is a label shown in the UI (e.g. "production"). Optional.
@@ -490,6 +492,9 @@ func (m *module) start(ctx context.Context) error {
 		return fmt.Errorf("orbit: %w", err)
 	}
 	if err := admin.ValidateLocaleConfig(m.cfg.Locale, m.cfg.Messages); err != nil {
+		return fmt.Errorf("orbit: %w", err)
+	}
+	if err := admin.ValidateFieldWidgets(src, m.cfg.FieldWidgets); err != nil {
 		return fmt.Errorf("orbit: %w", err)
 	}
 

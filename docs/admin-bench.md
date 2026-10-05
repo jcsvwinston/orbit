@@ -47,7 +47,7 @@ A control that cannot be probed does not belong in the bench.
 
 ## The result
 
-**60 of 72 controls present. 3 partial. 9 absent.**
+**63 of 72 controls present. 1 partial. 8 absent.**
 
 | family | present | partial | absent |
 |---|---|---|---|
@@ -57,12 +57,14 @@ A control that cannot be probed does not belong in the bench.
 | operations | 17 | 0 | 0 |
 | customization | 7 | 0 | 0 |
 | interface | 2 | 0 | 0 |
-| extension | 1 | 3 | 9 |
-| **total** | **60** | **3** | **9** |
+| extension | 4 | 1 | 8 |
+| **total** | **63** | **1** | **8** |
 
 The six families A6 measured are complete as of that arc's eighth session:
 59 of 59. The seventh, `extension`, was recorded at the baseline of A11 and
-is that arc's gap ([below](#what-an-application-adds-at-the-baseline-of-a11)).
+is that arc's gap ([below](#what-an-application-adds-at-the-baseline-of-a11)):
+1 present at the baseline, 4 after the arc's first session in this
+repository (O1).
 The number is not
 the end of the work: what this bench measures is a list of controls somebody
 wrote down, and a control that is present is one whose probe exercised it —
@@ -161,9 +163,10 @@ cd internal/adminbench/browser && npm ci && npx playwright install chromium
 go test ./internal/adminbench/ -run TestBrowserBench -v
 ```
 
-**6 of 8 controls present**, plus the one that measures the instrument. The
-two absent ones were recorded at the baseline of A11 and belong to the
-extension family ([below](#what-an-application-adds-at-the-baseline-of-a11)):
+**7 of 8 controls present**, plus the one that measures the instrument. The
+last two were recorded absent at the baseline of A11 and belong to the
+extension family ([below](#what-an-application-adds-at-the-baseline-of-a11));
+`UIX-07` closed in the arc's first session (O1):
 
 | control | what it asks |
 |---|---|
@@ -174,7 +177,7 @@ extension family ([below](#what-an-application-adds-at-the-baseline-of-a11)):
 | **UIX-04** | the document says what it is: language, landmarks, one main heading |
 | **UIX-05** | the keyboard reaches the navigation, and the focus is visible |
 | **UIX-06** | a dialog can be opened and dismissed from the keyboard |
-| **UIX-07** | the login screen draws the logo the application declared — **absent** |
+| **UIX-07** | the login screen draws the logo the application declared — and the browser loaded it |
 | **UIX-08** | the record view offers the action the application declared — **absent** |
 
 Three things worth keeping about how it is built:
@@ -395,9 +398,9 @@ Three things a product needs and the panel could not be told (`CUST-02`,
   login screen, the icon in the browser tab, the accent colour. It travels on
   the document as meta tags, the same channel as the prefix and the title,
   which is what makes it available on the LOGIN page, before any API call
-  could carry it. (Measured at A11's baseline: the login screen does not
-  draw it. The document carries it and nothing renders it there — `UIX-07`,
-  below.)
+  could carry it. (Measured at A11's baseline: the login screen did not
+  draw it — the document carried it and nothing rendered it there. It does
+  since the arc's first session, `UIX-07`, below.)
 - **The landing screen** — `orbit.Config.Widgets`: cards the application
   declares, each with the function that reads its value. The panel supplies
   the screen, the authorization (`admin:dashboard`), a three-second bound and
@@ -542,10 +545,11 @@ on the record it is about, a chart, a second screen of cards, its own script
 and its own field renderer, the theme its operators open on — and two
 properties every extension point should have: a declaration the panel cannot
 honour stops the application, and what the configuration accepts reaches the
-browser. It is A11's numerator on this side of the suite, recorded before the
-arc changed anything:
+browser. It is A11's numerator on this side of the suite. It was recorded
+before the arc changed anything at 1 present, 3 partial and 9 absent; the
+table is the reading after the arc's first session (O1, below):
 
-### extension — 1 present · 3 partial · 9 absent (HTTP)
+### extension — 4 present · 1 partial · 8 absent (HTTP)
 
 | id | control | verdict | what is missing |
 |---|---|---|---|
@@ -555,18 +559,19 @@ arc changed anything:
 | `EXT-04` | a widget draws a series (a chart), not only a value or a list | **absent** | WidgetValue is a value, a detail line or a list of rows; the card payload carries nothing a chart could be drawn from |
 | `EXT-05` | cards on a screen other than the overview: a second dashboard, or a page made of cards | **absent** | one dashboard, the overview; a Widget names no placement and a Page is an http.Handler that writes its own document |
 | `EXT-06` | the application's own script runs in the panel (a client-side hook), declared and allowed by the CSP | **absent** | no knob declares a script; the document loads only the panel's bundle under script-src 'self' |
-| `EXT-07` | a field drawn by a renderer the application provides | **absent** | the widget vocabulary is closed (json, richtext, file, image); a field declared with another widget is published as its column type |
-| `EXT-08` | a field widget the panel cannot draw refuses to start | **absent** | field_widgets is the one declaration not checked at startup: an unknown widget and a field that does not exist both start, and the declaration is dropped in silence |
+| `EXT-07` | a field drawn by a renderer the application provides | **absent** | the widget vocabulary is closed (json, richtext, file, image); a field declared with another widget refuses to start (EXT-08), and nothing registers a renderer |
+| `EXT-08` | a field widget the panel cannot draw refuses to start | **present** | — |
 | `EXT-09` | a default theme (dark, light, system) set by configuration decides the first frame | **absent** | no knob and no hint on the document: the first frame is the operator's last toggle kept in localStorage or, before one, the browser's prefers-color-scheme |
 | `EXT-10` | a palette by configuration, each colour validated | **partial** | one colour, branding.primary_color, validated as hex with a computed foreground; no surface, text, border or per-theme value |
-| `EXT-11` | branding the configuration accepts is loadable under the panel's own CSP | **partial** | a same-site logo loads; an absolute https logo URL is accepted at startup and written into the login page, and img-src 'self' data: refuses it |
-| `EXT-12` | the configuration reference documents every key an application can bind | **partial** | branding.logo_url, branding.favicon_url, branding.primary_color, locale and messages bind from nucleus.yml and have no row in website/docs/configuration.md |
+| `EXT-11` | branding the configuration accepts is loadable under the panel's own CSP | **present** | — |
+| `EXT-12` | the configuration reference documents every key an application can bind | **present** | — |
 | `EXT-13` | what an application adds answers to the panel's RBAC: card, screen and verb withheld without a grant | **present** | — |
 
 Two controls of the same family can only be measured in a browser and are
 recorded in the browser half, with their own numerator: `UIX-07` (the login
-screen draws the declared logo — **absent**) and `UIX-08` (the record view
-offers the declared action — **absent**, the drawing half of `EXT-02`).
+screen draws the declared logo — **present** since O1) and `UIX-08` (the
+record view offers the declared action — **absent**, the drawing half of
+`EXT-02`).
 
 ### What the shape of it says
 
@@ -595,22 +600,26 @@ offers the declared action — **absent**, the drawing half of `EXT-02`).
 
 ### What the baseline found that was not on the plan
 
-- **`field_widgets` is the one declaration the panel does not check**
+The first four were closed by the arc's first session (O1, below).
+
+- **FIXED — `field_widgets` was the one declaration the panel did not check**
   (`EXT-08`). Actions, pages, widgets, branding and the locale refuse at
   startup what the panel cannot honour; a field widget the panel does not
   ship, or one on a field that does not exist, starts — and the schema
   publishes the field as its column type, as if nothing had been declared.
-- **The configuration accepts branding the panel's own CSP refuses**
+- **FIXED — the configuration accepted branding the panel's own CSP refused**
   (`EXT-11`). The validation accepts an absolute `https://` logo or favicon
   explicitly; the panel sends `img-src 'self' data:`, so a browser fetches
   neither. `CUST-02` reads the document, which carries the URL, and measured
-  present; the same-site logo the bench declares does load.
-- **The login screen draws no logo** (`UIX-07`). The section on the arc's
+  present. The baseline also wrote that the same-site logo the bench
+  declares does load; the policy allowed it, and the bench served nothing at
+  that path (O1, below).
+- **FIXED — the login screen drew no logo** (`UIX-07`). The section on the arc's
   eighth session above says the logo is on the sidebar and the login screen;
   the login document carries it as a meta tag and the login screen renders
   nothing from it. The sidebar does — which is also what proves the
   instrument can see a logo when one is drawn.
-- **The configuration reference is five keys short** (`EXT-12`):
+- **FIXED — the configuration reference was five keys short** (`EXT-12`):
   `branding.logo_url`, `branding.favicon_url`, `branding.primary_color`,
   `locale` and `messages` bind from `nucleus.yml` and have no row in
   `website/docs/configuration.md`. The probe reads the keys from the binding
@@ -647,3 +656,80 @@ offers the declared action — **absent**, the drawing half of `EXT-02`).
   failed on a precondition — a request made from outside the browser that
   signed in is refused with a 401 — and would have been recorded as the
   absence it was looking for.
+
+## The panel keeps what its configuration promises, after A11's first session
+
+Four of the baseline's findings were one property seen four times: what an
+application declares, the panel either honours or refuses at startup — never
+accepts and then drops. The first session of the arc in this repository (O1)
+closed them (`EXT-08`, `EXT-11`, `EXT-12`, `UIX-07`): the HTTP bench reads 63
+of 72, the browser half 7 of 8.
+
+- **A field widget the panel cannot apply stops the application, by name.**
+  `field_widgets` is checked when the module mounts, against the four widgets
+  the panel draws and against the models of THIS application, through the
+  same spellings the schema reads (the Go name or the column, either case).
+  An unknown widget, a key that names no field, and two keys for one field
+  with different widgets each refuse to start, and the error names every
+  entry at once.
+- **An absolute branding URL loads.** The panel's `img-src` names the origin
+  of an absolute logo or favicon — scheme, host and port, never the path —
+  and nothing else changes in the policy. A same-site path adds nothing,
+  because `'self'` already covers it.
+- **The login screen draws the logo**, in place of the panel's mark, with an
+  empty `alt`: the title below names the product in text, and a screen
+  reader would otherwise read it twice. A logo that fails to load gives the
+  panel's mark back rather than leaving a hole.
+- **The configuration reference carries the five keys** that bound from
+  `nucleus.yml` without a row: `branding.logo_url`, `branding.favicon_url`,
+  `branding.primary_color`, `locale` and `messages`.
+
+Three decisions worth keeping:
+
+- **Refusing an entry that never worked is a fix, not a break.** The
+  suite's rule is that nothing incompatible ships before the major that
+  gathers them (QADR-0010), and an application that started yesterday with
+  a misspelled widget does not start today. Every entry the check refuses
+  was dropped before it existed: an unknown widget resolved to nothing and
+  the field fell back to its column type, and a key naming no field matched
+  nothing. A conflicting pair was worse than dropped, since which one won
+  could change between two requests. What stops starting is an application
+  carrying a declaration with no effect, and the error says which one —
+  there was no behaviour to keep behind a warning. The internal comment that
+  promised a `Model.*` wildcard was wrong: none was ever read, and the check
+  refuses one like any other key that names no field.
+- **The policy names an origin, so the origin has to be one a policy can
+  name.** The host goes into a response header: a host carrying a `;` would
+  end `img-src` and begin another directive, and a wildcard would widen it.
+  The URL validation therefore also refuses, at startup, a host a CSP source
+  cannot express — an IPv6 literal, a wildcard, a host with no name, a
+  character outside letters, digits, hyphens and dots — and converts an
+  internationalised name to the ASCII form a browser matches against. Each
+  of those was accepted before and never loaded, so this is the same kind of
+  refusal as the first decision, not a narrowing of what worked.
+- **A logo is drawn when the browser loaded it.** `UIX-07` asks the browser
+  for the image's natural width on the login screen, not for an `<img>`
+  element: an image the policy refuses, or one that answers 404, is in the
+  document and on nobody's screen.
+
+### What the bench got wrong about itself, the ninth time
+
+- **The bench's own logo was a 404.** The bench application declared
+  `/static/bench-logo.svg` and served nothing there, so the sidebar the
+  baseline used as `UIX-07`'s proof that "the instrument can see a logo" was
+  showing a broken image, and the first spec would have recorded the login
+  screen as present on one too. Counting `<img>` elements cannot tell a logo
+  from a broken image; asking the browser whether it loaded can. The bench
+  application serves the file now, and `UIX-07` fails, with its own message,
+  when the image it finds did not load.
+- **A refusal is evidence only when it is about the entry.** `EXT-08` first
+  counted any failure to start as the refusal it was looking for. It now
+  requires the error to name the entry, and requires an entry the panel CAN
+  draw to start — a check that refused every `field_widgets` entry would
+  otherwise have read as present.
+
+Every change was verified by breaking it: without the check at mount,
+`EXT-08` reads absent; letting an unknown widget through, partial; a check
+that refuses everything, partial; the policy without the branding origins,
+`EXT-11` partial; the reference without `locale`, `EXT-12` partial; the login
+screen without the logo, or the bench without its file, `UIX-07` absent.

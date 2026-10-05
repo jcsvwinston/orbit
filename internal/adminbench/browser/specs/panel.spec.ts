@@ -170,7 +170,8 @@ test.describe('UIX', () => {
    * that broke for any other reason fails too. So each one checks its own
    * precondition first, with a message of its own, and the Go side
    * (browserbench_test.go, failsWith) only accepts the failure the control
-   * is about.
+   * is about. UIX-07 is present since A11 O1; its preconditions stay, so a
+   * regression fails for the reason it is.
    */
 
   test('UIX-07 the login screen draws the logo the application declared', async ({ page }) => {
@@ -179,7 +180,17 @@ test.describe('UIX', () => {
     await page.locator('input[type="password"]').first().waitFor({ timeout: 15_000 })
     const logo = await page.locator('meta[name="nucleus-admin-logo"]').getAttribute('content')
     if (!logo) throw new Error('UIX-07 precondition: the document declares no logo (CUST-02 should be red too)')
-    const onLogin = await page.locator(`img[src="${logo}"]`).count()
+    const onLogin = page.locator(`img[src="${logo}"]`)
+    const drawn = await onLogin.count()
+    // Drawn means LOADED: an <img> whose fetch failed — a 404, or a source
+    // the page's own Content-Security-Policy refuses — is a broken image,
+    // not a logo. The bench's application serves the file it declares.
+    const loaded = drawn > 0
+      ? await onLogin.first().evaluate(async (img: HTMLImageElement) => {
+          if (!img.complete) await new Promise((done) => { img.onload = img.onerror = done })
+          return img.naturalWidth > 0
+        })
+      : false
 
     // The instrument can see a logo where the panel does draw one: the
     // sidebar. Without this, a locator that matched nothing anywhere would
@@ -190,7 +201,8 @@ test.describe('UIX', () => {
       'UIX-07 precondition: the sidebar draws no logo either, so this locator sees nothing',
     ).toHaveCount(1, { timeout: 10_000 })
 
-    expect(onLogin, `UIX-07: the login screen draws no logo — ${logo} travels on the document and nothing renders it`).toBeGreaterThan(0)
+    expect(drawn, `UIX-07: the login screen draws no logo — ${logo} travels on the document and nothing renders it`).toBeGreaterThan(0)
+    expect(loaded, `UIX-07: the login screen draws ${logo} and the browser did not load it`).toBe(true)
   })
 
   test('UIX-08 the record view offers the action the application declared', async ({ page }) => {

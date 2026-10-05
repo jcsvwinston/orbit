@@ -158,7 +158,7 @@ func controls() []control {
 		// What an application adds to the panel beyond the four extension
 		// points A6 shipped (DS-09, CUST-02, CUST-03, CUST-04). Recorded at
 		// the baseline of A11 (S0); probes_extension_test.go says what each
-		// one reads.
+		// one reads. EXT-08, EXT-11 and EXT-12 closed in O1.
 		{id: "EXT-01", family: "extension", title: "an action asks the operator for input before it runs (a form)",
 			want: absent, note: "ModelAction declares no input and the action descriptor publishes none; an input posted with the call is dropped before Run",
 			probe: probeActionInput},
@@ -178,11 +178,10 @@ func controls() []control {
 			want: absent, note: "no knob declares a script; the document loads only the panel's bundle under script-src 'self'",
 			probe: probeClientScript},
 		{id: "EXT-07", family: "extension", title: "a field drawn by a renderer the application provides",
-			want: absent, note: "the widget vocabulary is closed (json, richtext, file, image); a field declared with another widget is published as its column type",
+			want: absent, note: "the widget vocabulary is closed (json, richtext, file, image); a field declared with another widget refuses to start (EXT-08), and nothing registers a renderer",
 			probe: probeCustomFieldRenderer},
 		{id: "EXT-08", family: "extension", title: "a field widget the panel cannot draw refuses to start",
-			want: absent, note: "field_widgets is the one declaration not checked at startup: an unknown widget and a field that does not exist both start, and the declaration is dropped in silence",
-			probe: probeFieldWidgetRefusal},
+			want: present, probe: probeFieldWidgetRefusal},
 		{id: "EXT-09", family: "extension", title: "a default theme (dark, light, system) set by configuration decides the first frame",
 			want: absent, note: "no knob and no hint on the document: the first frame is the operator's last toggle kept in localStorage or, before one, the browser's prefers-color-scheme",
 			probe: probeDefaultTheme},
@@ -190,11 +189,9 @@ func controls() []control {
 			want: partial, note: "one colour, branding.primary_color, validated as hex with a computed foreground; no surface, text, border or per-theme value",
 			probe: probePaletteTokens},
 		{id: "EXT-11", family: "extension", title: "branding the configuration accepts is loadable under the panel's own CSP",
-			want: partial, note: "a same-site logo loads; an absolute https logo URL is accepted at startup and written into the login page, and img-src 'self' data: refuses it",
-			probe: probeBrandingUnderCSP},
+			want: present, probe: probeBrandingUnderCSP},
 		{id: "EXT-12", family: "extension", title: "the configuration reference documents every key an application can bind",
-			want: partial, note: "branding.logo_url, branding.favicon_url, branding.primary_color, locale and messages bind from nucleus.yml and have no row in website/docs/configuration.md",
-			probe: probeConfigReference},
+			want: present, probe: probeConfigReference},
 		{id: "EXT-13", family: "extension", title: "what an application adds answers to the panel's RBAC: card, screen and verb withheld without a grant",
 			want: present, probe: probeExtensionsAuthorized},
 	}

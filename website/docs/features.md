@@ -368,6 +368,12 @@ modules:
       Album.cover: image
 ```
 
+The declaration is checked when the panel mounts. A widget outside those four,
+a key that names no field of your models, or two keys for one field with
+different widgets stops the application with a message naming the entry —
+each of them is a form that would otherwise quietly show the column's plain
+input.
+
 A file field holds a storage **key**, and `POST /api/models/{model}/upload`
 (multipart, `file` plus an optional `field`) produces one: the bytes go to the
 application's own storage and the answer carries the key the form writes into
@@ -812,7 +818,7 @@ that says whose product this is. The colour lands in the custom property the
 stylesheet already reads, so it colours the buttons, the active navigation
 entry and the focus ring together.
 
-Two things the panel decides for you:
+Three things the panel decides for you:
 
 - **The text drawn on your colour.** A brand colour is chosen to look like a
   brand, not to contrast with white, so the panel computes the foreground from
@@ -822,6 +828,12 @@ Two things the panel decides for you:
   already serves. A `javascript:` or `data:` URL would be script execution on
   every page of the panel, granted by a line of YAML, so it is refused at
   startup rather than escaped — and so is a "colour" that is not a hex colour.
+- **That the browser loads it.** The panel sends a strict
+  Content-Security-Policy, and an absolute logo or favicon URL adds its origin
+  (scheme, host and port) to the policy's `img-src`, and nothing else. A path
+  your application serves needs nothing, and must be reachable before sign-in:
+  the login screen draws it. A host the policy cannot name — an IPv6 address,
+  a wildcard — is refused at startup, since the browser would never load it.
 
 ### The overview's cards
 
