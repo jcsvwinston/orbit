@@ -20,10 +20,10 @@ github.com/jcsvwinston/nucleus v1.31.0 h1:ofSi3R1GKkiLW777k4CjWYI6NTtePCl81Smnw9
 github.com/jcsvwinston/nucleus v1.31.0/go.mod h1:EsstUJmCRhn8kLPUGE9Cd9Soxr4zizRrukHGxONbDgE=
 github.com/jcsvwinston/orbit/datasource v1.0.0 h1:EJvdJrVhjShqzALGlv04lXoH4v+VAT9EAujWI4MNpc8=
 github.com/jcsvwinston/orbit/datasource v1.0.0/go.mod h1:gQBzMvpdON3cKcGsYHJfw1QvC56tWl10OoopkOiXZO8=
-github.com/jcsvwinston/quark v1.15.2 h1:lh2QZKP38F2VLwcc6fcLSKieSKWTz2Ps9CaOHaGBH8A=
-github.com/jcsvwinston/quark v1.15.2/go.mod h1:36Zkg7m2llmvZEdBE6bAF3MEa666gdtjs5quWSMMU+U=
-github.com/jcsvwinston/quark/drivers/sqlite v0.2.4 h1:+CfBrt0QWkmvz9wtTStg44k9xGhoaRAHuwHnHzaObbA=
-github.com/jcsvwinston/quark/drivers/sqlite v0.2.4/go.mod h1:j1JSXkAtzAF9Yqa0WiPJVCiW6BGYpIFM9R7mahXbT+U=
+github.com/jcsvwinston/quark v1.16.0 h1:Rd+zGwp0PiIvTK21ZaFDKTYIeQeqIpphn+uSKGwTCT4=
+github.com/jcsvwinston/quark v1.16.0/go.mod h1:36Zkg7m2llmvZEdBE6bAF3MEa666gdtjs5quWSMMU+U=
+github.com/jcsvwinston/quark/drivers/sqlite v0.2.5 h1:4sb5MRo/7XM4J1SGO2b/iCtkRuTIZ9ykbMNO5/egi8Y=
+github.com/jcsvwinston/quark/drivers/sqlite v0.2.5/go.mod h1:dH0ey8a7SzFs1Cg3kx2D1cd0lEMswHJ7aFo1Tpsd9ZU=
 github.com/leodido/go-urn v1.5.0 h1:pLqT2kq1zpHW/1D18QMjMpdtX7cekxqtJJjg5ANyWw0=
 github.com/leodido/go-urn v1.5.0/go.mod h1:9BORnCDhdPBJNDEX+w1bJisa8yOKYi116VeO96s4ifE=
 github.com/mattn/go-isatty v0.0.24 h1:tGZZoVgT/KiqK1c8ocVLeDS8BSWMRd47J3Lbz7vsReI=
