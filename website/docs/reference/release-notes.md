@@ -19,10 +19,65 @@ complete tag history lives on the
 
 ## v1.19.0 — 2026-10-05
 
-An alignment release with no product change: every module now requires
-Nucleus v1.31.0 and Quark v1.16.0, the versions the suite certifies next, and
-`quarkdatasource` pins the root at v1.18.1. Nothing in the binaries or the
-panel behaves differently from v1.18.1.
+A minor that lets an application extend the panel without forking it:
+actions that ask for input and act on one record, built-in widgets and more
+than one dashboard, a theme and palette from the configuration, and the
+application's own client code and field renderers under the panel's
+Content-Security-Policy. Everything is additive: a panel configured for
+v1.18 renders and behaves as before.
+
+**The browser half of these changes ships in the `ui` module (v1.1.0), and
+this root still requires `ui` v1.0.0.** The server side is here; the screens
+that use it (the action form and record menu, the dashboards, the theme
+script's first frame, the field renderers) reach an application through the
+root's next patch, which raises that requirement. Until then, an action that
+declares fields answers 422 for missing input, and the old screens keep
+working.
+
+### Added
+
+- **Actions that ask before they run.** `ModelAction.Fields` declares typed
+  inputs (text, number, boolean, select with options, date), validated at
+  startup; the server validates what the operator submits and answers 422
+  naming each field, and the handler receives typed values through
+  `ActionRequest.Input`. The submitted input is in the audit entry.
+- **Actions on one record, and what they answer.** `ModelAction.Placement`
+  offers an action on the selection, on a record, or both; a record action
+  runs on that one record with the same permission, tenant confinement and
+  audit as the bulk path. An action can answer with a message, a redirect
+  inside the panel (absolute URLs, `//`, `..` and control characters are
+  refused), or a download with a declared type, a safe file name and a 32 MiB
+  ceiling.
+- **Built-in widgets and several dashboards.** `Widget.Kind` adds stat, line
+  and bar series, table and recent-records cards, each fed by a typed Go
+  callback; a callback's error shows in its card, not as a page failure.
+  `Config.Dashboards` declares named dashboards with their own layout, each
+  behind a `view` permission on `admin:dashboard:<id>`.
+- **Theme and palette from the configuration.** `branding.theme` (dark, light
+  or system) is applied before the first frame through a script served from
+  the panel's own origin (`script-src` stays `'self'`); the operator's own
+  choice still wins. `branding.light|dark.{primary,surface,text}_color`
+  are checked for contrast against their theme at startup.
+- **The application's client code.** `Config.Client` declares scripts and
+  stylesheets the panel serves under its prefix with SRI hashes, after its own
+  bundle, and field renderers they register through `window.orbit`
+  (version 1); a renderer that throws falls back to the panel's own drawing.
+
+### Fixed
+
+- `field_widgets` is validated at startup like every other declaration: an
+  unknown widget or a key that names no field refuses to start, naming it.
+- A branding logo or favicon on another origin is added to `img-src`, so the
+  URLs the configuration accepts load under the panel's CSP; the login screen
+  draws the logo.
+- The grid offers row selection when the operator can run any bulk action,
+  not only when it can delete.
+- `website/docs/configuration.md` documents every key the panel binds.
+
+### Changed
+
+- Every module requires Nucleus v1.31.0 and Quark v1.16.0, the versions the
+  suite certifies next; `quarkdatasource` pins the root at v1.18.1.
 
 Fleet and bridge tags cut alongside: `quarkbridge/v1.9.4`, `quarkdatasource/v1.12.2`, `proto/v0.8.0`, `agent/v0.15.1`, `server/v0.20.1`, `datasource/v1.0.0`, `ui/v1.1.0`.
 
