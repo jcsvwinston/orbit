@@ -102,8 +102,8 @@ github.com/jcsvwinston/orbit/quarkdatasource v1.12.0 h1:SqJVzYU7VjO26irztgqfboeS
 github.com/jcsvwinston/orbit/quarkdatasource v1.12.0/go.mod h1:dai8qwySmJlBeq90ZU781fIEjkeb772VRWnwVRVk1Qk=
 github.com/jcsvwinston/orbit/server v0.19.0 h1:v6H485V9KiQFb4Fr4xIHH6B1UUDZvsPKyjByPdxICr0=
 github.com/jcsvwinston/orbit/server v0.19.0/go.mod h1:ZTncgTnoLZPT81oa8JImbEpCl/9YskdNJSX8qCe/z0M=
-github.com/jcsvwinston/orbit/ui v1.0.0 h1:J+vlA7NEQpBa0OcOLxCcSCow7d2sMob831iraJsWi+E=
-github.com/jcsvwinston/orbit/ui v1.0.0/go.mod h1:3EZJvFYfjA6HQttmEfUw7m/6/KNMFM3ENH7Cq3Xttqg=
+github.com/jcsvwinston/orbit/ui v1.1.0 h1:6MCeMY0ib/oj4ky8H9P49h90szyFDdi0ArIoeIYOrto=
+github.com/jcsvwinston/orbit/ui v1.1.0/go.mod h1:3EZJvFYfjA6HQttmEfUw7m/6/KNMFM3ENH7Cq3Xttqg=
 github.com/jcsvwinston/quark v1.15.0 h1:XO81BaqLKzZDBmfP3PjPM06Hr9PK/GMTtLaZFonC3B0=
 github.com/jcsvwinston/quark v1.15.0/go.mod h1:36Zkg7m2llmvZEdBE6bAF3MEa666gdtjs5quWSMMU+U=
 github.com/jcsvwinston/quark/drivers/sqlite v0.2.2 h1:w6UKGDSqG3Ka3jxmEO2tXhBP8kmGRjzlZMsq390J/+E=

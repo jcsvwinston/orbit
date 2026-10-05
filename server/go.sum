@@ -59,8 +59,8 @@ github.com/jcsvwinston/nucleus/drivers/sqlite v0.1.0 h1:YxSNfawwOaQrS2iEwCUhWyfS
 github.com/jcsvwinston/nucleus/drivers/sqlite v0.1.0/go.mod h1:xzQrDoyyYMYLNLjODEYnxib6pWmS1PgzNjtptH+u3O0=
 github.com/jcsvwinston/orbit/proto v0.8.0 h1:iBXrnE8Q3PUKhuUwfuhlP2RXcUq1MI7Pf7Im0M6emeM=
 github.com/jcsvwinston/orbit/proto v0.8.0/go.mod h1:HpW6Nxp8jW4Ig+8RKwdDt75NiN85WmT1k70hWSRSV74=
-github.com/jcsvwinston/orbit/ui v1.0.0 h1:J+vlA7NEQpBa0OcOLxCcSCow7d2sMob831iraJsWi+E=
-github.com/jcsvwinston/orbit/ui v1.0.0/go.mod h1:3EZJvFYfjA6HQttmEfUw7m/6/KNMFM3ENH7Cq3Xttqg=
+github.com/jcsvwinston/orbit/ui v1.1.0 h1:6MCeMY0ib/oj4ky8H9P49h90szyFDdi0ArIoeIYOrto=
+github.com/jcsvwinston/orbit/ui v1.1.0/go.mod h1:3EZJvFYfjA6HQttmEfUw7m/6/KNMFM3ENH7Cq3Xttqg=
 github.com/klauspost/compress v1.19.1 h1:VsB4HPswih7mmZ8WleSFQ75c/Ui1M4trX5oAsJnhSlk=
 github.com/klauspost/compress v1.19.1/go.mod h1:cwPg85FWrGar70rWktvGQj8/hthj3wpl0PGDogxkrSQ=
 github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0SNc=
