@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.1](https://github.com/jcsvwinston/orbit/compare/v1.19.0...v1.19.1) (2026-10-05)
+
+
+### Fixed
+
+* **deps:** the root and the server require orbit/ui v1.1.0, so the panel's new screens reach applications ([#542](https://github.com/jcsvwinston/orbit/issues/542)) ([6e7a840](https://github.com/jcsvwinston/orbit/commit/6e7a840e9e1afb27e9b611c96a22f0308717f819))
+
 ## [1.19.0](https://github.com/jcsvwinston/orbit/compare/v1.18.1...v1.19.0) (2026-10-05)
 
 
