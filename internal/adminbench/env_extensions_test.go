@@ -141,6 +141,38 @@ func publishAction() orbit.ModelAction {
 	}
 }
 
+// scheduleAction is the action that asks before it runs (EXT-01): the reason,
+// the channel, the day — one input of each type the panel draws. It writes
+// nothing: what the probes measure is what the panel let through to it and
+// in what type, and a row it changed would be one more thing the other
+// probes have to step around.
+func scheduleAction() orbit.ModelAction {
+	return orbit.ModelAction{
+		Name:        "schedule",
+		Model:       "Note",
+		Label:       "Schedule",
+		Description: "Schedule the selected notes for publication",
+		Fields: []orbit.ActionField{
+			{Name: "reason", Label: "Reason", Required: true, Help: "Recorded with the audit entry"},
+			{Name: "priority", Label: "Priority", Type: orbit.ActionFieldNumber},
+			{Name: "notify", Label: "Notify subscribers", Type: orbit.ActionFieldBoolean},
+			{Name: "channel", Label: "Channel", Type: orbit.ActionFieldSelect, Required: true, Options: []orbit.ActionOption{
+				{Value: "web", Label: "Website"}, {Value: "email", Label: "Email"},
+			}},
+			{Name: "publish_on", Label: "Publish on", Type: orbit.ActionFieldDate, Required: true},
+		},
+		Run: func(_ context.Context, req orbit.ActionRequest) (orbit.ActionResult, error) {
+			benchExtensions.record(req)
+			day, _ := req.Input.Date("publish_on")
+			return orbit.ActionResult{
+				Message: fmt.Sprintf("%d note(s) scheduled on %s for %s: %s",
+					len(req.IDs), req.Input.String("channel"), day.Format("2006-01-02"), req.Input.String("reason")),
+				Affected: len(req.IDs),
+			}, nil
+		},
+	}
+}
+
 // reportsPage is the screen an application has that the panel could never
 // ship: it writes its own document and names the operator reading it, which
 // is what makes it a page of the panel and not a public URL.
@@ -387,7 +419,7 @@ func benchOrbitConfig() orbit.Config {
 			"Note.Cover": "image",
 			"Note.Meta":  "json",
 		},
-		Actions:    []orbit.ModelAction{publishAction()},
+		Actions:    []orbit.ModelAction{publishAction(), scheduleAction()},
 		Pages:      []orbit.Page{reportsPage()},
 		Branding:   benchBranding(),
 		Widgets:    benchWidgets(),

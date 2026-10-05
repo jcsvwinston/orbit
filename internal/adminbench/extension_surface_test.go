@@ -175,51 +175,6 @@ func keysBeyond(payload map[string]any, known []string, fragments ...string) []s
 	return hits
 }
 
-// containsValue walks any value — structs, maps, slices, raw JSON — and
-// reports whether the marker string appears anywhere in it. It is how a probe
-// asks "did what the operator typed reach the application's function?"
-// without knowing what the field that would carry it will be called.
-func containsValue(v reflect.Value, marker string) bool {
-	if !v.IsValid() {
-		return false
-	}
-	switch v.Kind() {
-	case reflect.Interface, reflect.Pointer:
-		if v.IsNil() {
-			return false
-		}
-		return containsValue(v.Elem(), marker)
-	case reflect.String:
-		return strings.Contains(v.String(), marker)
-	case reflect.Struct:
-		for i := 0; i < v.NumField(); i++ {
-			if v.Type().Field(i).PkgPath != "" {
-				continue
-			}
-			if containsValue(v.Field(i), marker) {
-				return true
-			}
-		}
-	case reflect.Map:
-		iter := v.MapRange()
-		for iter.Next() {
-			if containsValue(iter.Key(), marker) || containsValue(iter.Value(), marker) {
-				return true
-			}
-		}
-	case reflect.Slice, reflect.Array:
-		if v.Type().Elem().Kind() == reflect.Uint8 {
-			return strings.Contains(string(v.Bytes()), marker)
-		}
-		for i := 0; i < v.Len(); i++ {
-			if containsValue(v.Index(i), marker) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 // startedApp is an application tryStart booted.
 type startedApp struct{ base string }
 

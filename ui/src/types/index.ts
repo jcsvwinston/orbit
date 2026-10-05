@@ -87,7 +87,26 @@ export interface ModelActionSpec {
   // requires_selection is false for the actions whose subject is the table
   // rather than a selection.
   requires_selection: boolean
+  // fields, when present, are what the action asks for before it runs: the
+  // grid draws them as a form in place of the plain confirmation.
+  fields?: ActionFieldSpec[]
 }
+
+// ActionFieldSpec is one input of an action's form, as the schema carries
+// it. The server checks what is posted against the same declaration, so the
+// form draws it and the server decides.
+export interface ActionFieldSpec {
+  name: string
+  label: string
+  type: 'text' | 'number' | 'boolean' | 'select' | 'date'
+  required: boolean
+  help?: string
+  options?: Array<{ value: string; label: string }>
+}
+
+// ActionInputValues is what an action's form posts: one entry per field
+// the operator filled, by field name.
+export type ActionInputValues = { [field: string]: string | number | boolean }
 
 export interface SchemaField {
   name: string

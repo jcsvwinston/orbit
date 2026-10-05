@@ -1,7 +1,7 @@
 import type {
   Session, SessionsResponse, Record as AppRecord, AuditLogPage, AuditLogQuery, RBACPolicy, RBACPoliciesResponse,
   HealthCheck, LiveRequest, LiveQuery, LiveFeedEntry, ModelsResponse, ModelSchema, PaginatedResult, SystemSnapshot,
-  Operator, OperatorsResponse, AuditRetention, SavedView,
+  Operator, OperatorsResponse, AuditRetention, SavedView, ActionInputValues,
 } from '@/types'
 import { buildAdminPath } from '@/config'
 
@@ -257,16 +257,40 @@ export interface ModelActionResult {
 // runModelAction posts a verb an application declared for its own model.
 // It rides the same endpoint as the built-in bulk verbs — the selection is
 // the same selection — and the backend confines the ids to what this
-// operator may touch before the application's own code sees them.
+// operator may touch before the application's own code sees them. input is
+// what the action's form collected; an action that declares no fields is
+// posted without it, exactly as before actions could ask.
 export async function runModelAction(
   name: string,
   action: string,
   ids: Array<string | number>,
+  input?: ActionInputValues,
 ): Promise<ModelActionResult> {
+  const body: { action: string; ids: string[]; input?: ActionInputValues } = { action, ids: ids.map(String) }
+  if (input !== undefined) body.input = input
   return fetchAPI(`/api/models/${encodeURIComponent(name)}/bulk`, {
     method: 'POST',
-    body: JSON.stringify({ action, ids: ids.map(String) }),
+    body: JSON.stringify(body),
   })
+}
+
+// fieldErrors reads the per-field answer of a refused form — a 422 whose
+// details map each field to what is wrong with it — so a form can put each
+// message on its input. Anything else yields an empty map, and the caller
+// shows the error's message instead.
+export function fieldErrors(err: unknown): { [field: string]: string } {
+  if (!isApiError(err) || err.status !== 422) return {}
+  const body = err.body
+  if (!body || typeof body !== 'object' || !('error' in body)) return {}
+  const e = (body as { error: unknown }).error
+  if (!e || typeof e !== 'object' || !('details' in e)) return {}
+  const details = (e as { details: unknown }).details
+  if (!details || typeof details !== 'object' || Array.isArray(details)) return {}
+  const out: { [field: string]: string } = {}
+  for (const [field, problem] of Object.entries(details as { [k: string]: unknown })) {
+    if (typeof problem === 'string') out[field] = problem
+  }
+  return out
 }
 
 // The kinds of card the panel draws (internal/admin/dashboard.go). A card

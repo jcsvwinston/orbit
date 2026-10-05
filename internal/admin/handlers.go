@@ -950,6 +950,9 @@ func (p *Panel) handleBulkAction(c *router.Context) error {
 	var req struct {
 		Action string            `json:"action"`
 		IDs    []json.RawMessage `json:"ids"`
+		// Input is what an application action's form posted; the panel's
+		// own verbs take none.
+		Input json.RawMessage `json:"input"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		return gferrors.BadRequest("invalid JSON")
@@ -1087,7 +1090,7 @@ func (p *Panel) handleBulkAction(c *router.Context) error {
 	default:
 		// Not one of the panel's verbs: either an action this application
 		// declared for the model, or the same bad request as before.
-		return p.runModelAction(c, mi, action, ids, databaseAlias)
+		return p.runModelAction(c, mi, action, ids, req.Input, databaseAlias)
 	}
 }
 

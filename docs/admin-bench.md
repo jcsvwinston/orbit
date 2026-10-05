@@ -48,7 +48,7 @@ A control that cannot be probed does not belong in the bench.
 
 ## The result
 
-**67 of 72 controls present. 0 partial. 5 absent.**
+**68 of 72 controls present. 0 partial. 4 absent.**
 
 | family | present | partial | absent |
 |---|---|---|---|
@@ -58,14 +58,15 @@ A control that cannot be probed does not belong in the bench.
 | operations | 17 | 0 | 0 |
 | customization | 7 | 0 | 0 |
 | interface | 2 | 0 | 0 |
-| extension | 8 | 0 | 5 |
-| **total** | **67** | **0** | **5** |
+| extension | 9 | 0 | 4 |
+| **total** | **68** | **0** | **4** |
 
 The six families A6 measured are complete as of that arc's eighth session:
 59 of 59. The seventh, `extension`, was recorded at the baseline of A11 and
 is that arc's gap ([below](#what-an-application-adds-at-the-baseline-of-a11)):
 1 present at the baseline, 4 after the arc's first session in this
-repository (O1), 6 after its second (O2), 8 after its fifth (O5).
+repository (O1), 6 after its second (O2), 8 after its fifth (O5), 9 after
+its third (O3), which joined after the fifth.
 The number is not
 the end of the work: what this bench measures is a list of controls somebody
 wrote down, and a control that is present is one whose probe exercised it —
@@ -164,14 +165,17 @@ cd internal/adminbench/browser && npm ci && npx playwright install chromium
 go test ./internal/adminbench/ -run TestBrowserBench -v
 ```
 
-**9 of 10 controls present**, plus the one that measures the instrument. The
-last four belong to the extension family
+**10 of 11 controls present**, plus the one that measures the instrument.
+The last five belong to the extension family
 ([below](#what-an-application-adds-at-the-baseline-of-a11)): `UIX-07` and
 `UIX-08` were recorded absent at the baseline of A11 and `UIX-07` closed in
 the arc's first session (O1); `UIX-10` was added, present, in its second
-(O2), and `UIX-11` in its fifth (O5). There is no `UIX-09` on this page yet:
-that number belongs to the control of the arc's third session (O3),
-measured on a stack of its own that joins this one later:
+(O2), `UIX-11` in its fifth (O5), and `UIX-09` arrived present with the form
+it measures in its third
+([O3](#an-action-that-asks-before-it-runs-after-a11s-session-o3)), which ran
+on a stack of its own and joined this one after the fifth. (O2's own pull
+request numbered its control `UIX-09`; it became `UIX-10` when the two stacks
+met, so the third session's kept its number.)
 
 | control | what it asks |
 |---|---|
@@ -184,6 +188,7 @@ measured on a stack of its own that joins this one later:
 | **UIX-06** | a dialog can be opened and dismissed from the keyboard |
 | **UIX-07** | the login screen draws the logo the application declared — and the browser loaded it |
 | **UIX-08** | the record view offers the action the application declared — **absent** |
+| **UIX-09** | an action that asks first draws its form and shows the refusal on the field |
 | **UIX-10** | the first frame wears the theme the application configured, and the operator's own choice wins on reload |
 | **UIX-11** | a second dashboard draws a series to the operator granted it, and is neither listed nor served to one who is not |
 
@@ -554,13 +559,13 @@ properties every extension point should have: a declaration the panel cannot
 honour stops the application, and what the configuration accepts reaches the
 browser. It is A11's numerator on this side of the suite. It was recorded
 before the arc changed anything at 1 present, 3 partial and 9 absent; the
-table is the reading after the arc's fifth session (O5, below):
+table is kept current as the arc closes its gaps, session by session (below):
 
-### extension — 8 present · 0 partial · 5 absent (HTTP)
+### extension — 9 present · 0 partial · 4 absent (HTTP)
 
 | id | control | verdict | what is missing |
 |---|---|---|---|
-| `EXT-01` | an action asks the operator for input before it runs (a form) | **absent** | ModelAction declares no input and the action descriptor publishes none; an input posted with the call is dropped before Run |
+| `EXT-01` | an action asks the operator for input before it runs (a form) | **present** | — |
 | `EXT-02` | an action is offered on the record view, for that one record | **absent** | the bulk endpoint runs an action over one id, but nothing says which actions belong on one record and the record payload names none — the record view has no action surface |
 | `EXT-03` | an action answers with a file to download or a page to open | **absent** | ActionResult is a message, a count and an untyped Data map the panel echoes; no Location, no Content-Disposition, no typed member a screen could follow |
 | `EXT-04` | a widget draws a series (a chart), not only a value or a list | **present** | — |
@@ -574,23 +579,25 @@ table is the reading after the arc's fifth session (O5, below):
 | `EXT-12` | the configuration reference documents every key an application can bind | **present** | — |
 | `EXT-13` | what an application adds answers to the panel's RBAC: card, screen and verb withheld without a grant | **present** | — |
 
-Four controls of the same family can only be measured in a browser and
+Five controls of the same family can only be measured in a browser and
 are recorded in the browser half, with their own numerator: `UIX-07` (the
 login screen draws the declared logo — **present** since O1), `UIX-08` (the
 record view offers the declared action — **absent**, the drawing half of
-`EXT-02`), `UIX-10` (the first frame is in the configured theme, and the
-operator's choice wins on reload — **present** since O2, the painting half
-of `EXT-09`) and `UIX-11` (a second dashboard draws a series for the
-operator granted it and is withheld from one who is not — **present** since
-O5, the drawing half of `EXT-04` and `EXT-05`).
+`EXT-02`), `UIX-09` (the form an action declared, with the server's refusal
+on the field — **present** since O3, the drawing half of `EXT-01`), `UIX-10`
+(the first frame is in the configured theme, and the operator's choice wins
+on reload — **present** since O2, the painting half of `EXT-09`) and
+`UIX-11` (a second dashboard draws a series for the operator granted it and
+is withheld from one who is not — **present** since O5, the drawing half of
+`EXT-04` and `EXT-05`).
 
 ### What the shape of it says
 
-- **An action is a verb over a selection, and nothing more.** It asks the
-  operator nothing (`EXT-01`), it is not offered where the record is
-  (`EXT-02`, `UIX-08`), and it answers with a toast: `ActionResult.Data` is
-  echoed as an untyped map, so "export these as PDF" or "open the
-  reconciliation" has no contract to ride (`EXT-03`).
+- **An action is a verb over a selection.** At the baseline it asked the
+  operator nothing (`EXT-01`; it asks since O3, below), it is not offered
+  where the record is (`EXT-02`, `UIX-08`), and it answers with a toast:
+  `ActionResult.Data` is echoed as an untyped map, so "export these as PDF"
+  or "open the reconciliation" has no contract to ride (`EXT-03`).
 - **The cards were one screen of numbers** (closed in O5, below). A value,
   a detail line or a list of rows, all on the overview (`EXT-04`, `EXT-05`). A screen of the
   application's own is an `http.Handler` that writes its own document; a
@@ -1001,3 +1008,58 @@ Every change was verified by breaking it:
 | a 403 read as signed out (dist rebuilt) | UIX-11 → absent |
 | the document's asset paths relative again | UIX-11 → absent |
 | the grid and the chart imported into the first load | `ui/embed_test.go` → over budget (690.5 KiB raw against 512) |
+
+## An action that asks before it runs, after A11's session O3
+
+The third session of the arc in this repository (O3) ran on a stack of its
+own, from the baseline, and joined this one after the fifth. It closed
+`EXT-01` and added `UIX-09`, its browser half: on its own stack the HTTP
+bench read 61 of 72; joined to the others it reads 68 of 72, the browser
+half 10 of 11. An action declares the inputs it needs
+next to its verb — `ModelAction.Fields`, each one text, number, boolean,
+select (with its options) or date — and the panel does the rest:
+
+- **At startup**, a field it cannot draw stops the application, naming the
+  action and the field: an unknown type, a select with no options, an
+  option without a value or declared twice, options on a field that is not
+  a select, a name a form cannot carry.
+- **On the call**, what was posted is checked against the declaration
+  before a row is read and before the application's function runs. A
+  refusal is a `422` whose `details` map every field at fault to what is
+  wrong with it — required, not a number, not one of the options, not a
+  date, not a field of this action — in one answer, not one mistake per
+  round trip. What passes reaches `ActionRequest.Input` typed: a string, a
+  `float64`, a `bool`, a `time.Time`. The audit entry records it.
+- **In the grid**, an action with fields opens a form in a dialog instead of
+  the plain confirmation, and the refusal lands on the input it names, as
+  that input's accessible description. An action without fields posts and
+  runs exactly as before — the server ignores an `input` sent to one.
+
+How it is measured, and what that showed:
+
+- **The form checks nothing itself.** It posts what was entered and shows
+  what the server answers; the browser's own constraint checking is off.
+  That is a product decision — a second copy of the rule could disagree
+  with the first, and a client that skipped it reaches the server anyway —
+  and it is also what lets `UIX-09` measure the server: it submits the form
+  empty and reads the refusal on the field, then fills it in and reads the
+  action's own message. Verified by breaking it three ways: with the
+  server's check disabled, `EXT-01` reads partial and `UIX-09` fails on its
+  first assertion; with the fields left out of the schema, `EXT-01` reads
+  absent and no form opens; with an unknown type accepted at startup,
+  `EXT-01` reads partial.
+- **The error was unreadable before it was measured.** `UIX-09` runs the
+  contrast rule over the dialog while the errors are showing, and its first
+  run failed there: `text-destructive` is the colour of a dangerous BUTTON,
+  and as text on the background it reads at about 3.8:1 in the light theme
+  and 2:1 in the dark one, below the 4.5:1 small text needs. The form uses a
+  text token now (`--destructive-text`, 6.5:1 and 7.2:1). Nine other places
+  still write messages in the fill colour — among them the record form's
+  field errors and the import dialog's row errors — and no control measures
+  them, because no screen `UIX-02` opens shows an error.
+- **A selection existed only for an operator who could delete.** The grid
+  drew its row checkboxes when the operator held `delete` on the model, so
+  one granted `publish` and not `delete` was shown no way to select what to
+  publish, and an action over a selection could never be offered to them.
+  The checkboxes now appear when anything can be done with a selection. No
+  control caught it: the browser half signs in as the superuser.

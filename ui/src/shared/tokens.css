@@ -22,6 +22,12 @@
     --accent-foreground: 222.2 47.4% 11.2%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
+    /* --destructive is a fill: the colour of a dangerous button, with
+       --destructive-foreground on it. As TEXT on the background it reads at
+       about 3.8:1 here and 2:1 in the dark theme, below what small text
+       needs (4.5:1), so a message written in red — a field's error — uses
+       this one: 6.5:1 on the light background, 7.2:1 on the dark. */
+    --destructive-text: 0 73.7% 41.8%;
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
     --ring: 222.2 84% 4.9%;
@@ -45,6 +51,7 @@
     --accent-foreground: 210 40% 98%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
+    --destructive-text: 0 91.1% 71.2%;
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 212.7 26.8% 83.9%;

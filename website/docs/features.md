@@ -749,6 +749,72 @@ unknown model, a duplicate verb, one of the panel's own verbs (`delete`,
 `export`, `create`, `update`, …) or a missing `Run`. Each of those would
 otherwise be a button that silently never appears.
 
+### An action that asks before it runs
+
+Some actions need one more thing from the operator — the reason for a
+refund, the date to publish on, the channel to notify. Declare it next to the
+verb, and the grid asks for it in a form instead of the plain confirmation:
+
+```go
+orbit.ModelAction{
+    Name:  "schedule",
+    Model: "Post",
+    Label: "Schedule",
+    Fields: []orbit.ActionField{
+        {Name: "reason", Label: "Reason", Required: true, Help: "Recorded with the audit entry"},
+        {Name: "priority", Label: "Priority", Type: orbit.ActionFieldNumber},
+        {Name: "notify", Label: "Notify subscribers", Type: orbit.ActionFieldBoolean},
+        {Name: "channel", Label: "Channel", Type: orbit.ActionFieldSelect, Required: true,
+            Options: []orbit.ActionOption{{Value: "web", Label: "Website"}, {Value: "email", Label: "Email"}}},
+        {Name: "publish_on", Label: "Publish on", Type: orbit.ActionFieldDate, Required: true},
+    },
+    Run: func(ctx context.Context, req orbit.ActionRequest) (orbit.ActionResult, error) {
+        day, _ := req.Input.Date("publish_on")      // a time.Time, midnight UTC
+        channel := req.Input.String("channel")      // "web" or "email", nothing else
+        n, err := schedulePosts(ctx, req.IDs, day, channel, req.Input.String("reason"))
+        if err != nil {
+            return orbit.ActionResult{}, err
+        }
+        return orbit.ActionResult{Message: fmt.Sprintf("%d post(s) scheduled", n), Affected: n}, nil
+    },
+}
+```
+
+| `Type` | the form draws | `Run` receives |
+|---|---|---|
+| `ActionFieldText` (the default) | a text input | `string` |
+| `ActionFieldNumber` | a number input | `float64` |
+| `ActionFieldBoolean` | a checkbox | `bool`, always present, `false` when unticked |
+| `ActionFieldSelect` | a list of `Options` | the option's `Value`, a `string` |
+| `ActionFieldDate` | a date picker | `time.Time` at midnight UTC |
+
+The **server** decides what is valid, not the form. What is posted
+(`{"action":"schedule","ids":[…],"input":{"reason":"…","channel":"email",…}}`)
+is checked against the declaration before a row is read and before `Run` is
+called, and a refusal never reaches your function. It is a `422` that names
+every field at fault in one answer:
+
+```json
+{"error": {"code": "VALIDATION_FAILED",
+           "message": "Schedule: channel must be one of web, email; reason is required",
+           "details": {"channel": "must be one of web, email", "reason": "is required"}}}
+```
+
+The form shows each message on the input it names. A key you did not declare
+is refused the same way ("is not a field of this action"). An optional field
+left empty is absent from `req.Input` rather than a zero you cannot tell from
+a real one, and `Required` on a boolean means the box must be ticked ("I
+understand this cannot be undone"). What passed is recorded with the audit
+entry under `input`, dates as the day picked.
+
+A field the panel cannot draw stops the application at startup, naming the
+action and the field: an unknown `Type`, a select with no options, an option
+with no `Value` or declared twice, options on a field that is not a select,
+or a name that is not a letter followed by letters, digits, `_` or `-`.
+
+An action without `Fields` is unchanged: it keeps the `Confirm` question, and
+an `input` posted to it is ignored.
+
 ### A screen of your own
 
 ```go

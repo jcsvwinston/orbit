@@ -67,10 +67,13 @@ func browserCases() []browserCase {
 		{id: "UIX-08", title: "the record view offers the action the application declared", want: absent,
 			note:      "the grid offers an application action over a selection (DS-09); the record view's dialog has no button for it (EXT-02 is the contract half)",
 			failsWith: "UIX-08: the record view offers no action"},
+		// The browser half of EXT-01 (A11 O3): the form an action declared,
+		// the server's refusal on the field it names, then the result.
+		{id: "UIX-09", title: "an action that asks first draws its form and shows the refusal on the field", want: present},
 		// The browser half of EXT-09, added in O2: the server's half
 		// says what the document carries; this says what the browser
-		// paints with it. (Numbered UIX-10: UIX-09 belongs to O3, which
-		// was measured on a stack of its own and lands after this one.)
+		// paints with it. (Numbered UIX-10 when the two stacks of the arc
+		// met; O2's own pull request called it UIX-09.)
 		{id: "UIX-10", title: "the first frame wears the theme the application configured, and the operator's own choice wins on reload", want: present},
 		// The browser half of EXT-04 and EXT-05, added in O5.
 		{id: "UIX-11", title: "a second dashboard draws a series to the operator granted it, and is neither listed nor served to one who is not", want: present},

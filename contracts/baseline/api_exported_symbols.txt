@@ -1,3 +1,8 @@
+github.com/jcsvwinston/orbit const:ActionFieldBoolean
+github.com/jcsvwinston/orbit const:ActionFieldDate
+github.com/jcsvwinston/orbit const:ActionFieldNumber
+github.com/jcsvwinston/orbit const:ActionFieldSelect
+github.com/jcsvwinston/orbit const:ActionFieldText
 github.com/jcsvwinston/orbit const:DefaultPrefix
 github.com/jcsvwinston/orbit const:WidgetBar
 github.com/jcsvwinston/orbit const:WidgetLine
@@ -39,6 +44,10 @@ github.com/jcsvwinston/orbit field:Config.TraceURLTemplate
 github.com/jcsvwinston/orbit field:Config.Widgets
 github.com/jcsvwinston/orbit func:Module
 github.com/jcsvwinston/orbit func:OperatorFromContext
+github.com/jcsvwinston/orbit type:ActionField
+github.com/jcsvwinston/orbit type:ActionFieldType
+github.com/jcsvwinston/orbit type:ActionInput
+github.com/jcsvwinston/orbit type:ActionOption
 github.com/jcsvwinston/orbit type:ActionRequest
 github.com/jcsvwinston/orbit type:ActionResult
 github.com/jcsvwinston/orbit type:Branding
