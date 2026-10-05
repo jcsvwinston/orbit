@@ -10,6 +10,7 @@ import { isFieldEditable } from '../lib/capabilities'
 import RelationSelect from './RelationSelect'
 import FileField from './FileField'
 import InlineEditor, { type InlineRow } from './InlineEditor'
+import RenderedField from './RenderedField'
 import { inlinePayload } from '../lib/inlinePayload'
 import { Loader2, Play } from 'lucide-react'
 
@@ -326,7 +327,20 @@ export default function RecordForm({ open, onClose, schema, record, onSave, acti
               {readonlyFields.map((f) => (
                 <div key={f.name} className="flex items-start gap-2 text-sm">
                   <span className="text-muted-foreground w-24 flex-shrink-0">{f.label}:</span>
-                  <span className="font-mono text-xs whitespace-pre-wrap break-all">{fieldToInput(record, f) || '—'}</span>
+                  {f.renderer ? (
+                    <RenderedField
+                      renderer={f.renderer}
+                      value={readField(record as AppRecord, f)}
+                      model={schema.name}
+                      field={f.name}
+                      column={f.column}
+                      record={record}
+                      where="record"
+                      fallback={<span className="font-mono text-xs whitespace-pre-wrap break-all">{fieldToInput(record, f) || '—'}</span>}
+                    />
+                  ) : (
+                    <span className="font-mono text-xs whitespace-pre-wrap break-all">{fieldToInput(record, f) || '—'}</span>
+                  )}
                 </div>
               ))}
             </div>
@@ -346,6 +360,22 @@ export default function RecordForm({ open, onClose, schema, record, onSave, acti
                     <span className="text-xs text-muted-foreground">FK → {f.fk_model}</span>
                   )}
                 </Label>
+                {/* The stored value as the application draws it (EXT-07),
+                    above the input that edits it. */}
+                {isEdit && f.renderer && (
+                  <div className="text-sm">
+                    <RenderedField
+                      renderer={f.renderer}
+                      value={readField(record as AppRecord, f)}
+                      model={schema.name}
+                      field={f.name}
+                      column={f.column}
+                      record={record}
+                      where="record"
+                      fallback={fieldToInput(record, f) || '—'}
+                    />
+                  </div>
+                )}
                 <FieldInput
                   field={f}
                   id={id}

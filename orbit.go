@@ -226,6 +226,18 @@ type Config struct {
 	// start, naming it.
 	Dashboards []Dashboard `yaml:"-" koanf:"-"`
 
+	// Client is the application's own code for the browser side of the
+	// panel: scripts and stylesheets the panel serves under its prefix and
+	// its document loads after the panel's bundle, each named with the
+	// digest of its bytes, so the Content-Security-Policy's script-src
+	// stays 'self'; and the field renderers those scripts register, which
+	// FieldWidgets may name to draw a field the application's way in the
+	// list and on the record view. Go-only wiring: it carries a file
+	// system. A declaration the panel cannot serve — a file that is not
+	// there, a path that climbs out of Files, a renderer no script was
+	// declared to register — refuses to start, naming it.
+	Client ClientCode `yaml:"-" koanf:"-"`
+
 	// Locale is the language the panel's own chrome opens in ("es",
 	// "pt-BR"). It covers the panel's words — navigation, buttons, empty
 	// states — and never the application's data: a model called Invoice is
@@ -409,6 +421,13 @@ type RecordList = admin.RecordList
 // Dashboard is a screen of cards beside the overview, listed in the
 // navigation and gated by its own permission on admin:dashboard:<id>.
 type Dashboard = admin.Dashboard
+
+// ClientCode is the application's own code for the browser side of the
+// panel (EXT-06, EXT-07): the files it is read from, the scripts and
+// stylesheets the panel's document loads after its own bundle, and the names
+// of the field renderers the scripts register with
+// window.orbit.registerFieldRenderer.
+type ClientCode = admin.ClientCode
 
 // OperatorFromContext returns the panel operator a Page request was
 // authenticated as.
@@ -610,7 +629,10 @@ func (m *module) start(ctx context.Context) error {
 	if err := admin.ValidateLocaleConfig(m.cfg.Locale, m.cfg.Messages); err != nil {
 		return fmt.Errorf("orbit: %w", err)
 	}
-	if err := admin.ValidateFieldWidgets(src, m.cfg.FieldWidgets); err != nil {
+	if err := admin.ValidateClientCode(m.cfg.Client); err != nil {
+		return fmt.Errorf("orbit: %w", err)
+	}
+	if err := admin.ValidateFieldWidgets(src, m.cfg.FieldWidgets, m.cfg.Client); err != nil {
 		return fmt.Errorf("orbit: %w", err)
 	}
 
@@ -658,6 +680,7 @@ func (m *module) start(ctx context.Context) error {
 		Branding:   m.cfg.Branding,
 		Widgets:    m.cfg.Widgets,
 		Dashboards: m.cfg.Dashboards,
+		Client:     m.cfg.Client,
 		Locale:     m.cfg.Locale,
 		Messages:   m.cfg.Messages,
 

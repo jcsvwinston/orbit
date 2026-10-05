@@ -642,4 +642,139 @@ test.describe('UIX', () => {
     await expect(page.getByText('You do not have permission to view this'), 'UIX-11: the dashboard reached by its address is not refused').toBeVisible({ timeout: 10_000 })
     await expect(page.locator('[data-widget]'), 'UIX-11: a refused dashboard still draws cards').toHaveCount(0)
   })
+
+  /*
+   * UIX-12 is the browser half of EXT-06 and EXT-07 (A11 O6): the server
+   * says the document names the application's script and stylesheet with
+   * their digests, after the bundle, under a script-src that is still
+   * 'self'; this says the browser runs and applies them, with no violation,
+   * and what the script registers draws a field.
+   *
+   * The bench's application draws Note.status with its own renderer
+   * (note-status), which knows "draft" and throws on any status it does not
+   * know. "Drawn" is the renderer's own element in the cell, styled by the
+   * application's stylesheet; "falls back" is the panel's own text and the
+   * renderer's failure, in that cell, with the rest of the grid and the
+   * record view still there.
+   */
+  test("UIX-12 the application's own script loads under the policy and draws a field in the grid and the record view, and a renderer that throws falls back", async ({ page }) => {
+    // Every violation of the policy, from before the document exists, and
+    // every error the console reports — a script refused for its digest is
+    // one, and fires no policy event.
+    await page.addInitScript(() => {
+      const seen: string[] = []
+      ;(window as unknown as { __violations: string[] }).__violations = seen
+      document.addEventListener('securitypolicyviolation', (e) => seen.push(`${e.violatedDirective} ${e.blockedURI}`))
+    })
+    const consoleErrors: string[] = []
+    page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()) })
+    const pageErrors: string[] = []
+    page.on('pageerror', (err) => pageErrors.push(err.message))
+
+    const stamp = Date.now()
+    const drawnTitle = `uix-12 ${stamp} drawn`
+    const brokenTitle = `uix-12 ${stamp} unknown`
+    await signIn(page)
+
+    // Preconditions: the schema names the renderer for the field, and the
+    // document names the application's files.
+    const renderer = await page.evaluate(async () => {
+      const r = await fetch('/admin/api/models/Note/schema', { credentials: 'same-origin' })
+      const schema = await r.json()
+      return (schema.fields ?? []).find((f: { column: string }) => f.column === 'status')?.renderer ?? null
+    })
+    expect(renderer, 'UIX-12 precondition: the schema names no renderer for Note.status (EXT-07 should be red too)').toBe('note-status')
+    expect(await page.locator('script[src^="/admin/client/"]').count(), 'UIX-12 precondition: the document loads no script of the application\'s (EXT-06 should be red too)').toBeGreaterThan(0)
+    expect(await page.locator('link[rel="stylesheet"][href^="/admin/client/"]').count(), 'UIX-12 precondition: the document links no stylesheet of the application\'s (EXT-06 should be red too)').toBeGreaterThan(0)
+    expect(await page.evaluate(() => (window as unknown as { orbit?: { version: number } }).orbit?.version), 'UIX-12: the panel offers no window.orbit (version 1) to the application\'s script').toBe(1)
+
+    // One note the renderer knows and one it does not.
+    const ids: string[] = []
+    for (const note of [{ title: drawnTitle, status: 'draft' }, { title: brokenTitle, status: 'uix-12-unknown' }]) {
+      const created = await page.evaluate(async (body) => {
+        const r = await fetch('/admin/api/models/Note', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify(body),
+        })
+        const out = await r.json().catch(() => ({}))
+        return { status: r.status, id: String(out?.data?.id ?? out?.id ?? '') }
+      }, note)
+      expect(created.status < 300 && created.id !== '', `UIX-12 precondition: creating a note answered ${created.status}`).toBe(true)
+      ids.push(created.id)
+    }
+    const [drawnId, brokenId] = ids
+
+    await page.goto('/admin/data-studio')
+    await page.waitForLoadState('networkidle')
+    await page.getByRole('button', { name: /^Notes/ }).first().click({ timeout: 15_000 })
+    // The first page of notes already holds the one the renderer throws on:
+    // a renderer's failure that escaped would take the screen with it.
+    const search = page.getByRole('textbox', { name: 'Search records' })
+    await expect(search, 'UIX-12: the Data Studio screen did not survive the application\'s renderer').toBeVisible({ timeout: 10_000 })
+    await search.fill(`uix-12 ${stamp}`, { timeout: 10_000 }).catch(() => {
+      throw new Error('UIX-12: the Data Studio screen stopped answering once the grid drew the application\'s renderer')
+    })
+    await page.keyboard.press('Enter')
+    // The grid holds the two notes and nothing else — the search has
+    // landed — and has stopped moving them: a row read mid-animation is
+    // read at an opacity it does not keep.
+    await expect(page.locator('.ag-center-cols-container [row-id]'), 'UIX-12 precondition: the search did not narrow the grid to the two notes')
+      .toHaveCount(2, { timeout: 10_000 })
+    await page.waitForFunction(() => document.getAnimations().length === 0, undefined, { timeout: 10_000 })
+    const cell = (id: string, column: string) => page.locator(`.ag-center-cols-container [row-id="${id}"] [col-id="${column}"]`)
+    await expect(cell(drawnId, 'title'), 'UIX-12 precondition: the search did not bring the two notes to the grid').toHaveText(drawnTitle, { timeout: 10_000 })
+    await expect(cell(brokenId, 'title'), 'UIX-12 precondition: the search did not bring the two notes to the grid').toHaveText(brokenTitle, { timeout: 10_000 })
+
+    // 1. In the grid, the renderer draws the status, and the application's
+    // stylesheet styles what it drew.
+    const badge = cell(drawnId, 'status').locator('[data-bench-status="draft"]')
+    await expect(badge, 'UIX-12: the grid does not draw Note.status with the application\'s renderer').toHaveText('Draft', { timeout: 10_000 })
+    await expect(badge, 'UIX-12: the renderer was not told it draws in the list').toHaveAttribute('data-bench-where', 'list')
+    expect(await badge.evaluate((el) => getComputedStyle(el).borderTopLeftRadius), 'UIX-12: the application\'s stylesheet did not apply to what its renderer drew').toBe('9999px')
+
+    // 2. A value the renderer throws on is drawn the panel's way, and the
+    // cell says the renderer failed; the row and the grid are still there.
+    const broken = cell(brokenId, 'status')
+    await expect(broken, 'UIX-12: a renderer that throws did not fall back to the panel\'s own drawing').toContainText('uix-12-unknown', { timeout: 10_000 })
+    await expect(broken, 'UIX-12: the cell whose renderer threw does not say so').toContainText('note-status failed: no badge for the status "uix-12-unknown"')
+    await expect(cell(brokenId, 'title')).toHaveText(brokenTitle)
+
+    // Both are legible, by the rule the panel's own screens are held to.
+    const gridViolations = (await new AxeBuilder({ page }).include('.ag-center-cols-container').withRules(['color-contrast']).analyze()).violations
+      .map((v) => ({ id: v.id, nodes: v.nodes.slice(0, 3).map((n) => n.target.join(' ')) }))
+    expect(gridViolations, `UIX-12: the grid: ${JSON.stringify(gridViolations, null, 2)}`).toEqual([])
+
+    // 3. The record view draws it too, and the record that throws keeps a
+    // record view that works.
+    await page.getByRole('button', { name: `Edit record ${drawnId}` }).click()
+    let view = page.getByRole('dialog').first()
+    await expect(view, 'UIX-12 precondition: the record view did not open').toBeVisible({ timeout: 10_000 })
+    await expect(view.locator('[data-bench-status="draft"][data-bench-where="record"]'), 'UIX-12: the record view does not draw Note.status with the application\'s renderer').toHaveText('Draft', { timeout: 5_000 })
+    await page.keyboard.press('Escape')
+    await expect(view).toBeHidden({ timeout: 5_000 })
+
+    await page.getByRole('button', { name: `Edit record ${brokenId}` }).click()
+    view = page.getByRole('dialog').first()
+    await expect(view, 'UIX-12: the record whose renderer throws has no record view').toBeVisible({ timeout: 10_000 })
+    await expect(view, 'UIX-12: the record view of a value the renderer throws on does not say so').toContainText('note-status failed: no badge for the status "uix-12-unknown"', { timeout: 5_000 })
+    await expect(view.getByLabel(/^Title/), 'UIX-12: the record view lost its form to the renderer that threw').toHaveValue(brokenTitle)
+    await page.keyboard.press('Escape')
+    await expect(view).toBeHidden({ timeout: 5_000 })
+
+    // 4. And nothing of the application's was refused on the way: no
+    // violation of the script or style policy and none naming its files, no
+    // digest the browser rejected, no error the page did not catch. The
+    // renderer's own failure is reported by the panel on purpose; nothing
+    // else is. (The panel's own grid trips font-src with the icon font its
+    // stylesheet carries as a data: URL — a defect of the panel's, not of
+    // the application's code, recorded in docs/admin-bench.md.)
+    const violations = (await page.evaluate(() => (window as unknown as { __violations: string[] }).__violations))
+      .filter((v) => /^(script|style)-src/.test(v) || v.includes('/admin/client/'))
+    expect(violations, `UIX-12: the policy refused something: ${JSON.stringify(violations)}`).toEqual([])
+    const refused = consoleErrors.filter((m) => /integrity/i.test(m) || m.includes('/admin/client/') || /directive: "(script|style)-src/.test(m))
+    expect(refused, `UIX-12: the browser refused the application's files: ${JSON.stringify(refused)}`).toEqual([])
+    expect(pageErrors, `UIX-12: an error the page did not catch: ${JSON.stringify(pageErrors)}`).toEqual([])
+  })
 })

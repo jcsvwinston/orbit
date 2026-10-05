@@ -6,7 +6,13 @@ import { applyBranding } from './lib/branding'
 import { useMessages } from './stores/messagesStore'
 import { installPreloadErrorReload } from './lib/chunk-recovery'
 import { applyInitialTheme, useTheme } from './stores/themeStore'
+import { installClientAPI } from './lib/clientExtensions'
 import './index.css'
+
+// window.orbit, for the application's own scripts: the server names them on
+// the document after this bundle, deferred, so they run once this module
+// has, and find it here (src/lib/clientExtensions.ts).
+installClientAPI()
 
 // Reflect the configured panel title (injected by the backend as a meta tag)
 // in the browser tab. The static <title> only covers a build served without

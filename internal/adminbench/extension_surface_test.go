@@ -5,9 +5,14 @@ package adminbench
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/sha512"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"html"
 	"io"
+	"io/fs"
 	"math"
 	"net"
 	"net/http"
@@ -454,7 +459,12 @@ var (
 
 // themeHints lists what in a document's head could set the first frame's
 // theme: a meta tag naming a theme, a dark class on the root, or a script
-// that is not the bundle. The panel without a configured theme carries none.
+// the parser stops for — a classic one, neither deferred nor async, which
+// runs before there is a body to paint. A module, or a deferred or async
+// script, runs when the browser may already have painted (the rule
+// firstFrameProblem applies), so it cannot decide the first frame: the
+// application's own scripts (EXT-06) are deferred, after the bundle. The
+// panel without a configured theme carries none.
 func themeHints(doc string) []string {
 	head := headOf(doc)
 	var hints []string
@@ -464,9 +474,14 @@ func themeHints(doc string) []string {
 	if strings.Contains(doc, `<html class="dark"`) {
 		hints = append(hints, "a dark class on <html>")
 	}
-	for _, m := range scriptTag.FindAllStringSubmatch(head, -1) {
-		if !strings.Contains(m[1], `type="module"`) {
-			hints = append(hints, "a classic script "+strings.TrimSpace(m[1]))
+	for _, tag := range headTags(head) {
+		if tag.name != "script" || tag.attrs["type"] == "module" {
+			continue
+		}
+		_, deferred := tag.attrs["defer"]
+		_, async := tag.attrs["async"]
+		if !deferred && !async {
+			hints = append(hints, "a classic script "+tag.ref())
 		}
 	}
 	return hints
@@ -648,4 +663,89 @@ func sameColour(a, b [3]float64) bool {
 		}
 	}
 	return true
+}
+
+// ---- the application's client code (EXT-06, EXT-07) ------------------------
+
+// headTag is one <script> or <link> of a document's head, where it stands
+// and what its attributes say. An attribute with no value maps to "".
+type headTag struct {
+	at    int
+	name  string
+	attrs map[string]string
+}
+
+// ref is what the tag loads: a script's src or a link's href.
+func (h headTag) ref() string {
+	if h.name == "link" {
+		return h.attrs["href"]
+	}
+	return h.attrs["src"]
+}
+
+var (
+	loadTag   = regexp.MustCompile(`<(script|link)\b([^>]*)>`)
+	attribute = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9-]*)(?:="([^"]*)")?`)
+)
+
+// headTags lists the scripts and links of a document's head, in order.
+func headTags(head string) []headTag {
+	var out []headTag
+	for _, m := range loadTag.FindAllStringSubmatchIndex(head, -1) {
+		tag := headTag{at: m[0], name: head[m[2]:m[3]], attrs: map[string]string{}}
+		for _, a := range attribute.FindAllStringSubmatch(head[m[4]:m[5]], -1) {
+			tag.attrs[strings.ToLower(a[1])] = html.UnescapeString(a[2])
+		}
+		out = append(out, tag)
+	}
+	return out
+}
+
+// sriMatches answers whether a Subresource Integrity value is the digest of
+// body, by the algorithm the value names — the check the browser makes
+// before it runs a script or applies a stylesheet.
+func sriMatches(integrity string, body []byte) bool {
+	for _, value := range strings.Fields(integrity) {
+		algorithm, digest, ok := strings.Cut(value, "-")
+		if !ok {
+			continue
+		}
+		var sum []byte
+		switch algorithm {
+		case "sha256":
+			s := sha256.Sum256(body)
+			sum = s[:]
+		case "sha384":
+			s := sha512.Sum384(body)
+			sum = s[:]
+		case "sha512":
+			s := sha512.Sum512(body)
+			sum = s[:]
+		default:
+			continue
+		}
+		if digest == base64.StdEncoding.EncodeToString(sum) {
+			return true
+		}
+	}
+	return false
+}
+
+// naiveDirFS is an fs.FS a hand-written adapter could be: it joins the name
+// it is asked for to its root without checking it, so "../x" opens a file
+// outside the root. io/fs's own implementations refuse such a name; this one
+// is what EXT-06 needs to tell the panel's path check from theirs.
+type naiveDirFS string
+
+func (d naiveDirFS) Open(name string) (fs.File, error) {
+	return os.Open(filepath.Join(string(d), name))
+}
+
+func keysOf[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }

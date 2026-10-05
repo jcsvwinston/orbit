@@ -166,6 +166,11 @@ type PanelConfig struct {
 	// own permission (dashboards.go).
 	Dashboards []Dashboard
 
+	// Client is the application's own code for the browser side of the
+	// panel: scripts and stylesheets the document loads after the bundle,
+	// and the field renderers those scripts register (client_code.go).
+	Client ClientCode
+
 	// Audit logging configuration
 	AuditEnabled bool // whether audit logging is enabled
 	AuditMaxSize int  // max audit entries in memory (default 10000)
@@ -238,6 +243,7 @@ type Panel struct {
 	pages        []Page
 	widgets      []Widget
 	dashboards   []Dashboard
+	client       *clientCode
 	branding     Branding
 	locale       string
 	messages     map[string]map[string]string
@@ -343,6 +349,13 @@ func NewPanel(src datasource.DataSource, logger *slog.Logger, cfg PanelConfig) *
 		}
 	} else {
 		p.branding = branding
+	}
+	if client, err := loadClientCode(cfg.Client); err != nil {
+		if logger != nil {
+			logger.Error("orbit: application client code ignored", "error", err)
+		}
+	} else {
+		p.client = client
 	}
 	p.locale = defaultLocale
 	if locale, err := validateLocale(cfg.Locale); err != nil {
@@ -616,6 +629,12 @@ func (p *Panel) mountRoutes(r *router.Mux) {
 		r.Group(func(sub *router.Mux) {
 			sub.Use(p.authMiddleware)
 
+			// The application's own scripts and stylesheets: behind the
+			// session, like the document that names them, and outside the
+			// SPA's stack — loading a script is not activity of the
+			// operator's, nor traffic for the live feed.
+			p.mountClientRoutes(sub)
+
 			// /api/* — authenticated at the edge, authorized per handler.
 			// The middleware stack mirrors the open posture's (minus the
 			// SPA fallback): this group has grown one middleware at a time
@@ -665,6 +684,7 @@ func (p *Panel) mountRoutes(r *router.Mux) {
 	r.Use(p.panelTrafficMiddleware)
 	p.mountAPIRoutes(r)
 	p.mountPageRoutes(r)
+	p.mountClientRoutes(r)
 	r.Get("/{path...}", p.handleSPA(uiContent))
 }
 
@@ -939,6 +959,7 @@ func (p *Panel) handleSPA(fsys fs.FS) router.Handler {
 		content = injectBranding(content, p.branding)
 		content = injectAppearance(content, p.branding, p.config.Prefix)
 		content = injectLocale(content, p.locale)
+		content = injectClientCode(content, p.client, p.config.Prefix)
 
 		http.ServeContent(w, r, "index.html", time.Time{}, bytes.NewReader(content))
 		return nil

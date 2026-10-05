@@ -48,7 +48,7 @@ relay.
 | `multitenant_ids` | []string | — | Known tenant IDs for the selector UI. |
 | `row_owner_fields` | map[string]string | — | Which column of each model says WHICH OPERATOR a row belongs to, keyed by model name, with `"*"` as the default for every model carrying the same column. It is what makes an `admin:<Model>#own` policy enforceable (see [Access control](./features.md#per-row-permissions)); a `#own` grant on a model with no entry here is refused with a 403, never widened to every row. |
 | `row_owner_subject` | string | `username` | Which name of the operator the owner column holds: `username` or `id`. |
-| `field_widgets` | map[string]string | — | How a field is edited when its type cannot say: `Model.Field` (or `Model.column`) to one of `json`, `richtext`, `file`, `image`. A JSON document is inferred from the type and needs no entry. A `file`/`image` field gets an upload route that stores the bytes in the application's storage and answers with the key the form writes (see [Features](./features.md#forms-that-hold-a-relation-a-document-and-a-file)). An entry the panel cannot apply — a widget outside those four, a key that names no field of your models, or two keys for one field with different widgets — stops the application at startup, naming the entry. |
+| `field_widgets` | map[string]string | — | How a field is edited when its type cannot say: `Model.Field` (or `Model.column`) to one of `json`, `richtext`, `file`, `image`. A JSON document is inferred from the type and needs no entry. A `file`/`image` field gets an upload route that stores the bytes in the application's storage and answers with the key the form writes (see [Features](./features.md#forms-that-hold-a-relation-a-document-and-a-file)). A value may instead name a field renderer the application declares in Go (`Client.FieldRenderers`), which draws the field in the list and on the record view (see [Code of your own in the browser](./features.md#code-of-your-own-in-the-browser)). An entry the panel cannot apply — a widget outside those four that is not a declared renderer, a key that names no field of your models, or two keys for one field with different widgets — stops the application at startup, naming the entry. |
 
 ## How the panel looks and reads
 
@@ -75,14 +75,16 @@ with a message naming the key.
 
 ## Wired in Go
 
-What an application adds to the panel that carries a function cannot be
-written in `nucleus.yml`, so it has no key here: `Actions`, `Pages`,
-`Widgets` and `Dashboards`, and the `Cache` and `DataSource` an application
-hands the panel, are set on `orbit.Config` in Go (see
+What an application adds to the panel that carries a function or a file
+system cannot be written in `nucleus.yml`, so it has no key here: `Actions`,
+`Pages`, `Widgets` and `Dashboards`, `Client` (its own scripts, stylesheets
+and field renderers), and the `Cache` and `DataSource` an application hands
+the panel, are set on `orbit.Config` in Go (see
 [What your application adds to the panel](./features.md#what-your-application-adds-to-the-panel)
 and [More than one dashboard](./features.md#more-than-one-dashboard)). An
-action, a page, a card or a dashboard the panel cannot draw stops the
-application at startup, naming it, like a key above.
+action, a page, a card, a dashboard or a file of client code the panel
+cannot draw or serve stops the application at startup, naming it, like a
+key above.
 
 ## The live feed
 

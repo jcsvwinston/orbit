@@ -368,11 +368,15 @@ modules:
       Album.cover: image
 ```
 
-The declaration is checked when the panel mounts. A widget outside those four,
-a key that names no field of your models, or two keys for one field with
-different widgets stops the application with a message naming the entry —
-each of them is a form that would otherwise quietly show the column's plain
-input.
+A value may also name a field renderer your own script registers, which
+draws the field your way in the list and on the record view (see
+[Code of your own in the browser](#code-of-your-own-in-the-browser)).
+
+The declaration is checked when the panel mounts. A widget outside those four
+that is not a renderer you declared, a key that names no field of your
+models, or two keys for one field with different widgets stops the
+application with a message naming the entry — each of them is a form that
+would otherwise quietly show the column's plain input.
 
 A file field holds a storage **key**, and `POST /api/models/{model}/upload`
 (multipart, `file` plus an optional `field`) produces one: the bytes go to the
@@ -683,9 +687,10 @@ method still returns 405, which is a different statement from 404.
 ## What your application adds to the panel
 
 The panel's verbs are the ones every table has, and its screens are the ones
-every application has. Two contracts let an application add the ones that are
-only its own, without forking the panel. Both are Go-only wiring: they carry
-functions, so there is nothing for `nucleus.yml` to bind.
+every application has. Three contracts let an application add the ones that
+are only its own — its verbs, its screens and its own code in the browser —
+without forking the panel. All three are Go-only wiring: they carry functions
+or files, so there is nothing for `nucleus.yml` to bind.
 
 ### An action of your own, on your own model
 
@@ -970,6 +975,103 @@ single-page app would be blocked by the browser — and relaxing that header for
 the whole panel to embed one screen would trade a clickjacking defence for a
 layout. The panel's `Content-Security-Policy` applies to your page too, so its
 scripts come from files rather than inline `<script>`.
+
+### Code of your own in the browser
+
+```go
+//go:embed panel
+var panelFiles embed.FS
+
+func adminPanel() nucleus.ModuleSpec {
+    files, err := fs.Sub(panelFiles, "panel")    // or os.DirFS("panel")
+    if err != nil {
+        panic(err)
+    }
+    return orbit.Module(orbit.Config{
+        // ...
+        Client: orbit.ClientCode{
+            Files:          files,
+            Scripts:        []string{"money.js"},
+            Stylesheets:    []string{"money.css"},
+            FieldRenderers: []string{"money"},  // what money.js registers
+        },
+        FieldWidgets: map[string]string{
+            "Invoice.Total": "money",            // drawn by your renderer
+        },
+    })
+}
+```
+
+```js
+// panel/money.js
+(function () {
+  var orbit = window.orbit
+  if (!orbit || orbit.version !== 1) return
+  var euros = new Intl.NumberFormat('en', { style: 'currency', currency: 'EUR' })
+  orbit.registerFieldRenderer('money', function (value, context) {
+    var amount = document.createElement('span')
+    amount.className = 'money'
+    amount.textContent = euros.format(Number(value) / 100)
+    return amount
+  })
+})()
+```
+
+**The panel serves your files under its own prefix and its own policy.** It
+reads each declared file once, when it mounts, and serves those bytes at
+`/admin/client/<path>`, behind the panel's session. The panel's document
+names them at the end of its `<head>`, after its own bundle — a stylesheet
+as a `<link>`, a script as a deferred `<script>`, so it runs once the
+panel's code has — each with an `integrity` attribute carrying the digest of
+the bytes the panel read, so the browser runs or applies exactly those. The
+Content-Security-Policy does not change: `script-src` stays `'self'`, and
+your files are `'self'`. Inline script stays refused, so your code comes from
+files. A file in `Files` you did not declare is not served, and the login
+screen loads none of them. With nothing declared, nothing changes.
+
+Your scripts run in the operator's session, like the panel's own code: they
+can call the panel's API with exactly the rights the operator holds, so
+declare only code you would ship in the panel itself.
+
+**What is checked when the panel mounts.** A path is inside `Files`: no
+leading `/`, no `.` or `..` segment, no backslash, and only letters, digits,
+`.`, `-` and `_` in each segment; a script ends in `.js` and a stylesheet in
+`.css`. A file that cannot be read, a path declared twice, files with no
+`Files` to read them from, a renderer name that is not lowercase letters,
+digits and dashes, a renderer named like one of the panel's own widgets
+(`json`, `richtext`, `file`, `image`) and a renderer with no script declared
+to register it each stop the application, with a message naming the entry. A
+`field_widgets` value that names neither one of the panel's widgets nor a
+renderer you declared stops it too.
+
+**`window.orbit`, version 1.** The panel's code installs it, read-only,
+before your scripts run:
+
+| member | what it is |
+|---|---|
+| `version` | `1`. A later version changes what a renderer receives or returns; a script that needs one checks it first. |
+| `registerFieldRenderer(name, render)` | Registers the renderer `field_widgets` names. A second registration under one name replaces the first; a name that is not lowercase letters, digits and dashes, or a `render` that is not a function, throws. |
+
+`render(value, context)` draws one value and returns a DOM node, or a string,
+which is drawn as text and never parsed as markup. `context` carries the
+`model`, the `field`, its `column`, a read-only copy of the `record` and
+`where` it is drawn: `"list"` or `"record"`.
+
+**Where a renderer draws.** In the Data Studio list, and on the record view:
+above the input that edits the field, and in place of the value when the
+record is shown read-only. A renderer draws a value; it does not edit one.
+The form keeps the panel's own input for the field's type, so a field drawn
+by a renderer is edited as its column says (a JSON document keeps its JSON
+editor). One field takes one `field_widgets` value, so a file or rich-text
+field cannot also have a renderer.
+
+**When a renderer fails, the value pays, not the screen.** A renderer that
+throws, or returns anything but a node or a string, leaves that one value
+drawn the panel's way, with a line in the same place that says the renderer
+failed and why; the browser console has the rest. A renderer the schema names
+that no script registered draws the panel's way, with a warning in the
+console. A renderer registered after the panel drew is applied when it
+registers.
 
 ## The panel in your product's clothes
 
