@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.19.0](https://github.com/jcsvwinston/orbit/compare/v1.18.1...v1.19.0) (2026-10-05)
+
+
+### Added
+
+* **admin:** actions on one record, and actions that answer with a redirect inside the panel or a confined download (A11 O4) ([#535](https://github.com/jcsvwinston/orbit/issues/535)) ([5ba6c53](https://github.com/jcsvwinston/orbit/commit/5ba6c5378795784044bbad2ccec649911711983f))
+* **admin:** actions that ask before they run — declared fields, validated on the server, rendered as a form (A11 O3) ([#533](https://github.com/jcsvwinston/orbit/issues/533)) ([12c234c](https://github.com/jcsvwinston/orbit/commit/12c234c48612d6a662d6b00097480c53ec003790))
+* **admin:** built-in widgets fed by Go callbacks, and more than one dashboard, each behind its own permission (A11 O5) ([#538](https://github.com/jcsvwinston/orbit/issues/538)) ([e64c60a](https://github.com/jcsvwinston/orbit/commit/e64c60aa790a0dbff8a550b1d3478d45034e249e))
+* **admin:** the application's own client code under the panel's CSP, and field renderers it registers (A11 O6) ([#540](https://github.com/jcsvwinston/orbit/issues/540)) ([5fba1fb](https://github.com/jcsvwinston/orbit/commit/5fba1fbf2a5f0024442d15488cb1da9b38422348))
+* **admin:** the panel keeps the promises its configuration makes — field widgets checked at startup, branding that loads under the CSP, the logo on the login screen, and every key in the reference (A11 O1) ([#532](https://github.com/jcsvwinston/orbit/issues/532)) ([b072e98](https://github.com/jcsvwinston/orbit/commit/b072e988590072b035376ea1f6f9d87d43bd9d46))
+* **admin:** the theme comes from the configuration — applied before the first frame, the operator's choice still wins, and a palette checked per theme (A11 O2) ([#534](https://github.com/jcsvwinston/orbit/issues/534)) ([2bcfe55](https://github.com/jcsvwinston/orbit/commit/2bcfe5530693088babd629257c98de8a744b3f93))
+
 ## [1.18.1](https://github.com/jcsvwinston/orbit/compare/v1.18.0...v1.18.1) (2026-10-04)
 
 
