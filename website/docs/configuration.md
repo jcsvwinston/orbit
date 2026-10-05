@@ -11,7 +11,7 @@ description: The modules.orbit.* configuration reference.
 working panel under `/admin`.
 
 The tables below group the keys by what they affect. For a plain in-process
-panel, only the first four groups can ever matter, and most apps set just
+panel, only the first five groups can ever matter, and most apps set just
 [Mounting](#mounting) and [the bootstrap user](#the-bootstrap-admin-user).
 The `cluster_*` keys belong to the **opt-in live-feed relay**: they are
 inert until `cluster_enabled` is true, and in particular **no Redis is
@@ -48,7 +48,23 @@ relay.
 | `multitenant_ids` | []string | — | Known tenant IDs for the selector UI. |
 | `row_owner_fields` | map[string]string | — | Which column of each model says WHICH OPERATOR a row belongs to, keyed by model name, with `"*"` as the default for every model carrying the same column. It is what makes an `admin:<Model>#own` policy enforceable (see [Access control](./features.md#per-row-permissions)); a `#own` grant on a model with no entry here is refused with a 403, never widened to every row. |
 | `row_owner_subject` | string | `username` | Which name of the operator the owner column holds: `username` or `id`. |
-| `field_widgets` | map[string]string | — | How a field is edited when its type cannot say: `Model.Field` (or `Model.column`) to one of `json`, `richtext`, `file`, `image`. A JSON document is inferred from the type and needs no entry. A `file`/`image` field gets an upload route that stores the bytes in the application's storage and answers with the key the form writes (see [Features](./features.md#forms-that-hold-a-relation-a-document-and-a-file)). |
+| `field_widgets` | map[string]string | — | How a field is edited when its type cannot say: `Model.Field` (or `Model.column`) to one of `json`, `richtext`, `file`, `image`. A JSON document is inferred from the type and needs no entry. A `file`/`image` field gets an upload route that stores the bytes in the application's storage and answers with the key the form writes (see [Features](./features.md#forms-that-hold-a-relation-a-document-and-a-file)). An entry the panel cannot apply — a widget outside those four, a key that names no field of your models, or two keys for one field with different widgets — stops the application at startup, naming the entry. |
+
+## How the panel looks and reads
+
+The panel in your product's clothes: its logo, icon and colour, and the
+language its own words are in (see
+[Features](./features.md#the-panel-in-your-products-clothes)). Every value is
+checked when the panel mounts, and one it cannot honour stops the application
+with a message naming the key.
+
+| Key (`modules.orbit.*`) | Type | Default | Description |
+|---|---|---|---|
+| `branding.logo_url` | string | — | The image in the sidebar, in place of the title (which becomes its alternative text), and on the login screen, above it. An absolute `http(s)` URL or a path your application already serves; the panel does not serve the file. Its origin is added to the `img-src` of the panel's Content-Security-Policy, so the browser loads it. A `javascript:` or `data:` URL, a protocol-relative one, or a host the policy cannot name (an IPv6 address, a wildcard) is refused. |
+| `branding.favicon_url` | string | — | The icon in the browser tab. Same rules as `branding.logo_url`. |
+| `branding.primary_color` | string | — | The accent colour as a CSS hex colour (`#0b5fff` or `#05f`): the buttons, the active navigation entry and the focus ring. The text drawn on it is chosen from its lightness. Anything else is refused. |
+| `locale` | string | English | The language the panel's own words open in (`es`, `pt-BR`), which also sets the document's `lang`. The panel ships English and Spanish; in another language, what `messages` does not translate reads in English. It never translates your data: model names, field labels and your errors stay as you wrote them. A value that is not a language tag is refused. |
+| `messages` | map[string]map[string]string | — | Phrases that add to or replace the panel's, by language tag and then key (`es: {nav.data_studio: Catálogo}`). They merge: yours win over the panel's translation, which wins over its English, and a phrase nobody translated reads in English rather than as its key. A language key that is not a language tag is refused. |
 
 ## The live feed
 

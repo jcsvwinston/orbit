@@ -39,17 +39,39 @@ type extensions struct {
 var benchExtensions = &extensions{}
 
 // extensionsModule lends the application's database handle to the action and
-// the widget this application declares. It is mounted only on the shared
-// bench application (env_test.go).
+// the widget this application declares, and serves the logo its branding
+// names. It is mounted only on the shared bench application (env_test.go).
+//
+// The logo is served because a declared logo the application does not serve
+// is a broken image, and a broken image is not a drawn logo: UIX-07 asks the
+// browser whether the image LOADED on the login screen, which is drawn before
+// anyone has signed in. Until A11 O1 the bench declared this path and served
+// nothing at it, and every reading of "the logo is drawn" was a 404.
 func extensionsModule() nucleus.ModuleSpec {
 	return nucleus.Module[struct{}]{
-		Name: "benchext",
+		Name:   "benchext",
+		Prefix: "/static",
 		OnStart: func(_ context.Context, rt nucleus.Runtime, _ struct{}) error {
 			benchExtensions.captureRuntime(rt)
 			return nil
 		},
+		Routes: func(r nucleus.Router, _ struct{}) {
+			r.Mount("/", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				if req.URL.Path != "/bench-logo.svg" {
+					http.NotFound(w, req)
+					return
+				}
+				w.Header().Set("Content-Type", "image/svg+xml")
+				_, _ = w.Write([]byte(benchLogoSVG))
+			}))
+		},
 	}.Build()
 }
+
+// benchLogoSVG is the bench application's logo: a mark with a size, so a
+// browser that loaded it reports a natural width.
+const benchLogoSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="32" viewBox="0 0 120 32">` +
+	`<rect width="120" height="32" rx="6" fill="#0b5fff"/></svg>`
 
 // captureRuntime records the handle the action and the widget read through.
 // It runs before any request.

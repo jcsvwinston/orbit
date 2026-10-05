@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
+
+	"golang.org/x/net/idna"
 )
 
 // The panel wearing the product's clothes (CUST-02).
@@ -27,7 +30,9 @@ type Branding struct {
 	// LogoURL is the image shown in the sidebar and on the login screen. It
 	// is a URL the BROWSER fetches, so it is either absolute (https://…) or
 	// a path the application already serves ("/static/logo.svg"); the panel
-	// does not become a file server for it.
+	// does not become a file server for it. An absolute URL's origin is added
+	// to the img-src of the panel's Content-Security-Policy, so the browser
+	// loads what the configuration accepted.
 	LogoURL string `yaml:"logo_url" koanf:"logo_url"`
 	// FaviconURL replaces the icon in the browser tab, same rules.
 	FaviconURL string `yaml:"favicon_url" koanf:"favicon_url"`
@@ -82,24 +87,85 @@ func validateBranding(b Branding) (Branding, error) {
 // panel, granted by a line of YAML — the kind of hole a configuration file
 // should not be able to open.
 func validateAssetURL(raw string) error {
+	_, err := assetOrigin(raw)
+	return err
+}
+
+// assetOrigin validates raw as validateAssetURL describes and returns the
+// origin a browser fetches it from: "" for a same-site path, which the
+// panel's own 'self' already covers, and scheme://host[:port] for an
+// absolute URL — the source the panel adds to its Content-Security-Policy
+// so the image the configuration accepted is one the browser will load.
+//
+// The host goes into a response header, so it has to be one a CSP source
+// can name: letters, digits, hyphens and dots, after an internationalised
+// name is converted to its ASCII form. Anything else — an IPv6 literal, a
+// wildcard, a host with no name — is refused at startup, because the
+// browser would refuse to draw it anyway, and a host that carried a ";"
+// would end the img-src directive and begin another.
+func assetOrigin(raw string) (string, error) {
 	if strings.HasPrefix(raw, "//") {
-		return fmt.Errorf("%q is protocol-relative; give the scheme or a path", raw)
+		return "", fmt.Errorf("%q is protocol-relative; give the scheme or a path", raw)
 	}
 	if strings.HasPrefix(raw, "/") {
-		return nil
+		return "", nil
 	}
 	parsed, err := url.Parse(raw)
 	if err != nil {
-		return fmt.Errorf("%q is not a URL: %w", raw, err)
+		return "", fmt.Errorf("%q is not a URL: %w", raw, err)
 	}
-	switch strings.ToLower(parsed.Scheme) {
+	scheme := strings.ToLower(parsed.Scheme)
+	switch scheme {
 	case "http", "https":
-		return nil
 	case "":
-		return fmt.Errorf("%q is neither an absolute http(s) URL nor a path starting with /", raw)
+		return "", fmt.Errorf("%q is neither an absolute http(s) URL nor a path starting with /", raw)
 	default:
-		return fmt.Errorf("%q uses the %q scheme; only http, https and same-site paths are allowed", raw, parsed.Scheme)
+		return "", fmt.Errorf("%q uses the %q scheme; only http, https and same-site paths are allowed", raw, parsed.Scheme)
 	}
+	host := parsed.Hostname()
+	if host == "" {
+		return "", fmt.Errorf("%q names no host", raw)
+	}
+	if strings.Contains(host, ":") {
+		return "", fmt.Errorf("%q names an IPv6 address, which a Content-Security-Policy source cannot express; use a host name or a same-site path", raw)
+	}
+	ascii, err := idna.Lookup.ToASCII(host)
+	if err != nil || !cspHost.MatchString(ascii) {
+		return "", fmt.Errorf("%q: %q is not a host name the panel's Content-Security-Policy can name (letters, digits, hyphens and dots)", raw, host)
+	}
+	origin := scheme + "://" + ascii
+	if port := parsed.Port(); port != "" {
+		origin += ":" + port
+	}
+	return origin, nil
+}
+
+// cspHost is a host-source a Content-Security-Policy can carry, without the
+// wildcard the panel never needs: dot-separated labels of letters, digits
+// and hyphens, with the trailing dot of a fully qualified name allowed.
+var cspHost = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\.?$`)
+
+// imageOrigins lists the origins the branding asks a browser to load images
+// from — the logo and the favicon — sorted and without repeats, for the
+// panel's img-src. Same-site paths contribute nothing: 'self' covers them.
+// The values were validated at startup; one that does not validate here
+// contributes nothing either, which is what a panel that refused it would do.
+func (b Branding) imageOrigins() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, raw := range []string{strings.TrimSpace(b.LogoURL), strings.TrimSpace(b.FaviconURL)} {
+		if raw == "" {
+			continue
+		}
+		origin, err := assetOrigin(raw)
+		if err != nil || origin == "" || seen[origin] {
+			continue
+		}
+		seen[origin] = true
+		out = append(out, origin)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // ValidateBranding is validateBranding for the module wiring, which reports

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -64,16 +65,13 @@ func (p *Panel) fieldWidget(modelName string, f datasource.FieldInfo) string {
 }
 
 // declaredWidget reads PanelConfig.FieldWidgets, which accepts the field's Go
-// name or its column, and "Model.*" for every field of a model.
+// name or its column, compared without regard to case. There is no wildcard:
+// an entry names one field.
 func (p *Panel) declaredWidget(modelName string, f datasource.FieldInfo) string {
 	if len(p.config.FieldWidgets) == 0 {
 		return ""
 	}
-	for _, key := range []string{
-		modelName + "." + f.Name,
-		modelName + "." + f.Column,
-		modelName + "." + runtimeColumn(f.Column),
-	} {
+	for _, key := range fieldWidgetKeys(modelName, f) {
 		for configured, widget := range p.config.FieldWidgets {
 			if strings.EqualFold(configured, key) {
 				return normalizeWidget(widget)
@@ -81,6 +79,111 @@ func (p *Panel) declaredWidget(modelName string, f datasource.FieldInfo) string 
 		}
 	}
 	return ""
+}
+
+// fieldWidgetKeys are the spellings of a FieldWidgets key that name f, in
+// the order declaredWidget tries them: the Go name first, then the column.
+// The startup check below resolves an entry through the same list, so what
+// it accepts is exactly what the schema will apply.
+func fieldWidgetKeys(modelName string, f datasource.FieldInfo) []string {
+	return []string{
+		modelName + "." + f.Name,
+		modelName + "." + f.Column,
+		modelName + "." + runtimeColumn(f.Column),
+	}
+}
+
+// ValidateFieldWidgets refuses, at startup, a field_widgets entry the panel
+// could never apply — the rule actions, pages, widgets, branding and the
+// locale already follow.
+//
+// Until it existed, field_widgets was the one declaration nothing checked:
+// a widget the panel does not ship ("color" for "colour", "rich-text" for
+// "richtext") or a key that names no field of the application (a typo, a
+// renamed column, a model that was removed) started normally, and the schema
+// published the field as its column type, as if nothing had been declared.
+// Each of those entries never had an effect, so refusing it stops nothing
+// that worked; it says, once and by name, what the operator would otherwise
+// discover field by field in a form.
+//
+// Two entries that name the same field with different widgets are refused
+// too: declaredWidget takes the first spelling that matches, and when both
+// spellings are the same one the choice follows map order, so the form could
+// change between two requests.
+func ValidateFieldWidgets(src datasource.DataSource, widgets map[string]string) error {
+	if len(widgets) == 0 {
+		return nil
+	}
+	var models []datasource.ModelInfo
+	if src != nil {
+		models = src.All()
+	}
+	return validateFieldWidgets(widgets, models)
+}
+
+func validateFieldWidgets(widgets map[string]string, models []datasource.ModelInfo) error {
+	keys := make([]string, 0, len(widgets))
+	for key := range widgets {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	type claim struct{ key, widget string }
+	claimed := map[string]claim{}
+	var problems []string
+	for _, key := range keys {
+		raw := widgets[key]
+		widget := normalizeWidget(raw)
+		if widget == "" {
+			problems = append(problems, fmt.Sprintf("field_widgets[%q]: %q is not a widget the panel draws (json, richtext, file or image)", key, raw))
+			continue
+		}
+		model, field, found := resolveFieldWidgetKey(key, models)
+		if !found {
+			problems = append(problems, unresolvedFieldWidget(key, models))
+			continue
+		}
+		target := model + "." + field
+		if prior, ok := claimed[target]; ok && prior.widget != widget {
+			problems = append(problems, fmt.Sprintf("field_widgets[%q] and field_widgets[%q] both name %s, with different widgets (%s, %s)", prior.key, key, target, prior.widget, widget))
+			continue
+		}
+		claimed[target] = claim{key: key, widget: widget}
+	}
+	if len(problems) > 0 {
+		return errors.New(strings.Join(problems, "; "))
+	}
+	return nil
+}
+
+// resolveFieldWidgetKey finds the model and field a key names, through the
+// same spellings declaredWidget reads.
+func resolveFieldWidgetKey(key string, models []datasource.ModelInfo) (model, field string, ok bool) {
+	for _, mi := range models {
+		for _, f := range mi.Fields {
+			for _, spelling := range fieldWidgetKeys(mi.Name, f) {
+				if strings.EqualFold(key, spelling) {
+					return mi.Name, f.Name, true
+				}
+			}
+		}
+	}
+	return "", "", false
+}
+
+// unresolvedFieldWidget says which half of a key names nothing: the model,
+// or a field of a model that does exist.
+func unresolvedFieldWidget(key string, models []datasource.ModelInfo) string {
+	for _, mi := range models {
+		prefix := mi.Name + "."
+		if len(key) > len(prefix) && strings.EqualFold(key[:len(prefix)], prefix) {
+			return fmt.Sprintf("field_widgets[%q]: model %s has no field or column named %q", key, mi.Name, key[len(prefix):])
+		}
+	}
+	if !strings.Contains(key, ".") {
+		return fmt.Sprintf("field_widgets[%q]: a key is Model.Field or Model.column", key)
+	}
+	return fmt.Sprintf("field_widgets[%q]: no model named %q in this application", key, key[:strings.LastIndex(key, ".")])
 }
 
 // inferredWidget is what the TYPE says on its own: a map or a slice is a

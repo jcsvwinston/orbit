@@ -1,6 +1,7 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useTheme } from '@/stores/themeStore'
 import { buildAdminPath, getAdminTitle } from '@/config'
+import { readBranding } from '@/lib/branding'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -21,6 +22,12 @@ export default function LoginPage() {
   const next = searchParams.get('next')?.trim() ?? ''
   const loginError = serverLoginMessage('nucleus-admin-login-error')
   const loginInfo = serverLoginMessage('nucleus-admin-login-info')
+  // The application's logo, declared as branding and carried on this
+  // document like the title: the login screen renders before any API call
+  // could say whose product this is. One that fails to load gives the
+  // panel's own mark back rather than leaving a hole above the title.
+  const logo = readBranding().logo
+  const [logoFailed, setLogoFailed] = useState(false)
 
   // Consume the injected metas so a later client-side navigation back to the
   // login route (e.g. session expiry) does not replay a stale banner.
@@ -44,9 +51,20 @@ export default function LoginPage() {
       <Card className="w-full max-w-md shadow-2xl">
         <CardHeader className="space-y-1 text-center">
           <div className="flex justify-center mb-4">
-            <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center">
-              <Shield className="h-8 w-8 text-primary" />
-            </div>
+            {logo && !logoFailed ? (
+              // The title below names the product in text, so the image is
+              // not announced a second time (an empty alt, not a missing one).
+              <img
+                src={logo}
+                alt=""
+                className="h-16 max-w-[12rem] object-contain"
+                onError={() => setLogoFailed(true)}
+              />
+            ) : (
+              <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center">
+                <Shield className="h-8 w-8 text-primary" />
+              </div>
+            )}
           </div>
           <CardTitle className="text-2xl font-bold">{getAdminTitle()}</CardTitle>
           <CardDescription>

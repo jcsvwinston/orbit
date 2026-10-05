@@ -558,8 +558,9 @@ func (p *Panel) Handler() *router.Mux {
 }
 
 func (p *Panel) mountRoutes(r *router.Mux) {
-	// Browser security headers on every panel response (SPA, login, API).
-	r.Use(securityHeadersMiddleware)
+	// Browser security headers on every panel response (SPA, login, API),
+	// with the origins of the application's branding images in img-src.
+	r.Use(securityHeadersMiddleware(p.branding.imageOrigins()))
 
 	uiContent := adminUIContentFS()
 	fileServer := http.FileServer(http.FS(uiContent))

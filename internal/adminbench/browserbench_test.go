@@ -60,10 +60,8 @@ func browserCases() []browserCase {
 		{id: "UIX-05", title: "the keyboard reaches the navigation, and the focus is visible", want: present},
 		{id: "UIX-06", title: "a dialog can be opened and dismissed from the keyboard", want: present},
 		// The browser half of the extension family (A11), recorded at the
-		// arc's baseline.
-		{id: "UIX-07", title: "the login screen draws the logo the application declared", want: absent,
-			note:      "the logo travels on the login document (CUST-02 reads it there) and the login screen renders no image for it; only the sidebar does",
-			failsWith: "UIX-07: the login screen draws no logo"},
+		// arc's baseline. UIX-07 closed in O1.
+		{id: "UIX-07", title: "the login screen draws the logo the application declared", want: present},
 		{id: "UIX-08", title: "the record view offers the action the application declared", want: absent,
 			note:      "the grid offers an application action over a selection (DS-09); the record view's dialog has no button for it (EXT-02 is the contract half)",
 			failsWith: "UIX-08: the record view offers no action"},
