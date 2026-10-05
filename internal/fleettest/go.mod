@@ -47,7 +47,7 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jcsvwinston/orbit/datasource v1.0.0 // indirect
-	github.com/jcsvwinston/orbit/ui v1.0.0 // indirect
+	github.com/jcsvwinston/orbit/ui v1.1.0 // indirect
 	github.com/knadh/koanf/maps v0.1.2 // indirect
 	github.com/knadh/koanf/parsers/yaml v1.1.1 // indirect
 	github.com/knadh/koanf/providers/env v1.1.0 // indirect
