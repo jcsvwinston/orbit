@@ -248,7 +248,7 @@ export default function FieldConfigPanel({ open, onClose, schema, onSaved }: Pro
         </div>
 
         {error && (
-          <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-sm text-destructive">
+          <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-sm text-destructive-text">
             {error}
           </div>
         )}

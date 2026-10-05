@@ -82,6 +82,13 @@ func browserCases() []browserCase {
 		// application's script runs under the policy and its renderer
 		// draws, and falls back when it throws.
 		{id: "UIX-12", title: "the application's own script loads under the policy and draws a field in the grid and the record view, and a renderer that throws falls back", want: present},
+		// The panel's own defects A12 O1 closed, each with the control
+		// that reads it in a browser: errors written in the fill colour
+		// (OR-62), the grid's icon font refused by the panel's own policy
+		// (OR-63), and files that travelled uncompressed (OR-61).
+		{id: "UIX-13", title: "a form with its errors showing is legible, in the light theme and in the dark one", want: present},
+		{id: "UIX-14", title: "Data Studio's grid draws its icons, and the panel's own policy refuses nothing it loads", want: present},
+		{id: "UIX-15", title: "the panel's own scripts and stylesheets reach the browser compressed once, by the build", want: present},
 	}
 }
 

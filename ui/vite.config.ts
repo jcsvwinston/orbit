@@ -4,13 +4,15 @@ import autoprefixer from 'autoprefixer'
 import tailwindcss from 'tailwindcss'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { stripUnusedGridThemes } from './tools/postcss-strip-unused-grid-themes.ts'
+import { precompress } from './tools/precompress.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  // precompress (tools/): .gz and .br beside every text file of the dist,
+  // for the Go servers to answer Accept-Encoding with.
+  plugins: [react(), precompress()],
   base: './',
   resolve: {
     alias: {
@@ -18,11 +20,11 @@ export default defineConfig({
     },
   },
   css: {
-    // Inline PostCSS setup (Vite skips postcss.config.js when this is set):
-    // Tailwind and autoprefixer as before, plus the pass that drops the AG
-    // Grid theme variant the panel never applies (tools/).
+    // Inline PostCSS setup (Vite skips postcss.config.js when this is set).
+    // The grid's styles are not here: AG Grid's Theming API injects them
+    // from Data Studio's chunk (src/features/data-studio/lib/grid.ts).
     postcss: {
-      plugins: [tailwindcss(), autoprefixer(), stripUnusedGridThemes()],
+      plugins: [tailwindcss(), autoprefixer()],
     },
   },
   build: {
@@ -50,6 +52,12 @@ export default defineConfig({
               priority: 2,
             },
             { name: 'icons', test: /node_modules[\\/]lucide-react[\\/]/, priority: 1 },
+            // AG Grid, in a file of its own that only Data Studio loads: the
+            // largest dependency the panel has changes once per upgrade, and
+            // a change to the screen around it no longer makes the browser
+            // fetch it again. React, which ag-grid-react imports, is taken by
+            // `vendor` first.
+            { name: 'grid', test: /node_modules[\\/](ag-grid-community|ag-grid-react|ag-stack)[\\/]/, priority: 1 },
             // What every screen of the panel reads — the prefix, the API
             // client, the stores and the class helpers — in one file. Left to
             // itself the bundler cuts it into one chunk per combination of

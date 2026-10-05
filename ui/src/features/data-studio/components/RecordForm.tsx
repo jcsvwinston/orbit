@@ -354,7 +354,7 @@ export default function RecordForm({ open, onClose, schema, record, onSave, acti
               <div key={f.column} className="space-y-1.5">
                 <Label htmlFor={id} className="flex items-center gap-1.5">
                   {f.label}
-                  {f.is_required && <span className="text-destructive text-xs" aria-hidden="true">*</span>}
+                  {f.is_required && <span className="text-destructive-text text-xs" aria-hidden="true">*</span>}
                   {json && <span className="text-xs text-muted-foreground">JSON</span>}
                   {f.is_fk && f.fk_model && (
                     <span className="text-xs text-muted-foreground">FK → {f.fk_model}</span>
@@ -386,7 +386,7 @@ export default function RecordForm({ open, onClose, schema, record, onSave, acti
                   onChange={(val) => updateField(f.column, val)}
                 />
                 {fieldError && (
-                  <p id={`${id}-error`} className="text-xs text-destructive">{fieldError}</p>
+                  <p id={`${id}-error`} className="text-xs text-destructive-text">{fieldError}</p>
                 )}
               </div>
             )
@@ -405,7 +405,7 @@ export default function RecordForm({ open, onClose, schema, record, onSave, acti
           ))}
 
           {error && (
-            <div role="alert" className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-sm text-destructive">
+            <div role="alert" className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-sm text-destructive-text">
               {error}
             </div>
           )}

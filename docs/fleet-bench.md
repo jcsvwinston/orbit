@@ -292,17 +292,16 @@ history that answers empty (`RET-03`).
 
 | id | control | verdict | what is missing |
 |---|---|---|---|
-| `UI-01` | one frontend project serves both planes: the server and the panel embed the same dist | **present** | one project (ui/package.json) with two entries builds into one dist that the ui module embeds (ui/embed.go, ADR-015); the admin server serves dist/fleet and the panel dist/panel, both through that module, and neither embeds a dist of its own. |
+| `UI-01` | one frontend project serves both planes: the server and the panel embed the same dist | **present** | one project (ui/package.json) with two entries builds into one dist that the ui module embeds (ui/embed.go, ADR-015); the admin server serves dist/fleet and the panel dist/panel, both through that module, and neither embeds a dist of its own. Since A12 O1 each entry is its own embedded variable, so the admin server's binary carries the fleet's entry and not the panel's (internal/fleettest builds it and reads it). |
 | `UI-02` | the two planes share design tokens: one token source imported by both, or one project | **present** | one project: both entries' stylesheets import src/shared/tokens.css, the design system's tokens. The fleet's screens still read their numbered palette (src/fleet/index.css) until they are re-skinned onto the shared names; the source is one. |
 | `UI-03` | the fleet UI has automated tests: a runner, a test script and at least one spec | **present** | the one project runs vitest (npm test) over the panel's suite and the fleet's specs (src/fleet/lib/*.test.ts); the CI lane runs it before building. |
 | `UI-04` | CI checks that the fleet UI's committed dist is fresh, as the panel's lane does | **present** | the ui job in .github/workflows/ci.yml typechecks, lints, tests and builds the one project and fails when the committed ui/dist — the one both binaries embed — differs from what it built. |
-| `UI-05` | a bundle-size budget covers the fleet UI (a test constant, a size-limit configuration or a CI step) | **present** | ui/embed_test.go names a budget per entry (panel and fleet initial JS and CSS) and fails the ui module's tests when the embedded dist exceeds it; the fleet's is its whole bundle today, a ceiling for the re-skin. |
+| `UI-05` | a bundle-size budget covers the fleet UI (a test constant, a size-limit configuration or a CI step) | **present** | ui/embed_test.go holds each entry, the fleet's among them, to one budget in gzip bytes over its initial load plus its heaviest navigation (the fleet has no lazy screen: its whole bundle), and fails the ui module's tests when the embedded dist exceeds it. |
 | `UI-06` | the fleet UI's generated stubs are connect-es 2 / protobuf-es 2, in the dependencies and in the generators | **present** | ui/package.json pins @connectrpc/connect ^2, @connectrpc/connect-web ^2 and @bufbuild/protobuf ^2, and proto/buf.gen.yaml generates the fleet's stubs with bufbuild/es v2 alone: messages and service descriptors from one generator, created with create(Schema) and called through createClient. |
-| `UI-07` | the browser instrument covers the fleet UI: a Playwright spec navigates to a path outside /admin | **present** | internal/adminbench/browser/specs/fleet.spec.ts is the fleet project of the same instrument: driven from internal/fleettest (TestFleetBrowserBench), which boots an admin server and an agent, it opens the fleet UI at / and measures six UIF controls (instrument, overview lists the node, contrast, names, landmarks, keyboard). |
+| `UI-07` | the browser instrument covers the fleet UI: a Playwright spec navigates to a path outside /admin | **present** | internal/adminbench/browser/specs/fleet.spec.ts is the fleet project of the same instrument: driven from internal/fleettest (TestFleetBrowserBench), which boots an admin server and an agent, it opens the fleet UI at / and measures eight UIF controls (instrument, overview lists the node, contrast in the light theme and in the dark one, names, landmarks, keyboard, files that travel compressed). |
 | `UI-08` | the fleet UI is told the operator's role: GetSelf says read-only for a viewer | **present** | — |
 | `UI-09` | the fleet UI has a tenant notion: a message on the wire carries one and the SPA sends or shows it | **present** | the SPA shows the operator's tenant (SelfInfo.tenant, beside who they are audited as) and marks a tenant-scoped model and its column (ModelInfo.tenant_field); the server fills the first from the trusted proxy's tenant header and the agent the second from the model's tenant field, both since they pin proto v0.8.0. The probe checks the fields are filled, not declared: a declared field left empty kept this control partial for one release. |
-| `UI-10` | the panel's initial load stays within its budget, and the budget is a test constant | **present** | — |
-
+| `UI-10` | the panel's download stays within a compressed budget, and the budget is a test constant | **present** | ui/embed_test.go holds one constant, compressedBudget (400 KiB gzip), against the initial load plus the heaviest navigation of each entry (A12 decision 2, proposed and open); the probe re-measures the initial load from the encodings the build wrote. Until A12 O1 the budget was raw bytes of the initial load only. |
 
 `UI-01` to `UI-05` are **present** since A9 `S9`, decided with the numbers
 in the table of ADR-015: the panel's project (10 318 lines, 116 tests,
@@ -328,8 +327,8 @@ creates messages with `create(Schema, …)` and calls through `createClient`).
 The browser instrument gained a second project, `fleet`: driven from the
 test-only module that may boot an admin server and an agent
 (`TestFleetBrowserBench`), it opens the fleet UI at `/` and measures six
-`UIF` controls — five present; `UIF-02` (text contrast) is **absent** with
-its reason: the light theme's small muted text on the overview sits below
+`UIF` controls — five present; `UIF-02` (text contrast) was **absent** with
+its reason (present since A12 `O1`, below): the light theme's small muted text on the overview sits below
 4.5:1, the sidebar's labels and two light tokens were raised, and the rest is
 the re-skin onto the shared tokens (OR-59), not another token nudged in
 isolation. `UI-09` was **partial** for one release, for the reason
@@ -344,6 +343,37 @@ checks both fills, and a model registered with a tenant field that came back
 without one would turn it partial again. The Data Studio blurb that promised
 "tenant filters apply" since before any wire field existed says what happens
 now (OR-58).
+
+**A12 `O1` (2026-10-05)** closed the three defects of this family the
+audit's register carried, without moving the numerator — they lived in the
+browser half and in the budget, not in a missing control:
+
+- **`UIF-02` is present, and two controls joined it.** The light palette
+  was not one token short: every muted step the screens write text in sat
+  under 4.5:1 on some surface (the darkest, `--t13`, behind the active
+  navigation item), the status colours under it on their own tints, and the
+  accent at 2.9:1 as text and 3.7:1 under white. The dark theme, which no
+  control read, was worse. The palette is now held to AA as a whole by a
+  unit test that derives from the sources which steps are text, which are
+  resting surfaces and which are status colours, and computes every pair in
+  both themes (`ui/tools/fleet-palette.test.ts`; the muted steps darkened or
+  lightened to that floor keeping their hue, the status colours from
+  Tailwind's 700 shades to the 800 ones, the light accent to cyan-800).
+  Run against the palette before the change it fails four of its eight
+  checks. `UIF-06` reads the dark theme off the same four screens, and
+  `UIF-07` reads that the fleet's script and stylesheet reach the browser
+  compressed (Chromium asks for and gets Brotli).
+- **`UI-10` measures a compressed budget.** The panel's budget used to be
+  raw bytes of the initial load: what travelled was not what was measured
+  (the server compressed nothing), and the deep link to Data Studio was
+  not measured at all. It is one constant now, 400 KiB of gzip over the
+  initial load plus the heaviest navigation, per entry (`ui/embed_test.go`,
+  decision 2 of A12, proposed and open); the probe re-measures the initial
+  load from the encodings the build wrote. `UI-05`'s note says the same of
+  the fleet's entry, whose whole bundle is its initial load.
+- **`UI-01` reads a binary that carries one entry.** Each entry is its own
+  embedded variable, and `internal/fleettest` builds the admin server and
+  checks its binary holds the fleet's entry and no byte of the panel's.
 
 ## What the shape of it says
 

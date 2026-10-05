@@ -63,7 +63,7 @@ export default function FileField({ id, modelName, field, value, image, inputCla
           onChange={(e) => { void upload(e.target.files?.[0]); e.target.value = '' }}
         />
       </label>
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      {error && <p className="text-xs text-destructive-text">{error}</p>}
     </div>
   )
 }

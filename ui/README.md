@@ -10,23 +10,52 @@ One project, two entries, one dist (ADR-015):
 | the fleet plane | `src/fleet/` (pages, hooks, generated stubs) with `fleet/index.html` | `dist/fleet/` | the admin server, at its UI root |
 
 Both entries share `src/shared/tokens.css` (the design system's tokens), the
-TypeScript configuration, ESLint, Vitest (`npm test` runs the panel's suite
-and the fleet's specs) and the byte budgets `embed_test.go` enforces on the
-embedded dist. The fleet's screens still read their numbered palette
-(`src/fleet/index.css`) over the shared tokens until they are re-skinned.
+TypeScript configuration, ESLint, Vitest (`npm test` runs the panel's suite,
+the fleet's specs and the checks in `tools/`) and the byte budget
+`embed_test.go` enforces on the embedded dist. The fleet's screens still read
+their numbered palette (`src/fleet/index.css`) over the shared tokens; the
+palette is held to WCAG AA in both themes as a whole
+(`tools/fleet-palette.test.ts`).
 
-The Go module embeds `dist/` and exposes `ui.Panel()`, `ui.Fleet()` and
-`ui.Dist()`; the root and `server/` require it by tag and depend on nothing
-else of it. The dist is **committed**: a consumer that requires the module
-gets the built frontend as a normal Go dependency. CI rebuilds it and fails
-when the committed copy is stale.
+The Go module embeds each entry in a variable of its own and exposes
+`ui.Panel()`, `ui.Fleet()` and `ui.Dist()`; the root and `server/` require it
+by tag and depend on nothing else of it. A program carries only the entries it
+calls for: the admin server calls `Fleet()` and its binary has no byte of the
+panel (`TestEmbeddedDist_EachEntryLinksAlone` builds two programs and reads
+them). The dist is **committed**: a consumer that requires the module gets
+the built frontend as a normal Go dependency. CI rebuilds it and fails when
+the committed copy is stale.
+
+## Compressed once, at build time
+
+`tools/precompress.ts` writes, beside every text file of the dist of at least
+1 KiB, `<file>.gz` (pako, level 9) and `<file>.br` (brotli-wasm, quality 11):
+pinned JavaScript and WebAssembly, so the bytes are the same on a laptop and
+on the CI runner, which rebuilds the dist and compares it byte for byte. The
+panel (`internal/admin/precompressed.go`) and the admin server
+(`server/precompressed.go`, the same code) answer `Accept-Encoding` with the
+file the browser accepts and `Vary: Accept-Encoding`.
+
+## The budget
+
+`embed_test.go` walks each entry the way a browser loads it — the document's
+files and their imports, then every screen a navigation can load, with what
+Vite's preload map fetches beside it — and reads the size of each file as it
+travels (its `.gz`). One constant, `compressedBudget` (400 KiB), holds the
+initial load plus the heaviest navigation of each entry; the test prints raw,
+gzip and Brotli for the initial load, every navigation and the total
+(`go test -run Budget -v` in this directory). What the threshold is compared
+with is decision 2 of the suite's arc A12, still open with its owner, and
+`budgeted()` is the one place that changes if the owner picks another
+meaning. Every file of an entry must be reached by the walk, so an import the
+measure cannot see fails the test instead of lowering the number.
 
 ```bash
 npm ci
 npm run dev          # the panel on :5173 (proxy to a panel on :8080)
 npm run dev:fleet    # the fleet plane on :5173 (proxy to an admin server on :8080)
 npm test
-npm run build        # both entries into dist/; commit the result
+npm run build        # both entries into dist/, with their .gz and .br; commit the result
 ```
 
 `NUCLEUS_ADMIN_UI_DIR=/path/to/ui/dist/panel` makes the panel serve a dist

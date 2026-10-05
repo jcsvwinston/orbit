@@ -166,8 +166,11 @@ cd internal/adminbench/browser && npm ci && npx playwright install chromium
 go test ./internal/adminbench/ -run TestBrowserBench -v
 ```
 
-**12 of 12 controls present**, plus the one that measures the instrument.
-The last six belong to the extension family
+**15 of 15 controls present**, plus the one that measures the instrument.
+`UIX-13` to `UIX-15` arrived present with the arc A12's session O1, each the
+browser half of a defect of the panel's own
+([below](#the-panel-travels-compressed-after-a12s-session-o1)). The six
+before them belong to the extension family
 ([below](#what-an-application-adds-at-the-baseline-of-a11)): `UIX-07` and
 `UIX-08` were recorded absent at the baseline of A11; `UIX-07` closed in the
 arc's first session (O1), and `UIX-08` turned present with the record
@@ -197,6 +200,9 @@ the two stacks met, so the third session's kept its number.)
 | **UIX-10** | the first frame wears the theme the application configured, and the operator's own choice wins on reload |
 | **UIX-11** | a second dashboard draws a series to the operator granted it, and is neither listed nor served to one who is not |
 | **UIX-12** | the application's own script loads under the policy and draws a field in the grid and the record view, and a renderer that throws falls back |
+| **UIX-13** | a form with its errors showing is legible, in the light theme and in the dark one |
+| **UIX-14** | Data Studio's grid draws its icons, and the panel's own policy refuses nothing it loads |
+| **UIX-15** | the panel's own scripts and stylesheets reach the browser compressed once, by the build |
 
 Three things worth keeping about how it is built:
 
@@ -1068,9 +1074,11 @@ How it is measured, and what that showed:
   and as text on the background it reads at about 3.8:1 in the light theme
   and 2:1 in the dark one, below the 4.5:1 small text needs. The form uses a
   text token now (`--destructive-text`, 6.5:1 and 7.2:1). Nine other places
-  still write messages in the fill colour — among them the record form's
-  field errors and the import dialog's row errors — and no control measures
-  them, because no screen `UIX-02` opens shows an error.
+  still wrote messages in the fill colour — among them the record form's
+  field errors and the import dialog's row errors — and no control measured
+  them, because no screen `UIX-02` opens shows an error. **Fixed in A12
+  O1**, with `UIX-13` to read them
+  ([below](#the-panel-travels-compressed-after-a12s-session-o1)).
 - **A selection existed only for an operator who could delete.** The grid
   drew its row checkboxes when the operator held `delete` on the model, so
   one granted `publish` and not `delete` was shown no way to select what to
@@ -1234,10 +1242,12 @@ Four decisions worth keeping:
   records every policy violation from before the document exists, and
   nothing else in the bench listens for them. The violation is the panel's
   and not the application's, so `UIX-12` counts only violations of the
-  script and style policy and those naming the application's files. It is
+  script and style policy and those naming the application's files. It was
   not fixed here: allowing `data:` in `font-src`, or serving the font as a
   file, changes the policy of every panel, and wants a control of its own —
-  the panel's own screens raise no violation.
+  the panel's own screens raise no violation. **Fixed in A12 O1** without
+  touching the policy — the grid no longer has a font — and `UIX-14` is the
+  control ([below](#the-panel-travels-compressed-after-a12s-session-o1)).
 - **Two layers refuse a path that climbs out.** The `io/fs` implementations
   refuse a name with `..` themselves: with the panel's own check removed and
   the path declared from the bench's `embed.FS`, the application still did
@@ -1282,3 +1292,139 @@ Every change was verified by breaking it:
 | a renderer's throw not caught (dist rebuilt): the screen stops answering | UIX-12 → absent |
 | no `window.orbit` (dist rebuilt) | UIX-12 → absent |
 | the stylesheet served as other bytes than its digest | UIX-12 → absent |
+
+## The panel travels compressed, after A12's session O1
+
+The arc A12 ("performance, re-audit and closing at 5") gave this repository
+one session, O1, for the panel's weight and three defects its own checks had
+found: OR-61 (nothing measured what travels, and the admin server sent the
+fleet's interface uncompressed), OR-63 (the grid's icon font refused by the
+panel's own policy) and OR-62 (errors written in the fill colour). The HTTP
+bench is unchanged at 72 of 72; the browser half went from 12 of 12 to 15
+of 15, and the fleet bench's browser half from 5 of 6 to 8 of 8
+([fleet-bench.md](fleet-bench.md)).
+
+- **Compressed once, by the build.** The ui module's build writes, beside
+  every text file of at least 1 KiB, its gzip (pako, level 9) and Brotli
+  (brotli-wasm, quality 11) encodings, and both are embedded. The panel and
+  the admin server answer `Accept-Encoding` with the one the browser
+  accepts — Brotli first on a tie —, with `Content-Encoding`, the encoded
+  length, and `Vary: Accept-Encoding` on every answer for a file that has an
+  encoding, the plain one too. Nothing is compressed per request. Both
+  compressors are pinned code, so the dist rebuilt on a Linux runner with
+  Node 22 is byte for byte the one built on a macOS laptop with Node 25 —
+  checked once in a container, and by CI's freshness lane on every change.
+- **The admin server carries the fleet only.** Each entry is its own
+  embedded variable, and the linker keeps an embedded variable only when
+  reachable code reads it: the admin server calls `ui.Fleet()`, and its
+  binary went from 25.6 MB to 23.8 MB, encodings of the fleet included. The
+  ui module's API did not change, so the root and the server build against
+  the tagged `ui v1.0.0` as before and pick this up when the release train
+  re-pins them.
+- **A budget over what travels.** `ui/embed_test.go` walks each entry the
+  way a browser loads it — the document's files and their imports, then
+  every screen a navigation can load, with what Vite's preload map fetches
+  beside it — and reads each file's size as it travels. One constant,
+  `compressedBudget`, 400 KiB of gzip, holds the initial load plus the
+  heaviest navigation. That is the meaning decision 2 of A12 proposes and
+  its owner has not yet confirmed; `budgeted()` is the one function that
+  changes if another one is chosen. A file of the dist the walk does not
+  reach fails the test, so a missed import cannot lower the number.
+- **Data Studio lost a sixth of its compressed weight.** The deep link to Data Studio
+  measured 424.6 KiB of gzip with the initial load — over the budget, so the
+  budget would have failed the day it was written. AG Grid moved from 32 to
+  36, whose features are modules the bundle leaves out unless registered:
+  the panel registers five (the client-side row model and its API, row
+  selection, column sizing, column state). Its styles come from the
+  Theming API inside the chunk, so Data Studio no longer loads a stylesheet,
+  and the grid travels in a chunk of its own that changes only when AG Grid
+  does. Recharts was measured too: version 3 is no smaller than the 2.15
+  the panel pins (about 100 KiB of gzip either way), it is already a chunk of
+  its own that only the pulse and the dashboards' series load, and those
+  navigations are a quarter of the budget; it stays.
+- **No font, so nothing to refuse (OR-63).** AG Grid's Theming API draws
+  the quartz icons as SVG images masked in CSS, which `img-src 'self' data:`
+  already allowed; `font-src` stays `'self'` and the dist carries no font as
+  a `data:` URL, which `TestEmbeddedDist_NoFontTravelsAsData` keeps true.
+- **Errors in the text colour (OR-62).** The nine places that wrote a
+  message in `text-destructive` — the record form's field errors, its alert
+  and its required mark, the import dialog's row errors and alert, the field
+  configuration panel, a file field, the health page and the login alert —
+  and four hover states write `text-destructive-text`, and a unit test keeps
+  the fill class out of the panel's sources.
+
+| KiB | raw before | gzip before | Brotli before | raw after | gzip after | Brotli after |
+|---|---:|---:|---:|---:|---:|---:|
+| panel: initial load | 354.6 | 109.6 | 95.7 | 354.6 | 109.6 | 95.7 |
+| panel: + Data Studio (heaviest) | 1246.0 | 314.9 | 255.0 | 921.4 | 263.8 | 218.7 |
+| panel: initial + heaviest (budgeted) | 1600.6 | **424.6** | 350.7 | 1276.1 | **373.4** | 314.5 |
+| panel: total, every lazy screen | 2028.3 | 539.8 | 446.9 | 1703.8 | 488.6 | 410.6 |
+| fleet: initial = total | 465.6 | 132.9 | 114.1 | 465.6 | 132.9 | 114.1 |
+
+Both columns are measured the same way — the parent commit's dist encoded
+with the same two compressors and walked by the same test. What travelled
+before is another matter: the admin server sent the fleet's 465.6 KiB as
+they were, and the panel travelled gzip-encoded only when the application's
+router compressed responses (Nucleus's default middleware does, at level 5,
+per request; any other router sent it as it was). The panel's other
+navigations: the dashboards and the pulse about 100 KiB each (Recharts), the
+operators, sessions and RBAC screens about 21 KiB, the rest under 3 KiB.
+
+Three browser controls, each the browser half of one defect:
+
+- **`UIX-13`** opens the record form in the light theme and in the dark
+  one, with a document field that is not JSON so the form's own errors show
+  — the field's, its description and the alert — and runs the contrast rule
+  over the dialog. `UIX-09` read the form an action declares; nothing read
+  this one.
+- **`UIX-14`** records every policy violation from before the document
+  exists, opens Data Studio, sorts a column so its icon draws, and checks
+  that every visible icon of the grid is painted by an image or by a font
+  the document loaded, that no font face is in error, and that the policy
+  refused nothing at all.
+- **`UIX-15`** reads every script and stylesheet the browser fetched for
+  the overview and Data Studio: a file of 1 KiB or more must come encoded,
+  in Brotli when the browser accepts it, with its length, and saying the
+  answer varies. The last two are what tell compressed-by-the-build from
+  compressed-on-the-way-out: the bench's own application gzipped the panel
+  per request before this session, and the control fails on that.
+
+### What the work found that was not on the plan
+
+- **The panel was already compressed, sometimes.** OR-61 said the server
+  compressed nothing, and of the admin server that was true. The panel is
+  mounted on the application's router, and Nucleus's default middleware
+  gzips every response at level 5 — so in the bench's application the
+  panel's files did travel gzip-encoded, per request and never in Brotli,
+  and on any other router they did not. `UIX-15`'s first version only asked
+  for an encoding and passed against the parent commit; it now asks for the
+  build's.
+- **The fleet's palette was short in both themes, not in one token.** The
+  register expected the light theme's overview; reading every screen in
+  both themes found 32 nodes under 4.5:1 in the light theme and 94 in the
+  dark one, across ten screens: the muted steps, the status colours on
+  their tints and the accent. The fleet bench
+  page has the palette rule that replaced them.
+- **`UIX-12` read AG Grid's private classes.** It found the grid's rows by
+  `.ag-center-cols-container`, a container AG Grid 36 no longer has. It
+  finds them by the grid's role and the row ids the panel gives them now,
+  which holds on both versions — run against the parent commit, it passes.
+
+Every change was verified by breaking it:
+
+| mutation | what fails |
+|---|---|
+| the budget at 350 KiB (under today's measure) | `TestEmbeddedDist_EachEntryWithinCompressedBudget` |
+| the parent commit's dist (AG Grid 32), encoded the same way | the budget (424.6 KiB) and `TestEmbeddedDist_NoFontTravelsAsData` |
+| the walk blind to dynamic imports | the budget: every lazy chunk is "a file no load reaches" |
+| one `.gz` with other bytes | `TestEmbeddedDist_PrecompressedSiblingsMatch` |
+| one `.br` deleted | the budget and the siblings test |
+| `Fleet()` reading the panel's variable | `TestEmbeddedDist_EachEntryLinksAlone`; `TestAdminServerBinary_CarriesTheFleetEntryOnly` |
+| the budget computed and not compared | the fleet bench's `UI-10` → partial |
+| no negotiation (always the file as it is) | `TestNegotiateEncoding`, `TestServePrecompressed`, `TestPanel_ServesTheDistCompressed` |
+| no `Vary` | `TestServePrecompressed`, `TestPanel_ServesTheDistCompressed` |
+| `q=0` ignored | `TestNegotiateEncoding` |
+| the server's copy of the serving code edited | `TestPrecompressedServing_TwoCopiesStayOne` |
+| the record form's field error in `text-destructive` (dist rebuilt) | `UIX-13` → absent (3.76:1 in the light theme); the sources test |
+| one muted step of the fleet's light palette back to its old value (dist rebuilt) | `UIF-02` → absent; `ui/tools/fleet-palette.test.ts` |
+| the parent commit, with this session's specs | `UIX-13`, `UIX-14` (the sort icon in a font never loaded), `UIX-15` (gzip, streamed); `UIF-02`, `UIF-06`, `UIF-07` |

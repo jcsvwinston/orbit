@@ -587,15 +587,19 @@ func (p *Panel) mountRoutes(r *router.Mux) {
 	// with the origins of the application's branding images in img-src.
 	r.Use(securityHeadersMiddleware(p.branding.imageOrigins()))
 
+	// The built files travel in the encoding the browser accepts, written
+	// beside each one by the build (precompressed.go); what is not a file —
+	// a directory, a name the dist lacks — goes to the file server as
+	// before.
 	uiContent := adminUIContentFS()
 	fileServer := http.FileServer(http.FS(uiContent))
-	r.Get("/static/{filepath...}", router.FromHTTP(http.StripPrefix("/static", fileServer).ServeHTTP))
+	r.Get("/static/{filepath...}", router.FromHTTP(precompressedOr(uiContent, "/static", fileServer)))
 
 	if assetsFS, err := fs.Sub(uiContent, "assets"); err == nil {
 		assetsServer := http.FileServer(http.FS(assetsFS))
-		r.Get("/assets/{filepath...}", router.FromHTTP(http.StripPrefix("/assets", assetsServer).ServeHTTP))
+		r.Get("/assets/{filepath...}", router.FromHTTP(precompressedOr(assetsFS, "/assets", assetsServer)))
 	}
-	r.Get("/favicon.svg", router.FromHandler(fileServer))
+	r.Get("/favicon.svg", router.FromHTTP(precompressedOr(uiContent, "", fileServer)))
 
 	// The chrome's phrases, next to the built assets and for the same
 	// reason: the login screen renders before there is a session, and a
@@ -931,17 +935,10 @@ func (p *Panel) LiveTrafficMiddleware() func(http.Handler) http.Handler {
 func (p *Panel) handleSPA(fsys fs.FS) router.Handler {
 	return func(c *router.Context) error {
 		w, r := c.Writer, c.Request
-		// If the request is for a JS/CSS asset, serve it directly
+		// A JS/CSS file the dist carries at this path is served as a file,
+		// in the encoding the browser accepts (precompressed.go).
 		if strings.HasSuffix(r.URL.Path, ".js") || strings.HasSuffix(r.URL.Path, ".css") {
-			assetPath := strings.TrimPrefix(r.URL.Path, "/")
-			content, err := fs.ReadFile(fsys, assetPath)
-			if err == nil {
-				if strings.HasSuffix(r.URL.Path, ".js") {
-					w.Header().Set("Content-Type", "application/javascript")
-				} else {
-					w.Header().Set("Content-Type", "text/css")
-				}
-				_, _ = w.Write(content)
+			if servePrecompressed(w, r, fsys, r.URL.Path) {
 				return nil
 			}
 		}

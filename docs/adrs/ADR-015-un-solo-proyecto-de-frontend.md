@@ -96,6 +96,35 @@ hoja.
   (440 KB) y viceversa: el precio de embeber un dist, no dos. Si pesara, la
   decisión sucesora es un módulo por entrada, no volver a dos proyectos.
 
+## Enmienda de A12 `O1` (2026-10-05): cada entrada en su variable, comprimida en el embed
+
+La consecuencia que este ADR aceptaba —«un consumidor del panel arrastra en
+su binario también el dist del fleet, y viceversa»— se resolvió sin el módulo
+por entrada que dejaba como sucesor. `ui/embed.go` embebe cada entrada en
+una variable propia (`//go:embed all:dist/panel` y `all:dist/fleet`) y el
+enlazador conserva una variable embebida sólo si algo alcanzable la lee: el
+admin-server llama a `Fleet()` y su binario no lleva ningún byte del panel
+(de 25,6 MB a 23,8 MB). `Dist()` sigue exponiendo las dos, uniéndolas; quien
+la llame lleva las dos. Lo verifican `TestEmbeddedDist_EachEntryLinksAlone`
+(en el módulo, con dos programas mínimos) y
+`TestAdminServerBinary_CarriesTheFleetEntryOnly` (en `internal/fleettest`,
+con el binario real). La API del módulo no cambia, así que la raíz y el
+servidor compilan igual contra `ui v1.0.0` y contra el siguiente tag.
+
+Además, el build escribe junto a cada fichero de texto de 1 KiB o más su
+`.gz` y su `.br` (`tools/precompress.ts`, con compresores fijados en el
+lockfile para que el dist sea reproducible entre máquinas), y los dos
+servidores responden `Accept-Encoding` con ellos. El código que lo sirve está
+duplicado en `internal/admin/precompressed.go` y `server/precompressed.go`:
+ponerlo en `ui` obligaría a la raíz y al servidor a esperar un corte de `ui`
+para compilar (ADR-006); `internal/fleettest` exige que las dos copias sean
+el mismo texto.
+
+El presupuesto por entrada pasó de bytes crudos de la carga inicial a una
+constante en gzip sobre la carga inicial más la navegación más pesada
+(decisión 2 del arco A12, propuesta y pendiente del dueño; `budgeted()` en
+`embed_test.go` es el único sitio que cambia si elige otro significado).
+
 ## Lo que NO decide
 
 - La migración a connect-es 2 y protobuf-es 2 (`S10`, desde `proto/`).

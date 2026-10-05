@@ -244,7 +244,7 @@ export default function DashboardLayout() {
                     type="button"
                     onClick={handleLogout}
                     aria-label={t('session.sign_out', 'Sign out')}
-                    className="flex-1 p-2 rounded-md border border-border hover:bg-destructive/10 hover:text-destructive"
+                    className="flex-1 p-2 rounded-md border border-border hover:bg-destructive/10 hover:text-destructive-text"
                   >
                     <LogOut className="h-4 w-4" />
                   </button>
@@ -268,7 +268,7 @@ export default function DashboardLayout() {
                   type="button"
                   onClick={handleLogout}
                   aria-label={t('session.sign_out', 'Sign out')}
-                  className="w-full p-2 rounded-md border border-border hover:bg-destructive/10 hover:text-destructive"
+                  className="w-full p-2 rounded-md border border-border hover:bg-destructive/10 hover:text-destructive-text"
                 >
                   <LogOut className="h-4 w-4" />
                 </button>

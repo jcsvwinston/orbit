@@ -14,7 +14,8 @@ func controlsUI() []control {
 		{id: "UI-01", family: "ui", title: "one frontend project serves both planes: the server and the panel embed the same dist",
 			want: present, note: "one project (ui/package.json) with two entries builds into one dist that the ui module embeds " +
 				"(ui/embed.go, ADR-015); the admin server serves dist/fleet and the panel dist/panel, both through that module, " +
-				"and neither embeds a dist of its own.",
+				"and neither embeds a dist of its own. Since A12 O1 each entry is its own embedded variable, so the admin " +
+				"server's binary carries the fleet's entry and not the panel's (internal/fleettest builds it and reads it).",
 			probe: probeOneFrontendProject},
 		{id: "UI-02", family: "ui", title: "the two planes share design tokens: one token source imported by both, or one project",
 			want: present, note: "one project: both entries' stylesheets import src/shared/tokens.css, the design system's tokens. " +
@@ -30,8 +31,9 @@ func controlsUI() []control {
 				"fails when the committed ui/dist — the one both binaries embed — differs from what it built.",
 			probe: probeFleetDistFreshnessGate},
 		{id: "UI-05", family: "ui", title: "a bundle-size budget covers the fleet UI (a test constant, a size-limit configuration or a CI step)",
-			want: present, note: "ui/embed_test.go names a budget per entry (panel and fleet initial JS and CSS) and fails the ui " +
-				"module's tests when the embedded dist exceeds it; the fleet's is its whole bundle today, a ceiling for the re-skin.",
+			want: present, note: "ui/embed_test.go holds each entry, the fleet's among them, to one budget in gzip bytes over its " +
+				"initial load plus its heaviest navigation (the fleet has no lazy screen: its whole bundle), and fails the ui module's " +
+				"tests when the embedded dist exceeds it.",
 			probe: probeFleetBundleBudget},
 		{id: "UI-06", family: "ui", title: "the fleet UI's generated stubs are connect-es 2 / protobuf-es 2, in the dependencies and in the generators",
 			want: present, note: "ui/package.json pins @connectrpc/connect ^2, @connectrpc/connect-web ^2 and @bufbuild/protobuf ^2, " +
@@ -41,7 +43,8 @@ func controlsUI() []control {
 		{id: "UI-07", family: "ui", title: "the browser instrument covers the fleet UI: a Playwright spec navigates to a path outside /admin",
 			want: present, note: "internal/adminbench/browser/specs/fleet.spec.ts is the fleet project of the same instrument: driven from " +
 				"internal/fleettest (TestFleetBrowserBench), which boots an admin server and an agent, it opens the fleet UI at / and " +
-				"measures six UIF controls (instrument, overview lists the node, contrast, names, landmarks, keyboard).",
+				"measures eight UIF controls (instrument, overview lists the node, contrast in the light theme and in the dark one, " +
+				"names, landmarks, keyboard, files that travel compressed).",
 			probe: probeBrowserInstrumentCoversFleet},
 		{id: "UI-08", family: "ui", title: "the fleet UI is told the operator's role: GetSelf says read-only for a viewer",
 			want: present, probe: probeUIKnowsRole},
@@ -51,7 +54,10 @@ func controlsUI() []control {
 				"header and the agent the second from the model's tenant field, both since they pin proto v0.8.0. The probe checks the " +
 				"fields are filled, not declared: a declared field left empty kept this control partial for one release.",
 			probe: probeFleetTenantNotion},
-		{id: "UI-10", family: "ui", title: "the panel's initial load stays within its budget, and the budget is a test constant",
-			want: present, probe: probePanelBudgetEnforced},
+		{id: "UI-10", family: "ui", title: "the panel's download stays within a compressed budget, and the budget is a test constant",
+			want: present, note: "ui/embed_test.go holds one constant, compressedBudget (400 KiB gzip), against the initial load plus " +
+				"the heaviest navigation of each entry (A12 decision 2, proposed and open); the probe re-measures the initial load " +
+				"from the encodings the build wrote. Until A12 O1 the budget was raw bytes of the initial load only.",
+			probe: probePanelBudgetEnforced},
 	}
 }

@@ -4,6 +4,7 @@ import autoprefixer from 'autoprefixer'
 import tailwindcss from 'tailwindcss'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { precompress } from './tools/precompress.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -18,7 +19,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // UI listener (which trusts 127.0.0.1) accepts the requests.
 export default defineConfig({
   root: path.join(__dirname, 'fleet'),
-  plugins: [react()],
+  plugins: [react(), precompress()],
   base: './',
   resolve: {
     alias: {

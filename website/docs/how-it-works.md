@@ -36,6 +36,15 @@ mount prefix. There is no separate asset deployment: mount Orbit and you get
 the whole admin panel offline, in a single binary, version-pinned to the
 module.
 
+Its scripts and stylesheets are compressed once, when the interface is built:
+each one is embedded beside a Brotli and a gzip copy, and the panel answers a
+request with the encoding the browser accepts (`Content-Encoding`), or with the
+file as it is, and says the answer varies on that (`Vary: Accept-Encoding`).
+Nothing is compressed per request, so the panel does not need a compression
+middleware or a proxy in front of it to travel compressed; Nucleus's own
+compression middleware, if the application installs it, passes an answer that
+already carries `Content-Encoding` through untouched.
+
 ## Relationship to Nucleus
 
 Orbit is built on the same public [Nucleus](/nucleus/) extension and `Runtime`

@@ -130,6 +130,14 @@ actually reach for.
 | `--ui-addr` | `NUCLEUS_ADMIN_UI_ADDR` | `:8080` | Address the UI/operator listener binds. Browsers (or your reverse proxy) hit this. |
 | `--metrics-addr` | `NUCLEUS_ADMIN_METRICS_ADDR` | *(empty — disabled)* | Opt-in third listener serving Prometheus `/metrics` plus `/healthz`. |
 
+The UI listener serves the fleet interface compressed on its own: each script
+and stylesheet is embedded with a Brotli and a gzip copy made when the
+interface was built, and the listener answers with the encoding the browser
+accepts (`Content-Encoding`, with `Vary: Accept-Encoding`). A reverse proxy in
+front of it does not need to compress the interface, and one that compresses
+responses should leave an answer that already carries `Content-Encoding` as it
+is. The binary carries the fleet interface only, not the in-process panel's.
+
 ### Agent authentication
 
 | Flag | Environment variable | Default | What it does |

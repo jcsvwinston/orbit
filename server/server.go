@@ -615,9 +615,11 @@ Run <code>npm ci &amp;&amp; npm run build</code> in <code>ui/</code> and rebuild
 
 // spaHandler serves static assets from fsys with SPA-style fallback to
 // index.html. Hash-based asset filenames cache fine; index.html should
-// not, so we set Cache-Control: no-store on it.
+// not, so we set Cache-Control: no-store on it. A file travels in the
+// encoding the browser accepts among those the build wrote beside it
+// (precompressed.go).
 func spaHandler(fsys fs.FS) http.Handler {
-	fileServer := http.FileServer(http.FS(fsys))
+	serveFile := precompressedOr(fsys, "", http.FileServer(http.FS(fsys)))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/")
 		if path == "" {
@@ -627,7 +629,7 @@ func spaHandler(fsys fs.FS) http.Handler {
 			if r.URL.Path == "/" || strings.HasSuffix(r.URL.Path, "/index.html") {
 				w.Header().Set("Cache-Control", "no-store")
 			}
-			fileServer.ServeHTTP(w, r)
+			serveFile(w, r)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
