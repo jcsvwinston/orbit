@@ -72,8 +72,19 @@ func browserCases() []browserCase {
 		// paints with it. (Numbered UIX-10: UIX-09 belongs to O3, which
 		// was measured on a stack of its own and lands after this one.)
 		{id: "UIX-10", title: "the first frame wears the theme the application configured, and the operator's own choice wins on reload", want: present},
+		// The browser half of EXT-04 and EXT-05, added in O5.
+		{id: "UIX-11", title: "a second dashboard draws a series to the operator granted it, and is neither listed nor served to one who is not", want: present},
 	}
 }
+
+// The two operators UIX-11 signs in as: one granted the bench's second
+// dashboard and one granted nothing. Both are created by the driver, with
+// the bench's limited password, because the question is about what an
+// operator WITHOUT the superuser's bypass is shown.
+const (
+	dashboardReader   = "dashboard-reader"
+	dashboardOutsider = "dashboard-outsider"
+)
 
 // themedBranding is the second application UIX-10 opens: one that says its
 // panel opens dark, with a dark surface of its own, so the spec can tell the
@@ -110,6 +121,15 @@ func TestBrowserBench(t *testing.T) {
 		t.Fatalf("the bench application is not serving: %d", r.code)
 	}
 
+	// UIX-11 needs an operator granted the second dashboard and one who is
+	// not, and a series with something on it: three notes created today.
+	reader := e.newOperator(t, dashboardReader, false)
+	e.grant(t, reader.username, "admin:dashboard:"+trendsDashboard, "view")
+	e.newOperator(t, dashboardOutsider, false)
+	for i := 0; i < 3; i++ {
+		e.createNote(t, map[string]any{"title": fmt.Sprintf("uix-11 note %d", i), "status": "draft"})
+	}
+
 	// UIX-10 needs an application that configured a theme, and the one the
 	// rest of the bench measures must keep the panel's default: the
 	// contrast controls read it as an operator opens it today.
@@ -126,6 +146,10 @@ func TestBrowserBench(t *testing.T) {
 		"ORBIT_BENCH_THEMED_SURFACE="+themedBranding().Dark.SurfaceColor,
 		"ORBIT_BENCH_USER=admin",
 		"ORBIT_BENCH_PASSWORD="+bootstrapPassword,
+		"ORBIT_BENCH_READER_USER="+dashboardReader,
+		"ORBIT_BENCH_OUTSIDER_USER="+dashboardOutsider,
+		"ORBIT_BENCH_OPERATOR_PASSWORD="+limitedPassword,
+		"ORBIT_BENCH_DASHBOARD="+trendsDashboard,
 		// Playwright writes its browsers here in CI; keep the default on a
 		// developer machine.
 		"PLAYWRIGHT_JSON_OUTPUT_NAME=results.json",

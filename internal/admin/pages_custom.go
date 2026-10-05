@@ -246,9 +246,11 @@ type pageDescriptor struct {
 	URL string `json:"url"`
 }
 
-// handleListUIExtensions lists the pages this operator may open. A page they
-// may not open is absent from the list, not greyed out in it: the list IS
-// the navigation, and a link that refuses is a worse answer than no link.
+// handleListUIExtensions lists the pages this operator may open, and the
+// dashboards. A page they may not open is absent from the list, not greyed
+// out in it: the list IS the navigation, and a link that refuses is a worse
+// answer than no link. The dashboards travel only when the application
+// declared some, so the payload of one that did not is the one it always was.
 func (p *Panel) handleListUIExtensions(c *router.Context) error {
 	prefix := strings.TrimSuffix(NormalizePrefix(p.config.Prefix), "/")
 	var user *auth.User
@@ -265,5 +267,9 @@ func (p *Panel) handleListUIExtensions(c *router.Context) error {
 			Icon: page.Icon, URL: prefix + pagePath(page.ID) + "/",
 		})
 	}
-	return c.JSON(http.StatusOK, map[string]any{"pages": pages})
+	payload := map[string]any{"pages": pages}
+	if len(p.dashboards) > 0 {
+		payload["dashboards"] = p.visibleDashboards(user)
+	}
+	return c.JSON(http.StatusOK, payload)
 }

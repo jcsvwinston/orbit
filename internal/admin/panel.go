@@ -162,6 +162,10 @@ type PanelConfig struct {
 	Locale   string
 	Messages map[string]map[string]string
 
+	// Dashboards are screens of cards beside the overview, each behind its
+	// own permission (dashboards.go).
+	Dashboards []Dashboard
+
 	// Audit logging configuration
 	AuditEnabled bool // whether audit logging is enabled
 	AuditMaxSize int  // max audit entries in memory (default 10000)
@@ -233,6 +237,7 @@ type Panel struct {
 	modelActions map[actionKey]ModelAction
 	pages        []Page
 	widgets      []Widget
+	dashboards   []Dashboard
 	branding     Branding
 	locale       string
 	messages     map[string]map[string]string
@@ -318,12 +323,19 @@ func NewPanel(src datasource.DataSource, logger *slog.Logger, cfg PanelConfig) *
 	} else {
 		p.pages = pages
 	}
-	if widgets, err := validateWidgets(cfg.Widgets); err != nil {
+	if widgets, err := validateWidgetList("widgets", cfg.Widgets, lookupIn(src), maxGridColumns, true); err != nil {
 		if logger != nil {
 			logger.Error("orbit: dashboard widgets ignored", "error", err)
 		}
 	} else {
 		p.widgets = widgets
+	}
+	if dashboards, err := validateDashboards(cfg.Dashboards, lookupIn(src)); err != nil {
+		if logger != nil {
+			logger.Error("orbit: dashboards ignored", "error", err)
+		}
+	} else {
+		p.dashboards = dashboards
 	}
 	if branding, err := validateBranding(cfg.Branding); err != nil {
 		if logger != nil {
@@ -749,10 +761,11 @@ func (p *Panel) mountAPIRoutes(m *router.Mux) {
 	m.Get("/api/jobs", p.handleListJobQueues)
 	m.Get("/api/sites", p.handleListSites)
 	// The screens an application added, as the navigation needs them
-	// (pages_custom.go), and the cards its overview opens on
-	// (dashboard.go).
+	// (pages_custom.go), the cards its overview opens on (dashboard.go),
+	// and the dashboards it added beside the overview (dashboards.go).
 	m.Get("/api/ui/extensions", p.handleListUIExtensions)
 	m.Get("/api/ui/dashboard", p.handleDashboardWidgets)
+	m.Get("/api/ui/dashboards/{id}", p.handleNamedDashboard)
 
 	// P2 features
 	m.Get("/api/deployment", p.handleDeploymentInfo)
@@ -918,6 +931,7 @@ func (p *Panel) handleSPA(fsys fs.FS) router.Handler {
 		}
 
 		content = injectAdminPrefix(content, NormalizePrefix(p.config.Prefix))
+		content = absoluteAssetPaths(content, p.config.Prefix)
 		content = injectAdminTitle(content, p.config.Title)
 		content = injectBranding(content, p.branding)
 		content = injectAppearance(content, p.branding, p.config.Prefix)

@@ -50,6 +50,17 @@ export default defineConfig({
               priority: 2,
             },
             { name: 'icons', test: /node_modules[\\/]lucide-react[\\/]/, priority: 1 },
+            // What every screen of the panel reads — the prefix, the API
+            // client, the stores and the class helpers — in one file. Left to
+            // itself the bundler cuts it into one chunk per combination of
+            // the lazy chunks that share it: the dashboards' grid (loaded by
+            // the overview and by the dashboard route) turned the one shared
+            // chunk of the first load into five.
+            {
+              name: 'app',
+              test: /src[\\/](config\.ts|lib[\\/]utils\.ts|services[\\/]api\.ts|stores[\\/][^\\/]+\.ts)$|node_modules[\\/](clsx|class-variance-authority|tailwind-merge|zustand)[\\/]/,
+              priority: 0,
+            },
           ],
         },
       },

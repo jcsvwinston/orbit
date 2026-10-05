@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { lazyRoutes } from './routes'
 
 describe('lazyRoutes', () => {
-  it('lists every sidebar destination except the Overview landing', () => {
+  it('lists every sidebar destination except the Overview landing, and the dashboards', () => {
     expect(lazyRoutes.map((route) => route.path)).toEqual([
       'data-studio',
       'system',
@@ -12,6 +12,7 @@ describe('lazyRoutes', () => {
       'operators',
       'rbac',
       'audit',
+      'dashboards/:id',
     ])
   })
 

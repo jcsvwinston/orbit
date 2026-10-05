@@ -4,12 +4,16 @@
 package adminbench
 
 import (
+	"context"
+	"encoding/json"
+	"math"
 	"net/http"
 	"net/url"
 	"reflect"
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jcsvwinston/orbit"
 )
@@ -38,18 +42,14 @@ import (
 // absence is never decided by the missing name alone.
 
 // The members of the contract types as A6 left them. A field outside these
-// sets is a surface that moved.
+// sets is a surface that moved. (The widget and page lists went when EXT-04
+// and EXT-05 became behaviour checks in O5.)
 var (
 	knownModelAction  = []string{"Name", "Model", "Label", "Description", "Confirm", "Destructive", "AllowEmptySelection", "Run"}
 	knownActionResult = []string{"Message", "Affected", "Data"}
-	knownWidget       = []string{"ID", "Title", "Description", "Permission", "Link", "Load"}
-	knownWidgetValue  = []string{"Value", "Detail", "Items"}
-	knownPage         = []string{"ID", "Title", "Description", "Icon", "Permission", "Handler"}
 
 	knownActionDescriptor = []string{"name", "label", "description", "confirm", "destructive", "requires_selection"}
 	knownActionResponse   = []string{"action", "ran", "requested", "affected", "failed", "errors", "message", "data"}
-	knownWidgetPayload    = []string{"id", "title", "description", "link", "value", "detail", "items", "error"}
-	knownPageDescriptor   = []string{"id", "title", "description", "icon", "url"}
 )
 
 // publishDescriptor returns the publish action as the schema of Note offers
@@ -184,65 +184,267 @@ func probeActionResultKinds(t *testing.T, e *env) verdict {
 
 // EXT-04: a widget draws a series — signups per day, failed payments per
 // hour — and not only a headline value or a short list.
+//
+// Present since A11 O5, and measured by effect, in four parts: the series
+// the bench application declares reaches the payload with one value per
+// label; it MOVES when the data does (a note created now is one more today),
+// which a chart drawn from a constant would not; a series its card cannot
+// draw is that card's error and never the screen's, on the overview and on
+// a dashboard; and a series declaration the panel cannot draw stops the
+// application, naming the widget. Whether the browser draws it is UIX-11.
 func probeWidgetSeries(t *testing.T, e *env) verdict {
-	for typ, known := range map[reflect.Type][]string{
-		reflect.TypeOf(orbit.WidgetValue{}): knownWidgetValue,
-		reflect.TypeOf(orbit.Widget{}):      knownWidget,
+	read := func() (labels []string, values []float64, ok bool) {
+		r := e.get(t, "/admin/api/ui/dashboards/"+trendsDashboard)
+		if r.code != http.StatusOK || r.servedTheShell() {
+			t.Logf("the dashboard that carries the series answered %d %s: %s", r.code, r.ctype, r.text())
+			return nil, nil, false
+		}
+		cards, _ := r.json(t)["widgets"].([]any)
+		card := cardByID(cards, "notes-per-day")
+		if card == nil {
+			t.Logf("the dashboard carries no notes-per-day card: %s", r.text())
+			return nil, nil, false
+		}
+		if card["kind"] != "line" {
+			t.Logf("the series card is served as kind %v: %v", card["kind"], card)
+			return nil, nil, false
+		}
+		labels, series := chartOf(card)
+		if len(series) != 1 || len(series[0]) != len(labels) || len(labels) != seriesDays {
+			t.Logf("the series card carries %d labels and %d series: %v", len(labels), len(series), card)
+			return nil, nil, false
+		}
+		return labels, series[0], true
+	}
+
+	labels, before, ok := read()
+	if !ok {
+		if v := e.unrouted(t, "/admin/api/ui/dashboards/"+trendsDashboard); v == absent {
+			return absent
+		}
+		return partial
+	}
+	if today := time.Now().UTC().Format("2006-01-02"); labels[len(labels)-1] != today {
+		t.Logf("the series ends on %q, and today is %s: the labels did not come from the application's function", labels[len(labels)-1], today)
+		return partial
+	}
+	e.createNote(t, map[string]any{"title": "ext04-series", "status": "draft"})
+	_, after, ok := read()
+	if !ok {
+		return partial
+	}
+	if got, want := after[len(after)-1], before[len(before)-1]+1; got != want {
+		t.Logf("a note created today moved today's reading from %v to %v, not to %v: the chart is not fed by the function", before[len(before)-1], got, want)
+		return partial
+	}
+
+	// A series its card cannot draw is the card's error, on the overview
+	// and on a dashboard. NaN is the sharpest case: JSON cannot carry it, so
+	// a panel that did not check it would fail the whole screen.
+	steady := func(context.Context) (orbit.SeriesValue, error) {
+		return orbit.SeriesValue{Labels: []string{"a", "b"}, Series: []orbit.Series{{Name: "n", Values: []float64{1, 2}}}}, nil
+	}
+	app, err := tryStart(t, extensionApp(t, orbit.Config{
+		Title: "Admin Bench (series)",
+		Widgets: []orbit.Widget{
+			{ID: "good-line", Kind: orbit.WidgetLine, Series: steady},
+			{ID: "nan-line", Kind: orbit.WidgetLine, Series: func(context.Context) (orbit.SeriesValue, error) {
+				return orbit.SeriesValue{Labels: []string{"a", "b"}, Series: []orbit.Series{{Values: []float64{1, math.NaN()}}}}, nil
+			}},
+		},
+		Dashboards: []orbit.Dashboard{{ID: "charts", Widgets: []orbit.Widget{
+			{ID: "ragged-bar", Kind: orbit.WidgetBar, Series: func(context.Context) (orbit.SeriesValue, error) {
+				return orbit.SeriesValue{Labels: []string{"a", "b", "c"}, Series: []orbit.Series{{Values: []float64{1}}}}, nil
+			}},
+			{ID: "good-bar", Kind: orbit.WidgetBar, Series: steady},
+		}}},
+	}))
+	if err != nil {
+		t.Logf("an application declaring series cards on the overview and a dashboard refused to start: %v", err)
+		return partial
+	}
+	client := signInAt(t, app, "admin", bootstrapPassword)
+	for path, want := range map[string][2]string{
+		"/admin/api/ui/dashboard":         {"good-line", "nan-line"},
+		"/admin/api/ui/dashboards/charts": {"good-bar", "ragged-bar"},
 	} {
-		if hits := fieldsBeyond(typ, known, "series", "point", "chart", "kind", "type", "trend", "spark", "data"); len(hits) > 0 {
-			t.Logf("%s grew %v: grow this probe to declare a series and read it back", typ.Name(), hits)
+		r, _ := fetch(t, client, app.URL(path))
+		var screen map[string]any
+		// A 200 is not enough: a value JSON cannot carry fails the encoder
+		// after the status is written, and the screen arrives empty.
+		if r.code != http.StatusOK || r.servedTheShell() || json.Unmarshal(r.body, &screen) != nil {
+			t.Logf("%s answered %d %q with one card that cannot be drawn: the card took the screen down", path, r.code, r.text())
+			return partial
+		}
+		cards, _ := screen["widgets"].([]any)
+		good, bad := cardByID(cards, want[0]), cardByID(cards, want[1])
+		if good == nil || good["error"] != nil || good["series"] == nil {
+			t.Logf("%s: the card that can be drawn is not: %v", path, good)
+			return partial
+		}
+		if bad == nil || bad["error"] == nil || bad["series"] != nil {
+			t.Logf("%s: the card that cannot be drawn was served as data, or dropped: %v", path, bad)
 			return partial
 		}
 	}
-	r := e.get(t, "/admin/api/ui/dashboard")
-	if r.code != http.StatusOK || r.servedTheShell() {
-		t.Fatalf("the dashboard answered %d %s; CUST-03 measures that and should be red too", r.code, r.ctype)
-	}
-	cards, _ := r.json(t)["widgets"].([]any)
-	for _, entry := range cards {
-		card, _ := entry.(map[string]any)
-		if hits := keysBeyond(card, knownWidgetPayload, "series", "point", "chart", "kind", "type", "trend", "spark", "data"); len(hits) > 0 {
-			t.Logf("a card carries %v: grow this probe", hits)
+
+	// A series declaration the panel cannot draw refuses to start, naming
+	// the widget.
+	for label, w := range map[string]orbit.Widget{
+		"a line with no series":          {ID: "series-missing", Kind: orbit.WidgetLine},
+		"a kind the panel does not draw": {ID: "pie-chart", Kind: "pie", Series: steady},
+	} {
+		_, err := tryStart(t, extensionApp(t, orbit.Config{Title: "Admin Bench (series refused)", Widgets: []orbit.Widget{w}}))
+		if err == nil {
+			t.Logf("%s started", label)
+			return partial
+		}
+		if !strings.Contains(err.Error(), w.ID) {
+			t.Logf("%s was refused, but the error does not name the widget: %v", label, err)
 			return partial
 		}
 	}
-	t.Logf("%d card(s), each a value, a detail line or a list of rows: nothing a chart could be drawn from", len(cards))
-	return absent
+	return present
 }
 
 // EXT-05: cards somewhere other than the overview — a second dashboard for
-// finance, or a page of the application's made of the panel's own cards
-// and drawn inside its chrome, which is what "pages declared in Go" means
-// when the page is not a handler that writes its own HTML.
+// finance, made of the panel's own cards and drawn inside its chrome.
+//
+// Present since A11 O5. The probe asks what makes it a second dashboard and
+// not a second copy of the first: the navigation lists it where the panel
+// serves it; it carries its own cards, in its own order and spans, and none
+// of them reaches the overview; an unknown one is a 404 in JSON; a grant on
+// the overview opens no dashboard, and the dashboard's own grant does; and
+// a dashboard the panel cannot draw stops the application, naming it.
 func probeWidgetPlacement(t *testing.T, e *env) verdict {
-	if hits := fieldsBeyond(reflect.TypeOf(orbit.Widget{}), knownWidget,
-		"dashboard", "page", "placement", "screen", "group", "section", "slot", "area", "region"); len(hits) > 0 {
-		t.Logf("orbit.Widget grew %v: grow this probe to place a card off the overview and read it there", hits)
-		return partial
-	}
-	if hits := fieldsBeyond(reflect.TypeOf(orbit.Page{}), knownPage,
-		"widget", "layout", "component", "block", "section", "kind", "card"); len(hits) > 0 {
-		t.Logf("orbit.Page grew %v: grow this probe to declare a page of cards and read it", hits)
-		return partial
-	}
 	nav := e.get(t, "/admin/api/ui/extensions")
-	pages, _ := nav.json(t)["pages"].([]any)
-	for _, entry := range pages {
-		page, _ := entry.(map[string]any)
-		if hits := keysBeyond(page, knownPageDescriptor, "widget", "layout", "kind", "card", "component"); len(hits) > 0 {
-			t.Logf("a page descriptor carries %v: grow this probe", hits)
+	if nav.code != http.StatusOK || nav.servedTheShell() {
+		t.Fatalf("the navigation answered %d; CUST-04 measures that and should be red too", nav.code)
+	}
+	url, listed := dashboardURLFor(nav.json(t), trendsDashboard)
+	if !listed {
+		if v := e.unrouted(t, "/admin/api/ui/dashboards/"+trendsDashboard); v == absent {
+			t.Logf("one dashboard, the overview: the navigation lists none (%s) and no route serves one", nav.text())
+			return absent
+		}
+		t.Logf("a dashboard is served, and the navigation does not list it: %s", nav.text())
+		return partial
+	}
+	if url != "/admin/dashboards/"+trendsDashboard {
+		t.Logf("the navigation links the dashboard at %q", url)
+		return partial
+	}
+
+	r := e.get(t, "/admin/api/ui/dashboards/"+trendsDashboard)
+	if r.code != http.StatusOK || r.servedTheShell() {
+		t.Logf("the dashboard the navigation lists answered %d %s", r.code, r.ctype)
+		return partial
+	}
+	board := r.json(t)
+	cards, _ := board["widgets"].([]any)
+	var ids []string
+	spans := map[string]float64{}
+	for _, entry := range cards {
+		card, _ := entry.(map[string]any)
+		id, _ := card["id"].(string)
+		ids = append(ids, id)
+		spans[id], _ = card["span"].(float64)
+	}
+	if want := []string{"notes-per-day", "published-notes", "notes-by-status", "recent-notes"}; strings.Join(ids, ",") != strings.Join(want, ",") {
+		t.Logf("the dashboard carries %v, declared %v: its order is its layout", ids, want)
+		return partial
+	}
+	if board["title"] != "Bench Trends" || board["columns"] != float64(2) || spans["notes-per-day"] != 2 || spans["notes-by-status"] != 1 || spans["recent-notes"] != 2 {
+		t.Logf("the dashboard's layout is not the one declared: title %v, columns %v, spans %v", board["title"], board["columns"], spans)
+		return partial
+	}
+	overview := e.get(t, "/admin/api/ui/dashboard")
+	for _, id := range ids {
+		if strings.Contains(overview.raw(), `"`+id+`"`) {
+			t.Logf("the dashboard's card %s reached the overview: %s", id, overview.text())
 			return partial
 		}
 	}
-	// A dashboard other than the overview would be addressable. An unknown
-	// path under /api answers 404 JSON since A6 S9, so a 200 here is a
-	// route and not the SPA's fallback.
-	if v := e.unrouted(t, "/admin/api/ui/dashboards", "/admin/api/ui/dashboard/finance"); v != absent {
-		t.Log("a route for another dashboard answered: grow this probe")
+	if unknown := e.get(t, "/admin/api/ui/dashboards/nowhere"); unknown.code != http.StatusNotFound || unknown.servedTheShell() {
+		t.Logf("an unknown dashboard answered %d %s", unknown.code, unknown.ctype)
 		return partial
 	}
-	t.Log("one dashboard, the overview; a page is an http.Handler that writes its own document, so a screen of cards is HTML the application writes by hand")
-	return absent
+
+	// A grant on the overview opens the overview, and no dashboard; the
+	// dashboard's own grant opens it.
+	op := e.operatorNamed(t, "overview-only")
+	e.grant(t, op.username, "admin:dashboard", "view")
+	listedFor := func() bool {
+		n := e.asOperator(t, op, http.MethodGet, "/admin/api/ui/extensions", nil)
+		_, ok := dashboardURLFor(n.json(t), trendsDashboard)
+		return ok
+	}
+	if code := e.asOperator(t, op, http.MethodGet, "/admin/api/ui/dashboards/"+trendsDashboard, nil).code; listedFor() || code != http.StatusForbidden {
+		t.Logf("an operator who holds only the overview is shown the dashboard (listed=%v) and its API answers %d", listedFor(), code)
+		return partial
+	}
+	e.grant(t, op.username, "admin:dashboard:"+trendsDashboard, "view")
+	if code := e.asOperator(t, op, http.MethodGet, "/admin/api/ui/dashboards/"+trendsDashboard, nil).code; !listedFor() || code != http.StatusOK {
+		t.Logf("the dashboard's own grant does not open it: listed=%v, API %d", listedFor(), code)
+		return partial
+	}
+
+	// A dashboard the panel cannot draw refuses to start, naming it.
+	_, err := tryStart(t, extensionApp(t, orbit.Config{
+		Title:      "Admin Bench (an empty dashboard)",
+		Dashboards: []orbit.Dashboard{{ID: "empty-board", Title: "Nothing here"}},
+	}))
+	if err == nil || !strings.Contains(err.Error(), "empty-board") {
+		t.Logf("a dashboard with no cards: %v", err)
+		return partial
+	}
+	return present
+}
+
+// cardByID finds one card of a widgets payload.
+func cardByID(cards []any, id string) map[string]any {
+	for _, entry := range cards {
+		if card, _ := entry.(map[string]any); card != nil && card["id"] == id {
+			return card
+		}
+	}
+	return nil
+}
+
+// chartOf reads a chart card's labels and series values.
+func chartOf(card map[string]any) ([]string, [][]float64) {
+	var labels []string
+	raw, _ := card["labels"].([]any)
+	for _, l := range raw {
+		s, _ := l.(string)
+		labels = append(labels, s)
+	}
+	var series [][]float64
+	list, _ := card["series"].([]any)
+	for _, entry := range list {
+		s, _ := entry.(map[string]any)
+		values, _ := s["values"].([]any)
+		var out []float64
+		for _, v := range values {
+			f, _ := v.(float64)
+			out = append(out, f)
+		}
+		series = append(series, out)
+	}
+	return labels, series
+}
+
+// dashboardURLFor finds a dashboard in the navigation payload.
+func dashboardURLFor(payload map[string]any, id string) (string, bool) {
+	list, _ := payload["dashboards"].([]any)
+	for _, entry := range list {
+		d, _ := entry.(map[string]any)
+		if d != nil && d["id"] == id {
+			url, _ := d["url"].(string)
+			return url, url != ""
+		}
+	}
+	return "", false
 }
 
 // EXT-06: the application's own script runs in the panel — a client-side
@@ -636,29 +838,46 @@ func probeConfigReference(t *testing.T, e *env) verdict {
 // or a verb to an operator who holds no grant for it would be the way
 // around every policy the panel enforces — and every surface this family
 // asks for will be one more place to forget it.
+//
+// O5 added two such places, and the probe asks about both: a dashboard
+// (listed and served only to an operator granted view on
+// admin:dashboard:<id>), and a "records" card on it, which lists a model's
+// rows and so is the model's to show — granted the dashboard, an operator
+// still does not see that card until they may list the model.
 func probeExtensionsAuthorized(t *testing.T, e *env) verdict {
 	op := e.operatorNamed(t, "extension-viewer")
 	e.grant(t, op.username, "admin:Note", "get_schema")
 
-	seen := func() (widget, page, action bool, pageCode int) {
+	type sight struct {
+		widget, page, action, dashboard, records bool
+		pageCode, dashboardCode                  int
+	}
+	seen := func() (s sight) {
 		dash := e.asOperator(t, op, http.MethodGet, "/admin/api/ui/dashboard", nil)
 		if dash.code == http.StatusOK && !dash.servedTheShell() {
 			cards, _ := dash.json(t)["widgets"].([]any)
-			widget = widgetValue(t, cards, "pending-notes") != "" || widgetError(t, cards, "pending-notes") != ""
+			s.widget = widgetValue(t, cards, "pending-notes") != "" || widgetError(t, cards, "pending-notes") != ""
 		}
 		nav := e.asOperator(t, op, http.MethodGet, "/admin/api/ui/extensions", nil)
 		if nav.code == http.StatusOK && !nav.servedTheShell() {
-			_, page = pageURLFor(nav.json(t), "reports")
+			_, s.page = pageURLFor(nav.json(t), "reports")
+			_, s.dashboard = dashboardURLFor(nav.json(t), trendsDashboard)
 		}
 		schema := e.asOperator(t, op, http.MethodGet, "/admin/api/models/Note/schema", nil)
-		action = strings.Contains(schema.raw(), `"name":"publish"`)
-		pageCode = e.asOperator(t, op, http.MethodGet, "/admin/x/reports/", nil).code
+		s.action = strings.Contains(schema.raw(), `"name":"publish"`)
+		s.pageCode = e.asOperator(t, op, http.MethodGet, "/admin/x/reports/", nil).code
+		board := e.asOperator(t, op, http.MethodGet, "/admin/api/ui/dashboards/"+trendsDashboard, nil)
+		s.dashboardCode = board.code
+		if board.code == http.StatusOK && !board.servedTheShell() {
+			cards, _ := board.json(t)["widgets"].([]any)
+			s.records = cardByID(cards, "recent-notes") != nil
+		}
 		return
 	}
 
-	widget, page, action, code := seen()
-	if widget || page || action || code == http.StatusOK {
-		t.Logf("an operator with no grant is shown widget=%v page=%v action=%v, and the page answers %d", widget, page, action, code)
+	s := seen()
+	if s.widget || s.page || s.action || s.dashboard || s.pageCode == http.StatusOK || s.dashboardCode == http.StatusOK {
+		t.Logf("an operator with no grant is shown %+v", s)
 		return absent
 	}
 
@@ -667,9 +886,19 @@ func probeExtensionsAuthorized(t *testing.T, e *env) verdict {
 	e.grant(t, op.username, "admin:dashboard", "view")
 	e.grant(t, op.username, "admin:page:reports", "view")
 	e.grant(t, op.username, "admin:Note", "publish")
-	widget, page, action, code = seen()
-	if !widget || !page || !action || code != http.StatusOK {
-		t.Logf("after the grants: widget=%v page=%v action=%v, page answers %d", widget, page, action, code)
+	e.grant(t, op.username, "admin:dashboard:"+trendsDashboard, "view")
+	s = seen()
+	if !s.widget || !s.page || !s.action || !s.dashboard || s.pageCode != http.StatusOK || s.dashboardCode != http.StatusOK {
+		t.Logf("after the grants: %+v", s)
+		return partial
+	}
+	if s.records {
+		t.Log("granted the dashboard and not the model, the operator is shown the model's rows")
+		return partial
+	}
+	e.grant(t, op.username, "admin:Note", "list")
+	if s = seen(); !s.records {
+		t.Logf("granted the model's list, the operator is still not shown its rows: %+v", s)
 		return partial
 	}
 	return present

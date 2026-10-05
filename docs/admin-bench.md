@@ -48,7 +48,7 @@ A control that cannot be probed does not belong in the bench.
 
 ## The result
 
-**65 of 72 controls present. 0 partial. 7 absent.**
+**67 of 72 controls present. 0 partial. 5 absent.**
 
 | family | present | partial | absent |
 |---|---|---|---|
@@ -58,14 +58,14 @@ A control that cannot be probed does not belong in the bench.
 | operations | 17 | 0 | 0 |
 | customization | 7 | 0 | 0 |
 | interface | 2 | 0 | 0 |
-| extension | 6 | 0 | 7 |
-| **total** | **65** | **0** | **7** |
+| extension | 8 | 0 | 5 |
+| **total** | **67** | **0** | **5** |
 
 The six families A6 measured are complete as of that arc's eighth session:
 59 of 59. The seventh, `extension`, was recorded at the baseline of A11 and
 is that arc's gap ([below](#what-an-application-adds-at-the-baseline-of-a11)):
 1 present at the baseline, 4 after the arc's first session in this
-repository (O1), 6 after its second (O2).
+repository (O1), 6 after its second (O2), 8 after its fifth (O5).
 The number is not
 the end of the work: what this bench measures is a list of controls somebody
 wrote down, and a control that is present is one whose probe exercised it —
@@ -164,14 +164,14 @@ cd internal/adminbench/browser && npm ci && npx playwright install chromium
 go test ./internal/adminbench/ -run TestBrowserBench -v
 ```
 
-**8 of 9 controls present**, plus the one that measures the instrument. The
-last three belong to the extension family
+**9 of 10 controls present**, plus the one that measures the instrument. The
+last four belong to the extension family
 ([below](#what-an-application-adds-at-the-baseline-of-a11)): `UIX-07` and
 `UIX-08` were recorded absent at the baseline of A11 and `UIX-07` closed in
 the arc's first session (O1); `UIX-10` was added, present, in its second
-(O2). There is no `UIX-09` on this page yet: that number belongs to the
-control of the arc's third session (O3), measured on a stack of its own that
-joins this one later:
+(O2), and `UIX-11` in its fifth (O5). There is no `UIX-09` on this page yet:
+that number belongs to the control of the arc's third session (O3),
+measured on a stack of its own that joins this one later:
 
 | control | what it asks |
 |---|---|
@@ -185,6 +185,7 @@ joins this one later:
 | **UIX-07** | the login screen draws the logo the application declared — and the browser loaded it |
 | **UIX-08** | the record view offers the action the application declared — **absent** |
 | **UIX-10** | the first frame wears the theme the application configured, and the operator's own choice wins on reload |
+| **UIX-11** | a second dashboard draws a series to the operator granted it, and is neither listed nor served to one who is not |
 
 Three things worth keeping about how it is built:
 
@@ -553,17 +554,17 @@ properties every extension point should have: a declaration the panel cannot
 honour stops the application, and what the configuration accepts reaches the
 browser. It is A11's numerator on this side of the suite. It was recorded
 before the arc changed anything at 1 present, 3 partial and 9 absent; the
-table is the reading after the arc's second session (O2, below):
+table is the reading after the arc's fifth session (O5, below):
 
-### extension — 6 present · 0 partial · 7 absent (HTTP)
+### extension — 8 present · 0 partial · 5 absent (HTTP)
 
 | id | control | verdict | what is missing |
 |---|---|---|---|
 | `EXT-01` | an action asks the operator for input before it runs (a form) | **absent** | ModelAction declares no input and the action descriptor publishes none; an input posted with the call is dropped before Run |
 | `EXT-02` | an action is offered on the record view, for that one record | **absent** | the bulk endpoint runs an action over one id, but nothing says which actions belong on one record and the record payload names none — the record view has no action surface |
 | `EXT-03` | an action answers with a file to download or a page to open | **absent** | ActionResult is a message, a count and an untyped Data map the panel echoes; no Location, no Content-Disposition, no typed member a screen could follow |
-| `EXT-04` | a widget draws a series (a chart), not only a value or a list | **absent** | WidgetValue is a value, a detail line or a list of rows; the card payload carries nothing a chart could be drawn from |
-| `EXT-05` | cards on a screen other than the overview: a second dashboard, or a page made of cards | **absent** | one dashboard, the overview; a Widget names no placement and a Page is an http.Handler that writes its own document |
+| `EXT-04` | a widget draws a series (a chart), not only a value or a list | **present** | — |
+| `EXT-05` | cards on a screen other than the overview: a second dashboard, or a page made of cards | **present** | — |
 | `EXT-06` | the application's own script runs in the panel (a client-side hook), declared and allowed by the CSP | **absent** | no knob declares a script; the document loads only the panel's bundle under script-src 'self' |
 | `EXT-07` | a field drawn by a renderer the application provides | **absent** | the widget vocabulary is closed (json, richtext, file, image); a field declared with another widget refuses to start (EXT-08), and nothing registers a renderer |
 | `EXT-08` | a field widget the panel cannot draw refuses to start | **present** | — |
@@ -573,13 +574,15 @@ table is the reading after the arc's second session (O2, below):
 | `EXT-12` | the configuration reference documents every key an application can bind | **present** | — |
 | `EXT-13` | what an application adds answers to the panel's RBAC: card, screen and verb withheld without a grant | **present** | — |
 
-Three controls of the same family can only be measured in a browser and
+Four controls of the same family can only be measured in a browser and
 are recorded in the browser half, with their own numerator: `UIX-07` (the
 login screen draws the declared logo — **present** since O1), `UIX-08` (the
 record view offers the declared action — **absent**, the drawing half of
-`EXT-02`) and `UIX-10` (the first frame is in the configured theme, and the
+`EXT-02`), `UIX-10` (the first frame is in the configured theme, and the
 operator's choice wins on reload — **present** since O2, the painting half
-of `EXT-09`).
+of `EXT-09`) and `UIX-11` (a second dashboard draws a series for the
+operator granted it and is withheld from one who is not — **present** since
+O5, the drawing half of `EXT-04` and `EXT-05`).
 
 ### What the shape of it says
 
@@ -588,8 +591,8 @@ of `EXT-09`).
   (`EXT-02`, `UIX-08`), and it answers with a toast: `ActionResult.Data` is
   echoed as an untyped map, so "export these as PDF" or "open the
   reconciliation" has no contract to ride (`EXT-03`).
-- **The cards are one screen of numbers.** A value, a detail line or a list
-  of rows, all on the overview (`EXT-04`, `EXT-05`). A screen of the
+- **The cards were one screen of numbers** (closed in O5, below). A value,
+  a detail line or a list of rows, all on the overview (`EXT-04`, `EXT-05`). A screen of the
   application's own is an `http.Handler` that writes its own document; a
   page "declared in Go" that the panel draws from cards does not exist.
 - **The SPA is closed.** No script of the application's runs in it
@@ -644,8 +647,8 @@ The first four were closed by the arc's first session (O1, below).
   absences, and an absence cannot be exercised. Each probe therefore reads
   what the panel SERVES — a payload, a document, a header, whether the
   application's own function received what was posted — and also the contract
-  types an application writes against (`ModelAction`, `ActionResult`,
-  `Widget`, `WidgetValue`, `Page`) and the whole mount surface. When one of
+  types an application writes against (`ModelAction`, `ActionResult`, and
+  until O5 `Widget`, `WidgetValue` and `Page`) and the whole mount surface. When one of
   those grows a member that could carry the capability, the probe answers
   `partial`, the suite goes red against the recorded `absent`, and that is
   the moment to grow it into the behaviour check the new surface makes
@@ -861,3 +864,140 @@ Every change was verified by breaking it:
 | the toggle recording no choice (dist rebuilt) | UIX-10 → absent |
 | the bundle deciding again after the head script (dist rebuilt) | UIX-10 → absent |
 | the root's head script with O1's bundle | UIX-10 → absent (first frame right; the choice lost on reload) |
+
+## Cards of every kind and a second dashboard, after A11's fifth session
+
+The fifth session of the arc in this repository (O5) closed `EXT-04` and
+`EXT-05` and added `UIX-11`, their browser half: the HTTP bench reads 67 of
+72, the browser half 9 of 10. `EXT-13` stays present and asks about the two
+surfaces the session added.
+
+- **A card's kind says what it draws, and each kind reads a function of its
+  own type.** `Widget.Kind` is `stat` (`Stat`: a figure, its change, a
+  trend and whether the change is good news), `line` or `bar` (`Series`:
+  one value per label for each series), `table` (`Table`: columns and rows
+  of text) or `records` (the newest rows of a model). An empty kind is the
+  value card A6 shipped, read from `Load`. The application writes no
+  frontend code for any of them.
+- **A `records` card has no function.** The panel lists the rows itself,
+  through the same list the grid uses, as the operator who is looking: the
+  tenant, the `#own` scope and the field permissions apply, and an operator
+  who may not list the model is not shown the card at all. A function of
+  the application's would return rows none of those policies saw — the
+  same reason an action runs through the panel.
+- **Dashboards beside the overview.** `Config.Dashboards` declares screens
+  of cards, each with its columns and its cards in the order declared, each
+  listed in the navigation and gated as a whole by `view` on
+  `admin:dashboard:<id>`. An operator without it does not see it listed,
+  and its API (`GET <prefix>/api/ui/dashboards/<id>`) answers 403; an
+  unknown one is a 404. The overview is not one of them and does not
+  change: its cards, their resource and their order are A6's.
+- **A declaration the panel cannot draw stops the application, naming
+  it**: an unknown kind, a kind without its function, a function its kind
+  never reads, a `records` card on a model, field or order the application
+  does not have, a span wider than its screen, a dashboard with no cards.
+  What a function returns that its card cannot draw — a series shorter
+  than its axis, a value that is not a finite number, a ragged table, an
+  unknown trend — is that card's error, never the screen's.
+
+Four decisions worth keeping:
+
+- **A value card's payload is A6's, byte for byte.** Every member a newer
+  kind adds is omitted when empty, and the navigation payload carries
+  `dashboards` only when the application declared one; an internal test
+  pins both against the literal JSON. A panel declared before this session
+  renders as it did (QADR-0010).
+- **The overview's cards moved into a chunk of their own.** The grid that
+  draws every kind is loaded by the overview only when the application
+  declared cards, and by the dashboard route; the chart library is a
+  further chunk, loaded only by a screen with a chart, and shared with
+  System Pulse, which already used it. Measured with the same script
+  before and after (KiB, gzip at zlib's default level): the first load's
+  JavaScript went from 99.8 to 100.0, in the same five files, and its
+  stylesheet from 7.3 to 7.4; everything the panel ships went from 506.7
+  to 510.5. Left to itself the bundler cut the shared code of the first
+  load into five chunks once the grid became a chunk both the entry and a
+  lazy route load; a `codeSplitting` group (`app`) keeps it in one.
+- **The bounds are a card's, not a report's.** At most 8 series and 500
+  points, 12 columns and 100 rows, 50 records. Past them the card says so
+  in its error instead of shipping the payload: a widget is a glance, and
+  a truncated table that looks complete would be the worse answer.
+- **The bench's series is fed by the application's table, not by a
+  constant.** `EXT-04` creates a note and requires today's reading to move
+  by exactly one, and `UIX-11` requires the point of the highest reading to
+  be drawn above the point of the lowest — a chart drawn from nothing, or
+  from the wrong numbers, passes neither. `UIX-11` also holds the new
+  screen to the contrast and naming rules `UIX-02` and `UIX-03` hold the
+  panel's own screens to, so a card kind cannot add an unreadable colour
+  or an unnamed picture in silence.
+
+### What the work found that was not on the plan
+
+- **An operator whose role opens only a dashboard could not sign in.** The
+  interface decides whether a session is signed in by asking for the model
+  list, and read the 403 an operator without `list_models` gets as "signed
+  out": after every successful sign-in it drew the login screen again, with
+  nothing saying why. A 403 is now a session that was accepted; each screen
+  says what it may not show. `UIX-11` found it — its first run had the
+  granted operator back on the login form.
+- **The document named its assets relative to itself.** The build writes
+  `./assets/…`, which resolves only while the interface's path is one
+  segment deep — and every screen was, until `<prefix>/dashboards/<id>`.
+  Opened by its address, reloaded or bookmarked, a dashboard asked for
+  `<prefix>/dashboards/assets/…`, was answered the document instead of the
+  script, and drew a blank page. The panel now writes the bundle's paths
+  from its own root on the documents it serves (the panel's and the login
+  page's); the chunks the bundle loads later already resolved against the
+  bundle's own URL. An internal test asks for a two-segment screen.
+- **SQLite's date functions cannot read the timestamps the framework
+  writes.** The driver stores a `time.Time` as Go prints one
+  (`2026-10-04 22:30:06.67 +0000 UTC`), and `date(created_at)` answers
+  NULL for it. The bench's first series was a flat line of zeros; the
+  probe caught it by creating a note and watching nothing move. The bench
+  reads the day as a prefix of the text. An application writing its own
+  series against SQLite will meet the same thing.
+- **A value JSON cannot carry fails the screen with a 200.** Without the
+  check on each value, a `NaN` reaches the encoder after the status is
+  written, and the whole overview arrives as an empty body with a 200 —
+  the kind of 200 that meant nothing this bench recorded at `OPS-15`. The
+  check makes it the card's error; `EXT-04` asks for it, and refuses a body
+  that does not decode rather than stopping on it.
+
+### What the bench got wrong about itself, the eleventh time
+
+- **The baseline's `EXT-05` would not have seen the dashboards.** It looked
+  for a placement member on `Widget`, a layout member on `Page`, and a
+  route at `<prefix>/api/ui/dashboards` with no id. Dashboards arrived as a
+  list on `Config` and a route with an id, and the probe went on reading
+  `absent` while the panel served them. `EXT-04` did notice its surface
+  (`Kind` and `Series` on `Widget`). Both are now behaviour checks.
+- **A probe that stops is not a probe that measures.** The first
+  `EXT-04` decoded the screen with a helper that fails the test on a body
+  that is not JSON, so the NaN mutation below stopped it instead of
+  measuring `partial`.
+
+Every change was verified by breaking it:
+
+| mutation | control |
+|---|---|
+| the series card served without its series | EXT-04 → partial |
+| a NaN left unchecked (the screen arrives empty, with a 200) | EXT-04 → partial |
+| an unknown kind accepted | EXT-04 → partial |
+| a kind without its function accepted | EXT-04 → partial |
+| the bench's series drawn from a constant | EXT-04 → partial |
+| the dashboards left out of the navigation | EXT-05 → partial; EXT-13 → partial |
+| a dashboard's cards ordered by ID | EXT-05 → partial |
+| a dashboard's spans dropped | EXT-05 → partial |
+| a dashboard served to anyone signed in | EXT-05 → partial; EXT-13 → absent; UIX-11 → absent |
+| the overview's grant opening every dashboard | EXT-05 → partial |
+| a dashboard's cards also on the overview | EXT-05 → partial |
+| an unknown dashboard answered 200 | EXT-05 → partial |
+| a dashboard with no cards accepted | EXT-05 → partial |
+| a records card shown without `list` on its model | EXT-13 → partial |
+| the navigation drawing no dashboard (dist rebuilt) | UIX-11 → absent |
+| the line marking no point (dist rebuilt) | UIX-11 → absent |
+| the readings drawn upside down (dist rebuilt) | UIX-11 → absent |
+| a stat's good-news colour below contrast in the light theme (dist rebuilt) | UIX-11 → absent |
+| a 403 read as signed out (dist rebuilt) | UIX-11 → absent |
+| the document's asset paths relative again | UIX-11 → absent |
+| the grid and the chart imported into the first load | `ui/embed_test.go` → over budget (690.5 KiB raw against 512) |

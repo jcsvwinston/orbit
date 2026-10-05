@@ -27,6 +27,16 @@ async function signIn(page: Page): Promise<void> {
   await page.waitForURL(/\/admin\/?$/, { timeout: 15_000 })
 }
 
+/** signInAs signs in to the bench's application as another operator than
+ * the bootstrap admin, through the same form. */
+async function signInAs(page: Page, username: string, password: string): Promise<void> {
+  await page.goto('/admin/login')
+  await page.locator('input[name="username"]').first().fill(username)
+  await page.locator('input[type="password"]').first().fill(password)
+  await page.locator('button[type="submit"], input[type="submit"]').first().click()
+  await page.waitForURL(/\/admin\/?$/, { timeout: 15_000 })
+}
+
 /** signInAt signs in to another application than the bench's own, through
  * its login form. */
 async function signInAt(page: Page, base: string): Promise<void> {
@@ -415,5 +425,94 @@ test.describe('UIX', () => {
       .toBe(false)
     const reloaded = await firstFrame(page, `${base}/admin/`, () => toggle.waitFor({ timeout: 15_000 }))
     expectFrame(reloaded, { dark: false, surface: '#ffffff' }, 'the panel, reloaded after the operator chose light')
+  })
+
+  /*
+   * UIX-11 is the browser half of EXT-04 and EXT-05 (A11 O5): the server
+   * says a second dashboard exists, carries a series and answers only the
+   * operator granted it; this says what each operator is SHOWN.
+   *
+   * "Drawn" is measured against what the API served, not against the
+   * existence of an <svg>: the chart must mark one point per label, and the
+   * point of the highest reading — today, where the driver created notes —
+   * must sit above the point of the lowest, which no chart drawn from
+   * nothing would do.
+   */
+  test('UIX-11 a second dashboard draws a series to the operator granted it, and is neither listed nor served to one who is not', async ({ page }) => {
+    const reader = process.env.ORBIT_BENCH_READER_USER ?? ''
+    const outsider = process.env.ORBIT_BENCH_OUTSIDER_USER ?? ''
+    const password = process.env.ORBIT_BENCH_OPERATOR_PASSWORD ?? ''
+    const board = process.env.ORBIT_BENCH_DASHBOARD ?? ''
+    if (!reader || !outsider || !password || !board) {
+      throw new Error('UIX-11 precondition: the driver passed no operators or dashboard (ORBIT_BENCH_READER_USER, ORBIT_BENCH_OUTSIDER_USER, ORBIT_BENCH_OPERATOR_PASSWORD, ORBIT_BENCH_DASHBOARD)')
+    }
+    const nav = page.getByRole('navigation', { name: /main navigation|navegación/i })
+    const apiPath = `/admin/api/ui/dashboards/${board}`
+    const askAPI = () =>
+      page.evaluate(async (path) => {
+        const r = await fetch(path, { credentials: 'same-origin' })
+        return { status: r.status, body: r.ok ? await r.json() : null }
+      }, apiPath)
+
+    // The operator granted the dashboard.
+    await signInAs(page, reader, password)
+    const served = await askAPI()
+    expect(served.status, `UIX-11 precondition: the dashboard's API answered the operator granted it ${served.status} (EXT-05 should be red too)`).toBe(200)
+    const card = (served.body.widgets ?? []).find((w: { kind?: string }) => w.kind === 'line' || w.kind === 'bar')
+    expect(card, 'UIX-11 precondition: the dashboard serves no series card (EXT-04 should be red too)').toBeTruthy()
+    const values: number[] = card.series[0].values
+    const highest = values.indexOf(Math.max(...values))
+    const lowest = values.indexOf(Math.min(...values))
+    expect(values[highest] > values[lowest], `UIX-11 precondition: the series is flat (${JSON.stringify(values)}), so its drawing cannot be told from nothing`).toBe(true)
+
+    const link = nav.getByRole('link', { name: served.body.title })
+    await expect(link, `UIX-11: the navigation of the operator granted the dashboard does not list "${served.body.title}"`).toHaveCount(1, { timeout: 10_000 })
+    await link.click()
+    await page.waitForURL(new RegExp(`/admin/dashboards/${board}$`), { timeout: 10_000 })
+    await expect(page.getByRole('heading', { level: 1, name: served.body.title })).toBeVisible()
+
+    const chart = page.locator(`[data-widget="${card.id}"] [data-chart]`)
+    await expect(chart, `UIX-11: the dashboard draws no chart for ${card.id}`).toHaveCount(1, { timeout: 10_000 })
+    const points = chart.locator('svg [data-series-point]')
+    await expect(points, `UIX-11: the chart marks ${await points.count()} points for the ${card.labels.length} labels the API served`).toHaveCount(card.labels.length, { timeout: 10_000 })
+    const heights = await points.evaluateAll((marks) => marks.map((m) => Number(m.getAttribute('cy'))))
+    expect(
+      heights[highest] < heights[lowest],
+      `UIX-11: the highest reading (${values[highest]}) is drawn no higher than the lowest (${values[lowest]}): cy ${JSON.stringify(heights)}`,
+    ).toBe(true)
+    const box = await chart.locator('svg').first().boundingBox()
+    expect(box && box.width > 200 && box.height > 100, `UIX-11: the chart is drawn at ${JSON.stringify(box)}`).toBe(true)
+
+    // The screen is legible, and says what its parts are, by the rules
+    // UIX-02 and UIX-03 hold the panel's own screens to.
+    const violations = await axeViolations(page, [
+      'color-contrast',
+      'button-name',
+      'link-name',
+      'image-alt',
+      'svg-img-alt',
+      'role-img-alt',
+      'aria-allowed-attr',
+      'aria-required-attr',
+      'aria-valid-attr-value',
+      'aria-hidden-focus',
+      'td-headers-attr',
+      'th-has-data-cells',
+    ])
+    expect(violations, `UIX-11: the dashboard: ${JSON.stringify(violations, null, 2)}`).toEqual([])
+
+    // The operator granted nothing.
+    await page.context().clearCookies()
+    await signInAs(page, outsider, password)
+    await nav.waitFor({ timeout: 10_000 })
+    await page.waitForLoadState('networkidle')
+    await expect(nav.getByRole('link', { name: served.body.title }), 'UIX-11: the navigation of an operator not granted the dashboard lists it').toHaveCount(0)
+    const refused = await askAPI()
+    expect(refused.status, `UIX-11: the dashboard's API answered ${refused.status} to an operator not granted it`).toBe(403)
+    // By its address, as a bookmark or a reload reaches it: the screen
+    // loads, and says no.
+    await page.goto(`/admin/dashboards/${board}`)
+    await expect(page.getByText('You do not have permission to view this'), 'UIX-11: the dashboard reached by its address is not refused').toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-widget]'), 'UIX-11: a refused dashboard still draws cards').toHaveCount(0)
   })
 })

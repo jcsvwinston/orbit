@@ -159,7 +159,7 @@ func controls() []control {
 		// points A6 shipped (DS-09, CUST-02, CUST-03, CUST-04). Recorded at
 		// the baseline of A11 (S0); probes_extension_test.go says what each
 		// one reads. EXT-08, EXT-11 and EXT-12 closed in O1; EXT-09 and
-		// EXT-10 in O2.
+		// EXT-10 in O2; EXT-04 and EXT-05 in O5.
 		{id: "EXT-01", family: "extension", title: "an action asks the operator for input before it runs (a form)",
 			want: absent, note: "ModelAction declares no input and the action descriptor publishes none; an input posted with the call is dropped before Run",
 			probe: probeActionInput},
@@ -170,11 +170,9 @@ func controls() []control {
 			want: absent, note: "ActionResult is a message, a count and an untyped Data map the panel echoes; no Location, no Content-Disposition, no typed member a screen could follow",
 			probe: probeActionResultKinds},
 		{id: "EXT-04", family: "extension", title: "a widget draws a series (a chart), not only a value or a list",
-			want: absent, note: "WidgetValue is a value, a detail line or a list of rows; the card payload carries nothing a chart could be drawn from",
-			probe: probeWidgetSeries},
+			want: present, probe: probeWidgetSeries},
 		{id: "EXT-05", family: "extension", title: "cards on a screen other than the overview: a second dashboard, or a page made of cards",
-			want: absent, note: "one dashboard, the overview; a Widget names no placement and a Page is an http.Handler that writes its own document",
-			probe: probeWidgetPlacement},
+			want: present, probe: probeWidgetPlacement},
 		{id: "EXT-06", family: "extension", title: "the application's own script runs in the panel (a client-side hook), declared and allowed by the CSP",
 			want: absent, note: "no knob declares a script; the document loads only the panel's bundle under script-src 'self'",
 			probe: probeClientScript},

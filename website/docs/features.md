@@ -945,6 +945,155 @@ What the panel does around your function:
 - **Degradation.** A card that fails — or panics — is drawn saying it could
   not be read. Dropping it would report a broken query as "nothing to see".
 
+### Cards of every kind
+
+A card's `Kind` says what it draws, and each kind reads from a function of
+its own type — so what your function returns is what the card can draw, and
+you write no frontend code for any of them. A card with no `Kind` is the
+value card above, read from `Load`.
+
+```go
+Widgets: []orbit.Widget{
+    {
+        ID: "revenue", Title: "Revenue this month",
+        Kind: orbit.WidgetStat,
+        Stat: func(ctx context.Context) (orbit.StatValue, error) {
+            return orbit.StatValue{
+                Value:     "$1.2M",
+                Delta:     "+12% on last month",
+                Trend:     "up",       // up, down or flat: the arrow
+                Sentiment: "good",     // good, bad or empty: the colour
+            }, nil
+        },
+    },
+    {
+        ID: "signups", Title: "Signups per day",
+        Kind: orbit.WidgetLine,        // or orbit.WidgetBar
+        Series: func(ctx context.Context) (orbit.SeriesValue, error) {
+            days, web, mobile, err := signupsLastWeek(ctx)
+            if err != nil {
+                return orbit.SeriesValue{}, err
+            }
+            return orbit.SeriesValue{
+                Labels: days,          // "Sep 29", "Sep 30", …
+                Series: []orbit.Series{
+                    {Name: "Web", Values: web},
+                    {Name: "Mobile", Values: mobile},
+                },
+            }, nil
+        },
+    },
+    {
+        ID: "queues", Title: "Deepest queues",
+        Kind: orbit.WidgetTable,
+        Table: func(ctx context.Context) (orbit.TableValue, error) {
+            return orbit.TableValue{
+                Columns: []string{"Queue", "Waiting"},
+                Rows:    [][]string{{"mail", "214"}, {"billing", "3"}},
+            }, nil
+        },
+    },
+    {
+        ID: "new-orders", Title: "Newest orders",
+        Kind: orbit.WidgetRecords,
+        Records: orbit.RecordList{
+            Model:   "Order",
+            Fields:  []string{"number", "customer", "total"},
+            OrderBy: "created_at desc",   // the default when the model has created_at
+            Limit:   5,
+        },
+    },
+},
+```
+
+| kind | reads | draws |
+|---|---|---|
+| (empty) | `Load` | a value, a detail line, or a short list |
+| `stat` | `Stat` | a figure, its change as you formatted it, an arrow for the trend and a colour for whether it is good news — the direction does not decide that, since failed payments going up is bad news |
+| `line`, `bar` | `Series` | one or more series over the same labels, with a legend when there is more than one |
+| `table` | `Table` | columns and rows of text you formatted |
+| `records` | — | the newest rows of one of your models |
+
+A chart, a table and a list of records take two columns of the grid by
+default; set `Span` to change it.
+
+**A `records` card has no function, on purpose.** The panel lists the rows
+itself, as the operator who is looking, through the same list the grid
+uses: the tenant they are confined to, the rows a `#own` grant leaves them,
+and only the columns their field permissions let them read. A function of
+yours would return rows none of those policies ever saw. For the same
+reason, an operator who may not list the model is not shown the card at
+all.
+
+What the panel checks, and when:
+
+- **At startup.** An unknown `Kind`, a kind without its function (a `line`
+  with no `Series`), or a function the kind never reads (a `Series` on a
+  `stat`) stops the application, naming the widget — each would otherwise
+  be a card that silently draws nothing, or something other than what you
+  wrote. So does a `records` card on a model, a field or an order your
+  application does not have, or a `Span` wider than its screen.
+- **On every load.** What your function returns has to be something its
+  card can draw: a series with one value per label, at most 8 series and
+  500 points, every value a finite number; a table whose rows have one cell
+  per column, at most 12 columns and 100 rows; a trend of `up`, `down` or
+  `flat`. Anything else is that card's error, drawn as a card that could
+  not be read, and never the screen's — a `NaN` cannot even be written as
+  JSON, so unchecked it would have taken the whole screen with it.
+
+The chart code is loaded only for a screen that has a chart on it: the
+panel's first load does not carry it, and an overview with no charts never
+fetches it.
+
+### More than one dashboard
+
+The overview is the screen every operator opens. Readings that belong to
+some operators and not others — the finance numbers, the support queue —
+get a screen of their own:
+
+```go
+orbit.Module(orbit.Config{
+    // ...
+    Dashboards: []orbit.Dashboard{{
+        ID:          "finance",          // served at /admin/dashboards/finance
+        Title:       "Finance",
+        Description: "Revenue, refunds and failed payments",
+        Columns:     2,                  // 1 to 4; the overview has 4
+        Widgets: []orbit.Widget{
+            {ID: "revenue", Title: "Revenue", Kind: orbit.WidgetLine, Span: 2, Series: revenueByDay},
+            {ID: "refunds", Title: "Refunds today", Kind: orbit.WidgetStat, Stat: refundsToday},
+            {ID: "failed", Title: "Failed payments", Kind: orbit.WidgetRecords,
+                Records: orbit.RecordList{Model: "Payment", Fields: []string{"id", "amount", "reason"}}},
+        },
+    }},
+})
+```
+
+A dashboard is listed in the navigation of every operator who may open it
+and is drawn from the same cards as the overview. The cards are drawn in
+the order you declare them, and that order, `Columns` and each card's
+`Span` are its layout.
+
+- **Authorization.** `view` on `admin:dashboard:<id>` opens it
+  (`p, finance-team, admin:dashboard:finance, view`); set `Permission` to
+  ask for another action. It is a resource of its own: a grant on the
+  overview (`admin:dashboard`) opens no dashboard, and a grant on one
+  dashboard opens no other. A card's own `Permission` is an action on its
+  dashboard's resource.
+- **What an operator without it sees.** Nothing in the navigation, and a
+  403 from the dashboard's API (`GET /admin/api/ui/dashboards/<id>`) — so
+  the screen, opened by its address, says they do not have permission
+  rather than showing an empty page. An unknown id is a 404.
+- **The overview does not change.** `Widgets` are still its cards, still
+  authorized on `admin:dashboard`, still ordered by ID; a dashboard's cards
+  never appear on it.
+- **A dashboard with no cards stops the application**, naming it, like an
+  ID with a slash in it, two dashboards of one ID, or more than 4 columns.
+
+An operator whose role opens a dashboard and nothing else can sign in and
+use it: the panel does not require access to the model list to treat a
+session as signed in.
+
 ### The language
 
 ```go

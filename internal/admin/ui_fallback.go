@@ -79,6 +79,21 @@ func injectAdminPrefix(content []byte, prefix string) []byte {
 	return injectHeadMeta(content, "nucleus-admin-prefix", NormalizePrefix(prefix))
 }
 
+// absoluteAssetPaths names the bundle's files from the panel's root. The
+// build writes them relative to the document ("./assets/index-….js"), which
+// resolves only while the SPA's path is one segment deep — and every screen
+// was, until the dashboards (<prefix>/dashboards/<id>). A dashboard opened
+// by its address, reloaded or bookmarked, asked for
+// <prefix>/dashboards/assets/…, was answered the document instead of the
+// script, and drew nothing. The chunks the bundle loads later resolve
+// against the bundle's own URL, so only the document needs it.
+func absoluteAssetPaths(content []byte, prefix string) []byte {
+	root := html.EscapeString(strings.TrimSuffix(NormalizePrefix(prefix), "/"))
+	out := strings.ReplaceAll(string(content), `="./assets/`, `="`+root+`/assets/`)
+	out = strings.ReplaceAll(out, `="./favicon.svg"`, `="`+root+`/favicon.svg"`)
+	return []byte(out)
+}
+
 // injectAdminTitle surfaces the configured panel title (Config.Title, default
 // "Orbit") to the SPA as a meta tag — same mechanism as the prefix — so the
 // login screen and the sidebar can render it. Served on every SPA page
