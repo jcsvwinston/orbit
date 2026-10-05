@@ -3,7 +3,7 @@ module github.com/jcsvwinston/orbit/datasource
 go 1.26.6
 
 require (
-	github.com/jcsvwinston/nucleus v1.30.1
+	github.com/jcsvwinston/nucleus v1.31.0
 	github.com/jcsvwinston/nucleus/drivers/sqlite v0.1.7
 )
 
@@ -40,12 +40,13 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.46.0 // indirect
 	go.opentelemetry.io/otel/trace v1.46.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
-	golang.org/x/crypto v0.56.0 // indirect
-	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.41.0 // indirect
-	modernc.org/libc v1.75.6 // indirect
+	golang.org/x/crypto v0.57.0 // indirect
+	golang.org/x/net v0.59.0 // indirect
+	golang.org/x/sync v0.23.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
+	modernc.org/libc v1.77.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
-	modernc.org/sqlite v1.58.0 // indirect
+	modernc.org/sqlite v1.60.1 // indirect
 )
