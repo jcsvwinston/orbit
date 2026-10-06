@@ -112,6 +112,9 @@ funcionaba cambia.**
 - **El rastro de auditoría.** Guarda los valores antes y después de una
   escritura con sus propias reglas de redacción; un campo prohibido por
   política puede seguir siendo legible ahí para quien tenga `audit_view`.
+  *(Enmendado por OR-73, más abajo: el historial de un registro y el rastro
+  enseñan los valores de una fila con el alcance del `retrieve` de su
+  modelo.)*
 - **El feed en vivo** no filtra por estas políticas.
 - **La allow-list de creación se refleja en `can_edit` como la de update.** Un
   formulario de alta con allow-lists distintas para `create` y `update`
@@ -286,6 +289,45 @@ Se enmienda así:
 **Cambio de comportamiento**: un hijo que nombraba otro registro en la clave
 al padre se guardaba bajo el registro editado; ahora rechaza el guardado. El
 formulario de Data Studio nunca envía esa clave.
+
+## Enmienda de OR-73 (2026-10-06): el rastro enseña de una fila lo que enseña la fila
+
+El historial de un registro (`GET /api/models/{modelo}/{id}/history`) lee
+del rastro los valores de cada escritura de la fila, y preguntaba el `#own`
+de `retrieve` pero no el tenant: una fila de otro tenant contestaba `404` en
+el registro y `200`, con sus valores, en su historial. Y el rastro entero
+(`GET /api/audit` y su copia CSV), concedido por `audit_view` sobre
+`admin:*`, enseñaba los valores de cualquier fila a quien lo leyera, como
+dejaba dicho «Lo que NO cubre».
+
+Se enmienda así:
+
+- **El historial lee con el alcance del registro** (`requestReadScope` con
+  `retrieve`): una fila de otro tenant o, bajo `#own`, ajena recibe el mismo
+  `404` que la fila —también el superusuario mientras la petición esté en un
+  tenant, que deja con `?tenant=` como en todo registro—, y los campos que el
+  operador no puede leer se enmascaran en cada entrada.
+- **`audit_view` dice quién lee el rastro, no de quién son las filas.** Una
+  entrada que guarda los valores de una fila (`create`, `update`, `delete`)
+  los enseña sólo como lo haría el historial de esa fila: con el `retrieve`
+  del modelo, dentro del tenant de la petición y, bajo `#own`, en las filas
+  del operador, con los campos que no puede leer enmascarados. La fila puede
+  no existir ya, así que de quién era se lee de los valores que guardó la
+  entrada, cada lado por separado; unos valores que no lo dicen no se enseñan
+  a quien está confinado. Lo que no se enseña queda vacío (`null`), y la
+  entrada sigue listada: quién hizo qué, a qué registro y cuándo es lo que
+  concede `audit_view`.
+- El superusuario no cambia salvo por el tenant (punto 8).
+
+**Lo que esta enmienda NO cambia**: las entradas no guardan el tenant, así
+que el rastro sigue listando a un operador confinado las de otros tenants
+—sin los valores de sus filas—, con su usuario, su IP y su agente. Las
+entradas que no guardan una fila (acciones de la aplicación, cambios de
+esquema, de RBAC…) siguen como estaban.
+
+**Cambio de comportamiento**: un operador con `audit_view` y sin el
+`retrieve` de un modelo leía en el rastro los valores de sus filas; ahora ve
+esas entradas sin ellos.
 
 ## Preguntas abiertas
 

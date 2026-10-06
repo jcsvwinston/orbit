@@ -119,6 +119,26 @@ func probeFieldPermissions(t *testing.T, e *env) verdict {
 		t.Logf("the lookup labels Note with its title, which the operator may not read: %s", options.text())
 		return partial
 	}
+
+	// Nor does the field come back through what the trail recorded of the
+	// row (OR-73): its history, and the trail itself to an operator who may
+	// read it, carry the edit the operator made with the title masked.
+	e.grant(t, op.username, "admin:*", "audit_view")
+	for _, path := range []string{
+		"/admin/api/models/Note/" + id + "/history",
+		"/admin/api/audit?model=Note&record_id=" + id,
+		"/admin/api/audit?format=csv&model=Note&record_id=" + id,
+	} {
+		trail := e.asOperator(t, op, http.MethodGet, path, nil)
+		if trail.code != http.StatusOK || !strings.Contains(trail.raw(), "reviewed") {
+			t.Logf("%s does not show the operator the edit they made (%d): %s", path, trail.code, trail.text())
+			return partial
+		}
+		if strings.Contains(trail.raw(), original) {
+			t.Logf("%s carries the title the operator may not read: %s", path, trail.text())
+			return partial
+		}
+	}
 	return present
 }
 
@@ -179,6 +199,37 @@ func probeRowPermissions(t *testing.T, e *env) verdict {
 	if put := e.asOperator(t, op, http.MethodPut, "/admin/api/models/Article/"+mine,
 		map[string]any{"title": "row-mine, edited"}); put.code != http.StatusOK {
 		t.Logf("the operator cannot edit their OWN row (%d): %s", put.code, put.text())
+		return partial
+	}
+
+	// What the trail recorded of a row is the row's to show (OR-73): the
+	// history of another operator's row is as absent as the row, and the
+	// trail, to an operator who may read it, lists that row's entry without
+	// its values — while their own row's history and entries carry them.
+	if got := e.asOperator(t, op, http.MethodGet, "/admin/api/models/Article/"+theirs+"/history", nil); got.code != http.StatusNotFound {
+		t.Logf("another operator's row has a history (%d): %s", got.code, got.text())
+		return partial
+	}
+	if got := e.asOperator(t, op, http.MethodGet, "/admin/api/models/Article/"+mine+"/history", nil); got.code != http.StatusOK ||
+		!strings.Contains(got.raw(), "row-mine, edited") {
+		t.Logf("the operator's own row has no history for them (%d): %s", got.code, got.text())
+		return partial
+	}
+	e.grant(t, op.username, "admin:*", "audit_view")
+	trail := e.asOperator(t, op, http.MethodGet, "/admin/api/audit?model=Article&page_size=200", nil)
+	if trail.code != http.StatusOK {
+		t.Logf("the trail answered %d: %s", trail.code, trail.text())
+		return partial
+	}
+	switch body := trail.raw(); {
+	case strings.Contains(body, "row-theirs"):
+		t.Logf("the trail carries the values of another operator's row (%s): %s", theirs, trail.text())
+		return partial
+	case !strings.Contains(body, `"record_id":"`+theirs+`"`):
+		t.Logf("the trail no longer lists the entry about another operator's row (%s): %s", theirs, trail.text())
+		return partial
+	case !strings.Contains(body, "row-mine, edited"):
+		t.Logf("the trail does not carry the values of the operator's own row (%s): %s", mine, trail.text())
 		return partial
 	}
 	return present
