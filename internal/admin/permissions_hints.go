@@ -132,6 +132,7 @@ func (p *Panel) capabilitiesForUser(user *auth.User, mi datasource.ModelInfo) mo
 			caps.Permissions[action] = p.config.Auth.Authorize(user, mi.Name, action)
 		}
 		caps.exportNeedsList(verbs)
+		caps.importNeedsAWrite(verbs)
 		caps.fill()
 		return caps
 	}
@@ -148,6 +149,7 @@ func (p *Panel) capabilitiesForUser(user *auth.User, mi datasource.ModelInfo) mo
 	}
 	sort.Strings(caps.RowScope)
 	caps.exportNeedsList(verbs)
+	caps.importNeedsAWrite(verbs)
 	caps.fill()
 	return caps
 }
@@ -165,6 +167,23 @@ func (c *modelCapabilities) exportNeedsList(verbs []string) {
 	}
 	if !c.Permissions["list"] {
 		c.Permissions["export_data"] = false
+	}
+}
+
+// importNeedsAWrite narrows import_data to a model this operator may write
+// rows of: an import asks import_data of admin:* AND, row by row, the
+// model's create or update (OR-67), so one who holds neither is refused
+// every file of the model. Either verb over their own rows counts: it is a
+// write the import admits. A verb this application declared under the same
+// name keeps its own answer, as fillScreenVerbs promises.
+func (c *modelCapabilities) importNeedsAWrite(verbs []string) {
+	for _, verb := range verbs {
+		if verb == "import_data" {
+			return
+		}
+	}
+	if !c.Permissions["create"] && !c.Permissions["update"] {
+		c.Permissions["import_data"] = false
 	}
 }
 

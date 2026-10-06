@@ -17,7 +17,11 @@ type Step = 'pick' | 'validating' | 'validated' | 'importing'
 // ImportDialog drives the backend's three-step import: upload the file,
 // validate it against the model (a dry run that reports per-row errors and
 // whether the import may proceed), then execute. The success toast only
-// fires after execute returns, with the counts it reports.
+// fires after execute returns, with the counts it reports. A file with a row
+// the operator may not write — a model they may not create rows of, a field
+// kept from them, another owner's or tenant's row — is refused whole by both
+// steps with a 403 naming the row and why (OR-67); its message is the
+// dialog's alert, and nothing was written.
 export default function ImportDialog({ open, onClose, modelName, onImported }: Props) {
   const { toast } = useToast()
   const [file, setFile] = useState<File | null>(null)
@@ -128,9 +132,13 @@ export default function ImportDialog({ open, onClose, modelName, onImported }: P
               </div>
               {validation.errors.length > 0 && (
                 <ul className="max-h-40 overflow-y-auto space-y-1 text-xs font-mono text-destructive-text">
+                  {/* The server numbers a row error from 0 and its refusal
+                      of a file from 1, the way a person counts the records
+                      of one: both are shown from 1, so "row 2" is the same
+                      row in either. */}
                   {validation.errors.slice(0, 50).map((e, i) => (
                     <li key={`${e.row}-${e.field ?? ''}-${i}`}>
-                      row {e.row}{e.field ? ` · ${e.field}` : ''}: {e.message}
+                      row {e.row + 1}{e.field ? ` · ${e.field}` : ''}: {e.message}
                     </li>
                   ))}
                   {validation.errors.length > 50 && (

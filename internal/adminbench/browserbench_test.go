@@ -100,7 +100,7 @@ func browserCases() []browserCase {
 		// The rest of Data Studio's doors, for the same operators and a
 		// third (OR-65): every one of them asks the server for a verb of
 		// its own, and until this control the screen drew them for anybody.
-		{id: "UIX-18", title: "an operator is offered a model, a record's history, an export, an import, the field settings and a saved view's removal only where they hold them, each one asked anyway is refused, an export holds only what the operator may list, and a field the operator may not read is neither offered nor answered as a sort, a filter or a saved view", want: present},
+		{id: "UIX-18", title: "an operator is offered a model, a record's history, an export, an import, the field settings and a saved view's removal only where they hold them, each one asked anyway is refused, an export holds only what the operator may list, a field the operator may not read is neither offered nor answered as a sort, a filter or a saved view, and an import writes only what the operator could write by hand", want: present},
 	}
 }
 
@@ -114,18 +114,21 @@ const (
 )
 
 // The operators UIX-16 to UIX-18 sign in as. None is a superuser and none
-// holds update, bulk_delete, update_schema or import_data. The viewer may
-// look — list a page, open a record — and nothing more. The actor also holds
-// delete (one record at a time, not a batch), two of the application's
-// actions — schedule, which runs over a selection, and duplicate, which runs
-// on one record — and the panel's export (export_data on admin:*); for what
-// that export holds (OR-66, UIX-18) the actor may not read a note's meta and
-// may list their own articles (admin:Article#own), not anybody else's; and
-// for what a query may name (OR-69, UIX-18) the actor may not read a note's
-// views either, a column the grid sorts by and a filter it offers. The
-// lister (UIX-18) may list the page and not open a record, so a record's
-// history is not theirs either. Each is a screen the superuser is never
-// shown.
+// holds update, bulk_delete or update_schema. The viewer may look — list a
+// page, open a record — and nothing more. The actor also holds delete (one
+// record at a time, not a batch), two of the application's actions —
+// schedule, which runs over a selection, and duplicate, which runs on one
+// record — and the panel's export (export_data on admin:*); for what that
+// export holds (OR-66, UIX-18) the actor may not read a note's meta and may
+// list their own articles (admin:Article#own), not anybody else's; and for
+// what a query may name (OR-69, UIX-18) the actor may not read a note's views
+// either, a column the grid sorts by and a filter it offers. For what an
+// import writes (OR-67, UIX-18) the actor holds the panel's import
+// (import_data on admin:*) and create on Note, and still not update or the
+// two fields kept from them. The lister (UIX-18) may list the page and not
+// open a record, so a record's history is not theirs either; they hold the
+// panel's import too, and neither create nor update on Note, so no import of
+// Note is theirs. Each is a screen the superuser is never shown.
 const (
 	noteViewer = "note-viewer"
 	noteActor  = "note-actor"
@@ -160,6 +163,11 @@ func partialOperators(t *testing.T, e *env) {
 	// searching its title, and a search that reaches a field the operator
 	// may not read is refused.
 	e.grant(t, noteActor, "admin:Note.views", "deny")
+	// What an import writes (OR-67): the actor imports and may create a note
+	// by hand, not update one; the lister imports and may do neither.
+	e.grant(t, noteActor, "admin:*", "import_data")
+	e.grant(t, noteActor, "admin:Note", "create")
+	e.grant(t, noteLister, "admin:*", "import_data")
 }
 
 // themedBranding is the second application UIX-10 opens: one that says its

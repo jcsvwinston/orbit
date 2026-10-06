@@ -8,7 +8,6 @@ package admin
 // discarded without a word and the record created afresh under a new key.
 
 import (
-	"context"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -298,14 +297,13 @@ func TestLoaddata_PKAsNumberOrString(t *testing.T) {
 	defer srv.Close()
 
 	created := createAdminUser(t, srv.URL, map[string]interface{}{"email": "fx@example.com", "name": "Before", "active": true})
-	ctx := context.Background()
 
 	for _, pk := range []any{float64(created.ID), fmt.Sprint(created.ID)} {
 		store.objects["_tmp/fixture.json"] = fixtureJSON(t, map[string]any{
 			"model": "AdminUser", "pk": pk,
 			"fields": map[string]any{"email": "fx@example.com", "name": fmt.Sprintf("After %v", pk), "active": true},
 		})
-		report, err := panel.Loaddata(ctx, LoaddataConfig{StorageKey: "_tmp/fixture.json", OnConflict: "update"})
+		report, err := panel.Loaddata(operatorRequest(), LoaddataConfig{StorageKey: "_tmp/fixture.json", OnConflict: "update"})
 		if err != nil {
 			t.Fatalf("pk=%#v: %v", pk, err)
 		}
@@ -326,7 +324,6 @@ func TestLoaddata_InvalidPKIsAFailedRow(t *testing.T) {
 	panel.store = store
 	srv := httptest.NewServer(panel.Handler())
 	defer srv.Close()
-	ctx := context.Background()
 
 	countUsers := func() int {
 		resp, _ := doJSON(t, http.MethodGet, srv.URL+"/api/models/AdminUser", nil)
@@ -339,7 +336,7 @@ func TestLoaddata_InvalidPKIsAFailedRow(t *testing.T) {
 			"model": "AdminUser", "pk": pk,
 			"fields": map[string]any{"email": "bad@example.com", "name": "Bad", "active": true},
 		})
-		report, err := panel.Loaddata(ctx, LoaddataConfig{StorageKey: "_tmp/fixture.json", OnConflict: "skip"})
+		report, err := panel.Loaddata(operatorRequest(), LoaddataConfig{StorageKey: "_tmp/fixture.json", OnConflict: "skip"})
 		if err != nil {
 			t.Fatalf("pk=%#v: %v", pk, err)
 		}
@@ -362,7 +359,6 @@ func TestDumpdata_Loaddata_RoundTrip(t *testing.T) {
 	panel.store = store
 	srv := httptest.NewServer(panel.Handler())
 	defer srv.Close()
-	ctx := context.Background()
 
 	createAdminUser(t, srv.URL, map[string]interface{}{"email": "rt1@example.com", "name": "RT1", "active": true})
 	createAdminUser(t, srv.URL, map[string]interface{}{"email": "rt2@example.com", "name": "RT2", "active": false})
@@ -384,7 +380,7 @@ func TestDumpdata_Loaddata_RoundTrip(t *testing.T) {
 
 	// Loading the dump back finds every record by its pk: nothing is
 	// created and, with on_conflict=skip, nothing changes.
-	report, err := panel.Loaddata(ctx, LoaddataConfig{StorageKey: key, OnConflict: "skip"})
+	report, err := panel.Loaddata(operatorRequest(), LoaddataConfig{StorageKey: key, OnConflict: "skip"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -26,7 +26,10 @@ export interface ScreenCapabilities {
   // canExport and canImport are the panel's data transfer. The server asks
   // them of the whole panel (export_data and import_data on admin:*), not of
   // the model: they are grants of their own, and holding create does not
-  // make an import any less refused.
+  // make an import any less refused. Nor does import_data make a row any
+  // less refused: each row of a file asks the model's create, or its update
+  // for a row that exists (OR-67), and the dialog's import creates every
+  // row it reads — so it is offered to an operator who holds both.
   canExport: boolean
   canImport: boolean
   // canConfigureFields is the field settings dialog (update_schema). It is
@@ -58,7 +61,7 @@ export function screenCapabilities(schema: ModelSchema): ScreenCapabilities {
     // Before the verb was read the export was always offered, and the
     // import was offered with create: those are the fallbacks.
     canExport: holds(schema, 'export_data'),
-    canImport: !readOnly && holds(schema, 'import_data', canCreate),
+    canImport: canCreate && holds(schema, 'import_data', canCreate),
     canConfigureFields: holds(schema, 'update_schema'),
     rowScoped: (schema.row_scope?.length ?? 0) > 0,
   }

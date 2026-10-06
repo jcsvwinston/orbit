@@ -626,7 +626,9 @@ func TestCapabilityHints_AnswerTheScreensOtherDoors(t *testing.T) {
 	}
 
 	// A grant of update_schema and import_data turns both on, and the
-	// field settings it now offers are saved.
+	// field settings it now offers are saved. The import also needs a write
+	// of the model, since each row asks for one (OR-67): import_data alone
+	// is not held on a model the operator may neither create nor update.
 	for _, pol := range [][3]string{
 		{"operator", "admin:OwnedNote", "update_schema"},
 		{"operator", "admin:*", "import_data"},
@@ -637,6 +639,11 @@ func TestCapabilityHints_AnswerTheScreensOtherDoors(t *testing.T) {
 	}
 	perms = held()
 	want(perms, "update_schema", true)
+	want(perms, "import_data", false)
+	if err := panel.rbac.AddPolicy("operator", "admin:OwnedNote", "create"); err != nil {
+		t.Fatal(err)
+	}
+	perms = held()
 	want(perms, "import_data", true)
 	if resp, status := doJSON(t, http.MethodPut, srv.URL+"/api/models/OwnedNote/schema/fields", fields); status != http.StatusOK {
 		t.Errorf("field settings with update_schema: status %d body=%s", status, mustJSON(resp))
