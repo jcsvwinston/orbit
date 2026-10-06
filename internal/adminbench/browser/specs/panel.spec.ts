@@ -55,6 +55,113 @@ async function signInAt(page: Page, base: string): Promise<void> {
   await page.waitForURL(`${base}/admin/`, { timeout: 15_000 })
 }
 
+/** The operators UIX-16 and UIX-17 sign in as, created by the driver: the
+ * viewer may list and open a note and nothing more; the actor also holds
+ * delete (not bulk_delete), schedule and duplicate. Neither holds update. */
+function partialOperators(control: string): { viewer: string; actor: string; password: string } {
+  const viewer = process.env.ORBIT_BENCH_VIEWER_USER ?? ''
+  const actor = process.env.ORBIT_BENCH_ACTOR_USER ?? ''
+  const password = process.env.ORBIT_BENCH_OPERATOR_PASSWORD ?? ''
+  if (!viewer || !actor || !password) {
+    throw new Error(`${control} precondition: the driver passed no operators (ORBIT_BENCH_VIEWER_USER, ORBIT_BENCH_ACTOR_USER, ORBIT_BENCH_OPERATOR_PASSWORD)`)
+  }
+  return { viewer, actor, password }
+}
+
+/** noteAsAdmin creates one note as the bootstrap admin — the operators
+ * under test may not — and signs out again. */
+async function noteAsAdmin(page: Page, fields: { title: string; body: string }, control: string): Promise<string> {
+  await signIn(page)
+  const created = await page.evaluate(async (note) => {
+    const r = await fetch('/admin/api/models/Note', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ ...note, status: 'draft' }),
+    })
+    const out = await r.json().catch(() => ({}))
+    return { status: r.status, id: String(out?.data?.id ?? out?.id ?? '') }
+  }, fields)
+  expect(created.status < 300 && created.id !== '', `${control} precondition: creating a note answered ${created.status}`).toBe(true)
+  await signOut(page)
+  return created.id
+}
+
+/** signOut leaves the panel before its session goes: a screen still open
+ * when the cookie is cleared answers its next 401 by navigating to the
+ * login page itself, and that navigation aborts the one the next sign-in
+ * starts. */
+async function signOut(page: Page): Promise<void> {
+  await page.goto('about:blank')
+  await page.context().clearCookies()
+}
+
+/** heldOnNote is what the schema a screen loads says this operator holds on
+ * Note, and the actions it offers them: the hints the grid draws from. */
+async function heldOnNote(page: Page): Promise<{ permissions: Record<string, boolean>; actions: string[] }> {
+  return page.evaluate(async () => {
+    const r = await fetch('/admin/api/models/Note/schema', { credentials: 'same-origin' })
+    const schema = r.ok ? await r.json() : {}
+    return {
+      permissions: schema.permissions ?? {},
+      actions: (schema.actions ?? []).map((a: { name: string }) => a.name).sort(),
+    }
+  })
+}
+
+/** forced makes, from the page, a call the screen did not offer: the
+ * operator's own session, the way a request typed into the console or
+ * replayed from another tab arrives. */
+async function forced(page: Page, method: string, path: string, body?: unknown): Promise<number> {
+  return page.evaluate(async ({ method, path, body }) => {
+    const r = await fetch(path, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+    return r.status
+  }, { method, path, body })
+}
+
+/** openNote opens Data Studio on Notes narrowed to one note, as the operator
+ * signed in. The row's History button is the one every operator who may
+ * open a record is offered: seeing it is what says the actions column was
+ * drawn, so a button missing beside it is missing, not unrendered. */
+async function openNote(page: Page, title: string, id: string, who: string, control: string): Promise<void> {
+  await page.goto('/admin/data-studio')
+  await page.waitForLoadState('networkidle')
+  await page.getByRole('button', { name: /^Notes/ }).first().click({ timeout: 15_000 })
+  await page.getByRole('textbox', { name: 'Search records' }).fill(title)
+  await page.keyboard.press('Enter')
+  await expect(page.locator(GRID_ROWS), `${control} precondition: the search did not narrow the ${who}'s grid to the note`)
+    .toHaveCount(1, { timeout: 10_000 })
+  await expect(page.getByRole('button', { name: `History of record ${id}` }), `${control} precondition: the ${who}'s row draws no actions column`)
+    .toBeVisible({ timeout: 10_000 })
+  await page.waitForFunction(() => document.getAnimations().length === 0, undefined, { timeout: 10_000 })
+}
+
+/** The rules an operator's own view is held to: the ones UIX-02 and UIX-03
+ * hold the panel's screens to, on the screen this operator is shown. */
+const OPERATOR_VIEW_RULES = [
+  'color-contrast',
+  'button-name',
+  'link-name',
+  'image-alt',
+  'label',
+  'aria-allowed-attr',
+  'aria-required-attr',
+  'aria-required-children',
+  'aria-valid-attr-value',
+  'aria-hidden-focus',
+]
+
+/** axeIn runs the accessibility engine over one part of the page. */
+async function axeIn(page: Page, selector: string, rules: string[]) {
+  const results = await new AxeBuilder({ page }).include(selector).withRules(rules).analyze()
+  return results.violations.map((v) => ({ id: v.id, nodes: v.nodes.slice(0, 3).map((n) => `${n.target.join(' ')} — ${n.any[0]?.message ?? ''}`) }))
+}
+
 /** axeViolations runs the accessibility engine over the current page and
  * returns the violations of the rules this control is about. */
 async function axeViolations(page: Page, rules: string[]) {
@@ -953,5 +1060,152 @@ test.describe('UIX', () => {
     expect(notBrotli, `UIX-15: the browser accepts Brotli and was sent another encoding: ${JSON.stringify(notBrotli, null, 2)}`).toEqual([])
     const streamed = built.filter((f) => f.encoding !== '' && !(f.length > 0))
     expect(streamed, `UIX-15: encoded answers without a length, compressed as they were sent: ${JSON.stringify(streamed, null, 2)}`).toEqual([])
+  })
+
+  /*
+   * UIX-16 and UIX-17 are the screens of an operator who is not a superuser
+   * (OR-64). Every other control but UIX-11 signs in as the bootstrap admin,
+   * and every permission question is answered yes for a superuser before
+   * any policy is read — so the grid drawn for an operator without delete
+   * (A11 O3) and the record's menu for one without update (A11 O4) had been
+   * seen only by whoever wrote them. The driver creates two operators, the
+   * viewer and the actor (partialOperators), and each control reads what
+   * each is shown, what they are NOT shown, that the screen they are shown
+   * meets the rules the panel's own screens are held to, and that the
+   * server refuses what the screen leaves out when it is asked anyway.
+   *
+   * Each "not shown" is read beside something the same operator IS shown
+   * in the same place, so a locator that matched nothing anywhere cannot
+   * pass for an absence.
+   */
+  test('UIX-16 an operator is offered a delete only where they hold one: no selection or Delete without it, and no batch Delete for one who may delete a record but not a batch', async ({ page }) => {
+    const { viewer, actor, password } = partialOperators('UIX-16')
+    const title = `uix-16 note ${Date.now()}`
+    const id = await noteAsAdmin(page, { title, body: 'uix-16 body' }, 'UIX-16')
+    const grid = page.locator(GRID)
+    const rowBoxes = grid.getByRole('checkbox')
+    const batchDelete = page.getByRole('button', { name: /^Delete \d+$/ })
+
+    // 1. The viewer may not delete and holds no action over a selection:
+    // the grid offers no selection, the row no Delete, and there is no
+    // batch to delete.
+    await signInAs(page, viewer, password)
+    const viewerHolds = await heldOnNote(page)
+    expect(
+      viewerHolds.permissions.list === true && viewerHolds.permissions.delete === false && viewerHolds.permissions.bulk_delete === false && viewerHolds.actions.length === 0,
+      `UIX-16 precondition: the viewer's schema does not say list and nothing else: ${JSON.stringify(viewerHolds)}`,
+    ).toBe(true)
+    await openNote(page, title, id, 'viewer', 'UIX-16')
+    await expect(rowBoxes, 'UIX-16: the grid offers a selection to an operator who may not delete and holds no action over one').toHaveCount(0)
+    await expect(page.getByRole('button', { name: `Delete record ${id}` }), 'UIX-16: the row offers a Delete to an operator who may not delete').toHaveCount(0)
+    await expect(batchDelete, 'UIX-16: the toolbar offers a batch Delete to an operator who may not delete').toHaveCount(0)
+    const viewerScreen = await axeIn(page, 'main', OPERATOR_VIEW_RULES)
+    expect(viewerScreen, `UIX-16: the viewer's Data Studio: ${JSON.stringify(viewerScreen, null, 2)}`).toEqual([])
+    // Asked anyway, the server says no to both, and the note is still there.
+    expect(await forced(page, 'DELETE', `/admin/api/models/Note/${id}`), 'UIX-16: the server deleted a record for an operator who may not delete').toBe(403)
+    expect(await forced(page, 'POST', '/admin/api/models/Note/bulk', { action: 'delete', ids: [id] }), 'UIX-16: the server ran a batch delete for an operator who may not delete').toBe(403)
+
+    // 2. The actor may delete one record and holds schedule, an action over
+    // a selection — and not bulk_delete, which is what the server asks of a
+    // batch delete. The grid keeps its selection for the action (O3), the
+    // row offers its Delete, and a selection offers Schedule and no Delete.
+    await signOut(page)
+    await signInAs(page, actor, password)
+    const actorHolds = await heldOnNote(page)
+    expect(
+      actorHolds.permissions.delete === true && actorHolds.permissions.bulk_delete === false && actorHolds.actions.includes('schedule'),
+      `UIX-16 precondition: the actor's schema does not say delete, schedule and no bulk_delete: ${JSON.stringify(actorHolds)}`,
+    ).toBe(true)
+    await openNote(page, title, id, 'actor', 'UIX-16')
+    await expect(page.getByRole('button', { name: `Delete record ${id}` }), 'UIX-16: the row offers no Delete to an operator who may delete it').toBeVisible()
+    const rowBox = grid.getByRole('checkbox', { name: /toggle row selection/i })
+    await expect(rowBox, 'UIX-16: the grid offers no selection to an operator who holds an action over one').toHaveCount(1, { timeout: 5_000 })
+    await rowBox.check()
+    await expect(page.getByRole('button', { name: /^Schedule 1$/ }), 'UIX-16: a selection offers the actor no Schedule').toBeVisible({ timeout: 5_000 })
+    await expect(batchDelete, 'UIX-16: a selection offers a batch Delete to an operator the server refuses one (no bulk_delete)').toHaveCount(0)
+    const actorScreen = await axeIn(page, 'main', OPERATOR_VIEW_RULES)
+    expect(actorScreen, `UIX-16: the actor's Data Studio, with a selection: ${JSON.stringify(actorScreen, null, 2)}`).toEqual([])
+    expect(await forced(page, 'POST', '/admin/api/models/Note/bulk', { action: 'delete', ids: [id] }), 'UIX-16: the server ran a batch delete for an operator without bulk_delete').toBe(403)
+    expect(await forced(page, 'GET', `/admin/api/models/Note/${id}`), 'UIX-16: the note is gone after the refused deletes').toBe(200)
+  })
+
+  test('UIX-17 an operator who may not update is offered no edit: the row opens the record read-only, and its menu and the record view hold only the actions granted', async ({ page }) => {
+    const { viewer, actor, password } = partialOperators('UIX-17')
+    const stamp = Date.now()
+    const title = `uix-17 note ${stamp}`
+    // The body is not a column of the grid: the record view is where an
+    // operator reads it.
+    const body = `uix-17 body ${stamp}`
+    const id = await noteAsAdmin(page, { title, body }, 'UIX-17')
+    const view = page.getByRole('dialog').first()
+    const offered = view.getByRole('group', { name: 'Actions on this record' })
+
+    // readOnlyView opens the record from its row and reads it as a view:
+    // every value, no input, no save.
+    const readOnlyView = async (who: string) => {
+      await expect(page.getByRole('button', { name: `Edit record ${id}` }), `UIX-17: the row offers the ${who} an Edit, and the ${who} may not update`).toHaveCount(0)
+      const open = page.getByRole('button', { name: `View record ${id}` })
+      await expect(open, `UIX-17: the row offers the ${who} no way to open the record, which the ${who} may read (retrieve) and not update`).toBeVisible({ timeout: 5_000 })
+      await open.click()
+      await expect(view, `UIX-17: the ${who}'s record view did not open`).toBeVisible({ timeout: 10_000 })
+      await expect(view, `UIX-17: the ${who}'s record view does not say it is read-only`).toContainText('You may view this record, not change it.')
+      await expect(view, `UIX-17: the ${who}'s record view does not show the record's body`).toContainText(body, { timeout: 10_000 })
+      await expect(view.locator('input, textarea, select'), `UIX-17: the ${who}'s record view draws an input`).toHaveCount(0)
+      await expect(view.getByRole('button', { name: /^(Update|Create|Save)/ }), `UIX-17: the ${who}'s record view offers a save`).toHaveCount(0)
+    }
+
+    // 1. The actor holds duplicate (on a record) and schedule (on a
+    // selection and on a record), not download_text and not update.
+    await signInAs(page, actor, password)
+    const actorHolds = await heldOnNote(page)
+    expect(
+      actorHolds.permissions.update === false && actorHolds.permissions.retrieve === true && JSON.stringify(actorHolds.actions) === JSON.stringify(['duplicate', 'schedule']),
+      `UIX-17 precondition: the actor's schema does not say retrieve, duplicate and schedule, and no update: ${JSON.stringify(actorHolds)}`,
+    ).toBe(true)
+    await openNote(page, title, id, 'actor', 'UIX-17')
+    await readOnlyView('actor')
+    const inView = (await offered.getByRole('button').allTextContents()).map((t) => t.trim()).sort()
+    expect(inView, 'UIX-17: the actor\'s record view does not offer exactly the record actions granted').toEqual(['Duplicate', 'Schedule'])
+    const viewViolations = await axeIn(page, '[role="dialog"]', OPERATOR_VIEW_RULES)
+    expect(viewViolations, `UIX-17: the actor's read-only record view: ${JSON.stringify(viewViolations, null, 2)}`).toEqual([])
+    await page.keyboard.press('Escape')
+    await expect(view).toBeHidden({ timeout: 5_000 })
+
+    // The row's menu — the way to a record action without opening the
+    // record (O4) — holds the same two, and not the one never granted.
+    const rowMenu = page.getByRole('button', { name: `Actions for record ${id}` })
+    await expect(rowMenu, 'UIX-17: the row offers the actor no menu of the record actions granted').toBeVisible()
+    await rowMenu.click()
+    const menu = page.getByRole('menu')
+    await expect(menu, 'UIX-17: the row\'s menu did not open').toBeVisible({ timeout: 5_000 })
+    const inMenu = (await menu.getByRole('menuitem').allTextContents()).map((t) => t.trim()).sort()
+    expect(inMenu, 'UIX-17: the row\'s menu does not hold exactly the record actions granted').toEqual(['Duplicate', 'Schedule'])
+    const menuViolations = await axeIn(page, '[role="menu"]', ['color-contrast', 'aria-required-children', 'aria-valid-attr-value'])
+    expect(menuViolations, `UIX-17: the actor's row menu: ${JSON.stringify(menuViolations, null, 2)}`).toEqual([])
+    await page.keyboard.press('Escape')
+    await expect(menu).toBeHidden({ timeout: 5_000 })
+
+    // Asked anyway: the write and the action never granted are refused, and
+    // the note still says what it said.
+    expect(await forced(page, 'PUT', `/admin/api/models/Note/${id}`, { title: 'uix-17 forced' }), 'UIX-17: the server wrote a record for an operator who may not update').toBe(403)
+    expect(await forced(page, 'POST', `/admin/api/models/Note/actions/download_text/${id}`, {}), 'UIX-17: the server ran a record action the operator was never granted').toBe(403)
+
+    // 2. The viewer holds no action: the record still opens read-only, and
+    // neither the row nor the view offers one.
+    await signOut(page)
+    await signInAs(page, viewer, password)
+    await openNote(page, title, id, 'viewer', 'UIX-17')
+    await expect(page.getByRole('button', { name: `Actions for record ${id}` }), 'UIX-17: the row offers a menu of actions to an operator granted none').toHaveCount(0)
+    await readOnlyView('viewer')
+    await expect(offered, 'UIX-17: the viewer\'s record view offers actions, and the viewer was granted none').toHaveCount(0)
+    await page.keyboard.press('Escape')
+    await expect(view).toBeHidden({ timeout: 5_000 })
+    expect(await forced(page, 'PUT', `/admin/api/models/Note/${id}`, { title: 'uix-17 forced' }), 'UIX-17: the server wrote a record for the viewer').toBe(403)
+    const kept = await page.evaluate(async (path) => {
+      const r = await fetch(path, { credentials: 'same-origin' })
+      const out = await r.json().catch(() => ({}))
+      return String(out?.data?.title ?? out?.title ?? '')
+    }, `/admin/api/models/Note/${id}`)
+    expect(kept, 'UIX-17: the note no longer says what it said after the refused writes').toBe(title)
   })
 })

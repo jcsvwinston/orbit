@@ -28,8 +28,8 @@ interface Props {
   // the action's own form or confirmation is the one dialog on screen.
   onAction?: (action: ModelActionSpec) => void
   // readOnly draws an existing record for an operator who may not update
-  // it — one who reached it through a link or an action's redirect: every
-  // field as a value, and no save to be refused.
+  // it — one who opened it from its row's View, a link or an action's
+  // redirect: every field as a value, and no save to be refused.
   readOnly?: boolean
 }
 

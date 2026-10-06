@@ -126,17 +126,19 @@ export default function ModelSidebar({ models, runtime, selectedModel, selectedD
             <Table2 className={`h-3.5 w-3.5 flex-shrink-0 ${isActive ? 'opacity-80' : 'opacity-40'}`} />
             <span className="truncate font-medium">{m.plural || m.name}</span>
           </div>
+          {/* Outlined on the open model too: a tint over the accent
+              takes the count under 4.5:1 on a bright accent. */}
           {m.count_known && (
-            <Badge 
-              variant={isActive ? 'secondary' : 'outline'} 
-              className={`text-[11px] px-1 h-4 flex-shrink-0 font-normal ${isActive ? 'bg-primary-foreground/20 border-none text-primary-foreground' : 'text-muted-foreground'}`}
+            <Badge
+              variant="outline"
+              className={`text-[11px] px-1 h-4 flex-shrink-0 font-normal ${isActive ? 'border-primary-foreground/50 text-primary-foreground' : 'text-muted-foreground'}`}
             >
               {m.count === -1 ? '?' : m.count.toLocaleString()}
-              {m.is_estimated && <span className="ml-0.5 opacity-60">~</span>}
+              {m.is_estimated && <span className="ml-0.5">~</span>}
             </Badge>
           )}
         </div>
-        <div className={`block text-[11px] ml-5.5 mt-0.5 ${isActive ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
+        <div className={`block text-[11px] ml-5.5 mt-0.5 ${isActive ? 'text-primary-foreground' : 'text-muted-foreground'}`}>
           {m.table}
         </div>
       </button>
@@ -160,7 +162,7 @@ export default function ModelSidebar({ models, runtime, selectedModel, selectedD
           {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
           <Box className="h-3 w-3" />
           <span className="truncate">{label}</span>
-          {subtitle && <span className="text-[11px] opacity-60 truncate">{subtitle}</span>}
+          {subtitle && <span className="text-[11px] truncate">{subtitle}</span>}
           <Badge variant="outline" className="text-[11px] ml-auto flex-shrink-0">
             {items.length}
           </Badge>

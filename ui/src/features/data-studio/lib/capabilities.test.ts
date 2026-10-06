@@ -23,7 +23,28 @@ function field(partial: Partial<SchemaField>): SchemaField {
 describe('screenCapabilities', () => {
   it('treats a schema with no hints as fully allowed, the way it behaved before hints existed', () => {
     const caps = screenCapabilities(schema({}))
-    expect(caps).toEqual({ canCreate: true, canUpdate: true, canDelete: true, rowScoped: false })
+    expect(caps).toEqual({ canCreate: true, canUpdate: true, canDelete: true, canBulkDelete: true, canRetrieve: true, rowScoped: false })
+  })
+
+  it('offers a batch delete by bulk_delete, the verb the server asks of one, not by delete', () => {
+    const oneAtATime = screenCapabilities(schema({ can_delete: true, permissions: { delete: true, bulk_delete: false } }))
+    expect(oneAtATime.canDelete).toBe(true)
+    expect(oneAtATime.canBulkDelete).toBe(false)
+    const batchOnly = screenCapabilities(schema({ can_delete: false, permissions: { delete: false, bulk_delete: true } }))
+    expect(batchOnly.canDelete).toBe(false)
+    expect(batchOnly.canBulkDelete).toBe(true)
+  })
+
+  it('falls back to delete for the batch when the backend sends no permission map', () => {
+    expect(screenCapabilities(schema({ can_delete: false })).canBulkDelete).toBe(false)
+    expect(screenCapabilities(schema({ can_delete: true })).canBulkDelete).toBe(true)
+  })
+
+  it('reads retrieve apart from update, so a record can open read-only', () => {
+    const viewer = screenCapabilities(schema({ can_update: false, permissions: { retrieve: true, update: false } }))
+    expect(viewer.canUpdate).toBe(false)
+    expect(viewer.canRetrieve).toBe(true)
+    expect(screenCapabilities(schema({ permissions: { retrieve: false } })).canRetrieve).toBe(false)
   })
 
   it('honours the hints the backend sends', () => {
@@ -38,6 +59,7 @@ describe('screenCapabilities', () => {
     expect(caps.canCreate).toBe(false)
     expect(caps.canUpdate).toBe(false)
     expect(caps.canDelete).toBe(false)
+    expect(caps.canBulkDelete).toBe(false)
   })
 
   it('reports a row-scoped grant so the screen can say the list is not the whole table', () => {

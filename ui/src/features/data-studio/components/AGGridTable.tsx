@@ -31,7 +31,7 @@ import { redirectDestination, saveFile } from '@/lib/actionAnswer'
 import { lazyRoutes } from '@/routes'
 import {
   Search, Plus, Pencil, Trash2, Loader2, History, Bookmark,
-  Download, Upload, X, Filter, ChevronDown, Play,
+  Download, Upload, X, Filter, ChevronDown, Play, Eye,
 } from 'lucide-react'
 
 interface Props {
@@ -60,7 +60,7 @@ export default function AGGridTable({ modelName, schema, dbAlias, focusRecord, o
   const { toast } = useToast()
   const navigate = useNavigate()
   // What this operator may do with this model (see lib/capabilities).
-  const { canCreate, canUpdate, canDelete } = screenCapabilities(schema)
+  const { canCreate, canUpdate, canDelete, canBulkDelete, canRetrieve } = screenCapabilities(schema)
   const { theme } = useTheme()
   const [gridApi, setGridApi] = useState<GridApi | null>(null)
   const [selectedCount, setSelectedCount] = useState(0)
@@ -129,7 +129,9 @@ export default function AGGridTable({ modelName, schema, dbAlias, focusRecord, o
     return () => clearTimeout(timeout)
   }, [filterInput])
 
-  const handleEdit = useCallback((record: AppRecord) => {
+  // openRecord opens a row's record view: its edit form for an operator
+  // who may update it, the record read-only for one who may only read it.
+  const openRecord = useCallback((record: AppRecord) => {
     setEditingRecord(record)
     setFormOpen(true)
   }, [])
@@ -209,12 +211,26 @@ export default function AGGridTable({ modelName, schema, dbAlias, focusRecord, o
             {canUpdate && (
               <button
                 type="button"
-                onClick={() => handleEdit(row)}
+                onClick={() => openRecord(row)}
                 className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
                 title="Edit"
                 aria-label={`Edit record ${id ?? ''}`}
               >
                 <Pencil className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {/* An operator who may read the record and not change it
+                opens the same view, read-only: without this the record's
+                fields the list leaves out were reachable only by a link. */}
+            {!canUpdate && canRetrieve && (
+              <button
+                type="button"
+                onClick={() => openRecord(row)}
+                className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                title="View"
+                aria-label={`View record ${id ?? ''}`}
+              >
+                <Eye className="h-3.5 w-3.5" />
               </button>
             )}
             {canDelete && (
@@ -241,12 +257,13 @@ export default function AGGridTable({ modelName, schema, dbAlias, focusRecord, o
         )
       },
     } as ColDef]),
-  ], [listFields, canUpdate, canDelete, pkColumn, handleEdit, recordActions, modelName])
+  ], [listFields, canUpdate, canRetrieve, canDelete, pkColumn, openRecord, recordActions, modelName])
 
   // Rows can be selected when something can be done with a selection: a
-  // delete, or an action that runs over one. An operator who may publish
-  // but not delete still has to be able to pick what to publish.
-  const selectable = canDelete || selectionActions.some((action) => action.requires_selection)
+  // batch delete, or an action that runs over one. An operator who may
+  // publish but not delete still has to be able to pick what to publish;
+  // one who may delete a record but not a batch has nothing to select for.
+  const selectable = canBulkDelete || selectionActions.some((action) => action.requires_selection)
   const rowSelection = useMemo<RowSelectionOptions | undefined>(
     () => (selectable ? { mode: 'multiRow', checkboxes: true, headerCheckbox: true, enableClickSelection: false } : undefined),
     [selectable],
@@ -605,7 +622,7 @@ export default function AGGridTable({ modelName, schema, dbAlias, focusRecord, o
 
         <div className="flex-1" />
 
-        {selectedCount > 0 && canDelete && (
+        {selectedCount > 0 && canBulkDelete && (
           <Button variant="destructive" size="sm" onClick={() => setConfirmBulk(true)} className="gap-1.5">
             <Trash2 className="h-3.5 w-3.5" />
             Delete {selectedCount}
@@ -839,7 +856,7 @@ export default function AGGridTable({ modelName, schema, dbAlias, focusRecord, o
                   <span className="font-medium text-foreground">
                     {total === -1 ? 'many' : total.toLocaleString()}
                   </span>
-                  {isEstimated && <span className="ml-1 opacity-70">(estimated)</span>}
+                  {isEstimated && <span className="ml-1">(estimated)</span>}
                 </>
               )}
             </span>
