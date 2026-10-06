@@ -166,7 +166,11 @@ cd internal/adminbench/browser && npm ci && npx playwright install chromium
 go test ./internal/adminbench/ -run TestBrowserBench -v
 ```
 
-**15 of 15 controls present**, plus the one that measures the instrument.
+**17 of 17 controls present**, plus the one that measures the instrument.
+`UIX-16` and `UIX-17` are the screens of two operators who are not
+superusers, added for OR-64; they found three defects of the panel's own, and
+arrived present with their fixes
+([below](#the-screens-of-an-operator-who-is-not-a-superuser-or-64)).
 `UIX-13` to `UIX-15` arrived present with the arc A12's session O1, each the
 browser half of a defect of the panel's own
 ([below](#the-panel-travels-compressed-after-a12s-session-o1)). The six
@@ -203,6 +207,8 @@ the two stacks met, so the third session's kept its number.)
 | **UIX-13** | a form with its errors showing is legible, in the light theme and in the dark one |
 | **UIX-14** | Data Studio's grid draws its icons, and the panel's own policy refuses nothing it loads |
 | **UIX-15** | the panel's own scripts and stylesheets reach the browser compressed once, by the build |
+| **UIX-16** | an operator is offered a delete only where they hold one: no selection or Delete without it, and no batch Delete for one who may delete a record but not a batch |
+| **UIX-17** | an operator who may not update is offered no edit: the row opens the record read-only, and its menu and the record view hold only the actions granted |
 
 Three things worth keeping about how it is built:
 
@@ -1428,3 +1434,84 @@ Every change was verified by breaking it:
 | the record form's field error in `text-destructive` (dist rebuilt) | `UIX-13` → absent (3.76:1 in the light theme); the sources test |
 | one muted step of the fleet's light palette back to its old value (dist rebuilt) | `UIF-02` → absent; `ui/tools/fleet-palette.test.ts` |
 | the parent commit, with this session's specs | `UIX-13`, `UIX-14` (the sort icon in a font never loaded), `UIX-15` (gzip, streamed); `UIF-02`, `UIF-06`, `UIF-07` |
+
+## The screens of an operator who is not a superuser (OR-64)
+
+Until this change every browser control but `UIX-11` signed in as the
+bootstrap admin, and every permission question is answered yes for a
+superuser before any policy is read. So the grid drawn for an operator
+without `delete` (A11 O3: a selection only when something can be done with
+one) and the record's menu for one without `update` (A11 O4: the way to a
+record action for an operator who may not edit the record) had been seen
+only by whoever wrote them. The browser half goes from 15 of 15 to 17 of 17;
+the HTTP bench is unchanged at 72 of 72.
+
+The driver creates two operators and grants them through the panel's own
+management API. Neither is a superuser, and neither holds `update` or
+`bulk_delete` on `Note`:
+
+| operator | holds on `Note` (and `list_models` on `admin:*`) |
+|---|---|
+| the viewer | `get_schema`, `list`, `retrieve` |
+| the actor | the same, and `delete`, `schedule` (an action over a selection and on a record) and `duplicate` (an action on a record) |
+
+Each control reads what each operator is shown and what they are not, runs
+the accessibility rules the panel's own screens are held to over the screen
+that operator is shown, and then makes from the page the calls the screen
+left out — the operator's own session, as a request typed into the console
+arrives — and reads the server's `403`:
+
+- **`UIX-16`** — the viewer's grid has no selection, its row no Delete and
+  its toolbar no batch Delete; the actor's grid keeps a selection for
+  Schedule, its row offers the one-record Delete the actor holds, and a
+  selection offers Schedule and no Delete. The forced delete and batch
+  delete are refused, and the note is still there.
+- **`UIX-17`** — neither row offers Edit; both offer View, and the record
+  view it opens says it is read-only, shows the body (which is not a column
+  of the grid), and has no input and no save. The actor's view and row menu
+  hold exactly Duplicate and Schedule — not Download as text, which the actor
+  was never granted — and the viewer is offered no action anywhere. The
+  forced write and the forced record action are refused, and the note still
+  says what it said.
+
+Every "not shown" is read beside something the same operator is shown in
+the same place — the row's History button, the actor's selection, the
+actor's Delete — so a locator that matched nothing anywhere cannot pass for
+an absence.
+
+### What the work found that was not on the plan
+
+Three defects of the panel, each caught by the first run of these two
+controls and fixed in the same change:
+
+- **FIXED — a batch Delete the server refuses.** The grid offered a
+  selection, and the selection a Delete, to any operator who held `delete`.
+  The server asks a batch delete for `bulk_delete`, a verb of its own, so an
+  operator who may delete one record at a time was offered a button that
+  answered `403` — and one who held `bulk_delete` alone was offered no
+  selection at all. The grid reads `bulk_delete` from the schema's
+  `permissions` now (falling back to `can_delete` when a backend sends no
+  map), and `UIX-16` reads the actor's selection with no Delete on it.
+- **FIXED — a record nobody without `update` could open.** The read-only
+  record view existed (A11 O4), and only a link or an action's redirect
+  reached it: the row offered Edit to an operator who may update and nothing
+  to one who may only read, so the fields the list leaves out were out of
+  reach for every operator granted `retrieve` and not `update` — and for
+  every operator of a read-only model. The row offers View to them now, and
+  it opens the same read-only view.
+- **FIXED — Data Studio with a model open was not legible.** `UIX-02` reads
+  the contrast of Data Studio before a model is chosen; nothing read it
+  after. With one open, three texts measured under 4.5:1 on the bench's
+  palette: the open model's count (3.7:1, white on a fifth of white over the
+  accent), its table name (3.26:1, the foreground at 70%) and the database
+  engine beside the toolbar (2.29:1, the muted colour at 60% opacity). They
+  are written in the full foreground and muted colours now; the estimate
+  marks beside a count and the group subtitles of the sidebar, written the
+  same way, were changed with them.
+
+Verified by breaking it:
+
+| mutation | what fails |
+|---|---|
+| the parent commit's interface, with these specs | `UIX-16` (the viewer's screen: three contrast nodes; the actor's selection offers Delete), `UIX-17` (no way to open the record) |
+| the server's update handler asking for `retrieve` instead of `update` | `UIX-17`: the server wrote a record for an operator who may not update |

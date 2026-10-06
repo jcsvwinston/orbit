@@ -13,9 +13,9 @@ interface Props {
 }
 
 // RecordActionsMenu is a row's own menu of application actions: the way to
-// run an action on one record without opening it, and the way an operator
-// who may run the action but not edit the record reaches it at all — the
-// record view is the edit form, which they are not offered.
+// run an action on one record without opening it. An operator who may run
+// the action but not edit the record finds it here and in the record's
+// read-only view, and nowhere else.
 export default function RecordActionsMenu({ actions, recordLabel, disabled, onSelect }: Props) {
   return (
     <Menu.Root>

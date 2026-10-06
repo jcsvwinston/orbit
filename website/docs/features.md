@@ -464,6 +464,15 @@ can disable what it may not instead of finding out by being refused:
 - each field of the schema carries `can_edit` (`can_read` is true for every
   field that arrives: the ones it is false for are not in the schema).
 
+Data Studio draws its grid from them. A row offers **Edit** with `update`,
+and **View** — the record read-only — with `retrieve` and no `update`; it
+offers **Delete** with `delete`. The grid offers a selection, and the
+selection a **Delete**, with `bulk_delete`, which is the verb the server asks
+of a batch — an operator who may delete one record at a time is not offered
+a batch they would be refused. A selection is also offered for an action that
+runs over one, so an operator who may publish and not delete can still pick
+what to publish. **New Record** needs `create`.
+
 They are a rendering aid. Every one of them is enforced again on the request
 that follows, and a client that ignores them is refused exactly as before.
 
@@ -866,10 +875,10 @@ The audit entry of a record action names the record, so its history
 (`GET /admin/api/models/{model}/{id}/history`) shows what was done to it; the
 entry's `on` says which place the action ran from, `record` or `selection`.
 
-The row's menu is the way to a record action for an operator who may run it
-and may not edit the record — the record view is the edit form, which they
-are not offered. When they open a record through a link, they are shown it
-read-only.
+An operator who may read a record (`retrieve`) and not edit it (`update`)
+opens it from its row's **View**: the record view, read-only, with the record
+actions they hold. The row's menu offers the same actions without opening the
+record, and a link or an action's redirect lands on the same read-only view.
 
 A `Placement` the panel does not know stops the application at startup, and
 so does `AllowEmptySelection` on an action offered only on a record, which

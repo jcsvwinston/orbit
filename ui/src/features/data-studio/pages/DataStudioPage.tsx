@@ -229,7 +229,7 @@ export default function DataStudioPage() {
                     <span className="flex items-center gap-1 text-xs text-muted-foreground">
                       <Server className="h-3 w-3" />
                       {modelDbs[0].alias}
-                      <span className="opacity-60">({modelDbs[0].engine})</span>
+                      <span>({modelDbs[0].engine})</span>
                     </span>
                   )}
 

@@ -13,17 +13,37 @@ export interface ScreenCapabilities {
   canCreate: boolean
   canUpdate: boolean
   canDelete: boolean
+  // canBulkDelete is the delete of a selection. The server authorizes it as
+  // a verb of its own (bulk_delete), not as delete: an operator who may
+  // delete one record at a time and not a batch is refused the batch, so the
+  // grid must not offer it — and one who holds bulk_delete alone may.
+  canBulkDelete: boolean
+  // canRetrieve is opening one record. An operator who may read a record and
+  // not update it is offered its view read-only; without it the only way to
+  // a record's fields is the columns the list shows.
+  canRetrieve: boolean
   // True when at least one verb is granted over the operator's OWN rows only,
   // which is worth saying on screen: the list is not the whole table.
   rowScoped: boolean
 }
 
+// holds reads one verb from the schema's permission map. A backend that
+// sends no map — an older one, or the open posture — leaves it undefined,
+// and the fallback says what the screen did before the verb was read.
+function holds(schema: ModelSchema, verb: string, fallback = true): boolean {
+  const held = schema.permissions?.[verb]
+  return held === undefined ? fallback : held
+}
+
 export function screenCapabilities(schema: ModelSchema): ScreenCapabilities {
   const readOnly = schema.read_only === true
+  const canDelete = !readOnly && schema.can_delete !== false
   return {
     canCreate: !readOnly && schema.can_create !== false,
     canUpdate: !readOnly && schema.can_update !== false,
-    canDelete: !readOnly && schema.can_delete !== false,
+    canDelete,
+    canBulkDelete: !readOnly && holds(schema, 'bulk_delete', canDelete),
+    canRetrieve: holds(schema, 'retrieve'),
     rowScoped: (schema.row_scope?.length ?? 0) > 0,
   }
 }

@@ -89,6 +89,14 @@ func browserCases() []browserCase {
 		{id: "UIX-13", title: "a form with its errors showing is legible, in the light theme and in the dark one", want: present},
 		{id: "UIX-14", title: "Data Studio's grid draws its icons, and the panel's own policy refuses nothing it loads", want: present},
 		{id: "UIX-15", title: "the panel's own scripts and stylesheets reach the browser compressed once, by the build", want: present},
+		// The screens of an operator who is not a superuser (OR-64): until
+		// these two, every control above but UIX-11 signed in as the
+		// bootstrap admin, whom every permission question answers yes, so
+		// the grid an operator without delete is shown (A11 O3) and the
+		// record's menu for one without update (A11 O4) had been seen only
+		// by whoever wrote them.
+		{id: "UIX-16", title: "an operator is offered a delete only where they hold one: no selection or Delete without it, and no batch Delete for one who may delete a record but not a batch", want: present},
+		{id: "UIX-17", title: "an operator who may not update is offered no edit: the row opens the record read-only, and its menu and the record view hold only the actions granted", want: present},
 	}
 }
 
@@ -100,6 +108,33 @@ const (
 	dashboardReader   = "dashboard-reader"
 	dashboardOutsider = "dashboard-outsider"
 )
+
+// The two operators UIX-16 and UIX-17 sign in as. Neither is a superuser
+// and neither holds update or bulk_delete on Note. The viewer may look —
+// list a page, open a record — and nothing more. The actor also holds
+// delete (one record at a time, not a batch) and two of the application's
+// actions: schedule, which runs over a selection, and duplicate, which runs
+// on one record. Each is a screen the superuser is never shown.
+const (
+	noteViewer = "note-viewer"
+	noteActor  = "note-actor"
+)
+
+// partialOperators creates the two operators of UIX-16 and UIX-17 and grants
+// them what they hold, through the panel's own management API.
+func partialOperators(t *testing.T, e *env) {
+	t.Helper()
+	for _, name := range []string{noteViewer, noteActor} {
+		op := e.newOperator(t, name, false)
+		e.grant(t, op.username, "admin:*", "list_models")
+		for _, act := range []string{"get_schema", "list", "retrieve"} {
+			e.grant(t, op.username, "admin:Note", act)
+		}
+	}
+	for _, act := range []string{"delete", "schedule", "duplicate"} {
+		e.grant(t, noteActor, "admin:Note", act)
+	}
+}
 
 // themedBranding is the second application UIX-10 opens: one that says its
 // panel opens dark, with a dark surface of its own, so the spec can tell the
@@ -145,6 +180,9 @@ func TestBrowserBench(t *testing.T) {
 		e.createNote(t, map[string]any{"title": fmt.Sprintf("uix-11 note %d", i), "status": "draft"})
 	}
 
+	// UIX-16 and UIX-17 need the two operators with partial permissions.
+	partialOperators(t, e)
+
 	// UIX-10 needs an application that configured a theme, and the one the
 	// rest of the bench measures must keep the panel's default: the
 	// contrast controls read it as an operator opens it today.
@@ -165,6 +203,8 @@ func TestBrowserBench(t *testing.T) {
 		"ORBIT_BENCH_OUTSIDER_USER="+dashboardOutsider,
 		"ORBIT_BENCH_OPERATOR_PASSWORD="+limitedPassword,
 		"ORBIT_BENCH_DASHBOARD="+trendsDashboard,
+		"ORBIT_BENCH_VIEWER_USER="+noteViewer,
+		"ORBIT_BENCH_ACTOR_USER="+noteActor,
 		// Playwright writes its browsers here in CI; keep the default on a
 		// developer machine.
 		"PLAYWRIGHT_JSON_OUTPUT_NAME=results.json",
