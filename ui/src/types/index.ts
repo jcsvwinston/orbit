@@ -154,6 +154,11 @@ export interface SavedView {
   name: string
   query: string
   is_shared: boolean
+  // can_edit says whether this operator may change or remove the view: a
+  // shared one is listed to everyone who may list its model and is its
+  // owner's alone. Absent from an older backend, which offered every view's
+  // removal.
+  can_edit?: boolean
 }
 
 // One child collection a form may edit in place: the model, the key a payload

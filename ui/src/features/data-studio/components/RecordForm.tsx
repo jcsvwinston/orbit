@@ -270,10 +270,12 @@ export default function RecordForm({ open, onClose, schema, record, onSave, acti
 
     // The children travel with the parent, in the shape the backend takes:
     // a row with an id is an edit, one without is an insert, and one marked
-    // deleted says so explicitly — never by being left out.
+    // deleted says so explicitly — never by being left out. A saved row
+    // nobody changed is left out, which leaves it as it is.
     for (const [key, rows] of Object.entries(inlineRows)) {
-      if (rows.length === 0) continue
-      payload[key] = inlinePayload(rows)
+      const children = inlinePayload(rows)
+      if (children.length === 0) continue
+      payload[key] = children
     }
 
     setSaving(true)

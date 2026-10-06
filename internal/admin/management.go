@@ -419,6 +419,9 @@ func (p *Panel) handleImportValidate(c *router.Context) error {
 	if !ok {
 		return gferrors.BadRequest(fmt.Sprintf("model %q not found", cfg.Model))
 	}
+	if mi.ReadOnly {
+		return gferrors.Forbidden("model is read-only")
+	}
 	cfg.Model = mi.Name
 
 	if p.store == nil {
@@ -471,6 +474,12 @@ func (p *Panel) handleImportExecute(c *router.Context) error {
 	var cfg ImportConfig
 	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
 		return gferrors.BadRequest("invalid JSON")
+	}
+	// An import writes rows, and a read-only model refuses every write the
+	// panel makes — a create, an update, a delete, a batch. It refused all
+	// of them but this one.
+	if mi, ok := p.src.Get(cfg.Model); ok && mi.ReadOnly {
+		return gferrors.Forbidden("model is read-only")
 	}
 
 	// A scoped request imports into its own tenant, whatever the body names;

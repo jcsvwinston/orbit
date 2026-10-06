@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/label'
 import * as api from '@/services/api'
 import type { InlineSpec, ModelSchema, SchemaField, Record as AppRecord } from '@/types'
 import { fieldToInput } from '../lib/fieldValues'
+import { screenCapabilities } from '../lib/capabilities'
 import { Loader2, Plus, Trash2, Undo2 } from 'lucide-react'
 
 // The children of a record, edited where the record is.
@@ -18,12 +19,21 @@ import { Loader2, Plus, Trash2, Undo2 } from 'lucide-react'
 // when they are: a row is deleted only when it is MARKED, never by being
 // absent — and the key that points at the parent is not editable here, since
 // the backend stamps it from the record being edited anyway.
+//
+// And a third: it offers what the CHILD model lets this operator do, read
+// from the child's own schema. The server checks every child verb before the
+// parent is written and refuses the whole save for one that is missing, so an
+// Add without create, a Remove without delete or an editable saved line
+// without update would each be a button that loses the operator's form.
 
 export interface InlineRow {
   // id is empty for a row that does not exist yet.
   id: string
   values: { [column: string]: string }
   deleted: boolean
+  // changed is true once a saved row's values were edited here: a row
+  // nobody touched is not sent (see inlinePayload).
+  changed: boolean
 }
 
 interface Props {
@@ -80,6 +90,7 @@ export default function InlineEditor({ spec, parentId, onChange }: Props) {
             editableChildFields(childSchema, spec.column).map((f) => [f.column, fieldToInput(item, f)]),
           ),
           deleted: false,
+          changed: false,
         }))
         setRows(existing)
       } catch (err) {
@@ -104,9 +115,12 @@ export default function InlineEditor({ spec, parentId, onChange }: Props) {
   }
 
   const fields = editableChildFields(schema, spec.column)
+  // What this operator may do with the children, from their own schema.
+  const child = screenCapabilities(schema)
+  const holdsNothing = !child.canCreate && !child.canUpdate && !child.canDelete
 
   const updateCell = (index: number, column: string, value: string) => {
-    publish(rows.map((row, i) => (i === index ? { ...row, values: { ...row.values, [column]: value } } : row)))
+    publish(rows.map((row, i) => (i === index ? { ...row, values: { ...row.values, [column]: value }, changed: true } : row)))
   }
 
   const toggleDeleted = (index: number) => {
@@ -120,16 +134,18 @@ export default function InlineEditor({ spec, parentId, onChange }: Props) {
   }
 
   const addRow = () => {
-    publish([...rows, { id: '', values: Object.fromEntries(fields.map((f) => [f.column, ''])), deleted: false }])
+    publish([...rows, { id: '', values: Object.fromEntries(fields.map((f) => [f.column, ''])), deleted: false, changed: true }])
   }
 
   return (
     <div className="space-y-2 rounded-md border p-3">
       <div className="flex items-center justify-between">
         <Label className="text-sm font-medium">{spec.label}</Label>
-        <Button type="button" size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={addRow}>
-          <Plus className="h-3 w-3" /> Add
-        </Button>
+        {child.canCreate && (
+          <Button type="button" size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={addRow}>
+            <Plus className="h-3 w-3" /> Add
+          </Button>
+        )}
       </div>
 
       {rows.length === 0 ? (
@@ -146,26 +162,37 @@ export default function InlineEditor({ spec, parentId, onChange }: Props) {
                   <span className="text-xs text-muted-foreground">{f.label}</span>
                   <Input
                     value={row.values[f.column] ?? ''}
-                    disabled={row.deleted}
+                    // A saved line is edited with update; a new one is
+                    // the create the Add was offered for.
+                    disabled={row.deleted || (row.id !== '' && !child.canUpdate)}
                     onChange={(e) => updateCell(index, f.column, e.target.value)}
                     className={inputClass}
                     aria-label={`${spec.label} ${index + 1} ${f.label}`}
                   />
                 </div>
               ))}
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="h-8"
-                onClick={() => toggleDeleted(index)}
-                aria-label={row.deleted ? `Keep ${spec.label} ${index + 1}` : `Remove ${spec.label} ${index + 1}`}
-              >
-                {row.deleted ? <Undo2 className="h-3.5 w-3.5" /> : <Trash2 className="h-3.5 w-3.5" />}
-              </Button>
+              {/* A new line is only dropped from the form; a saved one is
+                  deleted, which is the child's delete. */}
+              {(row.id === '' || child.canDelete) && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-8"
+                  onClick={() => toggleDeleted(index)}
+                  aria-label={row.deleted ? `Keep ${spec.label} ${index + 1}` : `Remove ${spec.label} ${index + 1}`}
+                >
+                  {row.deleted ? <Undo2 className="h-3.5 w-3.5" /> : <Trash2 className="h-3.5 w-3.5" />}
+                </Button>
+              )}
             </div>
           ))}
         </div>
+      )}
+      {holdsNothing && rows.length > 0 && (
+        <p className="text-xs text-muted-foreground">
+          You may view these, not change them.
+        </p>
       )}
       {rows.some((r) => r.deleted) && (
         <p className="text-xs text-muted-foreground">

@@ -329,6 +329,53 @@ func TestUpdateFieldMeta_WithoutRegistry_Is501NotPanic(t *testing.T) {
 	if status != http.StatusNotImplemented {
 		t.Fatalf("status %d, want 501", status)
 	}
+
+	// And the screen is not offered the dialog that would ask (OR-65): the
+	// 501 is everybody's answer here, so nobody holds update_schema.
+	schema, status := doJSON(t, http.MethodGet, srv.URL+"/api/models/AdminUser/schema", nil)
+	if status != http.StatusOK {
+		t.Fatalf("schema: status %d", status)
+	}
+	perms, _ := schema["permissions"].(map[string]interface{})
+	if held, _ := perms["update_schema"].(bool); held {
+		t.Fatalf("the schema offers update_schema on a panel that answers 501 to it: %v", perms)
+	}
+}
+
+// --- OR-65: a read-only model refuses an import, as it refuses every write --
+
+// Create, update, delete and a batch delete all refused a read-only model;
+// an import, which writes rows the same way, did not. Data Studio offers no
+// Import on such a model, and this is the server holding the same line when
+// the call is made anyway — before the upload is read.
+func TestImport_ReadOnlyModelIsRefused(t *testing.T) {
+	panel, cleanup := setupPanelForTest(t, db.EngineSQL)
+	defer cleanup()
+	srv := httptest.NewServer(panel.Handler())
+	defer srv.Close()
+
+	target := map[string]any{"model": "AdminUser", "format": "json"}
+	for _, step := range []string{"validate", "execute"} {
+		// Writable, the request gets past the model: it fails on the upload
+		// it names, which does not exist — not on the model.
+		if _, status := doJSON(t, http.MethodPost, srv.URL+"/api/import/"+step+"?key=_tmp/missing.json", target); status == http.StatusForbidden {
+			t.Fatalf("%s on a writable model: status 403 before the model was read-only", step)
+		}
+	}
+
+	meta, ok := panel.registry.Get("AdminUser")
+	if !ok {
+		t.Fatal("AdminUser is not registered")
+	}
+	meta.Config.ReadOnly = true
+	defer func() { meta.Config.ReadOnly = false }()
+
+	for _, step := range []string{"validate", "execute"} {
+		resp, status := doJSON(t, http.MethodPost, srv.URL+"/api/import/"+step+"?key=_tmp/missing.json", target)
+		if status != http.StatusForbidden {
+			t.Errorf("%s on a read-only model: status %d body=%s, want 403", step, status, mustJSON(resp))
+		}
+	}
 }
 
 // --- OR-22: a non-numeric id is a client error ------------------------------

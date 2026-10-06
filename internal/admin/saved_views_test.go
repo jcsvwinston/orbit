@@ -117,6 +117,52 @@ func TestSavedViews_OwnershipIsEnforced(t *testing.T) {
 	}
 }
 
+// The list says which views this operator may change (OR-65): a shared view
+// reaches everybody who may list its model, and a screen that offered each of
+// them a Remove offered a button the server refuses to all but its owner.
+func TestSavedViews_ListSaysWhoMayChangeEach(t *testing.T) {
+	panel, _, srv := formsPanel(t, nil)
+	shared, _ := saveView(t, srv, map[string]any{"model": "Album", "name": "Ours", "query": "b=2", "is_shared": true})
+	sharedID, _ := shared["id"].(string)
+
+	canEdit := func(who string) bool {
+		t.Helper()
+		list, status := doJSON(t, http.MethodGet, srv.URL+"/api/views?model=Album", nil)
+		if status != http.StatusOK {
+			t.Fatalf("%s: list status %d body=%s", who, status, mustJSON(list))
+		}
+		views, _ := list["views"].([]interface{})
+		for _, raw := range views {
+			view, _ := raw.(map[string]interface{})
+			if view["id"] != sharedID {
+				continue
+			}
+			allowed, present := view["can_edit"].(bool)
+			if !present {
+				t.Fatalf("%s: the listed view does not say whether it may be changed: %s", who, mustJSON(view))
+			}
+			return allowed
+		}
+		t.Fatalf("%s: the shared view is not listed: %s", who, mustJSON(list))
+		return false
+	}
+
+	if !canEdit("its owner") {
+		t.Errorf("the owner is told they may not change their own view")
+	}
+	panel.config.Auth = &testAdminAuth{user: &auth.User{ID: "9", Username: "someone-else", Role: "admin"}}
+	if canEdit("another operator") {
+		t.Errorf("another operator is told they may change a view the server refuses them")
+	}
+	if _, status := doJSON(t, http.MethodDelete, srv.URL+"/api/views/"+sharedID, nil); status != http.StatusForbidden {
+		t.Errorf("deleting the shared view as another operator: status %d, want the 403 the list promised", status)
+	}
+	panel.config.Auth = superuserAuth()
+	if !canEdit("a superuser") {
+		t.Errorf("a superuser, who may remove any view, is told they may not")
+	}
+}
+
 // A superuser may tidy up anybody's view: somebody has to be able to remove
 // the shared one whose owner left.
 func TestSavedViews_SuperuserMayEditAnyone(t *testing.T) {

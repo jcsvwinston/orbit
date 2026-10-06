@@ -1303,32 +1303,29 @@ func (p *Panel) authorizeAction(c *router.Context, modelName, action string) err
 	if err != nil {
 		return p.authErrorToDomain(err)
 	}
+	if !p.userCan(user, modelName, action) {
+		return authDeniedDomain(modelName, action)
+	}
+	return nil
+}
 
+// userCan is authorizeAction's answer for an operator already resolved. The
+// capability hints ask it too (permissions_hints.go), so the door a screen
+// offers for one of these verbs is the door this check opens.
+func (p *Panel) userCan(user *auth.User, modelName, action string) bool {
 	// If RBAC enforcer is configured, use it for authorization
 	if p.rbac != nil {
 		// Superusers bypass policy checks
 		if user.IsSuperuser {
-			return nil
+			return true
 		}
-
 		resource := "admin:" + modelName
-		if p.rbac.Can(user.ID, resource, action) {
-			return nil
-		}
-		if p.rbac.Can(user.Role, resource, action) {
-			return nil
-		}
-		if p.rbac.Can(user.Username, resource, action) {
-			return nil
-		}
-		return authDeniedDomain(modelName, action)
+		return p.rbac.Can(user.ID, resource, action) ||
+			p.rbac.Can(user.Role, resource, action) ||
+			p.rbac.Can(user.Username, resource, action)
 	}
-
 	// Fallback to default auth provider
-	if !p.config.Auth.Authorize(user, modelName, action) {
-		return authDeniedDomain(modelName, action)
-	}
-	return nil
+	return p.config.Auth.Authorize(user, modelName, action)
 }
 
 func (p *Panel) authenticatedUser(r *http.Request) (*auth.User, error) {

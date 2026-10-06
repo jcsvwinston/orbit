@@ -561,6 +561,119 @@ func TestCapabilityHints_NameTheRowScope(t *testing.T) {
 	}
 }
 
+// The screen's other doors are in the hints too (OR-65), each the answer its
+// handler gives: opening and configuring the model's schema, asked of the
+// model, and an export and an import, asked of the whole panel. Without them
+// Data Studio offered an Export, an Import and a Fields dialog to operators
+// the server then refused.
+func TestCapabilityHints_AnswerTheScreensOtherDoors(t *testing.T) {
+	panel, _, srv := ownedPanel(t,
+		[3]string{"operator", "admin:OwnedNote", "list"},
+		[3]string{"operator", "admin:OwnedNote", "get_schema"},
+		[3]string{"operator", "admin:*", "export_data"},
+		[3]string{"operator", "admin:*", "list_models"},
+	)
+	held := func() map[string]interface{} {
+		t.Helper()
+		schema, status := doJSON(t, http.MethodGet, srv.URL+"/api/models/OwnedNote/schema", nil)
+		if status != http.StatusOK {
+			t.Fatalf("schema: status %d body=%s", status, mustJSON(schema))
+		}
+		perms, ok := schema["permissions"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("the schema carries no permissions map: %s", mustJSON(schema))
+		}
+		return perms
+	}
+	want := func(perms map[string]interface{}, verb string, allowed bool) {
+		t.Helper()
+		got, present := perms[verb].(bool)
+		if !present || got != allowed {
+			t.Errorf("permissions[%s] = %v (present %v), want %v: %v", verb, got, present, allowed, perms)
+		}
+	}
+
+	perms := held()
+	want(perms, "get_schema", true)
+	want(perms, "export_data", true)
+	want(perms, "update_schema", false)
+	want(perms, "import_data", false)
+
+	// The refusals the hints promise are the ones the handlers give, and
+	// the grant they call held is not refused.
+	fields := map[string]any{"fields": map[string]any{"Title": map[string]any{"label": "Headline"}}}
+	if _, status := doJSON(t, http.MethodPut, srv.URL+"/api/models/OwnedNote/schema/fields", fields); status != http.StatusForbidden {
+		t.Errorf("field settings without update_schema: status %d, want 403", status)
+	}
+	if _, status := doJSON(t, http.MethodPost, srv.URL+"/api/import/execute?key=_tmp/import_x.json",
+		map[string]any{"model": "OwnedNote", "format": "json"}); status != http.StatusForbidden {
+		t.Errorf("an import without import_data: status %d, want 403", status)
+	}
+	if _, status := doJSON(t, http.MethodPost, srv.URL+"/api/exports",
+		map[string]any{"format": "json", "models": []string{"OwnedNote"}}); status == http.StatusForbidden {
+		t.Errorf("an export with export_data was refused")
+	}
+
+	// An import granted on the model is not the grant the handler asks for:
+	// it asks the whole panel, and so does the hint.
+	if err := panel.rbac.AddPolicy("operator", "admin:OwnedNote", "import_data"); err != nil {
+		t.Fatal(err)
+	}
+	want(held(), "import_data", false)
+	if _, status := doJSON(t, http.MethodPost, srv.URL+"/api/import/execute?key=_tmp/import_x.json",
+		map[string]any{"model": "OwnedNote", "format": "json"}); status != http.StatusForbidden {
+		t.Errorf("an import granted on the model only: status %d, want 403", status)
+	}
+
+	// A grant of update_schema and import_data turns both on, and the
+	// field settings it now offers are saved.
+	for _, pol := range [][3]string{
+		{"operator", "admin:OwnedNote", "update_schema"},
+		{"operator", "admin:*", "import_data"},
+	} {
+		if err := panel.rbac.AddPolicy(pol[0], pol[1], pol[2]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	perms = held()
+	want(perms, "update_schema", true)
+	want(perms, "import_data", true)
+	if resp, status := doJSON(t, http.MethodPut, srv.URL+"/api/models/OwnedNote/schema/fields", fields); status != http.StatusOK {
+		t.Errorf("field settings with update_schema: status %d body=%s", status, mustJSON(resp))
+	}
+
+	// A row-scoped grant of a screen verb is not one: authorizeAction asks
+	// the full grant only, and so does the hint.
+	if err := panel.rbac.AddPolicy("operator", "admin:OwnedNote#own", "get_schema"); err != nil {
+		t.Fatal(err)
+	}
+	if err := panel.rbac.RemovePolicy("operator", "admin:OwnedNote", "get_schema"); err != nil {
+		t.Fatal(err)
+	}
+	if _, status := doJSON(t, http.MethodGet, srv.URL+"/api/models/OwnedNote/schema", nil); status != http.StatusForbidden {
+		t.Fatalf("a schema with only an #own get_schema: status %d, want 403", status)
+	}
+	models, status := doJSON(t, http.MethodGet, srv.URL+"/api/models", nil)
+	if status != http.StatusOK {
+		t.Fatalf("models: status %d body=%s", status, mustJSON(models))
+	}
+	listed, _ := models["models"].([]interface{})
+	seen := false
+	for _, raw := range listed {
+		m, _ := raw.(map[string]interface{})
+		if m["name"] != "OwnedNote" {
+			continue
+		}
+		seen = true
+		perms, _ := m["permissions"].(map[string]interface{})
+		want(perms, "get_schema", false)
+		want(perms, "export_data", true)
+	}
+	if !seen {
+		t.Fatalf("the model list does not carry OwnedNote: %s", mustJSON(models))
+	}
+}
+
 // getText reads a non-JSON body (the CSV export).
 func getText(t *testing.T, url string) string {
 	t.Helper()

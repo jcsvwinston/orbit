@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { screenCapabilities, isFieldEditable } from './capabilities'
+import { screenCapabilities, isFieldEditable, canOpenModel } from './capabilities'
 import type { ModelSchema, SchemaField } from '@/types'
 
 function schema(partial: Partial<ModelSchema>): ModelSchema {
@@ -23,7 +23,10 @@ function field(partial: Partial<SchemaField>): SchemaField {
 describe('screenCapabilities', () => {
   it('treats a schema with no hints as fully allowed, the way it behaved before hints existed', () => {
     const caps = screenCapabilities(schema({}))
-    expect(caps).toEqual({ canCreate: true, canUpdate: true, canDelete: true, canBulkDelete: true, canRetrieve: true, rowScoped: false })
+    expect(caps).toEqual({
+      canCreate: true, canUpdate: true, canDelete: true, canBulkDelete: true, canRetrieve: true,
+      canExport: true, canImport: true, canConfigureFields: true, rowScoped: false,
+    })
   })
 
   it('offers a batch delete by bulk_delete, the verb the server asks of one, not by delete', () => {
@@ -62,9 +65,58 @@ describe('screenCapabilities', () => {
     expect(caps.canBulkDelete).toBe(false)
   })
 
+  // OR-65: an export and an import are panel-wide grants of their own, and
+  // the field settings are update_schema — none of them is create.
+  it('offers export, import and the field settings by the verbs the server asks of them', () => {
+    const none = screenCapabilities(schema({
+      can_create: true,
+      permissions: { create: true, export_data: false, import_data: false, update_schema: false },
+    }))
+    expect(none.canExport).toBe(false)
+    expect(none.canImport).toBe(false)
+    expect(none.canConfigureFields).toBe(false)
+    const held = screenCapabilities(schema({
+      can_create: false,
+      permissions: { create: false, export_data: true, import_data: true, update_schema: true },
+    }))
+    expect(held.canExport).toBe(true)
+    expect(held.canImport).toBe(true)
+    expect(held.canConfigureFields).toBe(true)
+  })
+
+  it('offers no import on a read-only model, which the server refuses', () => {
+    expect(screenCapabilities(schema({ read_only: true, permissions: { import_data: true } })).canImport).toBe(false)
+  })
+
+  it('falls back to what the screen did before the verbs were read when no map is sent', () => {
+    expect(screenCapabilities(schema({ can_create: false })).canImport).toBe(false)
+    expect(screenCapabilities(schema({ can_create: false })).canExport).toBe(true)
+    expect(screenCapabilities(schema({})).canConfigureFields).toBe(true)
+  })
+
+  it('reads the history as the record is read: by retrieve', () => {
+    expect(screenCapabilities(schema({ permissions: { list: true, retrieve: false } })).canRetrieve).toBe(false)
+  })
+
   it('reports a row-scoped grant so the screen can say the list is not the whole table', () => {
     expect(screenCapabilities(schema({ row_scope: ['list', 'update'] })).rowScoped).toBe(true)
     expect(screenCapabilities(schema({ row_scope: [] })).rowScoped).toBe(false)
+  })
+})
+
+describe('canOpenModel', () => {
+  it('offers a model whose schema and list are both held', () => {
+    expect(canOpenModel({ permissions: { get_schema: true, list: true } })).toBe(true)
+  })
+
+  it('does not offer one the server refuses either for', () => {
+    expect(canOpenModel({ permissions: { get_schema: false, list: true } })).toBe(false)
+    expect(canOpenModel({ permissions: { get_schema: true, list: false } })).toBe(false)
+  })
+
+  it('offers every model a backend with no hints lists, as before', () => {
+    expect(canOpenModel({})).toBe(true)
+    expect(canOpenModel({ permissions: { list: true } })).toBe(true)
   })
 })
 

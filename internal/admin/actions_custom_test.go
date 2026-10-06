@@ -191,6 +191,46 @@ func TestDeclaredActionRunsAndIsAudited(t *testing.T) {
 	}
 }
 
+// TestDestructiveActionNotOfferedOnAReadOnlyModel (OR-65): the server
+// refuses a destructive action on a read-only model whoever asks — the
+// superuser included — so the schema does not hand the screen a button for
+// it. The refusal itself stays where it was.
+func TestDestructiveActionNotOfferedOnAReadOnlyModel(t *testing.T) {
+	env := newActionPanel(t, ModelAction{Name: "purge", Model: "AdminUser", Label: "Purge", Destructive: true}, &actionCalls{})
+	created := createAdminUser(t, env.srv.URL, map[string]interface{}{"email": "ro@example.com", "name": "RO", "active": true})
+
+	offered := func() bool {
+		t.Helper()
+		schema, status := doJSON(t, http.MethodGet, env.srv.URL+"/api/models/AdminUser/schema", nil)
+		if status != http.StatusOK {
+			t.Fatalf("schema status=%d", status)
+		}
+		return strings.Contains(mustJSON(schema["actions"]), `"name":"purge"`)
+	}
+	if !offered() {
+		t.Fatal("precondition: the destructive action is not offered on a writable model")
+	}
+
+	meta, ok := env.panel.registry.Get("AdminUser")
+	if !ok {
+		t.Fatal("AdminUser is not registered")
+	}
+	meta.Config.ReadOnly = true
+	t.Cleanup(func() { meta.Config.ReadOnly = false })
+
+	if offered() {
+		t.Error("the schema offers a destructive action on a read-only model, which the server refuses")
+	}
+	if _, status := doJSON(t, http.MethodPost, env.srv.URL+"/api/models/AdminUser/bulk", map[string]interface{}{
+		"action": "purge", "ids": []interface{}{created.ID},
+	}); status != http.StatusForbidden {
+		t.Errorf("the destructive action on a read-only model: status %d, want 403", status)
+	}
+	if calls := env.calls.seen(); len(calls) != 0 {
+		t.Fatalf("a refused action reached the application: %+v", calls)
+	}
+}
+
 // TestDeclaredActionRefusedWithoutItsVerb: the action's name IS the
 // permission, so an operator who holds every record verb but not this one is
 // refused — and the application's function is never called.

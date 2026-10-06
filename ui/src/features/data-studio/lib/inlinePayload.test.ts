@@ -17,6 +17,20 @@ describe('inlinePayload', () => {
       .toEqual([{ id: '7', title: 'One', _delete: true }])
   })
 
+  it('leaves out a saved row nobody changed, which the server would ask update for', () => {
+    const got = inlinePayload([
+      { id: '1', values: { title: 'looked at' }, deleted: false, changed: false },
+      { id: '2', values: { title: 'edited' }, deleted: false, changed: true },
+      { id: '3', values: { title: 'removed' }, deleted: true, changed: false },
+      { id: '', values: { title: 'added' }, deleted: false, changed: false },
+    ])
+    expect(got).toEqual([
+      { id: '2', title: 'edited' },
+      { id: '3', title: 'removed', _delete: true },
+      { title: 'added' },
+    ])
+  })
+
   it('keeps every row it is given, in order', () => {
     const got = inlinePayload([
       { id: '1', values: { title: 'a' }, deleted: false },
