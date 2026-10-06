@@ -156,6 +156,38 @@ escritura del panel ya tenía: un modelo de sólo lectura rechaza la carga de
 fixtures entera, antes de escribir ninguna fila (OR-68), como desde OR-65
 rechaza la importación.
 
+## Enmienda de OR-69 (2026-10-06): un campo que no se lee no se pregunta
+
+El punto 5 decía que un campo que el operador no puede leer no sale del
+registro, de la lista, del CSV ni del esquema. Salía de otra forma: la lista
+filtraba, ordenaba y buscaba por él en nombre del operador. Con un `deny`
+sobre `owner`, `?owner=operator` contestaba una fila y `?owner=nobody`
+ninguna — el valor, una conjetura cada vez —, y un `order_by` paginaba las
+filas en el orden del campo oculto. La exportación rechazaba ese filtro desde
+OR-66; las demás superficies no.
+
+Se enmienda así:
+
+- **Un campo que el operador no lee no se puede nombrar en una consulta**, en
+  ninguna superficie que lea filas por él: un filtro (con operador o sin él) o
+  un `order_by` de la lista contestan el `400` que recibe un campo que el
+  modelo no tiene — la negativa no dice que el campo existe —; la exportación
+  rechaza el filtro con el mismo `400`; una búsqueda de relación etiqueta con
+  un campo legible; una vista guardada que filtra u ordena por él no se le
+  lista; y una tarjeta de registros ordenada por él no se le muestra, como no
+  se muestra la de un modelo que no puede listar. Todas preguntan lo mismo
+  que elige las columnas de una exportación (`fieldRules.readsField`), así
+  que lo que se lee y lo que se pregunta no pueden separarse.
+- **Una búsqueda que miraría en un campo oculto se rechaza, no se estrecha.**
+  El backend busca en todos los campos que marca buscables y
+  `datasource.Query` no tiene forma de decirle cuáles, así que el panel no
+  puede limitar la búsqueda a los legibles: contesta `400` y el esquema lleva
+  `searchable` en falso para que la rejilla no ofrezca la caja. Estrecharla
+  pide un añadido al contrato congelado (QADR-0010), que es otro cambio.
+- **Un campo excluido cuenta para todos**, superusuario incluido: nadie lo lee
+  en el panel, y Nucleus busca en un campo buscable aunque esté excluido. El
+  superusuario no cambia en lo demás: las políticas de campo no le aplican.
+
 ## Preguntas abiertas
 
 - Un operador de filtro con más gramática (rango, contiene, en) llega en la

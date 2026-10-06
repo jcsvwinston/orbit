@@ -42,7 +42,10 @@ func probeModelPermissions(t *testing.T, e *env) verdict {
 // then writes that field. It is measured by EFFECT and in both directions:
 // the denied field must still hold its old value afterwards, and a field the
 // same operator DOES hold must still be writable — a panel that refused every
-// write would pass a one-sided probe.
+// write would pass a one-sided probe. And a field the operator may not read
+// is not one they can filter, sort or search by, or see a lookup labelled
+// with (OR-69): masking a value is nothing if the grid answers questions
+// about it.
 func probeFieldPermissions(t *testing.T, e *env) verdict {
 	op := e.operatorNamed(t, "perm-field")
 	e.grant(t, op.username, "admin:Note", "list")
@@ -86,6 +89,34 @@ func probeFieldPermissions(t *testing.T, e *env) verdict {
 		map[string]any{"status": "reviewed"})
 	if allowed.code != http.StatusOK {
 		t.Logf("a field the operator DOES hold was refused too (%d): %s", allowed.code, allowed.text())
+		return partial
+	}
+
+	// A field the operator may not read is not one they can ask about
+	// either (OR-69). Title is a filter, a sort and the only searchable field
+	// of Note: answering a filter, a sort or a search on it reads the value
+	// back one guess at a time, through the rows that come back and their
+	// order, from a grid that masks it.
+	for _, query := range []string{
+		"title=" + original,
+		"title__startswith=field",
+		"order_by=title",
+		"search=" + original,
+	} {
+		asked := e.asOperator(t, op, http.MethodGet, "/admin/api/models/Note?"+query, nil)
+		if asked.code != http.StatusBadRequest {
+			t.Logf("?%s, over a field the operator may not read, answered %d: %s", query, asked.code, asked.text())
+			return partial
+		}
+	}
+	// A relation lookup names each row by a field the operator reads.
+	options := e.asOperator(t, op, http.MethodGet, "/admin/api/models/Note/options", nil)
+	if options.code != http.StatusOK {
+		t.Logf("the operator's lookup of Note answered %d: %s", options.code, options.text())
+		return partial
+	}
+	if strings.Contains(options.raw(), original) {
+		t.Logf("the lookup labels Note with its title, which the operator may not read: %s", options.text())
 		return partial
 	}
 	return present

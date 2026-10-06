@@ -457,6 +457,10 @@ func (p *Panel) handleGetSchema(c *router.Context) error {
 		"can_create":  caps.CanCreate,
 		"can_update":  caps.CanUpdate,
 		"can_delete":  caps.CanDelete,
+		// Whether ?search= is answered for this operator: a search that
+		// would look in a field they do not read is refused (OR-69), and a
+		// grid that knew only the fields it was shown would offer the box.
+		"searchable": rules.searchable(mi),
 	}
 	// The actions this application declared for the model, filtered to the
 	// ones this operator may run (actions_custom.go). The key is absent
@@ -581,13 +585,23 @@ func (p *Panel) handleListRecords(c *router.Context) error {
 	if search != "" && !modelSearchable(mi) {
 		return gferrors.BadRequest(fmt.Sprintf("search is not available for %s: it has no searchable fields (tag them admin:\"search\", set ModelConfig.SearchFields, or enable is_search in Field settings)", mi.Name))
 	}
+	// Nor can it honour one that would look in a field this operator does
+	// not read: the rows it found would say what that field holds (OR-69).
+	if search != "" && read.fields.searchesHidden(mi) {
+		return hiddenSearchError(mi)
+	}
 
-	orderBy, err := dsSanitizeOrderBy(mi, r.URL.Query().Get("order_by"))
+	// A filter or a sort names only a field this operator reads: one they
+	// may not is answered as a field the model does not have, since the
+	// rows a filter leaves, and the order a sort puts them in, say what the
+	// field holds (OR-69).
+	queried := read.fields.queryModel(mi)
+	orderBy, err := dsSanitizeOrderBy(queried, r.URL.Query().Get("order_by"))
 	if err != nil {
 		return err
 	}
 
-	filters, where, err := dsCollectFilters(mi, r.URL.Query())
+	filters, where, err := dsCollectFilters(queried, r.URL.Query())
 	if err != nil {
 		return err
 	}

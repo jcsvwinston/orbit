@@ -100,7 +100,7 @@ func browserCases() []browserCase {
 		// The rest of Data Studio's doors, for the same operators and a
 		// third (OR-65): every one of them asks the server for a verb of
 		// its own, and until this control the screen drew them for anybody.
-		{id: "UIX-18", title: "an operator is offered a model, a record's history, an export, an import, the field settings and a saved view's removal only where they hold them, each one asked anyway is refused, and an export holds only what the operator may list", want: present},
+		{id: "UIX-18", title: "an operator is offered a model, a record's history, an export, an import, the field settings and a saved view's removal only where they hold them, each one asked anyway is refused, an export holds only what the operator may list, and a field the operator may not read is neither offered nor answered as a sort, a filter or a saved view", want: present},
 	}
 }
 
@@ -120,7 +120,9 @@ const (
 // actions — schedule, which runs over a selection, and duplicate, which runs
 // on one record — and the panel's export (export_data on admin:*); for what
 // that export holds (OR-66, UIX-18) the actor may not read a note's meta and
-// may list their own articles (admin:Article#own), not anybody else's. The
+// may list their own articles (admin:Article#own), not anybody else's; and
+// for what a query may name (OR-69, UIX-18) the actor may not read a note's
+// views either, a column the grid sorts by and a filter it offers. The
 // lister (UIX-18) may list the page and not open a record, so a record's
 // history is not theirs either. Each is a screen the superuser is never
 // shown.
@@ -153,6 +155,11 @@ func partialOperators(t *testing.T, e *env) {
 	// sidebar UIX-16 to UIX-18 read is the one it was.
 	e.grant(t, noteActor, "admin:Note.meta", "deny")
 	e.grant(t, noteActor, "admin:Article#own", "list")
+	// What a query may name (OR-69): a field the grid offers as a sort and
+	// a filter, kept from the actor. Not title: the controls find a note by
+	// searching its title, and a search that reaches a field the operator
+	// may not read is refused.
+	e.grant(t, noteActor, "admin:Note.views", "deny")
 }
 
 // themedBranding is the second application UIX-10 opens: one that says its

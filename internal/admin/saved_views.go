@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -295,15 +296,36 @@ func (p *Panel) handleListSavedViews(c *router.Context) error {
 	}
 	// A shared view of a model this operator cannot list is not theirs to
 	// see: the row would tell them the model exists and what somebody filters
-	// it by, which is exactly what the list permission withholds.
+	// it by, which is exactly what the list permission withholds. Nor is one
+	// that filters or sorts by a field a policy keeps from them (OR-69): it
+	// names the field and what somebody looks for in it, which is what the
+	// schema withholds, and the list would refuse it anyway.
 	visible := make([]listedSavedView, 0, len(views))
+	// The scope is the model's, not the view's: resolved once per model, and
+	// nil for a model this operator may not list.
+	scopes := map[string]*readScope{}
 	for _, view := range views {
 		mi, ok := p.src.Get(view.Model)
 		if !ok {
 			continue
 		}
-		if _, err := p.authorizeRecordAction(c, mi, "list"); err != nil {
+		read, seen := scopes[mi.Name]
+		if !seen {
+			if scope, err := p.requestReadScope(c, mi, "list"); err == nil {
+				read = &scope
+			}
+			scopes[mi.Name] = read
+		}
+		if read == nil {
 			continue
+		}
+		if read.fields.enforced() {
+			// A stored query that does not parse still yields what it can,
+			// and a key it names is a key it names.
+			values, _ := url.ParseQuery(view.Query)
+			if read.fields.namesHiddenField(mi, values) {
+				continue
+			}
 		}
 		visible = append(visible, listedSavedView{
 			savedView: view,

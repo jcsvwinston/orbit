@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ModelSchema, SchemaField } from '@/types'
-import { isSearchable } from './searchable'
+import { isSearchable, searchUnavailableReason } from './searchable'
 
 const field = (over: Partial<SchemaField>): SchemaField => ({
   name: 'Name', column: 'name', label: 'Name', type: 'string', html_type: 'text',
@@ -25,5 +25,18 @@ describe('isSearchable', () => {
 
   it('is true once a visible field is searchable', () => {
     expect(isSearchable(schema([field({ column: 'qty' }), field({ column: 'label', is_search: true })]))).toBe(true)
+  })
+
+  it('takes the schema\'s answer when it gives one', () => {
+    // A searchable field kept from the operator is not in their schema, and
+    // the search would still look in it: the server says no.
+    const hidden = { ...schema([field({ column: 'label', is_search: true })]), searchable: false }
+    expect(isSearchable(hidden)).toBe(false)
+    expect(searchUnavailableReason(hidden)).toMatch(/fields you may not read/)
+    expect(isSearchable({ ...schema([field({ column: 'label', is_search: true })]), searchable: true })).toBe(true)
+  })
+
+  it('says a model with nothing to search in has nothing', () => {
+    expect(searchUnavailableReason(schema([field({ column: 'qty' })]))).toMatch(/Enable is_search/)
   })
 })

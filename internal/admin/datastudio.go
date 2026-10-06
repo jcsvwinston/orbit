@@ -84,6 +84,16 @@ func dsResolveField(mi datasource.ModelInfo, key string) (column string, field d
 // so a field whose own name contains them is still resolved whole.
 const filterOpSeparator = "__"
 
+// listReservedParams are the list's query parameters that are not a field
+// filter: the page, the search, the sort and the database. "tenant" is the
+// explicit scope override consumed by tenantContextMiddleware (see
+// requestTenant); before it was reserved here every ?tenant= list request
+// answered 400 "invalid filter field".
+var listReservedParams = map[string]bool{
+	"page": true, "page_size": true, "search": true, "order_by": true,
+	"db": true, "database": true, "db_alias": true, "tenant": true,
+}
+
 // dsCollectFilters extracts filters from a query string, skipping the reserved
 // pagination/selection params, and validates each against the model's
 // filterable fields.
@@ -96,12 +106,7 @@ func dsCollectFilters(mi datasource.ModelInfo, values url.Values) (map[string]st
 	filters := make(map[string]string)
 	var where []datasource.Filter
 	for key, vals := range values {
-		switch key {
-		// "tenant" is the explicit scope override consumed by
-		// tenantContextMiddleware (see requestTenant), not a field filter;
-		// before it was reserved here every ?tenant= list request answered
-		// 400 "invalid filter field".
-		case "page", "page_size", "search", "order_by", "db", "database", "db_alias", "tenant":
+		if listReservedParams[key] {
 			continue
 		}
 		if len(vals) == 0 {
@@ -312,9 +317,11 @@ func dsSanitizeOrderBy(mi datasource.ModelInfo, raw string) (string, error) {
 // a password hash does not leak through the audit log. Sorting by such a
 // column leaks it all the same — ORDER BY password_hash paginates the table in
 // hash order, which is a comparison oracle over the hidden value, one page at
-// a time. So the three query surfaces now agree: search skips excluded fields
-// (modelSearchable), filters refuse them (dsNormalizeFilter), and so does the
-// sort.
+// a time. So the three query surfaces now agree: a search that would look in
+// an excluded field is refused (fieldRules.searchesHidden), filters refuse
+// them (dsNormalizeFilter), and so does the sort. A field a policy keeps from
+// the operator reaches these helpers marked excluded (fieldRules.queryModel),
+// and is refused the same way (OR-69).
 //
 // Read-only is a different flag and stays sortable: created_at is read-only,
 // rendered in the list, and the column operators sort by most.

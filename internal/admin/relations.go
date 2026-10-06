@@ -63,6 +63,12 @@ func (p *Panel) handleFieldOptions(c *router.Context) error {
 	if !ok {
 		return gferrors.NotFound("field", fieldKey)
 	}
+	// A field a policy keeps from this operator is not in their schema, so
+	// no form of theirs asks for it, and it is not a field of the model to
+	// them here either (OR-69). Without a field policy nothing changes.
+	if rules := p.requestFieldRules(c.Request, mi); rules.enforced() && !rules.readsField(field) {
+		return gferrors.NotFound("field", fieldKey)
+	}
 	target := field.ForeignModel
 	if target == "" {
 		// The field may be declared as a key through the model's foreign-key
@@ -91,10 +97,11 @@ func (p *Panel) writeModelOptions(c *router.Context, modelName string) error {
 	if !ok {
 		return gferrors.NotFound("model", modelName)
 	}
-	// Reading the target is what this is, so it is authorized as a read of
-	// the target — including the row scope, which confines the candidates to
-	// the rows this operator may see.
-	rowScope, err := p.authorizeRecordAction(c, mi, "list")
+	// Reading the target is what this is, so it is read as the target's
+	// list reads it (requestReadScope): its tenant and row confinement, and
+	// the fields this operator reads, which are the only ones a label is
+	// drawn from or a search may look in (OR-69).
+	read, err := p.requestReadScope(c, mi, "list")
 	if err != nil {
 		return err
 	}
@@ -120,6 +127,9 @@ func (p *Panel) writeModelOptions(c *router.Context, modelName string) error {
 	if search != "" && !modelSearchable(mi) {
 		return gferrors.BadRequest(fmt.Sprintf("search is not available for %s: it has no searchable fields", mi.Name))
 	}
+	if search != "" && read.fields.searchesHidden(mi) {
+		return hiddenSearchError(mi)
+	}
 
 	databaseAlias, err := p.requestDatabaseAlias(r)
 	if err != nil {
@@ -134,25 +144,14 @@ func (p *Panel) writeModelOptions(c *router.Context, modelName string) error {
 		return err
 	}
 
-	filters := map[string]string{}
-	if scope := p.requestTenantScope(r, mi); scope.Enforced() {
-		filters[scope.Column()] = scope.Tenant
-	}
-	if rowScope.Enforced() {
-		filters[rowScope.Column()] = rowScope.Owner
-	}
-	if len(filters) == 0 {
-		filters = nil
-	}
-
 	page, err := st.List(r.Context(), datasource.Query{
-		Page: 1, PageSize: limit, Search: search, Filters: filters,
+		Page: 1, PageSize: limit, Search: search, Filters: read.filters(nil),
 	})
 	if err != nil {
 		return err
 	}
 
-	labelField, hasLabel := optionLabelField(mi)
+	labelField, hasLabel := optionLabelField(read.fields.queryModel(mi))
 	options := make([]relationOption, 0, len(page.Items))
 	for _, rec := range page.Items {
 		value, ok := canonicalID(recordPKValue(rec, mi))

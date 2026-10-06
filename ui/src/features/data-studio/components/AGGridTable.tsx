@@ -23,7 +23,7 @@ import { formatCellValue } from '../lib/fieldValues'
 import { useRecordsLoader } from '../lib/useRecordsLoader'
 import { BATCH_SIZE_OPTIONS, DEFAULT_PAGE_SIZE, FILTER_DEBOUNCE_MS } from '../lib/constants'
 import { primaryKeyColumn, recordId, toApiId, type RecordId } from '../lib/recordIds'
-import { isSearchable } from '../lib/searchable'
+import { isSearchable, searchUnavailableReason } from '../lib/searchable'
 import { screenCapabilities } from '../lib/capabilities'
 import { gridQueryFromString, gridQueryToString } from '../lib/savedViews'
 import { offeredOnRecord, offeredOnSelection } from '../lib/actionPlacement'
@@ -611,8 +611,8 @@ export default function AGGridTable({ modelName, schema, dbAlias, focusRecord, o
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" aria-hidden="true" />
           <Input
             aria-label="Search records"
-            placeholder={searchable ? 'Search records...' : 'Search is not enabled for this model'}
-            title={searchable ? undefined : 'No field of this model is searchable. Enable is_search in Field settings.'}
+            placeholder={searchable ? 'Search records...' : 'Search is not available for this model'}
+            title={searchable ? undefined : searchUnavailableReason(schema)}
             disabled={!searchable}
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
