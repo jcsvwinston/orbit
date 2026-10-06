@@ -684,9 +684,10 @@ entries): who took a copy of the log is the kind of thing the log is for.
 
 `GET /api/models/{model}/{id}/history` is the same trail read by record: what
 this row said before, and who changed it. It is gated by the record's own
-permission (`retrieve`), not by `audit_view` — and the row scope and field
-permissions of that grant apply, so a history never shows a row the operator
-cannot open or a field they may not read.
+permission (`retrieve`), not by `audit_view` — and everything that confines
+that grant applies: the request's tenant, the row scope and the field
+permissions. A row the operator cannot open answers `404` here exactly as it
+does on the record, and a field they may not read is masked in every entry.
 
 It goes back as far as the trail does, which the payload states
 (`persistent`, `retention_days`) so a short history is read as a retention
@@ -725,11 +726,23 @@ a Redis URL loses its password, a session token is shortened, imports and
 exports record counts rather than rows, and login entries carry the attempted
 username, never the password.
 
-Entries are not filtered by tenant. With `multitenant_enabled`, an operator
-granted `audit_view` reads every entry the ring holds — the redacted old and
-new values of rows written by other tenants' operators, and every
-`tenant.override` — not only the entries of the tenant the request resolved
-to.
+`audit_view` decides who reads the trail, not whose rows. An entry that
+records a row's values (`create`, `update`, `delete`) shows them only as that
+row's history would: to an operator holding the model's `retrieve`, for a row
+of the request's tenant and, under an ownership grant, one of their own, with
+the fields they may not read masked. The row may no longer exist, so whose it
+was is read from the values the entry recorded, each side on its own. When a
+side is not the operator's to read it is left out (`null`); the entry itself
+is still listed. Entries that record no row are shown as they are. A
+superuser is held to the tenant alone, as on every record surface: in a
+request the host resolved to a tenant, other tenants' rows keep their values
+out of the trail until `?tenant=` switches it.
+
+Entries are not filtered by tenant: the trail does not record which tenant a
+write was made in. With `multitenant_enabled`, an operator granted
+`audit_view` still sees every entry — who did what to which record, from which
+address, and every `tenant.override` — including other tenants', without the
+values of other tenants' rows.
 
 Entries are bounded as well as redacted. The user id, username, model,
 record id and client IP are cut at 256 bytes and the User-Agent at 512, with

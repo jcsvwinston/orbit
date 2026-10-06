@@ -629,6 +629,7 @@ func (p *Panel) handleListAuditLog(c *router.Context) error {
 	}
 
 	entries := p.audit.list(opts)
+	p.auditRowScopes(c).apply(entries)
 
 	// total counts the entries that match the filters, so a filtered
 	// listing does not page past its last entry.
@@ -680,11 +681,13 @@ func (p *Panel) writeAuditCSV(c *router.Context, opts auditQueryOpts) error {
 	exported := 0
 	page := opts
 	page.PageSize = auditExportPageSize
+	scopes := p.auditRowScopes(c)
 	for page.Page = 1; ; page.Page++ {
 		entries := p.audit.list(page)
 		if len(entries) == 0 {
 			break
 		}
+		scopes.apply(entries)
 		for _, e := range entries {
 			if err := writer.Write([]string{
 				strconv.FormatUint(uint64(e.ID), 10),
@@ -722,6 +725,79 @@ func (p *Panel) writeAuditCSV(c *router.Context, opts auditQueryOpts) error {
 		},
 	})
 	return nil
+}
+
+// auditRowActions are the entries that record a row's values: what a
+// create, an update or a delete of the record form wrote (a child it wrote
+// with its record, and each row of a batch delete, included).
+var auditRowActions = map[string]bool{"create": true, "update": true, "delete": true}
+
+// auditRowScopes is what one request may read of the rows the trail
+// recorded, resolved once per model: the trail asks it of every entry of a
+// page, and the answer does not change within a request.
+//
+// The trail (GET /api/audit and its CSV copy) is read with audit_view, which
+// says who reads the trail and not whose rows: an entry that records a row's
+// values shows them only as that row's history would (handleRecordHistory) —
+// with the model's retrieve, inside the request's tenant and, under an #own
+// grant, the operator's own rows, with the fields the operator may not read
+// masked. The row may be gone, so whose it was is read from the values the
+// entry recorded (readScope.holdsValues), each side on its own. Before OR-73
+// the trail showed every entry's values to anyone with audit_view. The entry
+// itself is still listed — who did what to which record, and when, is what
+// audit_view grants — and every other entry is unchanged.
+type auditRowScopes struct {
+	panel   *Panel
+	c       *router.Context
+	byModel map[string]auditRowScope
+}
+
+type auditRowScope struct {
+	model datasource.ModelInfo
+	read  readScope
+	err   error
+}
+
+func (p *Panel) auditRowScopes(c *router.Context) *auditRowScopes {
+	return &auditRowScopes{panel: p, c: c, byModel: map[string]auditRowScope{}}
+}
+
+// apply shows of each entry what this request may read of the row it
+// records, in place: a side outside the scope, or every side of a row the
+// operator may not retrieve, is left out (null).
+func (s *auditRowScopes) apply(entries []AuditEntry) {
+	for i := range entries {
+		e := &entries[i]
+		if !auditRowActions[e.Action] {
+			continue
+		}
+		scope, ok := s.forModel(e.ModelName)
+		if !ok {
+			continue
+		}
+		if scope.err != nil {
+			e.OldValue, e.NewValue = nil, nil
+			continue
+		}
+		e.OldValue = scope.read.rowValues(scope.model, e.OldValue)
+		e.NewValue = scope.read.rowValues(scope.model, e.NewValue)
+	}
+}
+
+// forModel resolves the read scope of one model, or reports that name is not
+// a model the panel serves — an entry about something else is not a row's.
+func (s *auditRowScopes) forModel(name string) (auditRowScope, bool) {
+	if scope, ok := s.byModel[name]; ok {
+		return scope, true
+	}
+	mi, ok := s.panel.src.Get(name)
+	if !ok {
+		return auditRowScope{}, false
+	}
+	read, err := s.panel.requestReadScope(s.c, mi, "retrieve")
+	scope := auditRowScope{model: mi, read: read, err: err}
+	s.byModel[name] = scope
+	return scope, true
 }
 
 // auditValueText renders a value map for a CSV cell. The values are already
@@ -855,10 +931,12 @@ func (p *Panel) handleClearAuditLog(c *router.Context) error {
 // the database answers "since the retention window".
 //
 // Who may read it is the record's own permission, not the log's: an operator
-// who may retrieve the row may see what it said before. The row scope and the
-// field permissions of that grant apply here too — a history that showed the
-// values of a row the operator cannot open, or a field they may not read,
-// would be a way around both.
+// who may retrieve the row may see what it said before. The scope of that
+// grant is the record view's (requestReadScope) — the request's tenant, the
+// operator's own rows under an #own grant and the fields they may read — so a
+// history never shows the values of a row the operator cannot open, or a
+// field they may not read. Before OR-73 it asked the #own scope and not the
+// tenant, and answered the history of another tenant's row.
 func (p *Panel) handleRecordHistory(c *router.Context) error {
 	r := c.Request
 	name := c.Param("name")
@@ -868,7 +946,7 @@ func (p *Panel) handleRecordHistory(c *router.Context) error {
 	if !ok {
 		return gferrors.NotFound("model", name)
 	}
-	rowScope, err := p.authorizeRecordAction(c, mi, "retrieve")
+	read, err := p.requestReadScope(c, mi, "retrieve")
 	if err != nil {
 		return err
 	}
@@ -881,10 +959,10 @@ func (p *Panel) handleRecordHistory(c *router.Context) error {
 		})
 	}
 
-	// The row has to be one this operator can reach: a row-scoped operator
-	// asking for somebody else's history gets the same answer as for the row
-	// itself.
-	if rowScope.Enforced() {
+	// The row has to be one this operator can reach: asking for the history
+	// of a row of another tenant, or of somebody else's under an #own grant,
+	// gets the answer the row itself gets.
+	if read.confined() {
 		databaseAlias, err := p.requestDatabaseAlias(r)
 		if err != nil {
 			return gferrors.BadRequest(err.Error())
@@ -897,8 +975,16 @@ func (p *Panel) handleRecordHistory(c *router.Context) error {
 		if err != nil {
 			return err
 		}
-		if err := scopedOwnedRecord(r.Context(), st, mi, idStr, rowScope); err != nil {
+		rec, err := st.Get(r.Context(), idStr)
+		if err != nil {
 			return err
+		}
+		reached, err := read.reaches(r.Context(), st, mi, idStr, rec)
+		if err != nil {
+			return err
+		}
+		if !reached {
+			return gferrors.NotFound(mi.Name, idStr)
 		}
 	}
 
@@ -916,10 +1002,10 @@ func (p *Panel) handleRecordHistory(c *router.Context) error {
 
 	// A field this operator may not read is not readable through its own
 	// history either.
-	if rules := p.requestFieldRules(r, mi); rules.enforced() {
+	if read.fields.enforced() {
 		for i := range entries {
-			entries[i].OldValue = rules.maskValues(mi, entries[i].OldValue)
-			entries[i].NewValue = rules.maskValues(mi, entries[i].NewValue)
+			entries[i].OldValue = read.fields.maskValues(mi, entries[i].OldValue)
+			entries[i].NewValue = read.fields.maskValues(mi, entries[i].NewValue)
 		}
 	}
 

@@ -1925,3 +1925,61 @@ Verified by breaking it:
 | the parent written before the children are planned | `TestInlineScope_OneRefusedChildWritesNothing`, `TestInlineScope_AChildFieldTheOperatorMayNotWriteIsRefused` |
 
 The HTTP bench is unchanged at 72 of 72; the browser half stays at 18 of 18.
+
+## What the trail shows of a row (OR-73)
+
+A record's history (`GET /api/models/{model}/{id}/history`) is the audit
+trail read by record, with the values of every write. It asked the `#own`
+scope of `retrieve` and not the tenant: a row of another tenant answered
+`404` on the record and `200`, values included, on its history. And the
+trail itself (`GET /api/audit` and its CSV copy) is granted by `audit_view`
+on `admin:*`, and showed every row's values to whoever read it — what the
+history of the same row withheld.
+
+The history now reads with the record's scope (`requestReadScope`, beside
+the list and the exports), and the trail shows a row's values only as that
+row's history would:
+
+| surface | what it shows of a row |
+|---|---|
+| a record's history | `404` for a row of another tenant or, under `#own`, of another operator — the record view's answer, a superuser's request in a tenant included; the fields the operator may not read masked in every entry |
+| the trail and its CSV copy, an entry recording a row (`create`, `update`, `delete`) | its values only with the model's `retrieve`, for a row of the request's tenant and, under `#own`, the operator's own — read from the values the entry recorded, each side on its own — with the fields the operator may not read masked; otherwise the entry is listed with its values left out |
+| the trail, any other entry | unchanged |
+
+The trail still lists every entry to whoever holds `audit_view`: it records
+who did what to which record and when, and not the tenant a write was made
+in.
+
+**`PERM-06`** (HTTP) now also grants its operator `audit_view` and reads the
+note whose title is kept from them through its history, the trail and the
+trail's CSV copy: each shows the operator's own edit, and none the title.
+**`PERM-07`** reads that another operator's article has no history for the
+row-scoped operator while their own has one, and that the trail lists the
+other article's entry without its values.
+
+### What the work found that was not on the plan
+
+- **CHANGED — an operator without a model's `retrieve` reads its entries
+  without their values.** `audit_view` alone used to show every row of every
+  model in the trail; it says who reads the trail now, not whose rows.
+- **CHANGED — a superuser in a request confined to a tenant reads the
+  trail with other tenants' rows left without their values**, as Data Studio
+  lists them none; `?tenant=` switches it, as on every record surface.
+- **CHANGED — a confined operator does not read the values of a row the
+  entry does not say is theirs.** The row may be gone, so the trail can only
+  read whose it was from what the entry recorded; a side that does not carry
+  the tenant or the owner column is left out for an operator confined by it.
+
+Verified by breaking it:
+
+| mutation | what fails |
+|---|---|
+| the parent commit's server | `PERM-06`: the trail carries the title the operator may not read; `PERM-07`: the trail carries the values of another operator's row; every `TestAuditTrail_*`, `TestRecordHistory_IsConfinedToTheRequestsTenant` |
+| the history confined by `#own` only, as before | `TestRecordHistory_IsConfinedToTheRequestsTenant` |
+| the history without its field mask | `TestRecordHistory_MasksTheFieldsTheOperatorMayNotRead` |
+| the trail's listing, or its CSV copy, read without the row scope | `TestAuditTrail_RowValuesStayInTheRequestsTenant`, `TestAuditTrail_RowValuesFollowTheOwnGrantAndTheFieldPolicies` (and `TestAuditTrail_RowValuesNeedTheModelsRetrieve` for the listing) |
+| a side's values shown whoever's row they record | `TestAuditTrail_RowValuesStayInTheRequestsTenant`, `TestAuditTrail_RowValuesFollowTheOwnGrantAndTheFieldPolicies` |
+| the trail's values not masked | `TestAuditTrail_RowValuesFollowTheOwnGrantAndTheFieldPolicies` |
+| a model the operator may not retrieve shown anyway | `TestAuditTrail_RowValuesNeedTheModelsRetrieve` |
+
+The HTTP bench is unchanged at 72 of 72; the browser half stays at 18 of 18.

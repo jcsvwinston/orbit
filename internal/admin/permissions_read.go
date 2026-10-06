@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"strings"
@@ -20,11 +21,13 @@ import (
 //
 // Every surface that reads rows on an operator's behalf takes it from
 // requestReadScope — the list, the per-model CSV export, the panel's export
-// in every format, the fixture dump, a dashboard's records card and a
-// relation lookup — so none of them can show more than the grid does. Before
-// OR-66 each assembled its own, and the panel's export and the dump assembled
-// only the tenant. What a query may name is the same scope's fields (OR-69,
-// below).
+// in every format, the fixture dump, a dashboard's records card, a relation
+// lookup, a record's history and the values the audit trail recorded of a
+// row — so none of them can show more than the grid does. Before OR-66 each
+// assembled its own, and the panel's export and the dump assembled only the
+// tenant; before OR-73 the history asked the #own scope and not the tenant,
+// and the trail asked nothing. What a query may name is the same scope's
+// fields (OR-69, below).
 type readScope struct {
 	// confine maps a runtime column to the value every row read must carry.
 	// Empty when the request is not confined.
@@ -34,6 +37,12 @@ type readScope struct {
 	tenant string
 	// fields is the operator's field policy over the model.
 	fields fieldRules
+	// tenantRows and ownRows are the confinements confine was built from,
+	// kept for the questions a filter does not answer: whether one row is
+	// within the scope (reaches), and whether the values an audit entry
+	// recorded of a row are (holdsValues).
+	tenantRows tenantScope
+	ownRows    ownerScope
 }
 
 // requestReadScope authorizes action on mi for c's operator and resolves what
@@ -50,11 +59,72 @@ func (p *Panel) requestReadScope(c *router.Context, mi datasource.ModelInfo, act
 	if scope := p.requestTenantScope(c.Request, mi); scope.Enforced() {
 		s.confineTo(scope.Column(), scope.Tenant)
 		s.tenant = scope.Tenant
+		s.tenantRows = scope
 	}
 	if rowScope.Enforced() {
 		s.confineTo(rowScope.Column(), rowScope.Owner)
+		s.ownRows = rowScope
 	}
 	return s, nil
+}
+
+// confined reports whether the scope reaches only some rows, so a surface
+// that names one row has to confirm it is one of them.
+func (s readScope) confined() bool { return s.tenantRows.Enforced() || s.ownRows.Enforced() }
+
+// reaches reports whether the row id names — rec being the record st
+// returned for it — is within the scope: of the request's tenant and, under
+// an #own grant, the operator's. A row it does not reach is answered as not
+// found by the caller, the record view's answer for it.
+func (s readScope) reaches(ctx context.Context, st datasource.RecordStore, mi datasource.ModelInfo, id string, rec datasource.Record) (bool, error) {
+	if s.tenantRows.Enforced() {
+		owned, err := s.tenantRows.owns(ctx, st, mi, id, rec)
+		if err != nil || !owned {
+			return false, err
+		}
+	}
+	if s.ownRows.Enforced() {
+		return s.ownRows.owns(ctx, st, mi, id, rec)
+	}
+	return true, nil
+}
+
+// holdsValues reports whether a row's values, as an audit entry recorded
+// them, are within the scope: they carry each confined column with the
+// scope's value. Values that do not carry it are not — nothing else says
+// whose row they were, and the row itself may be gone.
+func (s readScope) holdsValues(values map[string]any) bool {
+	if s.tenantRows.Enforced() && !valuesCarry(values, s.tenantRows.Keys, s.tenantRows.Tenant) {
+		return false
+	}
+	if s.ownRows.Enforced() && !valuesCarry(values, s.ownRows.Keys, s.ownRows.Owner) {
+		return false
+	}
+	return true
+}
+
+// valuesCarry reports whether values hold want under one of keys, compared
+// the way the tenant and the owner guards compare it (canonicalTenant).
+func valuesCarry(values map[string]any, keys []string, want string) bool {
+	v, ok := recordValueByKeys(datasource.Record(values), keys)
+	if !ok {
+		return false
+	}
+	got, _ := canonicalTenant(v)
+	return got == want
+}
+
+// rowValues is what this scope shows of one side of an audit entry about a
+// row of mi: nothing when the values are not of a row it reaches, else the
+// values with the fields the operator may not read masked.
+func (s readScope) rowValues(mi datasource.ModelInfo, values map[string]any) map[string]any {
+	if len(values) == 0 {
+		return values
+	}
+	if !s.holdsValues(values) {
+		return nil
+	}
+	return s.fields.maskValues(mi, values)
 }
 
 func (s *readScope) confineTo(column, value string) {
