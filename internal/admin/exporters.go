@@ -129,9 +129,10 @@ func (p *Panel) exportTargets(c *router.Context, requested []string, body map[st
 // keys its own, so the scope replaces one on a confined column instead of
 // sitting beside it for a backend to choose between; one that names no field
 // of mi is another model's, and is not applied to this one (the backends
-// dropped it anyway). A filter on a field the panel excludes, or that this
-// operator may not read, is refused: the number of rows it leaves would say
-// what the field holds, which is the value the export leaves out.
+// dropped it anyway). A filter on a field this operator does not read
+// (fieldRules.readsField, the predicate the list's filters are held to as
+// well) is refused with the list's answer: the number of rows it leaves would
+// say what the field holds, which is the value the export leaves out.
 func (p *Panel) exportFilters(mi datasource.ModelInfo, read readScope, body map[string]string, tenant string) (map[string]string, error) {
 	base := make(map[string]string, len(body)+1)
 	for key, value := range body {
@@ -139,7 +140,7 @@ func (p *Panel) exportFilters(mi datasource.ModelInfo, read readScope, body map[
 		if !ok {
 			continue
 		}
-		if field.IsExcluded || (!field.IsPK && !read.fields.readable(col)) {
+		if !read.fields.readsField(field) {
 			return nil, gferrors.BadRequest(fmt.Sprintf("invalid filter field %q", key))
 		}
 		base[col] = value

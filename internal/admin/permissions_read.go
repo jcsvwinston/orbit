@@ -4,6 +4,11 @@
 package admin
 
 import (
+	"fmt"
+	"net/url"
+	"strings"
+
+	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
 	"github.com/jcsvwinston/nucleus/pkg/router"
 
 	"github.com/jcsvwinston/orbit/datasource"
@@ -15,9 +20,11 @@ import (
 //
 // Every surface that reads rows on an operator's behalf takes it from
 // requestReadScope — the list, the per-model CSV export, the panel's export
-// in every format, the fixture dump and a dashboard's records card — so none
-// of them can show more than the grid does. Before OR-66 each assembled its
-// own, and the panel's export and the dump assembled only the tenant.
+// in every format, the fixture dump, a dashboard's records card and a
+// relation lookup — so none of them can show more than the grid does. Before
+// OR-66 each assembled its own, and the panel's export and the dump assembled
+// only the tenant. What a query may name is the same scope's fields (OR-69,
+// below).
 type readScope struct {
 	// confine maps a runtime column to the value every row read must carry.
 	// Empty when the request is not confined.
@@ -76,20 +83,119 @@ func (s readScope) filters(base map[string]string) map[string]string {
 }
 
 // readableFields lists the fields of mi an export may write for this scope:
-// every field the panel shows (not excluded) that the operator may read. The
-// primary key always stays — a row whose key is hidden cannot be opened,
-// re-imported or told apart from another, which is what fieldRules.mask
-// keeps it for too.
+// the ones the operator reads (fieldRules.readsField).
 func (s readScope) readableFields(mi datasource.ModelInfo) []datasource.FieldInfo {
 	out := make([]datasource.FieldInfo, 0, len(mi.Fields))
 	for _, f := range mi.Fields {
-		if f.IsExcluded {
-			continue
+		if s.fields.readsField(f) {
+			out = append(out, f)
 		}
-		if !f.IsPK && !s.fields.readable(runtimeColumn(f.Column)) {
-			continue
-		}
-		out = append(out, f)
 	}
 	return out
+}
+
+// What an operator may ASK about (OR-69).
+//
+// A field the operator may not read was masked out of every row, and then
+// filtered by, sorted by and searched in on their behalf: with a deny on
+// `owner`, ?owner=operator answered one row and ?owner=nobody none, which is
+// the value, one guess at a time — and a sort pages the rows in the hidden
+// field's order. A field the operator may not read is not one they can name
+// in a query either, on any surface that reads rows for them: the list (its
+// filters, its sort and its search), the panel's export (its filters), a
+// relation lookup (its label and its search), a records card (its order) and
+// the saved views listed. Each asks the predicate below, the one the columns
+// of an export are chosen by, so what may be read and what may be asked
+// cannot drift apart.
+
+// readsField reports whether the operator reads field f: never one the panel
+// excludes, always the primary key — a row whose key is hidden cannot be
+// opened, exported or told apart from another, which is what mask keeps it
+// for too — and otherwise what their field policies say of its column.
+func (fr fieldRules) readsField(f datasource.FieldInfo) bool {
+	if f.IsExcluded {
+		return false
+	}
+	return f.IsPK || fr.readable(runtimeColumn(f.Column))
+}
+
+// queryModel is mi as this operator may name its fields in a query: each one
+// they may not read is marked excluded, so the helpers that validate a filter
+// (dsCollectFilters), a sort (dsSanitizeOrderBy) or a relation's label
+// (optionLabelField) refuse it the way they refuse a field the panel never
+// shows — with the answer a field the model does not have gets, so the
+// refusal does not say the field exists either. mi is not modified, and comes
+// back as it is when no field policy applies.
+func (fr fieldRules) queryModel(mi datasource.ModelInfo) datasource.ModelInfo {
+	if !fr.enforced() {
+		return mi
+	}
+	fields := make([]datasource.FieldInfo, len(mi.Fields))
+	for i, f := range mi.Fields {
+		if !fr.readsField(f) {
+			f.IsExcluded = true
+		}
+		fields[i] = f
+	}
+	mi.Fields = fields
+	return mi
+}
+
+// searchesHidden reports whether ?search= would look in a field this
+// operator does not read. The backend searches every field it marks
+// searchable and datasource.Query has no way to say which, so the panel
+// cannot narrow a search to the readable ones: one that would reach a hidden
+// field is refused instead, since the rows it finds say what that field
+// holds. An excluded field counts, for every operator: Nucleus searches a
+// searchable field whether the panel shows it or not.
+func (fr fieldRules) searchesHidden(mi datasource.ModelInfo) bool {
+	for _, f := range mi.Fields {
+		if f.IsSearch && !fr.readsField(f) {
+			return true
+		}
+	}
+	return false
+}
+
+// searchable reports whether ?search= is answered for this operator: the
+// model has a field to search in, and no field the search would reach is
+// hidden from them. The schema carries it, so the grid does not offer a box
+// the list refuses.
+func (fr fieldRules) searchable(mi datasource.ModelInfo) bool {
+	return modelSearchable(mi) && !fr.searchesHidden(mi)
+}
+
+// hiddenSearchError is the 400 a search that would reach a hidden field
+// gets. It names no field: the field's name is what the schema withholds.
+func hiddenSearchError(mi datasource.ModelInfo) error {
+	return gferrors.BadRequest(fmt.Sprintf("search is not available for %s: it would look in fields hidden from this operator", mi.Name))
+}
+
+// namesHiddenField reports whether a list query string — a saved view's —
+// filters or sorts by a field this operator does not read. It reads the
+// query the way the list does (dsCollectFilters, dsSanitizeOrderBy) and
+// answers only that: a query wrong for any other reason is the list's to
+// refuse.
+func (fr fieldRules) namesHiddenField(mi datasource.ModelInfo, values url.Values) bool {
+	hidden := func(key string) bool {
+		_, f, ok := dsResolveField(mi, key)
+		return ok && !fr.readsField(f)
+	}
+	for key := range values {
+		if listReservedParams[key] {
+			continue
+		}
+		if hidden(key) {
+			return true
+		}
+		if field, _, ok := dsSplitFilterKey(mi, key); ok && hidden(field) {
+			return true
+		}
+	}
+	for _, clause := range strings.Split(values.Get("order_by"), ",") {
+		if words := strings.Fields(clause); len(words) > 0 && hidden(words[0]) {
+			return true
+		}
+	}
+	return false
 }

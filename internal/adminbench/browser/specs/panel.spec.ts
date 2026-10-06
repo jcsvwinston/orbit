@@ -1233,9 +1233,13 @@ test.describe('UIX', () => {
    * it holds (OR-66): the export is granted on admin:*, and what it carries
    * is what the actor may list — the notes without the field kept from
    * them, their own article and not another's, and no model they may not
-   * list.
+   * list. And a field kept from the actor is not one they can ask about
+   * (OR-69): the grid offers no sort or filter on it, a view somebody
+   * shared that filters by it is not listed to them, and the list asked
+   * anyway refuses the filter and the sort — the rows a filter leaves, and
+   * the order a sort puts them in, are what the field holds.
    */
-  test('UIX-18 an operator is offered a model, a record\'s history, an export, an import, the field settings and a saved view\'s removal only where they hold them, each one asked anyway is refused, and an export holds only what the operator may list', async ({ page }) => {
+  test('UIX-18 an operator is offered a model, a record\'s history, an export, an import, the field settings and a saved view\'s removal only where they hold them, each one asked anyway is refused, an export holds only what the operator may list, and a field the operator may not read is neither offered nor answered as a sort, a filter or a saved view', async ({ page }) => {
     // Four sign-ins: the admin who sets the stage and three operators.
     test.setTimeout(120_000)
     const { viewer, actor, lister, password } = partialOperators('UIX-18')
@@ -1258,6 +1262,20 @@ test.describe('UIX', () => {
       return r.status < 300 ? String(out?.id ?? '') : ''
     }, shared)
     expect(sharedId, 'UIX-18 precondition: the admin could not share a view of Notes').not.toBe('')
+    // A second shared view, filtered by a field the actor may not read
+    // (OR-69): the viewer, who reads it, is shown it; the actor is not.
+    const byViews = `uix-18 by views ${stamp}`
+    const byViewsId = await page.evaluate(async (name) => {
+      const r = await fetch('/admin/api/views', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ model: 'Note', name, query: 'views__gte=0', is_shared: true }),
+      })
+      const out = await r.json().catch(() => ({}))
+      return r.status < 300 ? String(out?.id ?? '') : ''
+    }, byViews)
+    expect(byViewsId, 'UIX-18 precondition: the admin could not share a view of Notes filtered by views').not.toBe('')
     // What the actor's export is read against (OR-66): two articles, one
     // the actor's — the actor may list their own and no other
     // (admin:Article#own) — and a credential, of a model the actor may not
@@ -1320,6 +1338,11 @@ test.describe('UIX', () => {
     await expect(page.getByRole('button', { name: /^Filters/ }), 'UIX-18 precondition: the viewer\'s toolbar is not drawn').toBeVisible()
     await expect(toolbarTransfer, 'UIX-18: the toolbar offers the viewer an export or an import, and the viewer holds neither').toHaveCount(0)
     await expect(page.getByRole('button', { name: shared, exact: true }), 'UIX-18 precondition: the viewer is not shown the shared view').toBeVisible({ timeout: 5_000 })
+    // The viewer reads a note's views: the grid sorts by it, and the view
+    // filtered by it is theirs to see — what the actor's screen is read
+    // against below.
+    await expect(page.getByRole('columnheader', { name: 'Views' }), 'UIX-18 precondition: the viewer\'s grid draws no Views column').toBeVisible()
+    await expect(page.getByRole('button', { name: byViews, exact: true }), 'UIX-18 precondition: the viewer, who reads views, is not shown the view filtered by it').toBeVisible({ timeout: 5_000 })
     await expect(page.getByRole('button', { name: `Remove the view ${shared}` }), 'UIX-18: the viewer is offered the removal of a view somebody else shared').toHaveCount(0)
     // Their own view, saved beside it, is theirs to remove.
     const own = `uix-18 own ${stamp}`
@@ -1345,6 +1368,18 @@ test.describe('UIX', () => {
       `UIX-18 precondition: the actor's schema does not say export and no import: ${JSON.stringify(actorHolds)}`,
     ).toBe(true)
     await openNote(page, title, id, 'actor', 'UIX-18')
+    // A field kept from the actor (OR-69): no column to sort by, no filter,
+    // and no view somebody shared that filters by it.
+    await expect(page.getByRole('columnheader', { name: 'Title' }), 'UIX-18 precondition: the actor\'s grid draws no header').toBeVisible()
+    await expect(page.getByRole('columnheader', { name: 'Views' }), 'UIX-18: the actor\'s grid offers a sort by views, which the actor may not read').toHaveCount(0)
+    const filtersToggle = page.getByRole('button', { name: /^Filters/ })
+    await filtersToggle.click()
+    await expect(page.getByLabel('Status', { exact: true }), 'UIX-18 precondition: the actor\'s filters did not open').toBeVisible({ timeout: 5_000 })
+    await expect(page.getByLabel('Views', { exact: true }), 'UIX-18: the actor is offered a filter on views, which the actor may not read').toHaveCount(0)
+    await filtersToggle.click()
+    await expect(page.getByLabel('Status', { exact: true })).toBeHidden({ timeout: 5_000 })
+    await expect(page.getByRole('button', { name: shared, exact: true }), 'UIX-18 precondition: the actor is not shown the shared view').toBeVisible({ timeout: 5_000 })
+    await expect(page.getByRole('button', { name: byViews, exact: true }), 'UIX-18: the actor is shown a view filtered by views, which the actor may not read').toHaveCount(0)
     const exportToggle = page.getByRole('button', { name: 'Export', exact: true })
     await expect(exportToggle, 'UIX-18: the toolbar offers the actor no export, which the actor holds').toBeVisible()
     await exportToggle.click()
@@ -1354,6 +1389,18 @@ test.describe('UIX', () => {
     expect(actorScreen, `UIX-18: the actor's Data Studio, with the export open: ${JSON.stringify(actorScreen, null, 2)}`).toEqual([])
     expect(await forced(page, 'POST', '/admin/api/exports', exportBody), 'UIX-18: the server refused the actor the export it offered').toBe(200)
     expect(await forced(page, 'POST', importPath, importBody), 'UIX-18: the server took an import from the actor, who holds no import_data').toBe(403)
+    // Asked anyway (OR-69): a filter or a sort on views is refused, with the
+    // answer a field the model does not have gets; one on a field the actor
+    // reads is answered.
+    for (const query of ['views=0', 'views__gte=0', 'order_by=views%20desc']) {
+      expect(await forced(page, 'GET', `/admin/api/models/Note?${query}`), `UIX-18: the server answered ?${query} to the actor, who may not read views`).toBe(400)
+    }
+    expect(await forced(page, 'GET', '/admin/api/models/Note?order_by=title%20desc'), 'UIX-18: the server refused the actor a sort by a field the actor reads').toBe(200)
+    const actorViews = await page.evaluate(async () => {
+      const r = await fetch('/admin/api/views?model=Note', { credentials: 'same-origin' })
+      return r.ok ? JSON.stringify(await r.json()) : `status ${r.status}`
+    })
+    expect(actorViews, 'UIX-18: the views listed to the actor hold the one filtered by views').not.toContain(byViewsId)
 
     // What the actor's export holds (OR-66). An export of every model, cut
     // and downloaded as the actor: the notes, without the field the actor
@@ -1381,6 +1428,7 @@ test.describe('UIX', () => {
     const exportedNotes = exported.records.filter((r) => r._model === 'Note')
     expect(exportedNotes.some((r) => r.title === title), 'UIX-18 precondition: the actor\'s export holds no note of this control').toBe(true)
     expect(exportedNotes.filter((r) => 'meta' in r).length, 'UIX-18: the actor\'s export holds a field of Note the actor may not read (meta)').toBe(0)
+    expect(exportedNotes.filter((r) => 'views' in r).length, 'UIX-18: the actor\'s export holds a field of Note the actor may not read (views)').toBe(0)
     // The model the actor may not list, asked for by name, is refused —
     // and the payload the screens draw from says so.
     const credential = await page.evaluate(async () => {

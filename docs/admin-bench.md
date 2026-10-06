@@ -101,8 +101,10 @@ The panel **browses and operates well, and administers poorly**.
   worth keeping in mind about how it is measured: the row probe creates the
   operator's own row THROUGH the panel and somebody else's as the superuser,
   the field probe reads the value back after the refusal (a 403 that wrote
-  the row anyway would be worse than no permission at all), and the hint
-  probe checks each hint against the answer the panel actually gives.
+  the row anyway would be worse than no permission at all) and asks the
+  hidden field back as a filter, a sort and a search
+  ([OR-69](#what-a-query-may-name-or-69)), and the hint probe checks each
+  hint against the answer the panel actually gives.
 - The audit trail is no longer a process-lifetime buffer: it is a table the
   panel owns, with a retention window an operator can declare, a CSV export
   that carries the filters the screen was showing, and the history of one
@@ -171,7 +173,10 @@ go test ./internal/adminbench/ -run TestBrowserBench -v
 not superusers, added for OR-65; it arrived present with the fixes it asked
 for ([below](#the-rest-of-data-studios-doors-or-65)). OR-66 extended it to
 read what the export it offers holds, and it stayed present with the fix
-([below](#what-an-export-holds-or-66)).
+([below](#what-an-export-holds-or-66)); OR-69 extended it to read that a
+field kept from the actor is neither offered nor answered as a sort, a
+filter or a saved view, and it stayed present with the fix
+([below](#what-a-query-may-name-or-69)).
 `UIX-16` and `UIX-17` are the screens of two of those operators, added for
 OR-64; they found three defects of the panel's own, and arrived present with
 their fixes
@@ -214,7 +219,7 @@ the two stacks met, so the third session's kept its number.)
 | **UIX-15** | the panel's own scripts and stylesheets reach the browser compressed once, by the build |
 | **UIX-16** | an operator is offered a delete only where they hold one: no selection or Delete without it, and no batch Delete for one who may delete a record but not a batch |
 | **UIX-17** | an operator who may not update is offered no edit: the row opens the record read-only, and its menu and the record view hold only the actions granted |
-| **UIX-18** | an operator is offered a model, a record's history, an export, an import, the field settings and a saved view's removal only where they hold them, each one asked anyway is refused, and an export holds only what the operator may list |
+| **UIX-18** | an operator is offered a model, a record's history, an export, an import, the field settings and a saved view's removal only where they hold them, each one asked anyway is refused, an export holds only what the operator may list, and a field the operator may not read is neither offered nor answered as a sort, a filter or a saved view |
 
 Three things worth keeping about how it is built:
 
@@ -1690,5 +1695,94 @@ Verified by breaking it:
 | every operator seeing every export job | `TestPanelExport_JobsAreHandedToTheirProducer` |
 | the export's filters passed to the store as they came | `TestPanelExport_FiltersCannotWidenTheScopeOrProbeAHiddenField` |
 | no read-only check on the fixture load | `TestLoaddata_ReadOnlyModelIsRefused` |
+
+The browser half stays at 18 of 18; the HTTP bench is unchanged at 72 of 72.
+
+## What a query may name (OR-69)
+
+`UIX-18` read what the actor's export holds. It did not ask what the actor's
+list answers about the field kept from them, and the list answered
+everything. A field a policy keeps from an operator (`admin:<Model>.<field>
+deny`, or left out of a `read` allow-list) was masked out of every row, and
+then filtered by, sorted by and searched in on that operator's behalf: with a
+`deny` on `owner`, `?owner=operator` answered one row and `?owner=nobody`
+none, which is the value, one guess at a time, and `order_by=owner` paged
+the rows in the hidden field's order. The export refused such a filter since
+OR-66; nothing else did.
+
+Every surface that reads rows for an operator now asks the predicate the
+columns of an export are chosen by (`fieldRules.readsField`, beside
+`requestReadScope`) before it answers a question about a field:
+
+| surface | what it did | what it does |
+|---|---|---|
+| the list's filters, with or without an operator | filtered by the hidden field | `400 invalid filter field`, the answer a field the model does not have gets |
+| the list's `order_by` | sorted by it | `400 invalid order_by`, the same way |
+| the list's `?search=` | searched in it | `400` when the search would reach a field the operator may not read, and the schema's `searchable` is false, so the grid disables the box |
+| a relation lookup (`/options`) | labelled the options with it, and searched in it | labels them with a field the operator reads; `?q=` is the list's search |
+| a field's lookup (`/fields/{field}/options`) | answered for the hidden field | `404`, as a field the model does not have |
+| the panel's export, its `filters` | refused since OR-66 | the same refusal, from the same predicate |
+| a shared saved view that filters or sorts by it | listed, naming the field and the value somebody looks for | not listed to the operator |
+| a dashboard's records card ordered by it | drawn: the rows ranked by the hidden field | not shown, as a card of a model the operator may not list is not |
+
+There is no facet, aggregate or per-field count in the panel to check; the
+model list's counts are of the whole table and name no field.
+
+A search cannot be narrowed to the readable fields from the panel: the
+backend searches every field it marks searchable, and `datasource.Query`
+has no way to say which. So it is refused instead, and the reason is in the
+grid's disabled search box. Narrowing it is an addition to the frozen
+contract, and another change.
+
+The driver gives the actor one grant more, a `deny` on `Note.views`: a
+column the grid sorts by and a filter it offers. Not `title`, which the
+controls find a note by searching.
+
+| operator | holds (beside `list_models` on `admin:*`) |
+|---|---|
+| the viewer | `get_schema`, `list`, `retrieve` on `Note` |
+| the actor | the same, `delete`, `schedule`, `duplicate`, `export_data` on `admin:*`, a `deny` on `Note.meta` and on `Note.views`, and `list` on `admin:Article#own` |
+| the lister | `get_schema`, `list` on `Note` |
+
+**`UIX-18`** now also shares, as the admin, a view of Notes filtered by
+`views`. The viewer, who reads `views`, is shown it and a Views column; the
+actor is shown neither, nor a Views filter, and asked anyway the list refuses
+the actor `?views=0`, `?views__gte=0` and `order_by=views desc` with `400`,
+answers a sort by `title`, and lists the actor no view filtered by `views`.
+The actor's export holds no note with a `views` key.
+
+**`PERM-06`** (HTTP) now also asks the field it denies — Note's `title`, a
+filter, a sort and its only searchable field — back as `?title=`,
+`?title__startswith=`, `order_by=title` and `?search=`, each of which must
+answer `400`, and reads the relation lookup of Note for a title.
+
+### What the work found that was not on the plan
+
+- **FIXED — a search reached a field the panel excludes, for every
+  operator.** Nucleus searches every field marked searchable, excluded or
+  not, and the panel only checked that SOME searchable field was shown: a
+  model with a shown searchable field and an excluded one answered a search
+  by the excluded field's value, to a superuser too. It counts as a field no
+  one reads now, and the search is refused. A configuration that marks an
+  excluded field searchable loses its search until one of the two flags
+  goes.
+- **FIXED — the refusal of a filter on a hidden field said the field
+  existed.** A field kept from the operator that the model does not offer as
+  a filter answered `filter is not enabled for "secret"`, and a field the
+  model does not have answered `invalid filter field`. Both answer the
+  second now.
+
+Verified by breaking it:
+
+| mutation | what fails |
+|---|---|
+| the parent commit's server, with this spec | `UIX-18`: the actor is shown a view filtered by views; `PERM-06`: `?title=` answered `200` |
+| the list's filters and sort read without the scope's fields | `UIX-18`: `?views=0` answered to the actor; `PERM-06`; `TestListQuery_*` |
+| no refusal of a search that reaches a hidden field | `PERM-06`: `?search=` answered `200`; `TestListSearch_*` |
+| a relation lookup labelled from every field | `PERM-06`: the lookup labels Note with its title; `TestModelOptions_StayInTheFieldsTheOperatorReads` |
+| a relation lookup's `?q=` reaching a hidden field | `TestModelOptions_StayInTheFieldsTheOperatorReads` |
+| a field's lookup answered for a hidden field | `TestFieldOptions_AFieldTheOperatorMayNotReadIsNotFound` |
+| saved views listed whatever they name | `UIX-18`: the actor is shown a view filtered by views; `TestSavedViews_AViewNamingAHiddenFieldIsNotListed` |
+| a records card's order not checked | `TestRecordsCard_InAnOrderTheOperatorMayNotReadIsNotShown` |
 
 The browser half stays at 18 of 18; the HTTP bench is unchanged at 72 of 72.

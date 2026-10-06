@@ -187,7 +187,9 @@ type RecordList struct {
 	Fields []string
 	// OrderBy is the order, in the grid's syntax: "created_at desc". Empty
 	// is newest first — by created_at when the model has one, else by its
-	// primary key.
+	// primary key. An operator who does not read the field it orders by
+	// is not shown the card: the rows in that order are what the field
+	// holds, ranked.
 	OrderBy string
 	// Limit is how many rows: zero is 5, and at most 50.
 	Limit int

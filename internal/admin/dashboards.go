@@ -220,6 +220,11 @@ type recordsRead struct {
 // It answers false when the operator may not list the model — the card is
 // then not shown — and also when the model has gone from the registry since
 // the panel started.
+//
+// It also answers false when the card's order names a field this operator
+// does not read (OR-69): the rows in that order are the ranking the field
+// holds — "the five largest salaries", without the salaries — which is the
+// sort the grid refuses them.
 func (p *Panel) prepareRecordsRead(c *router.Context, list RecordList) (*recordsRead, bool) {
 	mi, ok := p.src.Get(list.Model)
 	if !ok {
@@ -227,6 +232,9 @@ func (p *Panel) prepareRecordsRead(c *router.Context, list RecordList) (*records
 	}
 	read, err := p.requestReadScope(c, mi, "list")
 	if err != nil {
+		return nil, false
+	}
+	if _, err := dsSanitizeOrderBy(read.fields.queryModel(mi), list.OrderBy); err != nil {
 		return nil, false
 	}
 	return &recordsRead{model: mi, list: list, filters: read.filters(nil), rules: read.fields}, true

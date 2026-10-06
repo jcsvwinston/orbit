@@ -82,6 +82,13 @@ differently (Nucleus lower-cases both sides;
 Quark escapes `%` and `_` in the text per engine), so do not expect identical
 results across them.
 
+A search looks in every searchable field, and the panel cannot tell the
+backend to skip one. So a search that would also look in a field the
+operator may not read — kept from them by a field policy, or excluded from
+the panel — answers `400` instead of the rows it would find by that field's
+value (see [what an operator may ask](#what-an-operator-may-ask)); the
+schema's `searchable` says so, and the grid disables the box.
+
 **Filters that carry an operator.** A filter used to mean one thing — this
 column equals this value — and the query string carries the comparison now:
 
@@ -328,12 +335,14 @@ GET /api/models/{model}/fields/{field}/options       the candidates a field may 
 ```
 
 Each option carries the `value` a record stores and a `label` a person reads
-(the model's first searchable text field, then its first listed one). The
+(the model's first searchable text field, then its first listed one, of the
+fields the operator reads). The
 permission is the **target's**: resolving what an Author id means is reading
 Authors, so an operator who may edit the record and not browse the target gets
 a `403` and a form that falls back to the raw id — the panel does not widen a
-grant to render a nicer widget. Search, tenant confinement and row scope apply
-exactly as they do to a list.
+grant to render a nicer widget. Search, tenant confinement, row scope and field
+policies apply exactly as they do to a list; a field the operator may not read
+answers `404` on the second endpoint, as one the model does not have.
 
 **Children, edited with the parent.** A model whose foreign key names another
 appears in the parent's schema as an inline, and the parent's own payload
@@ -454,6 +463,31 @@ believes it saved a value it did not save is worse than one that is told. A
 field the operator may not read is left out of the record, the list, every
 export and the schema.
 
+### What an operator may ask
+
+A field the operator may not read is not one they can ask about either. The
+rows a filter leaves say what the field holds, one guess at a time
+(`?price__gt=1000` answering one row is the price), and a sort pages the rows
+in the field's order. So, for that operator:
+
+- a list filter on it, with or without an operator (`?price=`,
+  `?price__gt=`), answers `400 invalid filter field` — the answer a field the
+  model does not have gets, so the refusal does not say the field exists;
+- an `order_by` that names it answers `400 invalid order_by`, the same way;
+- a `?search=` that would also look in it answers `400`, and the schema's
+  `searchable` is `false` (the backend searches every searchable field; the
+  panel cannot narrow it to the readable ones);
+- the panel's export refuses a `filters` entry on it with the list's `400`;
+- a relation lookup (`/options`) labels its options with a field the operator
+  reads, and its `?q=` is the list's search;
+- a saved view that filters or sorts by it is not listed to them;
+- a dashboard's records card ordered by it is not shown to them, as a card of
+  a model they may not list is not.
+
+An excluded field counts for every operator, superusers included, since no
+one reads it in the panel. The superuser is otherwise unaffected: field
+policies do not apply to them.
+
 Field policies narrow a grant; they never widen one. An operator who cannot
 update the model at all is refused before any field is consulted.
 
@@ -492,7 +526,10 @@ can disable what it may not instead of finding out by being refused:
   (action → boolean), `can_create`, `can_update`, `can_delete`, and `row_scope`
   — the actions confined to the operator's own rows;
 - each field of the schema carries `can_edit` (`can_read` is true for every
-  field that arrives: the ones it is false for are not in the schema).
+  field that arrives: the ones it is false for are not in the schema);
+- the schema carries `searchable`: whether `?search=` is answered for this
+  operator. A field kept from them is not in their schema, so the fields
+  alone cannot say that a search would reach one.
 
 The `permissions` map carries the record verbs, the actions this application
 declared, and the screen's other doors, each asked of the resource its

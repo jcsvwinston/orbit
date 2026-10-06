@@ -60,6 +60,12 @@ export interface ModelSummary extends CapabilityHints {
 }
 
 export interface ModelSchema extends CapabilityHints {
+  // searchable says whether ?search= is answered for this operator. A search
+  // looks in every searchable field, the ones kept from this operator too,
+  // so the server refuses one that would reach a field they may not read —
+  // and the schema, which omits that field, cannot tell the grid on its own.
+  // Absent from a server that predates it.
+  searchable?: boolean
   inlines?: InlineSpec[]
   // Actions this application declared for the model, already filtered to
   // the ones this operator may run: the key is absent when there are none.
