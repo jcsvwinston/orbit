@@ -104,7 +104,9 @@ funcionaba cambia.**
 - **Las superficies globales.** `export_data`, `import_data` y las fixtures se
   autorizan sobre `admin:*`, no sobre un modelo: no llevan alcance de fila ni
   de campo. Conceder esos verbos a un operador confinado es darle el rodeo, y
-  quien los concede lo está decidiendo.
+  quien los concede lo está decidiendo. *(Enmendado para `export_data` y el
+  volcado de fixtures por OR-66, abajo: llevan el alcance de `list`. La
+  importación y la carga de fixtures siguen como dice esta viñeta.)*
 - **El rastro de auditoría.** Guarda los valores antes y después de una
   escritura con sus propias reglas de redacción; un campo prohibido por
   política puede seguir siendo legible ahí para quien tenga `audit_view`.
@@ -112,6 +114,47 @@ funcionaba cambia.**
 - **La allow-list de creación se refleja en `can_edit` como la de update.** Un
   formulario de alta con allow-lists distintas para `create` y `update`
   ofrece los campos de `update`; el servidor rechaza lo que sobre.
+
+## Enmienda de OR-66 (2026-10-06): la exportación lleva el alcance de `list`
+
+La primera viñeta de «Lo que NO cubre» dejaba `export_data` sin alcance de
+fila ni de campo, y el resultado era peor que un rodeo decidido: el botón
+Export de Data Studio usa esa exportación, así que un operador confinado a
+sus filas, o sin un campo, exportaba todas las filas y todos los campos del
+modelo que estaba mirando — y de cualquier modelo que no podía abrir — en
+CSV, JSON y SQL. Nadie que concediera `export_data` para «que exporte lo que
+ve» estaba decidiendo eso.
+
+Se enmienda así:
+
+- **`export_data` sigue concediéndose sobre `admin:*`**, pero dice quién
+  exporta, no qué. La exportación del panel (`POST /api/exports`) y el
+  volcado de fixtures (`dumpdata`, que va con el mismo permiso) llevan, por
+  modelo, lo que el `list` de ese operador mostraría: el tenant, las filas
+  propias bajo `#own` y sólo los campos legibles, en todos los formatos. Las
+  cinco superficies que leen filas en nombre de un operador (la lista,
+  `export_csv`, la exportación del panel, el volcado y la tarjeta de
+  registros de un dashboard) toman ese alcance de una sola función
+  (`requestReadScope`).
+- **Un modelo que el operador no puede listar** se rechaza con el `403` de
+  `list` si la petición lo nombra (también el de un `#own` sin columna de
+  propiedad: el punto 3 vale aquí), y se omite si la petición exporta todos
+  los modelos.
+- **Una exportación ya cortada es una copia de lo que su autor podía leer**:
+  la lista de trabajos, su estado y su descarga se entregan a ese operador y
+  a un superusuario, y la clave lleva un sufijo aleatorio (dos exportaciones
+  en el mismo segundo compartían clave y la segunda pisaba la primera).
+- La pista `export_data` del esquema es falsa en un modelo que el operador
+  no puede listar, porque es la respuesta que da el handler.
+
+**Lo que esta enmienda NO cambia**: `import_data` y la carga de fixtures
+siguen autorizándose sobre `admin:*` sin el `create`/`update` de cada
+modelo, sin alcance de fila y sin políticas de campo de escritura, tal como
+dice «Lo que NO cubre»; si eso se mantiene es una decisión pendiente del
+dueño (OR-67), no de esta enmienda. Lo único que ganan es lo que cualquier
+escritura del panel ya tenía: un modelo de sólo lectura rechaza la carga de
+fixtures entera, antes de escribir ninguna fila (OR-68), como desde OR-65
+rechaza la importación.
 
 ## Preguntas abiertas
 

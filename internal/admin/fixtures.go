@@ -29,7 +29,7 @@ type DjangoFixtureRecord struct {
 
 // DumpdataConfig configures the dumpdata operation.
 type DumpdataConfig struct {
-	Models   []string `json:"models"`    // Models to export (empty = all)
+	Models   []string `json:"models"`    // Models to export (empty = every one the operator may list)
 	Database string   `json:"database"`  // Source database alias
 	TenantID string   `json:"tenant_id"` // Tenant scope (empty = all)
 }
@@ -42,9 +42,12 @@ type LoaddataConfig struct {
 	TenantID   string `json:"tenant_id"`   // Tenant ID for auto-injection
 }
 
-// Dumpdata exports registered models to a Django-compatible JSON fixture file.
-// Each record is serialized as {"model": "AppName.ModelName", "pk": <id>, "fields": {...}}.
-func (p *Panel) Dumpdata(ctx context.Context, cfg DumpdataConfig) (ExportResult, error) {
+// Dumpdata exports the targets (exportTargets) to a Django-compatible JSON
+// fixture file. Each record is serialized as {"model": "AppName.ModelName",
+// "pk": <id>, "fields": {...}}, and carries the rows and fields its target's
+// read scope lets the requesting operator see; a model with no target is not
+// dumped.
+func (p *Panel) Dumpdata(ctx context.Context, cfg DumpdataConfig, targets []exportTarget) (ExportResult, error) {
 	result := ExportResult{
 		Status:    "processing",
 		Format:    "django_fixture",
@@ -55,15 +58,6 @@ func (p *Panel) Dumpdata(ctx context.Context, cfg DumpdataConfig) (ExportResult,
 		return result, fmt.Errorf("storage not configured")
 	}
 
-	// Resolve models to export
-	modelsToExport := cfg.Models
-	if len(modelsToExport) == 0 {
-		for _, m := range p.src.All() {
-			modelsToExport = append(modelsToExport, m.Name)
-		}
-	}
-	sort.Strings(modelsToExport)
-
 	databaseAlias := cfg.Database
 	if databaseAlias == "" {
 		databaseAlias = p.defaultDBAlias
@@ -73,26 +67,18 @@ func (p *Panel) Dumpdata(ctx context.Context, cfg DumpdataConfig) (ExportResult,
 	fixtureRecords := make([]DjangoFixtureRecord, 0)
 	totalRecords := 0
 
-	for _, modelName := range modelsToExport {
-		mi, ok := p.src.Get(modelName)
-		if !ok {
-			continue
-		}
+	for _, t := range targets {
+		mi := t.model
+		modelName := mi.Name
 
 		st, err := p.src.Store(mi.Name, databaseAlias)
 		if err != nil {
 			return result, fmt.Errorf("dumpdata model %s: %w", modelName, err)
 		}
 
-		// Build filters including tenant if applicable
-		filters := make(map[string]string)
-		if cfg.TenantID != "" && mi.TenantField != "" {
-			filters[mi.TenantField] = cfg.TenantID
-		}
-
 		page, err := st.List(ctx, datasource.Query{
 			Page: 1, PageSize: 10000,
-			Filters: filters,
+			Filters: t.filters,
 		})
 		if err != nil {
 			return result, fmt.Errorf("dumpdata fetch %s: %w", modelName, err)
@@ -102,8 +88,9 @@ func (p *Panel) Dumpdata(ctx context.Context, cfg DumpdataConfig) (ExportResult,
 			// Extract PK value
 			pkValue := recordPKValue(item, mi)
 
-			// Build fields map (exclude PK from fields, it goes in "pk")
-			fieldsMap := recordToFixtureFields(mi, item)
+			// Build fields map (exclude PK from fields, it goes in "pk"),
+			// with only the fields this operator may read.
+			fieldsMap := recordToFixtureFields(mi, t.read, item)
 
 			// Model name in Django format: "app.ModelName"
 			// We use just the model name since Go doesn't have app labels
@@ -135,7 +122,7 @@ func (p *Panel) Dumpdata(ctx context.Context, cfg DumpdataConfig) (ExportResult,
 
 	// Store the fixture file
 	ts := time.Now().UTC().Format("20060102150405")
-	key := storage.CleanupTempKey("fixture") + fmt.Sprintf("_%s.json", ts)
+	key := exportKey("fixture", "json")
 
 	info, err := p.store.Put(ctx, key, bytes.NewReader(jsonData), storage.PutOptions{
 		Visibility:  storage.Private,
@@ -204,6 +191,16 @@ func (p *Panel) Loaddata(ctx context.Context, cfg LoaddataConfig) (*ImportReport
 		modelNames = append(modelNames, name)
 	}
 	sort.Strings(modelNames)
+
+	// A load writes rows, and a read-only model refuses every write the
+	// panel makes — a create, an update, a delete, a batch, an import
+	// (OR-65). A fixture that names one is refused whole, before any row
+	// of it is written: half a fixture loaded is worse than none (OR-68).
+	for _, modelName := range modelNames {
+		if mi, ok := p.src.Get(modelName); ok && mi.ReadOnly {
+			return nil, gferrors.Forbidden(fmt.Sprintf("model %s is read-only", mi.Name))
+		}
+	}
 
 	for _, modelName := range modelNames {
 		records := recordsByModel[modelName]
@@ -377,13 +374,20 @@ func (p *Panel) handleDumpdata(c *router.Context) error {
 	if scoped := p.enforcedTenantID(r); scoped != "" {
 		cfg.TenantID = scoped
 	}
+	// The dump rides on export_data and is an export: each model carries
+	// what this operator may list of it, as the panel's export does (OR-66).
+	targets, err := p.exportTargets(c, cfg.Models, nil, cfg.TenantID)
+	if err != nil {
+		return err
+	}
 
-	result, err := p.Dumpdata(r.Context(), cfg)
+	result, err := p.Dumpdata(r.Context(), cfg, targets)
 	if err != nil {
 		result.Status = "failed"
 		result.Error = err.Error()
 	}
 	result.Tenant = cfg.TenantID
+	result.producer = p.exportProducerOf(r)
 
 	// Store result for status lookup
 	if p.exportResults != nil {
@@ -470,13 +474,13 @@ func recordPKValue(rec datasource.Record, mi datasource.ModelInfo) interface{} {
 }
 
 // recordToFixtureFields converts a neutral Record to a map of field values for
-// fixture export. Excludes the primary key field (it goes in the "pk" field of
-// the fixture record). It is the datasource.ModelInfo replacement for
-// entityToFixtureFields.
-func recordToFixtureFields(mi datasource.ModelInfo, rec datasource.Record) map[string]interface{} {
+// fixture export: the fields read lets the operator see. Excludes the primary
+// key field (it goes in the "pk" field of the fixture record). It is the
+// datasource.ModelInfo replacement for entityToFixtureFields.
+func recordToFixtureFields(mi datasource.ModelInfo, read readScope, rec datasource.Record) map[string]interface{} {
 	fieldsMap := make(map[string]interface{})
-	for _, f := range mi.Fields {
-		if f.IsExcluded || f.IsPK {
+	for _, f := range read.readableFields(mi) {
+		if f.IsPK {
 			continue
 		}
 		val, ok := recordValue(rec, f)

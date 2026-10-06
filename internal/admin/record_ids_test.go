@@ -367,12 +367,15 @@ func TestDumpdata_Loaddata_RoundTrip(t *testing.T) {
 	createAdminUser(t, srv.URL, map[string]interface{}{"email": "rt1@example.com", "name": "RT1", "active": true})
 	createAdminUser(t, srv.URL, map[string]interface{}{"email": "rt2@example.com", "name": "RT2", "active": false})
 
-	result, err := panel.Dumpdata(ctx, DumpdataConfig{Models: []string{"AdminUser"}})
-	if err != nil {
-		t.Fatal(err)
+	// Through the endpoint: a dump carries what the operator may list
+	// (OR-66), so the scope it is cut with is the request's.
+	dump, status := doJSON(t, http.MethodPost, srv.URL+"/api/fixtures/dumpdata", map[string]any{"models": []string{"AdminUser"}})
+	if status != http.StatusOK {
+		t.Fatalf("dumpdata: status %d body=%s", status, mustJSON(dump))
 	}
+	key := fmt.Sprint(dump["storage_key"])
 	var records []DjangoFixtureRecord
-	if err := json.Unmarshal([]byte(store.objects[result.StorageKey]), &records); err != nil {
+	if err := json.Unmarshal([]byte(store.objects[key]), &records); err != nil {
 		t.Fatalf("fixture is not JSON: %v", err)
 	}
 	if len(records) != 2 {
@@ -381,7 +384,7 @@ func TestDumpdata_Loaddata_RoundTrip(t *testing.T) {
 
 	// Loading the dump back finds every record by its pk: nothing is
 	// created and, with on_conflict=skip, nothing changes.
-	report, err := panel.Loaddata(ctx, LoaddataConfig{StorageKey: result.StorageKey, OnConflict: "skip"})
+	report, err := panel.Loaddata(ctx, LoaddataConfig{StorageKey: key, OnConflict: "skip"})
 	if err != nil {
 		t.Fatal(err)
 	}

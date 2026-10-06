@@ -169,7 +169,9 @@ go test ./internal/adminbench/ -run TestBrowserBench -v
 **18 of 18 controls present**, plus the one that measures the instrument.
 `UIX-18` reads the rest of Data Studio's doors for three operators who are
 not superusers, added for OR-65; it arrived present with the fixes it asked
-for ([below](#the-rest-of-data-studios-doors-or-65)).
+for ([below](#the-rest-of-data-studios-doors-or-65)). OR-66 extended it to
+read what the export it offers holds, and it stayed present with the fix
+([below](#what-an-export-holds-or-66)).
 `UIX-16` and `UIX-17` are the screens of two of those operators, added for
 OR-64; they found three defects of the panel's own, and arrived present with
 their fixes
@@ -212,7 +214,7 @@ the two stacks met, so the third session's kept its number.)
 | **UIX-15** | the panel's own scripts and stylesheets reach the browser compressed once, by the build |
 | **UIX-16** | an operator is offered a delete only where they hold one: no selection or Delete without it, and no batch Delete for one who may delete a record but not a batch |
 | **UIX-17** | an operator who may not update is offered no edit: the row opens the record read-only, and its menu and the record view hold only the actions granted |
-| **UIX-18** | an operator is offered a model, a record's history, an export, an import, the field settings and a saved view's removal only where they hold them, and each one asked anyway is refused |
+| **UIX-18** | an operator is offered a model, a record's history, an export, an import, the field settings and a saved view's removal only where they hold them, each one asked anyway is refused, and an export holds only what the operator may list |
 
 Three things worth keeping about how it is built:
 
@@ -1610,3 +1612,83 @@ Verified by breaking it:
 
 The browser half goes from 17 of 17 to 18 of 18; the HTTP bench is unchanged
 at 72 of 72.
+
+## What an export holds (OR-66)
+
+`UIX-18` read that the actor is offered Export and that the export answers
+`200`. It did not read what the export held, and the export held everything.
+The panel's export (`POST /api/exports`, what Data Studio's Export button
+asks for) and the fixture dump are granted by `export_data` on `admin:*`,
+and walked every model they were asked for — or every model, when asked for
+none — with no confinement but the tenant's. An operator granted
+`export_data` and confined to their own rows (`admin:<Model>#own`), or kept
+off a field (`admin:<Model>.<field> deny`), exported every row and every
+field anyway, in CSV, JSON and SQL, of the model on the screen and of the
+models they could not open at all. The model's own CSV export
+(`export_csv`) had the row and field scope; the screen did not use it.
+
+Every surface that reads rows on an operator's behalf now takes what it may
+read from one function: the list, the model's CSV export, the panel's
+export, the fixture dump and a dashboard's records card. Each model of an
+export carries what that operator's `list` of it shows — their tenant's
+rows, their own under an `#own` grant, the fields they may read — and a
+model the request names that they may not list is refused with the list's
+`403`. An export of every model leaves those models out.
+
+The driver gives the actor two grants more; neither is a door `UIX-16` or
+`UIX-17` reads, and the actor still may not open Articles, so the sidebar
+those controls read is the one it was:
+
+| operator | holds (beside `list_models` on `admin:*`) |
+|---|---|
+| the viewer | `get_schema`, `list`, `retrieve` on `Note` |
+| the actor | the same, `delete`, `schedule`, `duplicate`, `export_data` on `admin:*`, a `deny` on `Note.meta`, and `list` on `admin:Article#own` |
+| the lister | `get_schema`, `list` on `Note` |
+
+**`UIX-18`** now seeds, as the admin, an article the actor owns, one the
+viewer owns and a credential, and then cuts an export of every model as the
+actor and downloads it through the panel: it holds Notes and Articles and
+nothing of Credentials, the actor's article and not the viewer's, and no
+note with a `meta` key. The model list says the actor holds neither `list`
+nor `export_data` on Credential, and the export of Credential asked by name
+is refused with `403`.
+
+### What the work found that was not on the plan
+
+- **FIXED — an export was handed to whoever held `export_data`.** The job
+  list, a job's status and its download were scoped by tenant only, and the
+  audit trail names each export's key: an operator confined to their own
+  rows could list a superuser's export and download every row of it. An
+  export is now handed to the operator who cut it and to a superuser; an
+  operator who is not a superuser is not served a key the panel holds no job
+  for (after a restart, or from another replica, they cut it again).
+- **FIXED — two exports in the same second shared a key.** The key was the
+  time to the second, twice, so the second export overwrote the first and the
+  first's producer downloaded the second's rows. The key carries a random
+  suffix now, which also makes it a key nobody guesses.
+- **FIXED — a fixture load wrote into a read-only model (OR-68).** The
+  import refused one since OR-65; the load, which writes the same way, did
+  not. It refuses the whole fixture now, before any row of it is written.
+- **FIXED — the export's own filters reached past the scope.** The body's
+  `filters` went to the store as they came, beside the tenant's: one on the
+  owner column under another spelling sat next to the scope's for the
+  backend to choose between, and one on a hidden field answered, by the rows
+  it left, what the field held. They are keyed by the column they resolve to
+  now, so the scope replaces one on a confined column, and one on a field the
+  operator may not read is refused with `400`.
+- **FIXED — the schema offered the export of a model the operator may not
+  list.** `export_data` in the permissions map is the handler's answer for
+  that model now: `export_data` on `admin:*` and `list` of the model.
+
+Verified by breaking it:
+
+| mutation | what fails |
+|---|---|
+| the parent commit's server, with this spec | `UIX-18`: the actor's export of every model holds a model the actor may not list (a credential); `TestPanelExport_*` |
+| the export reading every row (the read scope's filters dropped) | `UIX-18`: the actor's export holds an article another operator owns; `TestPanelExport_CarriesOnlyTheOperatorsRowsAndFields` |
+| the JSON export not masking the record | `UIX-18`: the actor's export holds a field of Note the actor may not read (meta) |
+| every operator seeing every export job | `TestPanelExport_JobsAreHandedToTheirProducer` |
+| the export's filters passed to the store as they came | `TestPanelExport_FiltersCannotWidenTheScopeOrProbeAHiddenField` |
+| no read-only check on the fixture load | `TestLoaddata_ReadOnlyModelIsRefused` |
+
+The browser half stays at 18 of 18; the HTTP bench is unchanged at 72 of 72.

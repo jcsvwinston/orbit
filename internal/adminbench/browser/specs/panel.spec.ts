@@ -58,7 +58,8 @@ async function signInAt(page: Page, base: string): Promise<void> {
 /** The operators UIX-16 to UIX-18 sign in as, created by the driver: the
  * viewer may list and open a note and nothing more; the actor also holds
  * delete (not bulk_delete), schedule, duplicate and the panel's export
- * (export_data); the lister may list the notes and not open one. None holds
+ * (export_data), may not read a note's meta, and may list their own articles
+ * and no other; the lister may list the notes and not open one. None holds
  * update, update_schema or import_data. */
 function partialOperators(control: string): { viewer: string; actor: string; lister: string; password: string } {
   const viewer = process.env.ORBIT_BENCH_VIEWER_USER ?? ''
@@ -1228,9 +1229,13 @@ test.describe('UIX', () => {
    * (update_schema), and a shared view its removal (its owner's alone).
    * For each operator the control reads what is offered beside what is
    * not, holds the screen to the panel's rules, and asks the server for
-   * each door the screen left out.
+   * each door the screen left out. The actor's export is then read for what
+   * it holds (OR-66): the export is granted on admin:*, and what it carries
+   * is what the actor may list — the notes without the field kept from
+   * them, their own article and not another's, and no model they may not
+   * list.
    */
-  test('UIX-18 an operator is offered a model, a record\'s history, an export, an import, the field settings and a saved view\'s removal only where they hold them, and each one asked anyway is refused', async ({ page }) => {
+  test('UIX-18 an operator is offered a model, a record\'s history, an export, an import, the field settings and a saved view\'s removal only where they hold them, each one asked anyway is refused, and an export holds only what the operator may list', async ({ page }) => {
     // Four sign-ins: the admin who sets the stage and three operators.
     test.setTimeout(120_000)
     const { viewer, actor, lister, password } = partialOperators('UIX-18')
@@ -1253,6 +1258,30 @@ test.describe('UIX', () => {
       return r.status < 300 ? String(out?.id ?? '') : ''
     }, shared)
     expect(sharedId, 'UIX-18 precondition: the admin could not share a view of Notes').not.toBe('')
+    // What the actor's export is read against (OR-66): two articles, one
+    // the actor's — the actor may list their own and no other
+    // (admin:Article#own) — and a credential, of a model the actor may not
+    // list at all.
+    const actorArticle = `uix-18 the actor's article ${stamp}`
+    const otherArticle = `uix-18 another's article ${stamp}`
+    const seeded = await page.evaluate(async (rows) => {
+      const statuses: number[] = []
+      for (const [model, row] of rows) {
+        const r = await fetch(`/admin/api/models/${model}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify(row),
+        })
+        statuses.push(r.status)
+      }
+      return statuses
+    }, [
+      ['Article', { title: actorArticle, owner: actor }],
+      ['Article', { title: otherArticle, owner: viewer }],
+      ['Credential', { label: `uix-18 credential ${stamp}`, password: 'uix-18-password', api_token: 'uix-18-token' }],
+    ] as Array<[string, Record<string, unknown>]>)
+    expect(seeded.every((status) => status < 300), `UIX-18 precondition: creating the articles and the credential answered ${seeded}`).toBe(true)
     await signOut(page)
 
     const exportBody = { format: 'json', models: ['Note'] }
@@ -1325,6 +1354,43 @@ test.describe('UIX', () => {
     expect(actorScreen, `UIX-18: the actor's Data Studio, with the export open: ${JSON.stringify(actorScreen, null, 2)}`).toEqual([])
     expect(await forced(page, 'POST', '/admin/api/exports', exportBody), 'UIX-18: the server refused the actor the export it offered').toBe(200)
     expect(await forced(page, 'POST', importPath, importBody), 'UIX-18: the server took an import from the actor, who holds no import_data').toBe(403)
+
+    // What the actor's export holds (OR-66). An export of every model, cut
+    // and downloaded as the actor: the notes, without the field the actor
+    // may not read; the actor's own article, not another's; and nothing of
+    // a model the actor may not list.
+    const exported = await page.evaluate(async () => {
+      const made = await fetch('/admin/api/exports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ format: 'json', models: [] }),
+      })
+      const out = await made.json().catch(() => ({}))
+      const key = String(out?.storage_key ?? '')
+      if (made.status !== 200 || key === '') return { status: made.status, records: [] as Array<Record<string, unknown>> }
+      const got = await fetch(`/admin/api/exports/download?key=${encodeURIComponent(key)}`, { credentials: 'same-origin' })
+      return { status: got.status, records: (got.ok ? await got.json() : []) as Array<Record<string, unknown>> }
+    })
+    expect(exported.status, 'UIX-18: the actor could not cut and download an export of every model').toBe(200)
+    const exportedModels = [...new Set(exported.records.map((r) => String(r._model)))].sort()
+    expect(exportedModels, 'UIX-18: the actor\'s export of every model holds a model the actor may not list (a credential), or lost one they may').toEqual(['Article', 'Note'])
+    const exportedArticles = exported.records.filter((r) => r._model === 'Article').map((r) => String(r.title))
+    expect(exportedArticles, 'UIX-18: the actor\'s export lost the article the actor owns').toContain(actorArticle)
+    expect(exportedArticles, 'UIX-18: the actor\'s export holds an article another operator owns').not.toContain(otherArticle)
+    const exportedNotes = exported.records.filter((r) => r._model === 'Note')
+    expect(exportedNotes.some((r) => r.title === title), 'UIX-18 precondition: the actor\'s export holds no note of this control').toBe(true)
+    expect(exportedNotes.filter((r) => 'meta' in r).length, 'UIX-18: the actor\'s export holds a field of Note the actor may not read (meta)').toBe(0)
+    // The model the actor may not list, asked for by name, is refused —
+    // and the payload the screens draw from says so.
+    const credential = await page.evaluate(async () => {
+      const r = await fetch('/admin/api/models', { credentials: 'same-origin' })
+      const out = r.ok ? await r.json() : {}
+      const model = ((out.models ?? []) as Array<{ name: string; permissions?: Record<string, boolean> }>).find((m) => m.name === 'Credential')
+      return model?.permissions ?? {}
+    })
+    expect(credential.list === false && credential.export_data === false, `UIX-18: the model list offers the actor an export of Credential, which the actor may not list: ${JSON.stringify(credential)}`).toBe(true)
+    expect(await forced(page, 'POST', '/admin/api/exports', { format: 'json', models: ['Credential'] }), 'UIX-18: the server exported Credential for an operator who may not list it').toBe(403)
 
     // 3. The lister may list the notes and not open one: no history, no
     // view, and no Actions column with nothing in it.

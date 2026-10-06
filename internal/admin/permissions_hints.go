@@ -131,6 +131,7 @@ func (p *Panel) capabilitiesForUser(user *auth.User, mi datasource.ModelInfo) mo
 		for _, action := range verbs {
 			caps.Permissions[action] = p.config.Auth.Authorize(user, mi.Name, action)
 		}
+		caps.exportNeedsList(verbs)
 		caps.fill()
 		return caps
 	}
@@ -146,8 +147,25 @@ func (p *Panel) capabilitiesForUser(user *auth.User, mi datasource.ModelInfo) mo
 		}
 	}
 	sort.Strings(caps.RowScope)
+	caps.exportNeedsList(verbs)
 	caps.fill()
 	return caps
+}
+
+// exportNeedsList narrows export_data to a model this operator may list: the
+// panel's export of a model asks export_data of admin:* AND list of the
+// model, and carries the rows and fields list would show them (OR-66). A
+// verb this application declared under the same name keeps its own answer,
+// as fillScreenVerbs promises.
+func (c *modelCapabilities) exportNeedsList(verbs []string) {
+	for _, verb := range verbs {
+		if verb == "export_data" {
+			return
+		}
+	}
+	if !c.Permissions["list"] {
+		c.Permissions["export_data"] = false
+	}
 }
 
 // fillScreenVerbs answers the screen's other doors (screenVerbs) the way

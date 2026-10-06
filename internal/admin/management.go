@@ -253,15 +253,25 @@ func (p *Panel) handleExportCreate(c *router.Context) error {
 	if scoped := p.enforcedTenantID(r); scoped != "" {
 		cfg.TenantID = scoped
 	}
+	// export_data is granted on admin:*, and says nothing about WHAT is
+	// exported: each model carries what this operator may list of it —
+	// their tenant's rows, their own under an #own grant, the fields they
+	// may read — and a model they may not list is refused (OR-66).
+	targets, err := p.exportTargets(c, cfg.Models, cfg.Filters, cfg.TenantID)
+	if err != nil {
+		return err
+	}
 
-	result, err := p.exportModels(r.Context(), cfg)
+	result, err := p.exportModels(r.Context(), cfg, targets)
 	if err != nil {
 		result.Status = "failed"
 		result.Error = err.Error()
 	}
-	// The export records the tenant it was confined to, so the job list,
-	// status and download can be scoped the way the export itself was.
+	// The export records the tenant it was confined to and the operator it
+	// was cut for, so the job list, status and download can be scoped the
+	// way the export itself was.
 	result.Tenant = cfg.TenantID
+	result.producer = p.exportProducerOf(r)
 
 	// Store result for status lookup
 	if p.exportResults != nil {
@@ -300,7 +310,7 @@ func (p *Panel) handleExportList(c *router.Context) error {
 	if err := p.authorizeAction(c, "*", "export_data"); err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, p.listExportJobs(p.enforcedTenantID(c.Request)))
+	return c.JSON(http.StatusOK, p.listExportJobs(p.exportViewerOf(c.Request)))
 }
 
 func (p *Panel) handleExportStatus(c *router.Context) error {
@@ -317,8 +327,10 @@ func (p *Panel) handleExportStatus(c *router.Context) error {
 		return gferrors.NotFound("export", id)
 	}
 	// An export of another tenant, or of every tenant, is not found for a
-	// scoped request — the same answer a record of another tenant gets.
-	if scoped := p.enforcedTenantID(c.Request); scoped != "" && result.Tenant != scoped {
+	// scoped request — the same answer a record of another tenant gets — and
+	// neither is one cut for another operator, unless this one is a
+	// superuser.
+	if !p.exportViewerOf(c.Request).sees(result) {
 		return gferrors.NotFound("export", id)
 	}
 	return c.JSON(http.StatusOK, result)
@@ -342,14 +354,19 @@ func (p *Panel) handleExportDownload(c *router.Context) error {
 	if !isExportStorageKey(key) {
 		return gferrors.Forbidden("key is not an export produced by this panel")
 	}
-	// A scoped request downloads its own tenant's exports only: the key is
-	// checked against the job registry, and a key of an export produced for
-	// another tenant, for every tenant, or unknown to the registry (it is
-	// in memory; a restart empties it) is not found. Before this, the
-	// export_data permission of any tenant downloaded any export.
-	if scoped := p.enforcedTenantID(r); scoped != "" {
+	// A scoped request downloads its own tenant's exports only, and an
+	// operator who is not a superuser the exports cut for them only: an
+	// export is a copy of what its producer could read (OR-66), and handing
+	// it to another holder of export_data would hand them the rows and
+	// fields their own export leaves out. The key is checked against the
+	// job registry, and a key of an export produced for another tenant or
+	// operator, or unknown to the registry (it is in memory; a restart
+	// empties it, and another replica never filled it), is not found.
+	// Before this, the export_data permission of any tenant downloaded any
+	// export.
+	if viewer := p.exportViewerOf(r); viewer.confined() {
 		job, ok := p.getExportJob(key)
-		if !ok || job.Tenant != scoped {
+		if !ok || !viewer.sees(job) {
 			return gferrors.NotFound("export", key)
 		}
 	}
