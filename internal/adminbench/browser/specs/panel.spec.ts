@@ -57,10 +57,11 @@ async function signInAt(page: Page, base: string): Promise<void> {
 
 /** The operators UIX-16 to UIX-18 sign in as, created by the driver: the
  * viewer may list and open a note and nothing more; the actor also holds
- * delete (not bulk_delete), schedule, duplicate and the panel's export
- * (export_data), may not read a note's meta, and may list their own articles
- * and no other; the lister may list the notes and not open one. None holds
- * update, update_schema or import_data. */
+ * delete (not bulk_delete), schedule, duplicate, the panel's export
+ * (export_data) and import (import_data) and create on Note, may not read a
+ * note's meta or views, and may list their own articles and no other; the
+ * lister may list the notes and not open one, and holds the panel's import
+ * with no write of Note. None holds update or update_schema. */
 function partialOperators(control: string): { viewer: string; actor: string; lister: string; password: string } {
   const viewer = process.env.ORBIT_BENCH_VIEWER_USER ?? ''
   const actor = process.env.ORBIT_BENCH_ACTOR_USER ?? ''
@@ -126,6 +127,37 @@ async function forced(page: Page, method: string, path: string, body?: unknown):
     })
     return r.status
   }, { method, path, body })
+}
+
+/** importAs uploads rows as a JSON file and runs one step of the import of
+ * Note (validate or execute) with it, from the page: the operator's own
+ * session, the way the import dialog makes the same three calls. */
+async function importAs(page: Page, step: 'validate' | 'execute', rows: unknown[], onConflict = ''): Promise<{ status: number; message: string }> {
+  return page.evaluate(async ({ step, rows, onConflict }) => {
+    const form = new FormData()
+    form.append('file', new Blob([JSON.stringify(rows)], { type: 'application/json' }), 'uix-18.json')
+    const up = await fetch('/admin/api/imports', { method: 'POST', body: form, credentials: 'same-origin' })
+    const uploaded = await up.json().catch(() => ({}))
+    if (up.status !== 201 || !uploaded?.key) return { status: up.status, message: `upload answered ${up.status}` }
+    const r = await fetch(`/admin/api/import/${step}?key=${encodeURIComponent(uploaded.key)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ model: 'Note', format: 'json', on_conflict: onConflict }),
+    })
+    const out = await r.json().catch(() => ({}))
+    return { status: r.status, message: String(out?.error?.message ?? '') }
+  }, { step, rows, onConflict })
+}
+
+/** notesTitled counts, through the operator's own list, the notes whose
+ * title is title. */
+async function notesTitled(page: Page, title: string): Promise<number> {
+  return page.evaluate(async (title) => {
+    const r = await fetch(`/admin/api/models/Note?search=${encodeURIComponent(title)}`, { credentials: 'same-origin' })
+    const out = r.ok ? await r.json() : {}
+    return ((out.items ?? []) as Array<{ title?: string }>).filter((n) => n.title === title).length
+  }, title)
 }
 
 /** narrowToNote opens Data Studio on Notes narrowed to one note, as the
@@ -1237,9 +1269,16 @@ test.describe('UIX', () => {
    * (OR-69): the grid offers no sort or filter on it, a view somebody
    * shared that filters by it is not listed to them, and the list asked
    * anyway refuses the filter and the sort — the rows a filter leaves, and
-   * the order a sort puts them in, are what the field holds.
+   * the order a sort puts them in, are what the field holds. Last, the
+   * import (OR-67): it is granted on admin:* too, and each row it writes
+   * asks what the record form asks. The actor, who may create a note and
+   * not update one, is offered the import; a file with a field kept from
+   * them is refused in the dialog, with the row and the field named and
+   * nothing written, the same file without it lands, and a file that would
+   * update a note is refused at both steps. The lister holds the import and
+   * no write of Note, and is offered none.
    */
-  test('UIX-18 an operator is offered a model, a record\'s history, an export, an import, the field settings and a saved view\'s removal only where they hold them, each one asked anyway is refused, an export holds only what the operator may list, and a field the operator may not read is neither offered nor answered as a sort, a filter or a saved view', async ({ page }) => {
+  test('UIX-18 an operator is offered a model, a record\'s history, an export, an import, the field settings and a saved view\'s removal only where they hold them, each one asked anyway is refused, an export holds only what the operator may list, a field the operator may not read is neither offered nor answered as a sort, a filter or a saved view, and an import writes only what the operator could write by hand', async ({ page }) => {
     // Four sign-ins: the admin who sets the stage and three operators.
     test.setTimeout(120_000)
     const { viewer, actor, lister, password } = partialOperators('UIX-18')
@@ -1358,14 +1397,15 @@ test.describe('UIX', () => {
     expect(await forced(page, 'GET', `/admin/api/models/${closed[0].name}/schema`), `UIX-18: the server opened ${closed[0].name} for an operator the sidebar did not offer it to`).toBe(403)
     expect(await forced(page, 'DELETE', `/admin/api/views/${sharedId}`), 'UIX-18: the server removed a shared view for an operator who does not own it').toBe(403)
 
-    // 2. The actor holds the export and not the import: the toolbar offers
-    // the one and its panel has no Import.
+    // 2. The actor holds the export, and the import with create on Note
+    // and no update: the toolbar offers both.
     await signOut(page)
     await signInAs(page, actor, password)
     const actorHolds = await heldOnNote(page)
     expect(
-      actorHolds.permissions.export_data === true && actorHolds.permissions.import_data === false,
-      `UIX-18 precondition: the actor's schema does not say export and no import: ${JSON.stringify(actorHolds)}`,
+      actorHolds.permissions.export_data === true && actorHolds.permissions.import_data === true &&
+        actorHolds.permissions.create === true && actorHolds.permissions.update === false,
+      `UIX-18 precondition: the actor's schema does not say export, import and create, and no update: ${JSON.stringify(actorHolds)}`,
     ).toBe(true)
     await openNote(page, title, id, 'actor', 'UIX-18')
     // A field kept from the actor (OR-69): no column to sort by, no filter,
@@ -1380,15 +1420,51 @@ test.describe('UIX', () => {
     await expect(page.getByLabel('Status', { exact: true })).toBeHidden({ timeout: 5_000 })
     await expect(page.getByRole('button', { name: shared, exact: true }), 'UIX-18 precondition: the actor is not shown the shared view').toBeVisible({ timeout: 5_000 })
     await expect(page.getByRole('button', { name: byViews, exact: true }), 'UIX-18: the actor is shown a view filtered by views, which the actor may not read').toHaveCount(0)
-    const exportToggle = page.getByRole('button', { name: 'Export', exact: true })
-    await expect(exportToggle, 'UIX-18: the toolbar offers the actor no export, which the actor holds').toBeVisible()
+    const exportToggle = page.getByRole('button', { name: 'Export / Import', exact: true })
+    await expect(exportToggle, 'UIX-18: the toolbar offers the actor no export and import, which the actor holds').toBeVisible()
     await exportToggle.click()
     await expect(page.getByRole('button', { name: /^Export (CSV|JSON|SQL)$/ }), 'UIX-18: the actor\'s export panel offers no export').toBeVisible({ timeout: 5_000 })
-    await expect(page.getByRole('button', { name: /^Import/ }), 'UIX-18: the actor is offered an import, and holds no import_data').toHaveCount(0)
+    const importButton = page.getByRole('button', { name: 'Import…', exact: true })
+    await expect(importButton, 'UIX-18: the actor\'s export panel offers no import, and the actor holds import_data and create').toBeVisible()
     const actorScreen = await axeIn(page, 'main', OPERATOR_VIEW_RULES)
     expect(actorScreen, `UIX-18: the actor's Data Studio, with the export open: ${JSON.stringify(actorScreen, null, 2)}`).toEqual([])
     expect(await forced(page, 'POST', '/admin/api/exports', exportBody), 'UIX-18: the server refused the actor the export it offered').toBe(200)
-    expect(await forced(page, 'POST', importPath, importBody), 'UIX-18: the server took an import from the actor, who holds no import_data').toBe(403)
+
+    // What the actor's import writes (OR-67). In the dialog, a file with a
+    // field kept from the actor is refused whole, with the row and the
+    // field named, and nothing is written.
+    const refusedTitle = `uix-18 refused import ${stamp}`
+    const importedTitle = `uix-18 imported ${stamp}`
+    const asFile = (rows: unknown[]) => ({ name: 'uix-18.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(rows)) })
+    await importButton.click()
+    const importDialog = page.getByRole('dialog').filter({ hasText: 'Import into' })
+    await expect(importDialog, 'UIX-18 precondition: the import dialog did not open').toBeVisible({ timeout: 5_000 })
+    await importDialog.locator('#import-file').setInputFiles(asFile([{ title: refusedTitle, status: 'draft' }, { title: refusedTitle, status: 'draft', meta: 'uix-18 meta' }]))
+    await importDialog.getByRole('button', { name: 'Validate' }).click()
+    const refusal = importDialog.getByRole('alert')
+    await expect(refusal, 'UIX-18: the dialog does not say why the actor\'s file with a field kept from them was refused').toContainText('row 2', { timeout: 10_000 })
+    await expect(refusal, 'UIX-18: the refusal does not name the field kept from the actor').toContainText('meta')
+    await expect(refusal, 'UIX-18: the refusal does not say nothing was written').toContainText('nothing in the file was written')
+    await expect(importDialog.getByRole('button', { name: /^Import \d+ row/ }), 'UIX-18: the dialog offers to import a file the server refused').toHaveCount(0)
+    const refusedDialog = await axeIn(page, '[role="dialog"]', OPERATOR_VIEW_RULES)
+    expect(refusedDialog, `UIX-18: the import dialog with the refusal showing: ${JSON.stringify(refusedDialog, null, 2)}`).toEqual([])
+    expect(await notesTitled(page, refusedTitle), 'UIX-18: a refused file wrote a note').toBe(0)
+    // The same rows without the field land, created by the actor.
+    await importDialog.locator('#import-file').setInputFiles(asFile([{ title: importedTitle, status: 'draft' }]))
+    await importDialog.getByRole('button', { name: 'Validate' }).click()
+    const importRows = importDialog.getByRole('button', { name: 'Import 1 row' })
+    await expect(importRows, 'UIX-18: the dialog does not let the actor import a file of rows they may create').toBeVisible({ timeout: 10_000 })
+    await importRows.click()
+    await expect(importDialog, 'UIX-18: the actor\'s import of rows they may create did not finish').toBeHidden({ timeout: 10_000 })
+    expect(await notesTitled(page, importedTitle), 'UIX-18: the actor\'s import of rows they may create wrote no note').toBe(1)
+    // A file that would update a note is refused at both steps: the actor
+    // may not update one by hand. The note keeps its title.
+    for (const step of ['validate', 'execute'] as const) {
+      const updated = await importAs(page, step, [{ id: Number(id), title: `${title} overwritten` }], 'update')
+      expect(updated.status, `UIX-18: the ${step} step took from the actor a file that updates a note: ${updated.message}`).toBe(403)
+      expect(updated.message, `UIX-18: the ${step} step's refusal does not name the update the actor does not hold`).toContain('update')
+    }
+    expect(await notesTitled(page, title), 'UIX-18: a refused file updated the note').toBe(1)
     // Asked anyway (OR-69): a filter or a sort on views is refused, with the
     // answer a field the model does not have gets; one on a field the actor
     // reads is answered.
@@ -1455,6 +1531,14 @@ test.describe('UIX', () => {
     await expect(page.getByRole('button', { name: `History of record ${id}` }), 'UIX-18: the row offers the lister a history, which the server asks retrieve for').toHaveCount(0)
     await expect(page.getByRole('button', { name: `View record ${id}` }), 'UIX-18: the row offers the lister a record they may not open').toHaveCount(0)
     await expect(page.getByRole('columnheader', { name: 'Actions' }), 'UIX-18: the grid draws the lister an Actions column with nothing to offer in it').toHaveCount(0)
+    // The lister holds the import and no write of Note (OR-67): the schema
+    // does not say import, the toolbar offers none, and a file of rows to
+    // create, asked anyway, is refused for the create the lister lacks.
+    expect(listerHolds.permissions.import_data, 'UIX-18: the lister\'s schema offers an import of Note, which the lister may neither create nor update rows of').toBe(false)
+    await expect(toolbarTransfer, 'UIX-18: the toolbar offers the lister an import of Note, which the lister may not write').toHaveCount(0)
+    const listerImport = await importAs(page, 'validate', [{ title: `uix-18 lister import ${stamp}`, status: 'draft' }])
+    expect(listerImport.status, `UIX-18: the server took from the lister a file of notes to create: ${listerImport.message}`).toBe(403)
+    expect(listerImport.message, 'UIX-18: the refusal of the lister\'s file does not name the create the lister lacks').toContain('create')
     const listerScreen = await axeIn(page, 'main', OPERATOR_VIEW_RULES)
     expect(listerScreen, `UIX-18: the lister's Data Studio: ${JSON.stringify(listerScreen, null, 2)}`).toEqual([])
     expect(await forced(page, 'GET', `/admin/api/models/Note/${id}/history`), 'UIX-18: the server answered a record\'s history to an operator who may not open it').toBe(403)

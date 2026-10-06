@@ -76,12 +76,27 @@ describe('screenCapabilities', () => {
     expect(none.canImport).toBe(false)
     expect(none.canConfigureFields).toBe(false)
     const held = screenCapabilities(schema({
-      can_create: false,
-      permissions: { create: false, export_data: true, import_data: true, update_schema: true },
+      can_create: true,
+      permissions: { create: true, export_data: true, import_data: true, update_schema: true },
     }))
     expect(held.canExport).toBe(true)
     expect(held.canImport).toBe(true)
     expect(held.canConfigureFields).toBe(true)
+  })
+
+  // OR-67: each row of an import asks the model's create (or its update, for
+  // a row that exists), and the dialog's import creates every row it reads.
+  it('offers the import to an operator who may also create the rows it writes', () => {
+    const noCreate = screenCapabilities(schema({
+      can_create: false, can_update: true,
+      permissions: { create: false, update: true, import_data: true },
+    }))
+    expect(noCreate.canImport).toBe(false)
+    const ownCreate = screenCapabilities(schema({
+      can_create: true, row_scope: ['create'],
+      permissions: { create: true, import_data: true },
+    }))
+    expect(ownCreate.canImport).toBe(true)
   })
 
   it('offers no import on a read-only model, which the server refuses', () => {

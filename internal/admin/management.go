@@ -448,10 +448,12 @@ func (p *Panel) handleImportValidate(c *router.Context) error {
 		cfg.TenantID = scoped
 	}
 
-	// Run the shared import flow in dry-run mode: it reads the upload, parses,
-	// and validates without writing (ExecuteImport short-circuits on DryRun).
+	// Run the shared import flow in dry-run mode: it reads the upload,
+	// parses, plans and validates without writing. The plan is the execute
+	// step's, so a file the operator may not write is refused here with the
+	// 403 the execute step would answer (OR-67).
 	cfg.DryRun = true
-	report, err := p.ImportFromFile(r.Context(), key, cfg)
+	report, err := p.ImportFromFile(c, key, cfg)
 	if err != nil {
 		return err
 	}
@@ -506,7 +508,11 @@ func (p *Panel) handleImportExecute(c *router.Context) error {
 		cfg.TenantID = scoped
 	}
 
-	report, err := p.ImportFromFile(r.Context(), key, cfg)
+	// import_data says who may import, not what: each row of the file asks
+	// what the record form asks — the model's create or update, the tenant,
+	// the operator's own rows, the fields they may write — and one row that
+	// is refused refuses the file before any row is written (OR-67).
+	report, err := p.ImportFromFile(c, key, cfg)
 	if err != nil {
 		return err
 	}

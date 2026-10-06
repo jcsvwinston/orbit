@@ -701,7 +701,11 @@ func (p *Panel) handleCreateRecord(c *router.Context) error {
 	if !ok {
 		return gferrors.NotFound("model", name)
 	}
-	rowScope, err := p.authorizeRecordAction(c, mi, "create")
+	// What this operator may create: the grant, the tenant, their own rows
+	// under an #own grant and the fields they may write. The import and the
+	// fixture load ask the same (requestWriteScope), so neither writes what
+	// this form would refuse (OR-67).
+	write, err := p.requestWriteScope(c, mi, fieldActionCreate)
 	if err != nil {
 		return err
 	}
@@ -730,25 +734,13 @@ func (p *Panel) handleCreateRecord(c *router.Context) error {
 		return gferrors.BadRequest("invalid JSON: " + err.Error())
 	}
 
-	// A scoped request creates in its own tenant: a payload naming another
-	// one (under any spelling of the column) is refused, a payload naming
-	// none gets the tenant stamped.
-	if scope := p.requestTenantScope(r, mi); scope.Enforced() {
-		if err := scope.guardPayload(data, true); err != nil {
-			return err
-		}
-	}
-	// A row-scoped operator creates rows that belong to them: a payload
-	// naming another owner is refused, one naming none gets theirs stamped.
-	if rowScope.Enforced() {
-		if err := rowScope.guardPayload(data, true); err != nil {
-			return err
-		}
-	}
-	// A field this operator may not write is refused by name, not dropped:
-	// a form that believes it saved a value it did not save is worse.
-	fieldRules := p.requestFieldRules(r, mi)
-	if err := fieldRules.guardPayload(mi, data, fieldActionCreate); err != nil {
+	// A scoped request creates in its own tenant and a row-scoped operator
+	// rows that belong to them: a payload naming another tenant or owner
+	// (under any spelling of the column) is refused, one naming neither gets
+	// them stamped. A field this operator may not write is refused by name,
+	// not dropped: a form that believes it saved a value it did not save is
+	// worse.
+	if err := write.guardPayload(mi, data); err != nil {
 		return err
 	}
 
@@ -779,7 +771,7 @@ func (p *Panel) handleCreateRecord(c *router.Context) error {
 
 	// The trail records what was written; the answer only shows back what
 	// this operator may read.
-	fieldRules.mask(mi, created)
+	write.fields.mask(mi, created)
 	if len(inlineResults) > 0 {
 		return c.JSON(http.StatusCreated, map[string]any{"record": created, "inlines": inlineResults})
 	}
@@ -797,7 +789,9 @@ func (p *Panel) handleUpdateRecord(c *router.Context) error {
 	if !ok {
 		return gferrors.NotFound("model", name)
 	}
-	rowScope, err := p.authorizeRecordAction(c, mi, "update")
+	// What this operator may update, asked the way the import and the
+	// fixture load ask it (requestWriteScope, OR-67).
+	write, err := p.requestWriteScope(c, mi, fieldActionUpdate)
 	if err != nil {
 		return err
 	}
@@ -809,7 +803,9 @@ func (p *Panel) handleUpdateRecord(c *router.Context) error {
 	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
 		return gferrors.BadRequest("invalid JSON")
 	}
-	if err := p.requestFieldRules(r, mi).guardPayload(mi, updates, fieldActionUpdate); err != nil {
+	// An update cannot move a row to another tenant or hand it to another
+	// owner, and a field this operator may not write is refused by name.
+	if err := write.guardPayload(mi, updates); err != nil {
 		return err
 	}
 	inlineSpecs := p.inlinesFor(mi)
@@ -833,24 +829,20 @@ func (p *Panel) handleUpdateRecord(c *router.Context) error {
 	if err != nil {
 		return err
 	}
-	// A scoped request only reaches rows of its tenant (another tenant's
-	// row is not found) and cannot move a row to another tenant.
-	if scope := p.requestTenantScope(r, mi); scope.Enforced() {
-		if _, err := scopedRecord(r.Context(), st, mi, idStr, scope); err != nil {
+	// A scoped request only reaches rows of its tenant, and a row-scoped
+	// operator their own: another's is not found, the answer a row that does
+	// not exist gets.
+	if write.confined() {
+		rec, err := st.Get(r.Context(), idStr)
+		if err != nil {
 			return err
 		}
-		if err := scope.guardPayload(updates, false); err != nil {
+		reached, err := write.reaches(r.Context(), st, mi, idStr, rec)
+		if err != nil {
 			return err
 		}
-	}
-	// A row-scoped operator only reaches their own rows, and cannot hand one
-	// over to somebody else.
-	if rowScope.Enforced() {
-		if err := scopedOwnedRecord(r.Context(), st, mi, idStr, rowScope); err != nil {
-			return err
-		}
-		if err := rowScope.guardPayload(updates, false); err != nil {
-			return err
+		if !reached {
+			return gferrors.NotFound(mi.Name, idStr)
 		}
 	}
 	// Editing only the children is a real edit: a form that changed a line

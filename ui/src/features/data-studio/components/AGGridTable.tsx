@@ -667,8 +667,9 @@ export default function AGGridTable({ modelName, schema, dbAlias, focusRecord, o
 
         {/* The panel's data transfer, offered as far as it is held: the
             server asks an export for export_data and an import for
-            import_data, both of the whole panel. An operator who holds
-            only the import is offered it here directly. */}
+            import_data, both of the whole panel, and each row the import
+            writes for the model's create (canImport). An operator who
+            holds only the import is offered it here directly. */}
         {canExport && (
           <Button variant="outline" size="sm" onClick={() => setShowExportImport(!showExportImport)} aria-expanded={showExportImport} className="gap-1.5">
             <Download className="h-3.5 w-3.5" />

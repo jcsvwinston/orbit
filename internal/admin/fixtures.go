@@ -135,13 +135,20 @@ func (p *Panel) Dumpdata(ctx context.Context, cfg DumpdataConfig, targets []expo
 	return finalizeExport(result, info, totalRecords, fmt.Sprintf("fixture_%s.json", ts), p.store, ctx)
 }
 
-// Loaddata imports data from a Django-compatible JSON fixture file.
-// It auto-detects models from the "model" field, skips unknown models,
-// and handles conflicts based on the OnConflict setting.
-func (p *Panel) Loaddata(ctx context.Context, cfg LoaddataConfig) (*ImportReport, error) {
+// Loaddata imports data from a Django-compatible JSON fixture file for c's
+// operator. It auto-detects models from the "model" field, skips unknown
+// models, and handles conflicts based on the OnConflict setting.
+//
+// It is the import in another format, and writes the way the import does
+// (OR-67): every record of the fixture is planned before any is written —
+// a record whose pk the store holds is an update (or a skip), any other a
+// create — and each asks what the record form asks (planLoad). One record
+// the operator may not write refuses the whole fixture with importRefused.
+func (p *Panel) Loaddata(c *router.Context, cfg LoaddataConfig) (*ImportReport, error) {
 	if p.store == nil {
 		return nil, fmt.Errorf("storage not configured")
 	}
+	ctx := c.Request.Context()
 
 	// Default on_conflict to "skip"
 	if cfg.OnConflict == "" {
@@ -178,11 +185,12 @@ func (p *Panel) Loaddata(ctx context.Context, cfg LoaddataConfig) (*ImportReport
 		Total: len(fixtureRecords),
 	}
 
-	// Group records by model for efficient processing
-	recordsByModel := make(map[string][]DjangoFixtureRecord)
-	for _, rec := range fixtureRecords {
+	// Group records by model for efficient processing, each with its
+	// position in the file: a refusal names the record by it.
+	recordsByModel := make(map[string][]fixtureRow)
+	for i, rec := range fixtureRecords {
 		modelName := rec.Model
-		recordsByModel[modelName] = append(recordsByModel[modelName], rec)
+		recordsByModel[modelName] = append(recordsByModel[modelName], fixtureRow{pos: i, rec: rec})
 	}
 
 	// Process each model
@@ -202,13 +210,20 @@ func (p *Panel) Loaddata(ctx context.Context, cfg LoaddataConfig) (*ImportReport
 		}
 	}
 
+	// Every model is planned before any is written, for the same reason:
+	// a record the operator may not write refuses the fixture whole.
+	type modelPlan struct {
+		st   datasource.RecordStore
+		plan []importWrite
+	}
+	plans := make([]modelPlan, 0, len(modelNames))
 	for _, modelName := range modelNames {
-		records := recordsByModel[modelName]
+		rows := recordsByModel[modelName]
 
 		mi, ok := p.src.Get(modelName)
 		if !ok {
 			// Skip records for models not in registry
-			report.Skipped += len(records)
+			report.Skipped += len(rows)
 			continue
 		}
 
@@ -216,144 +231,129 @@ func (p *Panel) Loaddata(ctx context.Context, cfg LoaddataConfig) (*ImportReport
 		if err != nil {
 			return report, fmt.Errorf("loaddata model %s: %w", modelName, err)
 		}
-		scope := p.importTenantScope(mi, cfg.TenantID)
+		plan, err := p.planLoad(c, st, mi, cfg, rows)
+		if err != nil {
+			return nil, err
+		}
+		plans = append(plans, modelPlan{st: st, plan: plan})
+	}
 
-		// Process records for this model
-		for _, rec := range records {
-			// Merge fields with PK
-			data := make(map[string]interface{})
-			for k, v := range rec.Fields {
-				data[k] = v
-			}
+	for _, mp := range plans {
+		runImportWrites(ctx, mp.st, mp.plan, report)
+	}
+	return report, nil
+}
 
-			// The pk travels as the boundary string (ADR-001 D1): "7", 7 and
-			// a UUID are all keys, and the backend narrows them. A pk with no
-			// usable text is a failed row — it used to be dropped silently,
-			// which created the record afresh under a new key.
-			pkValue := ""
-			if rec.PK != nil {
-				normalized, err := normalizePKValue(rec.PK)
-				if err != nil {
-					report.Failed++
-					report.Errors = append(report.Errors, ImportError{
-						Message: fmt.Sprintf("model %s: invalid pk %v: %v", modelName, rec.PK, err),
-					})
-					continue
-				}
-				data[mi.PrimaryKey] = rec.PK
-				pkValue = normalized
-			} else {
-				pkValue = extractDataPK(data, mi)
-			}
+// fixtureRow is one record of a fixture and its position in the file.
+type fixtureRow struct {
+	pos int
+	rec DjangoFixtureRecord
+}
 
-			// A fixture loaded into a tenant belongs to it: a record naming
-			// another tenant (under any spelling of the column) fails, one
-			// naming none gets the tenant stamped.
-			if scope.Enforced() {
-				if err := scope.guardPayload(data, true); err != nil {
-					report.Failed++
-					report.Errors = append(report.Errors, ImportError{
-						Field:   mi.TenantField,
-						Message: fmt.Sprintf("model %s pk=%s: %v", modelName, pkValue, err),
-					})
-					continue
-				}
-			}
+// planLoad is planImport for the records of one model of a fixture. A
+// record is EXISTING when its pk names a row the store holds: it is skipped
+// or updated (on_conflict), and any other record is a create. A pk with no
+// usable text, or one the store refuses outright, is a failed record, as it
+// always was; neither is a question of who is writing.
+func (p *Panel) planLoad(c *router.Context, st datasource.RecordStore, mi datasource.ModelInfo, cfg LoaddataConfig, rows []fixtureRow) ([]importWrite, error) {
+	ctx := c.Request.Context()
+	modelName := mi.Name
+	target := p.importTenantScope(mi, cfg.TenantID)
+	scopes := p.writeScopesFor(c, mi)
 
-			// Determine if record already exists
-			if pkValue == "" {
-				// No PK, just create
-				if _, err := st.Create(ctx, datasource.Record(data)); err != nil {
-					report.Failed++
-					report.Errors = append(report.Errors, ImportError{
-						Message: fmt.Sprintf("model %s create: %v", modelName, err),
-					})
-				} else {
-					report.Imported++
-				}
+	plan := make([]importWrite, 0, len(rows))
+	for _, row := range rows {
+		rec := row.rec
+		// Merge fields with PK
+		data := make(map[string]interface{})
+		for k, v := range rec.Fields {
+			data[k] = v
+		}
+		w := importWrite{row: row.pos, action: fieldActionCreate, data: data, label: "model " + modelName}
+
+		// The pk travels as the boundary string (ADR-001 D1): "7", 7 and
+		// a UUID are all keys, and the backend narrows them. A pk with no
+		// usable text is a failed row — it used to be dropped silently,
+		// which created the record afresh under a new key.
+		pkValue := ""
+		if rec.PK != nil {
+			normalized, err := normalizePKValue(rec.PK)
+			if err != nil {
+				w.action = importFail
+				w.failure = ImportError{Row: row.pos, Message: fmt.Sprintf("model %s: invalid pk %v: %v", modelName, rec.PK, err)}
+				plan = append(plan, w)
 				continue
 			}
+			data[mi.PrimaryKey] = rec.PK
+			pkValue = normalized
+		} else {
+			pkValue = extractDataPK(data, mi)
+		}
+		if pkValue != "" {
+			w.label = fmt.Sprintf("model %s pk=%s", modelName, pkValue)
+		}
 
-			// Check if record exists
-			existing, err := st.Get(ctx, pkValue)
-			if err != nil {
+		// A fixture loaded into a tenant belongs to it: a record naming
+		// another tenant (under any spelling of the column) is refused, one
+		// naming none gets the tenant stamped.
+		if target.Enforced() {
+			if err := target.guardPayload(data, true); err != nil {
+				return nil, importRefused(mi, row.pos, err)
+			}
+		}
+
+		var existing datasource.Record
+		if pkValue != "" {
+			found, err := st.Get(ctx, pkValue)
+			switch {
+			case err != nil && isClientError(err):
 				// A key the backend refuses outright ("abc" on an integer
 				// key) must not fall through to a create that would drop
 				// the pk and store the row under a fresh key.
-				if isClientError(err) {
-					report.Failed++
-					report.Errors = append(report.Errors, ImportError{
-						Message: fmt.Sprintf("model %s pk=%s: %v", modelName, pkValue, err),
-					})
-					continue
-				}
-				// Record doesn't exist, create it
-				if _, err := st.Create(ctx, datasource.Record(data)); err != nil {
-					report.Failed++
-					report.Errors = append(report.Errors, ImportError{
-						Message: fmt.Sprintf("model %s create pk=%s: %v", modelName, pkValue, err),
-					})
-				} else {
-					report.Imported++
-				}
+				w.action = importFail
+				w.failure = ImportError{Row: row.pos, Message: fmt.Sprintf("model %s pk=%s: %v", modelName, pkValue, err)}
+				plan = append(plan, w)
 				continue
-			}
-
-			// The row the pk names must be the tenant's: a fixture can
-			// neither update another tenant's row (it used to overwrite and
-			// re-tenant it) nor, under on_conflict=skip, confirm it exists.
-			// Reported as not found, the same answer a get gives, so the id
-			// space of other tenants is not disclosed. A record that carries
-			// no tenant key (the field is hidden from JSON) is confirmed
-			// through the store rather than taken for another tenant's.
-			if scope.Enforced() {
-				owned, err := scope.owns(ctx, st, mi, pkValue, existing)
-				if err != nil {
-					report.Failed++
-					report.Errors = append(report.Errors, ImportError{
-						Message: fmt.Sprintf("model %s pk=%s: %v", modelName, pkValue, err),
-					})
-					continue
-				}
-				if !owned {
-					report.Failed++
-					report.Errors = append(report.Errors, ImportError{
-						Message: fmt.Sprintf("model %s pk=%s: not found in tenant %q", modelName, pkValue, cfg.TenantID),
-					})
-					continue
-				}
-			}
-
-			// Record exists, handle conflict
-			if cfg.OnConflict == "skip" {
-				report.Skipped++
-				continue
-			}
-
-			// On-conflict: update
-			if existing != nil {
-				// Build updates from fields (exclude PK)
-				updates := make(map[string]interface{})
-				for k, v := range rec.Fields {
-					field := dsFindFieldByColumn(mi, k)
-					if field != nil && !field.IsPK && !field.IsReadOnly {
-						updates[k] = v
+			case err == nil:
+				// The row the pk names must be the tenant's: a fixture can
+				// neither update another tenant's row (it used to overwrite
+				// and re-tenant it) nor, under on_conflict=skip, confirm it
+				// exists. Reported as not found, the same answer a get
+				// gives, so the id space of other tenants is not disclosed.
+				// A record that carries no tenant key (the field is hidden
+				// from JSON) is confirmed through the store rather than
+				// taken for another tenant's.
+				if target.Enforced() {
+					owned, err := target.owns(ctx, st, mi, pkValue, found)
+					if err != nil {
+						return nil, err
+					}
+					if !owned {
+						return nil, importRefused(mi, row.pos, notInTenant(mi, pkValue, target))
 					}
 				}
-
-				if err := st.Update(ctx, pkValue, datasource.Record(updates)); err != nil {
-					report.Failed++
-					report.Errors = append(report.Errors, ImportError{
-						Message: fmt.Sprintf("model %s update pk=%s: %v", modelName, pkValue, err),
-					})
+				w.id, existing = pkValue, found
+				if cfg.OnConflict == "skip" {
+					w.action = importSkip
 				} else {
-					report.Updated++
+					// Build updates from fields (exclude PK)
+					w.action = fieldActionUpdate
+					w.data = importUpdates(mi, rec.Fields)
 				}
 			}
+			// Any other error is a row the store does not hold: a create.
 		}
-	}
 
-	return report, nil
+		refusal, err := admitWrite(ctx, scopes, st, mi, &w, existing)
+		if err != nil {
+			return nil, err
+		}
+		if refusal != nil {
+			return nil, importRefused(mi, row.pos, refusal)
+		}
+		plan = append(plan, w)
+	}
+	return plan, nil
 }
 
 // handleDumpdata is the HTTP handler for dumpdata.
@@ -443,7 +443,10 @@ func (p *Panel) handleLoaddata(c *router.Context) error {
 		cfg.TenantID = scoped
 	}
 
-	report, err := p.Loaddata(r.Context(), cfg)
+	// import_data says who may load a fixture, not what: each record asks
+	// what the record form asks, and one that is refused refuses the
+	// fixture before any record is written (OR-67).
+	report, err := p.Loaddata(c, cfg)
 	if err != nil {
 		return fmt.Errorf("loaddata: %w", err)
 	}

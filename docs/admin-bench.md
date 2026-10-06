@@ -176,7 +176,9 @@ read what the export it offers holds, and it stayed present with the fix
 ([below](#what-an-export-holds-or-66)); OR-69 extended it to read that a
 field kept from the actor is neither offered nor answered as a sort, a
 filter or a saved view, and it stayed present with the fix
-([below](#what-a-query-may-name-or-69)).
+([below](#what-a-query-may-name-or-69)); OR-67 extended it to read that an
+import writes only what the operator could write by hand, and it stayed
+present with the fix ([below](#what-an-import-writes-or-67)).
 `UIX-16` and `UIX-17` are the screens of two of those operators, added for
 OR-64; they found three defects of the panel's own, and arrived present with
 their fixes
@@ -219,7 +221,7 @@ the two stacks met, so the third session's kept its number.)
 | **UIX-15** | the panel's own scripts and stylesheets reach the browser compressed once, by the build |
 | **UIX-16** | an operator is offered a delete only where they hold one: no selection or Delete without it, and no batch Delete for one who may delete a record but not a batch |
 | **UIX-17** | an operator who may not update is offered no edit: the row opens the record read-only, and its menu and the record view hold only the actions granted |
-| **UIX-18** | an operator is offered a model, a record's history, an export, an import, the field settings and a saved view's removal only where they hold them, each one asked anyway is refused, an export holds only what the operator may list, and a field the operator may not read is neither offered nor answered as a sort, a filter or a saved view |
+| **UIX-18** | an operator is offered a model, a record's history, an export, an import, the field settings and a saved view's removal only where they hold them, each one asked anyway is refused, an export holds only what the operator may list, a field the operator may not read is neither offered nor answered as a sort, a filter or a saved view, and an import writes only what the operator could write by hand |
 
 Three things worth keeping about how it is built:
 
@@ -1784,5 +1786,81 @@ Verified by breaking it:
 | a field's lookup answered for a hidden field | `TestFieldOptions_AFieldTheOperatorMayNotReadIsNotFound` |
 | saved views listed whatever they name | `UIX-18`: the actor is shown a view filtered by views; `TestSavedViews_AViewNamingAHiddenFieldIsNotListed` |
 | a records card's order not checked | `TestRecordsCard_InAnOrderTheOperatorMayNotReadIsNotShown` |
+
+The browser half stays at 18 of 18; the HTTP bench is unchanged at 72 of 72.
+
+## What an import writes (OR-67)
+
+`UIX-18` read that an operator without `import_data` is neither offered an
+import nor served one. It did not ask what an import writes for one who holds
+it, and the import wrote anything. The import (upload, validate, execute) and
+the fixture load are granted by `import_data` on `admin:*`, and wrote any
+model, by create or by update, with no grant of the model's, outside the
+operator's own rows, and through a field kept from them: whoever could import
+could write what they could not write by hand. It is the write twin of OR-66,
+and the owner's decision of 2026-10-06 closed it in a minor rather than the
+2.0.
+
+Each row of a file now asks what the record form asks, through the function
+the form's create and update ask it of (`requestWriteScope`, beside
+`requestReadScope`):
+
+| row | what it needs |
+|---|---|
+| a new row | the model's `create`; the tenant and, under `#own`, the operator stamped; no field the operator may not write |
+| an existing row (by primary key, or a unique index within the tenant, when `on_conflict` is `skip` or `update`; a fixture's `pk`) updated | the model's `update`, a row of the tenant and, under `#own`, the operator's own; no field the operator may not write |
+| an existing row skipped | nothing: it is not written |
+| an existing row of another tenant | not found, skipped or updated alike |
+
+The file is planned whole before any row of it is written, and one row the
+operator may not write refuses it with a `403` that names the row, the model
+and what it lacks. The validate step answers the same `403`; the import
+dialog shows it as its alert, with nothing written. A superuser is unchanged
+but for the tenant, which the form holds them to as well.
+
+The driver gives the actor two grants more and the lister one:
+
+| operator | holds (beside `list_models` on `admin:*`) |
+|---|---|
+| the viewer | `get_schema`, `list`, `retrieve` on `Note` |
+| the actor | the same, `delete`, `schedule`, `duplicate`, `create` on `Note`, `export_data` and `import_data` on `admin:*`, a `deny` on `Note.meta` and on `Note.views`, and `list` on `admin:Article#own` |
+| the lister | `get_schema`, `list` on `Note`, and `import_data` on `admin:*` |
+
+**`UIX-18`** now reads, for the actor, that the toolbar offers Export /
+Import and its panel an Import; that a file of two notes, the second with a
+`meta` key, is refused in the dialog with an alert naming row 2, `meta` and
+that nothing was written, and no note of it exists; that the same notes
+without `meta` validate and land; and that a file updating the admin's note
+by its key is refused with `403` by validate and by execute, naming the
+`update` the actor does not hold, and the note keeps its title. For the
+lister it reads that the schema does not offer the import of `Note`, the
+toolbar draws none, and a file of notes to create is refused for the
+`create` the lister lacks.
+
+### What the work found that was not on the plan
+
+- **FIXED — the schema offered an import every row of which is refused.**
+  `import_data` in the permissions map is false now on a model the operator
+  may neither create nor update rows of, and Data Studio offers its import —
+  which creates every row it reads — only beside `create`.
+- **FIXED — the import dialog counted rows from 0.** A row error read
+  `row 0` for the first record of the file; the dialog counts from 1 now, as
+  the refusal does, so both name the same row the same way.
+- **CHANGED — a row of another tenant refuses the file.** It used to fail
+  alone and let the rest of the file through; it refuses the file whole now,
+  for every operator.
+
+Verified by breaking it:
+
+| mutation | what fails |
+|---|---|
+| the parent commit's server and interface, with this spec | `UIX-18`: the dialog does not say why the actor's file with a field kept from them was refused (it validated, and would have imported) |
+| the import's payload not held to the write scope | `UIX-18`: the dialog does not say why the actor's file was refused; `TestImport_ADeniedFieldIsRefusedNotDropped`, `TestImport_OwnRowsOnlyForAnOwnGrant`, `TestLoaddata_*` |
+| the row's verb not asked | `TestImport_WithoutCreateIsRefusedAndWritesNothing`, `TestImport_UpdatingAnExistingRowNeedsUpdate`, `TestLoaddata_*` |
+| an update not confined to the rows the operator reaches | `TestImport_OwnRowsOnlyForAnOwnGrant`, `TestLoaddata_*` |
+| rows written as they are planned | `TestImport_AMixedFileWritesNothing`, `TestImport_ARowForAnotherTenantIsRefused`, `TestImport_OwnRowsOnlyForAnOwnGrant` |
+| the validate step not planning | `UIX-18`: the dialog does not say why the actor's file was refused; every `TestImport_*` that refuses (validate and execute disagree) |
+| the write scope without the field policies | the form's `TestFieldPerms_*` and the import's `TestImport_*` alike: one function |
+| `import_data` not narrowed to a write of the model | `UIX-18`: the lister's schema offers an import of Note; `TestCapabilityHints_ImportDataNeedsAWriteOfTheModel` |
 
 The browser half stays at 18 of 18; the HTTP bench is unchanged at 72 of 72.

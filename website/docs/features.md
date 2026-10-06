@@ -517,6 +517,46 @@ list in memory, so after a restart, or from another replica, an operator who
 is not a superuser cuts the export again; the signed URL a store returns with
 the export is unaffected.
 
+### What an import writes
+
+`import_data` is granted on `admin:*` too, and says who may import, not what.
+The import (`POST /api/imports`, then `/api/import/validate` and
+`/api/import/execute`) and the fixture load (`POST /api/fixtures/loaddata`,
+the same operation in another format) write each row the way the record form
+would write it for that operator:
+
+- a **new** row needs the model's `create`, and an **existing** one its
+  `update`;
+- the row stays in the request's tenant: one naming another tenant is
+  refused, never moved into this one, and one naming none has the tenant
+  stamped, as a create does;
+- under an `#own` grant, only the operator's own rows are updated, and a new
+  row has the operator stamped as its owner; one naming another owner is
+  refused;
+- a field the operator may not write is refused by name, not dropped.
+
+A row is **existing** when `on_conflict` asks the import to look for it
+(`skip` or `update`) and its primary key — under the key's name, its column
+or its Go name — names a row the store holds, or else every column of one of
+the model's unique indexes is in the row and matches a row of the tenant. A
+fixture record is existing when its `pk` names a row the store holds. An
+existing row of another tenant is not found, whatever `on_conflict` says, and
+one outside the operator's own rows is not found for an update. A row
+`on_conflict=skip` leaves alone writes nothing and needs no grant. Every
+other row is a create.
+
+The file is planned whole before any row of it is written. **One row the
+operator may not write refuses the whole file** with a `403` that names the
+row (counted from 1), the model, and the permission, field or scope it
+lacks — nothing of the file is written. The validate step plans the file the
+same way and answers the same `403`. A cell of the wrong type, a fixture `pk`
+the store cannot use and a write the store itself refuses are still failed
+rows of the report: none of them is a question of who is writing.
+
+A superuser is unaffected, apart from the tenant: model grants, `#own` and
+field policies do not apply to them, and a row of another tenant refuses
+their file whole as it does anybody's.
+
 ### What a screen is told
 
 The payloads a model screen loads carry what this operator may do, so the panel
@@ -537,7 +577,8 @@ handler asks it of: `get_schema` and `update_schema` of the model,
 `export_data` and `import_data` of the whole panel (`admin:*`). Those four are
 full grants only — an `#own` grant of them is not one, here or on the
 request. `export_data` is also false on a model the operator may not `list`,
-since its export is refused there. `update_schema` is false for everybody on
+since its export is refused there, and `import_data` on a model they may
+neither `create` nor `update` rows of, since every row of its import is. `update_schema` is false for everybody on
 a data source with no schema registry, which answers `501` to it.
 
 Data Studio draws its screens from them, and offers a door only to an
@@ -549,7 +590,7 @@ operator the server will let through it:
 | **Fields**, the field settings | `update_schema` |
 | **New Record** | `create` |
 | **Export** (the panel's export of the model) | `export_data` on `admin:*`, and `list` of the model, whose rows and fields it holds |
-| **Import** | `import_data` on `admin:*`, on a model that is not read-only |
+| **Import** | `import_data` on `admin:*` and `create` on the model — the dialog's import creates every row it reads — on a model that is not read-only |
 | a row's **History** | `retrieve`, the record's own verb |
 | a row's **Edit** | `update` |
 | a row's **View**, the record read-only | `retrieve` and no `update` |
@@ -568,7 +609,9 @@ changed, since the server asks each child it is sent for its verb: an
 operator who may add a line and not edit one is not refused the line for the
 lines they only looked at. An import into a read-only model is refused like
 every other write, and so is a fixture load that names one — whole, before
-any of its rows is written.
+any of its rows is written. A file with a row the operator may not write is
+refused whole too, and the import dialog shows the refusal, with the row and
+the reason, as its alert.
 
 They are a rendering aid. Every one of them is enforced again on the request
 that follows, and a client that ignores them is refused exactly as before.

@@ -105,8 +105,10 @@ funcionaba cambia.**
   autorizan sobre `admin:*`, no sobre un modelo: no llevan alcance de fila ni
   de campo. Conceder esos verbos a un operador confinado es darle el rodeo, y
   quien los concede lo está decidiendo. *(Enmendado para `export_data` y el
-  volcado de fixtures por OR-66, abajo: llevan el alcance de `list`. La
-  importación y la carga de fixtures siguen como dice esta viñeta.)*
+  volcado de fixtures por OR-66, abajo: llevan el alcance de `list`; y para
+  la importación y la carga de fixtures por OR-67, más abajo: escriben con el
+  alcance de `create` y `update`. Ninguna de las cuatro sigue ya como dice
+  esta viñeta.)*
 - **El rastro de auditoría.** Guarda los valores antes y después de una
   escritura con sus propias reglas de redacción; un campo prohibido por
   política puede seguir siendo legible ahí para quien tenga `audit_view`.
@@ -154,7 +156,67 @@ dice «Lo que NO cubre»; si eso se mantiene es una decisión pendiente del
 dueño (OR-67), no de esta enmienda. Lo único que ganan es lo que cualquier
 escritura del panel ya tenía: un modelo de sólo lectura rechaza la carga de
 fixtures entera, antes de escribir ninguna fila (OR-68), como desde OR-65
-rechaza la importación.
+rechaza la importación. *(El dueño lo decidió el mismo día: ver la enmienda
+de OR-67.)*
+
+## Enmienda de OR-67 (2026-10-06): quien importa escribe lo que escribiría a mano
+
+La enmienda de OR-66 dejó a la importación y a la carga de fixtures donde
+las ponía «Lo que NO cubre»: autorizadas sobre `admin:*` sin el `create` ni
+el `update` de cada modelo, sin alcance de fila y sin políticas de campo. Es
+el gemelo de escritura de OR-66: quien tenía `import_data` escribía cualquier
+modelo, creando o actualizando, en filas ajenas y en campos que no podía
+escribir — lo que el formulario del registro le negaba. El dueño lo decidió
+el 2026-10-06 como arreglo de seguridad en una minor, no aplazado al 2.0:
+**quien puede importar ya no escribe lo que no podría escribir a mano.**
+
+Se enmienda así:
+
+- **`import_data` sigue concediéndose sobre `admin:*`**, y dice quién
+  importa, no qué. La importación (subida, validación y ejecución) y la
+  carga de fixtures (`loaddata`, la misma operación en otro formato) piden,
+  fila a fila, lo que pide el formulario: el `create` del modelo para una
+  fila nueva y su `update` para una existente; el tenant de la petición (una
+  fila de otro tenant se rechaza, nunca se re-tenantiza, y la que no nombra
+  ninguno lo recibe estampado, como en el alta); bajo `#own`, sólo las filas
+  propias para actualizar y el operador estampado como propietario al crear;
+  y ningún campo que el operador no pueda escribir, que se rechaza por
+  nombre y no se descarta (punto 5). El formulario y las dos superficies
+  toman ese alcance de una sola función (`requestWriteScope`, gemela de
+  `requestReadScope`), así que lo que se escribe a mano y lo que se importa
+  no pueden separarse.
+- **Qué fila es existente.** En la importación, sólo cuando `on_conflict`
+  pide buscarla (`skip` o `update`): su clave primaria —bajo el nombre de la
+  pk, su columna o su nombre Go— nombra una fila que el almacén tiene, o, si
+  no, todas las columnas de un índice único están en la fila y coinciden con
+  una fila del tenant de la importación. En la carga de fixtures, cuando su
+  `pk` nombra una fila que el almacén tiene. Una fila existente de otro
+  tenant no se encuentra, diga lo que diga `on_conflict` —un `skip`
+  confirmaría que existe—, y una fuera de las filas propias del operador no
+  se encuentra para actualizarla. Saltar una fila existente no escribe nada
+  y no pide permiso. Cualquier otra fila es un alta.
+- **Todo o nada.** El fichero se planifica entero antes de escribir ninguna
+  fila, y una fila que el operador no puede escribir lo rechaza con un `403`
+  que nombra la fila (contada desde 1), el modelo y el permiso, el campo o el
+  alcance que falta — como desde OR-65 y OR-68 lo rechaza un modelo de sólo
+  lectura. Lo que no es una cuestión de quién escribe sigue como estaba: una
+  celda inválida, una `pk` inutilizable de una fixture o una escritura que el
+  almacén rechaza son filas del informe.
+- **La validación rechaza lo que rechazaría la ejecución**: recorre el mismo
+  plan sin escribir.
+- **El superusuario no cambia**: no le aplican el permiso del modelo, el
+  `#own` ni las políticas de campo (punto 8). Sí le aplica, como en el
+  formulario, el tenant de su petición: una fila de otro tenant rechaza ahora
+  el fichero entero en vez de fallar sola.
+- La pista `import_data` del esquema es falsa en un modelo del que el
+  operador no puede crear ni actualizar filas, y Data Studio ofrece su
+  importación —que crea cada fila que lee— a quien tiene además `create`.
+
+**Cambio de comportamiento**: un operador con `import_data` y sin permisos
+sobre un modelo importaba en él; ahora necesita su `create`, y su `update`
+para un fichero que actualiza filas existentes. Un fichero con una fila de
+otro tenant, que antes fallaba esa fila y escribía las demás, se rechaza
+entero.
 
 ## Enmienda de OR-69 (2026-10-06): un campo que no se lee no se pregunta
 

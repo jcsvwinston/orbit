@@ -455,18 +455,19 @@ func TestTenantScope_WritesCannotChangeTenant(t *testing.T) {
 	// so the row landed under ' acme ' — a value no request resolves to,
 	// invisible to the tenant's list and 404 by id.
 	assertPaddedTenantRefused(t, sqlDB, srv.URL+"/api/models/ScopedNote", "tenant_id", "scoped_notes")
-	report, err := panel.ExecuteImport(context.Background(), ImportConfig{Model: "ScopedNote", TenantID: "acme", OnConflict: "skip"},
+	// The import and the load refuse the file the row is in (OR-67).
+	report, err := panel.ExecuteImport(operatorRequest(), ImportConfig{Model: "ScopedNote", TenantID: "acme", OnConflict: "skip"},
 		[]map[string]interface{}{{"tenant_id": " acme ", "title": "padded"}})
-	if err != nil || report.Failed != 1 || report.Imported != 0 {
-		t.Fatalf("ExecuteImport tenant_id=' acme ': err=%v report=%+v, want the row failed", err, report)
+	if !isImportRefusal(err) {
+		t.Fatalf("ExecuteImport tenant_id=' acme ': err=%v report=%+v, want the file refused", err, report)
 	}
 	store := panel.store.(*keyedStore)
 	store.objects["_tmp/fixture_padded.json"] = fixtureJSON(t,
 		map[string]any{"model": "ScopedNote", "fields": map[string]any{"tenant_id": "acme ", "title": "padded"}},
 	)
 	resp, status = doJSON(t, http.MethodPost, srv.URL+"/api/fixtures/loaddata", map[string]any{"key": "_tmp/fixture_padded.json"})
-	if status != http.StatusOK || int(resp["failed"].(float64)) != 1 || int(resp["imported"].(float64)) != 0 {
-		t.Fatalf("loaddata tenant_id='acme ': status %d report=%s, want the row failed", status, mustJSON(resp))
+	if status != http.StatusForbidden {
+		t.Fatalf("loaddata tenant_id='acme ': status %d report=%s, want the fixture refused", status, mustJSON(resp))
 	}
 	if n := strayTenantRows(t, sqlDB, "scoped_notes"); n != 0 {
 		t.Fatalf("%d scoped_notes rows outside acme/globex after the padded writes, want 0", n)
@@ -509,8 +510,9 @@ func TestTenantScope_ExportsImportsAndFixturesStayInTenant(t *testing.T) {
 		t.Fatalf("fixture = %q, want only the acme row", fixture)
 	}
 
-	// Loaddata: a record naming another tenant fails, one naming none is
-	// stamped with the request's tenant, whatever the body's tenant_id says.
+	// Loaddata: a record naming another tenant refuses the fixture, the
+	// record beside it included (OR-67); one naming none is stamped with the
+	// request's tenant, whatever the body's tenant_id says.
 	store.objects["_tmp/fixture.json"] = fixtureJSON(t,
 		map[string]any{"model": "ScopedNote", "fields": map[string]any{"tenant_id": "globex", "title": "smuggled"}},
 		map[string]any{"model": "ScopedNote", "fields": map[string]any{"title": "stamped"}},
@@ -518,11 +520,20 @@ func TestTenantScope_ExportsImportsAndFixturesStayInTenant(t *testing.T) {
 	resp, status = doJSON(t, http.MethodPost, srv.URL+"/api/fixtures/loaddata", map[string]any{
 		"key": "_tmp/fixture.json", "tenant_id": "globex",
 	})
-	if status != http.StatusOK {
-		t.Fatalf("loaddata status %d body=%s", status, mustJSON(resp))
+	if status != http.StatusForbidden {
+		t.Fatalf("loaddata status %d body=%s, want the fixture refused", status, mustJSON(resp))
 	}
-	if int(resp["failed"].(float64)) != 1 || int(resp["imported"].(float64)) != 1 {
-		t.Fatalf("loaddata report = %s, want 1 failed / 1 imported", mustJSON(resp))
+	if noteCount(t, sqlDB, "globex") != 1 || noteCount(t, sqlDB, "acme") != 1 {
+		t.Fatalf("rows after a refused loaddata: globex=%d acme=%d", noteCount(t, sqlDB, "globex"), noteCount(t, sqlDB, "acme"))
+	}
+	store.objects["_tmp/fixture_stamped.json"] = fixtureJSON(t,
+		map[string]any{"model": "ScopedNote", "fields": map[string]any{"title": "stamped"}},
+	)
+	resp, status = doJSON(t, http.MethodPost, srv.URL+"/api/fixtures/loaddata", map[string]any{
+		"key": "_tmp/fixture_stamped.json", "tenant_id": "globex",
+	})
+	if status != http.StatusOK || int(resp["imported"].(float64)) != 1 {
+		t.Fatalf("loaddata status %d report=%s, want 1 imported", status, mustJSON(resp))
 	}
 	if noteCount(t, sqlDB, "globex") != 1 || noteCount(t, sqlDB, "acme") != 2 {
 		t.Fatalf("rows after loaddata: globex=%d acme=%d", noteCount(t, sqlDB, "globex"), noteCount(t, sqlDB, "acme"))
@@ -535,11 +546,8 @@ func TestTenantScope_ExportsImportsAndFixturesStayInTenant(t *testing.T) {
 	resp, status = doJSON(t, http.MethodPost, srv.URL+"/api/import/execute?key=_tmp/import_smuggled.csv", map[string]any{
 		"model": "ScopedNote", "format": "csv", "tenant_id": "globex",
 	})
-	if status != http.StatusOK {
-		t.Fatalf("import status %d body=%s", status, mustJSON(resp))
-	}
-	if int(resp["failed"].(float64)) != 1 || int(resp["imported"].(float64)) != 0 {
-		t.Fatalf("import report = %s, want the globex row refused", mustJSON(resp))
+	if status != http.StatusForbidden {
+		t.Fatalf("import status %d body=%s, want the file refused", status, mustJSON(resp))
 	}
 	store.objects["_tmp/import_stamped.csv"] = "title\nstamped\n"
 	resp, status = doJSON(t, http.MethodPost, srv.URL+"/api/import/execute?key=_tmp/import_stamped.csv", map[string]any{
@@ -698,17 +706,16 @@ func TestTenantScope_TenantKeySpellingsAreGuarded(t *testing.T) {
 		map[string]any{"model": "ScopedNote", "fields": map[string]any{"TENANT_ID": "globex", "title": "smuggled"}},
 	)
 	resp, status = doJSON(t, http.MethodPost, srv.URL+"/api/fixtures/loaddata", map[string]any{"key": "_tmp/fixture_case.json"})
-	if status != http.StatusOK || int(resp["failed"].(float64)) != 1 || int(resp["imported"].(float64)) != 0 {
-		t.Fatalf("loaddata TENANT_ID: status %d report=%s, want the row failed", status, mustJSON(resp))
+	if status != http.StatusForbidden {
+		t.Fatalf("loaddata TENANT_ID: status %d report=%s, want the fixture refused", status, mustJSON(resp))
 	}
 
-	// Import execute: the validator refuses an unknown column spelling
-	// before the importer runs, so the importer's own guard is exercised
-	// directly.
-	report, err := panel.ExecuteImport(context.Background(), ImportConfig{Model: "ScopedNote", TenantID: "acme", OnConflict: "skip"},
+	// Import execute: the plan refuses the spelling before the validator
+	// reads a cell, through the import and directly alike.
+	report, err := panel.ExecuteImport(operatorRequest(), ImportConfig{Model: "ScopedNote", TenantID: "acme", OnConflict: "skip"},
 		[]map[string]interface{}{{"TENANT_ID": "globex", "title": "smuggled"}})
-	if err != nil || report.Failed != 1 || report.Imported != 0 {
-		t.Fatalf("ExecuteImport TENANT_ID: err=%v report=%+v, want the row failed", err, report)
+	if !isImportRefusal(err) {
+		t.Fatalf("ExecuteImport TENANT_ID: err=%v report=%+v, want the file refused", err, report)
 	}
 
 	if noteCount(t, sqlDB, "globex") != 1 || noteCount(t, sqlDB, "acme") != 1 {
@@ -732,14 +739,12 @@ func TestTenantScope_LoaddataCannotReachOtherTenantRow(t *testing.T) {
 	)
 	for _, mode := range []string{"update", "skip"} {
 		resp, status := doJSON(t, http.MethodPost, srv.URL+"/api/fixtures/loaddata", map[string]any{"key": "_tmp/hijack.json", "on_conflict": mode})
-		if status != http.StatusOK {
-			t.Fatalf("loaddata %s: status %d body=%s", mode, status, mustJSON(resp))
+		// The fixture is refused whole (OR-67), and the row it names is
+		// not found, as a get answers it.
+		if status != http.StatusForbidden {
+			t.Fatalf("loaddata %s: status %d body=%s, want the fixture refused", mode, status, mustJSON(resp))
 		}
-		if int(resp["failed"].(float64)) != 2 || int(resp["updated"].(float64)) != 0 || int(resp["skipped"].(float64)) != 0 {
-			t.Fatalf("loaddata %s report = %s, want both rows failed", mode, mustJSON(resp))
-		}
-		errs := resp["errors"].([]interface{})
-		if msg := fmt.Sprint(errs[0].(map[string]interface{})["message"]); !strings.Contains(msg, "not found") {
+		if msg := errorMessage(resp); !strings.Contains(msg, "not found") {
 			t.Fatalf("loaddata %s error = %q, want the row reported as not found", mode, msg)
 		}
 	}
@@ -773,14 +778,12 @@ func TestTenantScope_ImportUpdateCannotReachOtherTenantRow(t *testing.T) {
 			resp, status := doJSON(t, http.MethodPost, srv.URL+"/api/import/execute?key=_tmp/import_hijack.json", map[string]any{
 				"model": "ScopedNote", "format": "json", "on_conflict": mode,
 			})
-			if status != http.StatusOK {
-				t.Fatalf("import %s=2 %s: status %d body=%s", key, mode, status, mustJSON(resp))
+			// The file is refused whole (OR-67), and the row it names is
+			// not found, as a get answers it.
+			if status != http.StatusForbidden {
+				t.Fatalf("import %s=2 %s: status %d body=%s, want the file refused", key, mode, status, mustJSON(resp))
 			}
-			if int(resp["failed"].(float64)) != 1 || int(resp["updated"].(float64)) != 0 || int(resp["skipped"].(float64)) != 0 || int(resp["imported"].(float64)) != 0 {
-				t.Fatalf("import %s=2 %s report = %s, want the row failed", key, mode, mustJSON(resp))
-			}
-			errs := resp["errors"].([]interface{})
-			if msg := fmt.Sprint(errs[0].(map[string]interface{})["message"]); !strings.Contains(msg, "not found") {
+			if msg := errorMessage(resp); !strings.Contains(msg, "not found") {
 				t.Fatalf("import %s=2 %s error = %q, want not found", key, mode, msg)
 			}
 		}
@@ -1026,13 +1029,13 @@ func TestTenantScope_JSONTaggedTenantFieldIsGuardedAndReadable(t *testing.T) {
 		map[string]any{"model": "CamelNote", "fields": map[string]any{"org": "globex", "title": "smuggled"}},
 	)
 	resp, status = doJSON(t, http.MethodPost, srv.URL+"/api/fixtures/loaddata", map[string]any{"key": "_tmp/fixture_json_tag.json"})
-	if status != http.StatusOK || int(resp["failed"].(float64)) != 1 || int(resp["imported"].(float64)) != 0 {
-		t.Fatalf("loaddata org=globex: status %d report=%s, want the row failed", status, mustJSON(resp))
+	if status != http.StatusForbidden {
+		t.Fatalf("loaddata org=globex: status %d report=%s, want the fixture refused", status, mustJSON(resp))
 	}
-	report, err := panel.ExecuteImport(context.Background(), ImportConfig{Model: "CamelNote", TenantID: "acme", OnConflict: "skip"},
+	report, err := panel.ExecuteImport(operatorRequest(), ImportConfig{Model: "CamelNote", TenantID: "acme", OnConflict: "skip"},
 		[]map[string]interface{}{{"org": "globex", "title": "smuggled"}})
-	if err != nil || report.Failed != 1 || report.Imported != 0 {
-		t.Fatalf("ExecuteImport org=globex: err=%v report=%+v, want the row failed", err, report)
+	if !isImportRefusal(err) {
+		t.Fatalf("ExecuteImport org=globex: err=%v report=%+v, want the file refused", err, report)
 	}
 
 	if g, a := tenantRows(t, sqlDB, "camel_notes", "globex"), tenantRows(t, sqlDB, "camel_notes", "acme"); g != 1 || a != 1 {
@@ -1245,28 +1248,37 @@ func TestTenantScope_HiddenJSONTenantFieldOwnRowsReachable(t *testing.T) {
 		t.Fatalf("DELETE other tenant's row: status %d body=%s, want 404", status, mustJSON(resp))
 	}
 
-	// Loaddata: the own pk updates or is skipped, the other tenant's pk
-	// fails as not found.
+	// Loaddata: the other tenant's pk is not found, and refuses the fixture
+	// it is in, the own pk beside it included (OR-67); alone, the own pk
+	// updates or is skipped.
 	store := panel.store.(*keyedStore)
 	store.objects["_tmp/hidden.json"] = fixtureJSON(t,
 		map[string]any{"model": "HiddenNote", "pk": 1, "fields": map[string]any{"title": "via fixture"}},
 		map[string]any{"model": "HiddenNote", "pk": 2, "fields": map[string]any{"title": "hijacked"}},
 	)
+	store.objects["_tmp/hidden_own.json"] = fixtureJSON(t,
+		map[string]any{"model": "HiddenNote", "pk": 1, "fields": map[string]any{"title": "via fixture"}},
+	)
 	for _, mode := range []string{"update", "skip"} {
 		resp, status = doJSON(t, http.MethodPost, srv.URL+"/api/fixtures/loaddata", map[string]any{"key": "_tmp/hidden.json", "on_conflict": mode})
-		if status != http.StatusOK {
-			t.Fatalf("loaddata %s: status %d body=%s", mode, status, mustJSON(resp))
+		if status != http.StatusForbidden {
+			t.Fatalf("loaddata %s: status %d body=%s, want the fixture refused", mode, status, mustJSON(resp))
 		}
+		if msg := errorMessage(resp); !strings.Contains(msg, "HiddenNote 2") || !strings.Contains(msg, "not found") {
+			t.Fatalf("loaddata %s error = %q, want pk 2 reported as not found", mode, msg)
+		}
+		if _, title := hiddenRow(t, sqlDB, 1); title == "via fixture" {
+			t.Fatalf("loaddata %s: a refused fixture wrote row 1", mode)
+		}
+	}
+	for _, mode := range []string{"skip", "update"} {
+		resp, status = doJSON(t, http.MethodPost, srv.URL+"/api/fixtures/loaddata", map[string]any{"key": "_tmp/hidden_own.json", "on_conflict": mode})
 		wantUpdated, wantSkipped := 1, 0
 		if mode == "skip" {
 			wantUpdated, wantSkipped = 0, 1
 		}
-		if int(resp["failed"].(float64)) != 1 || int(resp["updated"].(float64)) != wantUpdated || int(resp["skipped"].(float64)) != wantSkipped {
-			t.Fatalf("loaddata %s report = %s, want own pk %s and the other pk failed", mode, mustJSON(resp), mode+"d")
-		}
-		errs := resp["errors"].([]interface{})
-		if msg := fmt.Sprint(errs[0].(map[string]interface{})["message"]); !strings.Contains(msg, "pk=2") || !strings.Contains(msg, "not found") {
-			t.Fatalf("loaddata %s error = %q, want pk 2 reported as not found", mode, msg)
+		if status != http.StatusOK || int(resp["failed"].(float64)) != 0 || int(resp["updated"].(float64)) != wantUpdated || int(resp["skipped"].(float64)) != wantSkipped {
+			t.Fatalf("loaddata own pk %s: status %d report = %s, want it %s", mode, status, mustJSON(resp), mode+"d")
 		}
 	}
 	if tenant, title := hiddenRow(t, sqlDB, 1); tenant != "acme" || title != "via fixture" {
@@ -1278,11 +1290,15 @@ func TestTenantScope_HiddenJSONTenantFieldOwnRowsReachable(t *testing.T) {
 	resp, status = doJSON(t, http.MethodPost, srv.URL+"/api/import/execute?key=_tmp/hidden_import.json", map[string]any{
 		"model": "HiddenNote", "format": "json", "on_conflict": "update",
 	})
-	if status != http.StatusOK {
-		t.Fatalf("import: status %d body=%s", status, mustJSON(resp))
+	if status != http.StatusForbidden || !strings.Contains(errorMessage(resp), "not found") {
+		t.Fatalf("import: status %d body=%s, want the file refused with the other row not found", status, mustJSON(resp))
 	}
-	if int(resp["updated"].(float64)) != 1 || int(resp["failed"].(float64)) != 1 || int(resp["imported"].(float64)) != 0 {
-		t.Fatalf("import report = %s, want own row updated and the other failed", mustJSON(resp))
+	store.objects["_tmp/hidden_import_own.json"] = `[{"id":1,"title":"via import"}]`
+	resp, status = doJSON(t, http.MethodPost, srv.URL+"/api/import/execute?key=_tmp/hidden_import_own.json", map[string]any{
+		"model": "HiddenNote", "format": "json", "on_conflict": "update",
+	})
+	if status != http.StatusOK || int(resp["updated"].(float64)) != 1 || int(resp["failed"].(float64)) != 0 {
+		t.Fatalf("import own row: status %d report = %s, want it updated", status, mustJSON(resp))
 	}
 	if tenant, title := hiddenRow(t, sqlDB, 1); tenant != "acme" || title != "via import" {
 		t.Fatalf("row 1 = (%q, %q), want (acme, via import)", tenant, title)
