@@ -419,7 +419,10 @@ func probeRelationLookup(t *testing.T, e *env) verdict {
 }
 
 // probeNestedEditing asks for the shape every "order with its lines" screen
-// needs: a parent and its children in one form.
+// needs: a parent and its children in one form. And a child is edited WITH
+// its record (OR-72): one named by id from another record is not found, and
+// stays where it was — a form for one record is not a way to write the
+// children of another.
 func probeNestedEditing(t *testing.T, e *env) verdict {
 	note := e.createNote(t, map[string]any{"title": "with-comments", "status": "draft"})
 	nested := e.do(t, http.MethodPost, "/admin/api/models/Note", map[string]any{
@@ -430,7 +433,7 @@ func probeNestedEditing(t *testing.T, e *env) verdict {
 	if nested.code < 400 {
 		list := e.get(t, "/admin/api/models/Comment")
 		if strings.Contains(list.raw(), "inline child") {
-			return present
+			return probeChildOfAnotherRecord(t, e, note, nested)
 		}
 		t.Logf("a nested payload was accepted and the child was dropped: %s", nested.text())
 	}
@@ -440,6 +443,53 @@ func probeNestedEditing(t *testing.T, e *env) verdict {
 	}
 	t.Logf("no inline metadata in the schema and nested children are not written (note %s)", note)
 	return absent
+}
+
+// probeChildOfAnotherRecord edits note with a child of the record nested
+// created, named by id: an edit and a deletion. Both are answered as a row
+// that does not exist, and the child keeps its body and its record.
+func probeChildOfAnotherRecord(t *testing.T, e *env, note string, nested response) verdict {
+	payload := nested.json(t)
+	if record, ok := payload["record"].(map[string]any); ok {
+		payload = record
+	}
+	parent := recordID(t, payload)
+	list := e.get(t, "/admin/api/models/Comment")
+	items, _ := list.json(t)["items"].([]any)
+	child := ""
+	for _, raw := range items {
+		if item, ok := raw.(map[string]any); ok && fmt.Sprint(item["note_id"]) == parent {
+			child = recordID(t, item)
+		}
+	}
+	if child == "" {
+		t.Logf("the nested child is not listed under its record %s: %s", parent, list.text())
+		return partial
+	}
+
+	for _, edit := range []map[string]any{
+		{"id": child, "body": "taken over"},
+		{"id": child, "_delete": true},
+	} {
+		r := e.do(t, http.MethodPut, "/admin/api/models/Note/"+note, map[string]any{
+			"comments": []map[string]any{edit},
+		})
+		if r.code != http.StatusNotFound {
+			t.Logf("note %s's form wrote %v, a child of note %s (%d): %s", note, edit, parent, r.code, r.text())
+			return partial
+		}
+	}
+	after := e.get(t, "/admin/api/models/Comment/"+child)
+	if after.code != http.StatusOK {
+		t.Logf("the child of note %s is gone after a refused edit (%d): %s", parent, after.code, after.text())
+		return partial
+	}
+	rec := after.json(t)
+	if rec["body"] != "inline child" || fmt.Sprint(rec["note_id"]) != parent {
+		t.Logf("a refused edit changed the child of note %s: %s", parent, after.text())
+		return partial
+	}
+	return present
 }
 
 // probeFieldTypes reads the widget vocabulary the schema publishes. Scalars

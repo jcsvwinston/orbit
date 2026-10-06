@@ -44,7 +44,7 @@ func controls() []control {
 		{id: "DS-10", family: "data-studio", title: "a form can resolve what a foreign key points at",
 			want: present, probe: probeRelationLookup},
 		{id: "DS-11", family: "data-studio", title: "nested and many-to-many editing (inlines)",
-			want: present, note: "the parent and its children in one write; not transactional, and the response says what each child did",
+			want: present, note: "the parent and its children in one write, each child under its own record; not transactional, and the response says what each child did",
 			probe: probeNestedEditing},
 		{id: "DS-12", family: "data-studio", title: "rich field types (document, file, rich text)",
 			want: present, probe: probeFieldTypes},

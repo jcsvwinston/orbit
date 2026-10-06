@@ -323,7 +323,9 @@ func TestInlines_UpdateEditsAndDeletesButNeverByOmission(t *testing.T) {
 }
 
 // A child cannot be filed under another parent by naming one: the key is
-// stamped from the record being edited.
+// stamped from the record being edited, and a payload naming another record
+// is refused rather than quietly re-stamped (OR-72) — the form would believe
+// it had filed the child where it had not.
 func TestInlines_ChildCannotNameAnotherParent(t *testing.T) {
 	_, sqlDB, srv := formsPanel(t, nil)
 	for _, title := range []string{"First", "Second"} {
@@ -332,13 +334,23 @@ func TestInlines_ChildCannotNameAnotherParent(t *testing.T) {
 		}
 	}
 
-	if _, status := doJSON(t, http.MethodPut, srv.URL+"/api/models/Album/1", map[string]any{
+	if resp, status := doJSON(t, http.MethodPut, srv.URL+"/api/models/Album/1", map[string]any{
 		"tracks": []map[string]any{{"title": "Planted", "album_id": 2}},
-	}); status != http.StatusOK {
-		t.Fatal("update failed")
+	}); status != http.StatusBadRequest {
+		t.Fatalf("a child naming album 2 under album 1: status %d body=%s, want 400", status, mustJSON(resp))
 	}
 	if got := trackTitles(t, sqlDB, 2); len(got) != 0 {
 		t.Fatalf("album 2 gained %v from a child edited under album 1", got)
+	}
+	if got := trackTitles(t, sqlDB, 1); len(got) != 0 {
+		t.Fatalf("album 1 gained %v from a refused child", got)
+	}
+
+	// A child that names no parent is stamped with the one being edited.
+	if _, status := doJSON(t, http.MethodPut, srv.URL+"/api/models/Album/1", map[string]any{
+		"tracks": []map[string]any{{"title": "Planted"}},
+	}); status != http.StatusOK {
+		t.Fatal("update failed")
 	}
 	if got := trackTitles(t, sqlDB, 1); len(got) != 1 || got[0] != "Planted" {
 		t.Fatalf("album 1 tracks = %v, want the child stamped to it", got)

@@ -358,15 +358,24 @@ carries the children:
 A row with an id is an edit, one without is an insert, and a row that should
 go **says so** — absence never deletes, because a form that loaded two of five
 lines would otherwise remove the three it never showed. The key pointing at
-the parent is stamped by the panel, so a child cannot be filed under another
-record. Writing children needs the **child model's** own permissions, and they
-are checked before the parent is written.
+the parent is stamped by the panel: a child that names another record there
+is refused with `400`, and a child named by id must be one of the record being
+edited — any other row, including one that does not exist, answers `404`, for
+a superuser too. A record being created has no children to edit or remove yet.
 
-This is deliberately **not transactional**: the panel's data contract writes
-one row at a time, so the parent is saved first and each child reported on its
-own in the response (`inlines`). A form that needs all-or-nothing needs a
-transactional data source underneath it, and saying so is better than implying
-otherwise.
+Each child is written the way the **child model's** own form would write it:
+with that model's `create`, `update` or `delete`, inside the request's tenant,
+within the operator's own rows under an ownership grant, and with no field the
+operator may not write (refused by name, as on the form). Every child is
+checked before the parent is written, and one that is refused refuses the
+whole save — the error names it (`tracks[1]: …`) and nothing is written.
+
+Past those checks this is deliberately **not transactional**: the panel's data
+contract writes one row at a time, so the parent is saved first and each child
+reported on its own in the response (`inlines`). A child the database then
+rejects does not roll the parent back. A form that needs all-or-nothing for
+those failures needs a transactional data source underneath it, and saying so
+is better than implying otherwise.
 
 **Documents, rich text and files.** The schema's widget vocabulary was scalar;
 it now also names `json`, `richtext`, `file` and `image`. A JSON document is

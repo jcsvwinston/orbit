@@ -17,15 +17,18 @@ import (
 // policies leave writable for that verb.
 //
 // Every surface that writes rows on an operator's behalf takes it from
-// requestWriteScope — the record form's create and update, the import
-// (validate and execute) and the fixture load — so an import cannot write
-// what the form would refuse. Before OR-67 the import and the load were
-// granted by import_data on admin:* alone and wrote any model, by create or
-// by update, outside the operator's own rows and through a field kept from
-// them. It is the write twin of readScope (permissions_read.go).
+// requestWriteScope — the record form's create and update, the children
+// that form writes with its record (inlines.go), the import (validate and
+// execute) and the fixture load — so an import or a child cannot write what
+// the form would refuse. Before OR-67 the import and the load were granted
+// by import_data on admin:* alone and wrote any model, by create or by
+// update, outside the operator's own rows and through a field kept from
+// them; before OR-72 a child was granted by the child model's verb alone.
+// It is the write twin of readScope (permissions_read.go).
 type writeScope struct {
 	// action is the verb the scope was granted for: fieldActionCreate or
-	// fieldActionUpdate.
+	// fieldActionUpdate — or "delete" for a child the record form deletes,
+	// whose scope says which rows it reaches and guards no payload.
 	action string
 	// tenant is the request's tenant confinement; zero when it has none.
 	tenant tenantScope
@@ -36,13 +39,13 @@ type writeScope struct {
 	fields fieldRules
 }
 
-// requestWriteScope authorizes action ("create" or "update") on mi for c's
-// operator and resolves what that grant reaches: a full grant every row, an
-// #own grant the operator's own (or the 403 that says why it cannot be
-// honoured), the request's tenant when it is confined to one, and the
-// fields the operator's policies leave writable. The superuser and the open
-// posture get a scope that confines nothing but the tenant, as the record
-// form always did.
+// requestWriteScope authorizes action ("create", "update" or "delete") on
+// mi for c's operator and resolves what that grant reaches: a full grant
+// every row, an #own grant the operator's own (or the 403 that says why it
+// cannot be honoured), the request's tenant when it is confined to one, and
+// the fields the operator's policies leave writable. The superuser and the
+// open posture get a scope that confines nothing but the tenant, as the
+// record form always did.
 func (p *Panel) requestWriteScope(c *router.Context, mi datasource.ModelInfo, action string) (writeScope, error) {
 	owner, err := p.authorizeRecordAction(c, mi, action)
 	if err != nil {

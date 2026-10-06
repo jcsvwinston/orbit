@@ -1864,3 +1864,64 @@ Verified by breaking it:
 | `import_data` not narrowed to a write of the model | `UIX-18`: the lister's schema offers an import of Note; `TestCapabilityHints_ImportDataNeedsAWriteOfTheModel` |
 
 The browser half stays at 18 of 18; the HTTP bench is unchanged at 72 of 72.
+
+## What a child of a record writes (OR-72)
+
+`DS-11` read that a record and its children are written in one form. It did
+not ask which children, and with what scope. The record form carries the
+children in the parent's payload, and each child was granted by the child
+model's verb alone: not the request's tenant, not an `#own` grant, not the
+field policies — and a child named by id was any row of the child model, not
+one of the record being edited. The form of one record wrote, moved and
+deleted the children of another, and wrote into a child what the child's own
+form refused.
+
+Each child now asks what its own form asks, through the function the form,
+the import and the fixture load ask it of (`requestWriteScope`):
+
+| child | what it needs |
+|---|---|
+| a new child | the child model's `create`; the tenant and, under `#own`, the operator stamped; the parent key stamped (a payload naming another record is refused with `400`); no field the operator may not write |
+| a child named by id, edited | the child model's `update`; a row of the tenant, the operator's own under `#own`, and one of the record being edited — any other answers `404`; no field the operator may not write |
+| a child named by id, deleted | the child model's `delete`; the same row, or `404` |
+| a child named by id under a record being created | `404`: the record has no children yet |
+
+Which record a child belongs to is integrity, not a grant: a superuser is
+held to it too. Every child is planned before the parent is written, and one
+refused refuses the save with its status and its position (`tracks[1]: …`);
+nothing is written. What the store rejects after that is still reported per
+child, as before: the data contract has no transaction.
+
+**`DS-11`** now also edits a note with the child of another note, by id —
+an edit and a deletion — as the bench's superuser: both answer `404`, and
+the child keeps its body and its note.
+
+### What the work found that was not on the plan
+
+- **CHANGED — a child naming another record is refused, under any
+  spelling.** Under the key's column it used to be re-stamped with the record
+  being edited and saved, so a form that named a parent believed it had filed
+  the child there; under its Go name the key reached the backend next to the
+  stamp, and the backend refused the child after the parent was saved. Both
+  are the `400` the tenant guard answers for the same shape now, before
+  anything is written. Data Studio's form never sends the key.
+- **OPEN — the form cannot list the children of a model whose key is not a
+  filter.** The inline editor lists a record's children by filtering on the
+  key to the parent, and the list refuses a filter on a field the model does
+  not mark filterable — so, unless the application tags that key, the form
+  says the children cannot be edited there. Writing them is unaffected. It
+  is not a permission question, and it is left to its own change.
+
+Verified by breaking it:
+
+| mutation | what fails |
+|---|---|
+| the parent commit's server | `DS-11`: note 1's form wrote a child of note 2; every `TestInlineScope_*` |
+| a child named by id not confirmed as one of the record's | `DS-11`; `TestInlineScope_AChildOfAnotherRecordIsNotFound`, `TestInlineScope_OneRefusedChildWritesNothing` |
+| no check of an id-named child at all (an update without reach, or a delete) | `TestInlineScope_AChildOfAnotherRecordIsNotFound`, `TestInlineScope_ANewRecordHasNoChildrenToEditOrDelete`, `TestInlineScope_AnOwnGrantReachesOnlyTheOperatorsChildren`, `TestInlineScope_AChildStaysInTheRequestsTenant` |
+| the child's scope not reaching rows (tenant and `#own`) | `TestInlineScope_AnOwnGrantReachesOnlyTheOperatorsChildren`, `TestInlineScope_AChildStaysInTheRequestsTenant` |
+| the child's payload not held to its scope | `TestInlineScope_AChildFieldTheOperatorMayNotWriteIsRefused`, `TestInlineScope_AnOwnGrantReachesOnlyTheOperatorsChildren`, `TestInlineScope_AChildStaysInTheRequestsTenant` |
+| a child naming another record accepted | `TestInlineScope_AChildIsNotReparented`, `TestInlines_ChildCannotNameAnotherParent` |
+| the parent written before the children are planned | `TestInlineScope_OneRefusedChildWritesNothing`, `TestInlineScope_AChildFieldTheOperatorMayNotWriteIsRefused` |
+
+The HTTP bench is unchanged at 72 of 72; the browser half stays at 18 of 18.
