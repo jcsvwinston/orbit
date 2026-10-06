@@ -250,6 +250,43 @@ Se enmienda así:
   en el panel, y Nucleus busca en un campo buscable aunque esté excluido. El
   superusuario no cambia en lo demás: las políticas de campo no le aplican.
 
+## Enmienda de OR-72 (2026-10-06): un hijo se escribe con el alcance de su propio formulario
+
+El formulario de un registro lleva a sus hijos en el mismo payload
+(ADR-009), y cada hijo se autorizaba sólo con el verbo del modelo hijo: no
+con el tenant de la petición, ni con un `#own`, ni con las políticas de
+campo. Y un hijo nombrado por id era cualquier fila del modelo hijo, no una
+del registro que se editaba. El formulario de un registro era así un rodeo a
+lo que el formulario del hijo rechaza.
+
+Se enmienda así:
+
+- **Un hijo pide lo que pediría su propio formulario**: el `create`, el
+  `update` o el `delete` del modelo hijo; el tenant de la petición (uno que
+  nombra otro se rechaza, el que no nombra ninguno lo recibe estampado); bajo
+  `#own`, sólo las filas propias y el operador estampado al crear; y ningún
+  campo que el operador no pueda escribir, rechazado por nombre (punto 5). Lo
+  toma de la función del formulario, la importación y la carga de fixtures
+  (`requestWriteScope`).
+- **Un hijo nombrado por id es un hijo del registro que se edita**: su clave
+  al padre apunta a él. Uno que no existe, de otro tenant, de otro
+  propietario o de otro registro recibe el mismo `404`, y un registro que se
+  está creando no tiene hijos todavía. Es integridad, no autorización:
+  también aplica al superusuario.
+- **Un hijo no cambia de registro**: un payload que nombra otro en la clave
+  al padre —con cualquier grafía que el backend acepte, o dos veces— se
+  rechaza con `400` en vez de re-estamparse en silencio (ADR-009, punto 4).
+  En un alta, la clave estampada cuenta como campo escrito, igual que el
+  tenant y el propietario estampados.
+- **Un rechazo es de todo el guardado**: los hijos se planifican antes de
+  escribir el padre, y uno rechazado rechaza el guardado entero con el estado
+  de su rechazo y nombrándolo (`tracks[1]: …`). Lo que el almacén falle
+  después sigue siendo, como dice ADR-009, un error por hijo en la respuesta.
+
+**Cambio de comportamiento**: un hijo que nombraba otro registro en la clave
+al padre se guardaba bajo el registro editado; ahora rechaza el guardado. El
+formulario de Data Studio nunca envía esa clave.
+
 ## Preguntas abiertas
 
 - Un operador de filtro con más gramática (rango, contiene, en) llega en la

@@ -45,12 +45,16 @@ como `DS-10`, `DS-11` y `DS-12`:
 
 4. **La clave al padre la estampa el panel**, nunca el payload: un hijo que
    nombre otro padre sería una escritura en un registro que el operador no
-   estaba editando.
+   estaba editando. *(Enmendado por OR-72 en ADR-007: un hijo que nombra
+   otro padre se rechaza en vez de re-estamparse, y uno nombrado por id
+   tiene que ser hijo del registro que se edita.)*
 
 5. **Escribir un hijo exige los permisos del MODELO hijo**, y se comprueban
    **antes** de escribir el padre. El orden importa: sin transacción, un
    rechazo descubierto después dejaría el padre guardado y al formulario un
-   «prohibido» sobre el que nadie puede actuar.
+   «prohibido» sobre el que nadie puede actuar. *(Enmendado por OR-72 en
+   ADR-007: el hijo pide todo el alcance de escritura de su modelo —tenant,
+   `#own` y políticas de campo—, no sólo el verbo.)*
 
 6. **No es transaccional, y no se finge.** El contrato `datasource` (ADR-001)
    escribe una fila; el padre va primero y cada hijo se reporta por separado

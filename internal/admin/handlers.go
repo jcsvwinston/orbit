@@ -746,10 +746,13 @@ func (p *Panel) handleCreateRecord(c *router.Context) error {
 
 	// The children of a nested payload are taken out before the parent is
 	// written: handed to the backend they would be an unknown key, which is
-	// how a nested payload used to disappear without a word.
+	// how a nested payload used to disappear without a word. Each is asked
+	// what its own form would ask before anything is written (OR-72), and a
+	// record being created has no children yet for one to name by id.
 	inlineSpecs := p.inlinesFor(mi)
 	inlinePayloads := takeInlinePayloads(data, inlineSpecs)
-	if err := p.authorizeInlines(c, inlinePayloads, inlineSpecs); err != nil {
+	inlinePlans, err := p.planInlines(c, inlinePayloads, inlineSpecs, "", databaseAlias)
+	if err != nil {
 		return err
 	}
 
@@ -764,10 +767,7 @@ func (p *Panel) handleCreateRecord(c *router.Context) error {
 		RecordID:  auditRecordID(mi, created),
 		NewValue:  auditValues(mi, created),
 	})
-	inlineResults, err := p.writeInlines(c, mi, auditRecordID(mi, created), inlinePayloads, inlineSpecs, databaseAlias)
-	if err != nil {
-		return err
-	}
+	inlineResults := p.writeInlines(r, inlinePlans, inlineParentKey(mi, created, ""))
 
 	// The trail records what was written; the answer only shows back what
 	// this operator may read.
@@ -810,9 +810,6 @@ func (p *Panel) handleUpdateRecord(c *router.Context) error {
 	}
 	inlineSpecs := p.inlinesFor(mi)
 	inlinePayloads := takeInlinePayloads(updates, inlineSpecs)
-	if err := p.authorizeInlines(c, inlinePayloads, inlineSpecs); err != nil {
-		return err
-	}
 
 	databaseAlias, err := p.requestDatabaseAlias(r)
 	if err != nil {
@@ -831,13 +828,17 @@ func (p *Panel) handleUpdateRecord(c *router.Context) error {
 	}
 	// A scoped request only reaches rows of its tenant, and a row-scoped
 	// operator their own: another's is not found, the answer a row that does
-	// not exist gets.
-	if write.confined() {
-		rec, err := st.Get(r.Context(), idStr)
+	// not exist gets. A row with children in the payload has to exist too,
+	// or the children would be filed under a record that is not there.
+	var row datasource.Record
+	if write.confined() || len(inlinePayloads) > 0 {
+		row, err = st.Get(r.Context(), idStr)
 		if err != nil {
 			return err
 		}
-		reached, err := write.reaches(r.Context(), st, mi, idStr, rec)
+	}
+	if write.confined() {
+		reached, err := write.reaches(r.Context(), st, mi, idStr, row)
 		if err != nil {
 			return err
 		}
@@ -845,16 +846,18 @@ func (p *Panel) handleUpdateRecord(c *router.Context) error {
 			return gferrors.NotFound(mi.Name, idStr)
 		}
 	}
+	// Every child is asked what its own form would ask, and a child named
+	// by id has to be one of this record's, before anything is written
+	// (OR-72): one refused refuses the save whole.
+	parentKey := inlineParentKey(mi, row, idStr)
+	inlinePlans, err := p.planInlines(c, inlinePayloads, inlineSpecs, parentKey, databaseAlias)
+	if err != nil {
+		return err
+	}
 	// Editing only the children is a real edit: a form that changed a line
 	// and nothing on the parent sends exactly this. The parent's own write
-	// is skipped — and so is its audit entry, because it did not happen —
-	// but the row still has to exist, or the children would be filed under
-	// a parent that is not there.
-	if len(updates) == 0 && len(inlinePayloads) > 0 {
-		if _, err := st.Get(r.Context(), idStr); err != nil {
-			return err
-		}
-	} else {
+	// is skipped — and so is its audit entry, because it did not happen.
+	if len(updates) > 0 || len(inlinePayloads) == 0 {
 		// The row before and after the change go into the audit entry. A
 		// failed read leaves that side nil but never turns a valid write into
 		// an error: the update is the operation, the snapshot is its record.
@@ -872,10 +875,7 @@ func (p *Panel) handleUpdateRecord(c *router.Context) error {
 		})
 	}
 
-	inlineResults, err := p.writeInlines(c, mi, idStr, inlinePayloads, inlineSpecs, databaseAlias)
-	if err != nil {
-		return err
-	}
+	inlineResults := p.writeInlines(r, inlinePlans, parentKey)
 	if len(inlineResults) > 0 {
 		return c.JSON(http.StatusOK, map[string]interface{}{
 			"updated": true, "id": idStr, "inlines": inlineResults,
