@@ -60,7 +60,7 @@ export default function AGGridTable({ modelName, schema, dbAlias, focusRecord, o
   const { toast } = useToast()
   const navigate = useNavigate()
   // What this operator may do with this model (see lib/capabilities).
-  const { canCreate, canUpdate, canDelete, canBulkDelete, canRetrieve } = screenCapabilities(schema)
+  const { canCreate, canUpdate, canDelete, canBulkDelete, canRetrieve, canExport, canImport } = screenCapabilities(schema)
   const { theme } = useTheme()
   const [gridApi, setGridApi] = useState<GridApi | null>(null)
   const [selectedCount, setSelectedCount] = useState(0)
@@ -94,8 +94,11 @@ export default function AGGridTable({ modelName, schema, dbAlias, focusRecord, o
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [confirmBulk, setConfirmBulk] = useState(false)
 
-  // Saved views: the filter set this operator returns to.
+  // Saved views: the filter set this operator returns to. viewsAvailable
+  // is whether the panel answered the list at all: one with no database
+  // answers 501 to every view, and is offered no save.
   const [savedViews, setSavedViews] = useState<SavedView[]>([])
+  const [viewsAvailable, setViewsAvailable] = useState(false)
   const [viewName, setViewName] = useState('')
   const [savingView, setSavingView] = useState(false)
 
@@ -150,6 +153,11 @@ export default function AGGridTable({ modelName, schema, dbAlias, focusRecord, o
   // the grid's own state — from being rebuilt on every render.
   const startActionRef = useRef<(action: ModelActionSpec, subject: ActionSubject) => void>(() => {})
 
+  // A row's own doors: its history, its view or edit, its delete and the
+  // record actions. An operator who holds none of them is not drawn an
+  // empty Actions column.
+  const rowHasActions = canRetrieve || canUpdate || canDelete || recordActions.length > 0
+
   // Build column definitions
   const columnDefs = useMemo<ColDef[]>(() => [
     ...listFields.map((f) => ({
@@ -185,7 +193,7 @@ export default function AGGridTable({ modelName, schema, dbAlias, focusRecord, o
         return builtIn
       },
     })),
-    ...([{
+    ...(rowHasActions ? [{
       headerName: 'Actions',
       colId: '__actions',
       width: recordActions.length > 0 ? 128 : 100,
@@ -198,16 +206,20 @@ export default function AGGridTable({ modelName, schema, dbAlias, focusRecord, o
         const id = recordId(row, pkColumn)
         return (
           <div className="flex items-center justify-end gap-1">
-            <button
-              type="button"
-              onClick={() => id !== null && setHistoryId(id)}
-              disabled={id === null}
-              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-40"
-              title="History"
-              aria-label={`History of record ${id ?? ''}`}
-            >
-              <History className="h-3.5 w-3.5" />
-            </button>
+            {/* The history is the record's own trail, and the server asks
+                it for the record's own verb: retrieve. */}
+            {canRetrieve && (
+              <button
+                type="button"
+                onClick={() => id !== null && setHistoryId(id)}
+                disabled={id === null}
+                className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-40"
+                title="History"
+                aria-label={`History of record ${id ?? ''}`}
+              >
+                <History className="h-3.5 w-3.5" />
+              </button>
+            )}
             {canUpdate && (
               <button
                 type="button"
@@ -256,8 +268,8 @@ export default function AGGridTable({ modelName, schema, dbAlias, focusRecord, o
           </div>
         )
       },
-    } as ColDef]),
-  ], [listFields, canUpdate, canRetrieve, canDelete, pkColumn, openRecord, recordActions, modelName])
+    } as ColDef] : []),
+  ], [listFields, rowHasActions, canUpdate, canRetrieve, canDelete, pkColumn, openRecord, recordActions, modelName])
 
   // Rows can be selected when something can be done with a selection: a
   // batch delete, or an action that runs over one. An operator who may
@@ -514,10 +526,13 @@ export default function AGGridTable({ modelName, schema, dbAlias, focusRecord, o
   const reloadViews = useCallback(async () => {
     try {
       setSavedViews(await api.getSavedViews(modelName))
+      setViewsAvailable(true)
     } catch {
       // A panel with no database handle has no views; the control simply
-      // does not appear, which is better than an error on every model.
+      // does not appear, which is better than an error on every model —
+      // and neither does the save, which would be refused the same way.
       setSavedViews([])
+      setViewsAvailable(false)
     }
   }, [modelName])
 
@@ -650,10 +665,22 @@ export default function AGGridTable({ modelName, schema, dbAlias, focusRecord, o
             </Button>
           ))}
 
-        <Button variant="outline" size="sm" onClick={() => setShowExportImport(!showExportImport)} aria-expanded={showExportImport} className="gap-1.5">
-          <Download className="h-3.5 w-3.5" />
-          Export / Import
-        </Button>
+        {/* The panel's data transfer, offered as far as it is held: the
+            server asks an export for export_data and an import for
+            import_data, both of the whole panel. An operator who holds
+            only the import is offered it here directly. */}
+        {canExport && (
+          <Button variant="outline" size="sm" onClick={() => setShowExportImport(!showExportImport)} aria-expanded={showExportImport} className="gap-1.5">
+            <Download className="h-3.5 w-3.5" />
+            {canImport ? 'Export / Import' : 'Export'}
+          </Button>
+        )}
+        {!canExport && canImport && (
+          <Button variant="outline" size="sm" onClick={() => setImportOpen(true)} className="gap-1.5">
+            <Upload className="h-3.5 w-3.5" />
+            Import…
+          </Button>
+        )}
 
         {canCreate && (
           <Button size="sm" onClick={handleCreate} className="gap-1.5">
@@ -664,7 +691,7 @@ export default function AGGridTable({ modelName, schema, dbAlias, focusRecord, o
       </div>
 
       {/* Saved views: pick one, or keep the filters you are looking at. */}
-      {(savedViews.length > 0 || showFilters) && (
+      {viewsAvailable && (savedViews.length > 0 || showFilters) && (
         <div className="flex flex-wrap items-center gap-2 py-2 border-b">
           <Bookmark className="h-3.5 w-3.5 text-muted-foreground" />
           {savedViews.map((view) => (
@@ -672,14 +699,18 @@ export default function AGGridTable({ modelName, schema, dbAlias, focusRecord, o
               <button type="button" onClick={() => applyView(view)} className="hover:underline">
                 {view.name}
               </button>
-              <button
-                type="button"
-                onClick={() => void removeView(view)}
-                className="ml-1 text-muted-foreground hover:text-destructive-text"
-                aria-label={`Remove the view ${view.name}`}
-              >
-                <X className="h-3 w-3" />
-              </button>
+              {/* A shared view is somebody's: only they (or a superuser)
+                  may remove it, and the list says which these are. */}
+              {view.can_edit !== false && (
+                <button
+                  type="button"
+                  onClick={() => void removeView(view)}
+                  className="ml-1 text-muted-foreground hover:text-destructive-text"
+                  aria-label={`Remove the view ${view.name}`}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
             </span>
           ))}
           <div className="flex items-center gap-1">
@@ -766,7 +797,7 @@ export default function AGGridTable({ modelName, schema, dbAlias, focusRecord, o
       )}
 
       {/* Export/Import panel */}
-      {showExportImport && (
+      {showExportImport && canExport && (
         <div className="flex flex-wrap items-end gap-4 py-3 border-b">
           <div className="flex items-end gap-2">
             <div className="space-y-1" role="group" aria-labelledby="export-format-label">
@@ -778,8 +809,11 @@ export default function AGGridTable({ modelName, schema, dbAlias, focusRecord, o
                     type="button"
                     onClick={() => setExportFormat(fmt)}
                     aria-pressed={exportFormat === fmt}
+                    // The format not chosen is written in the full
+                    // foreground: the muted colour on the muted fill reads
+                    // 4.34:1, under the 4.5:1 the panel is held to.
                     className={`px-2 py-1 rounded text-xs transition-colors ${
-                      exportFormat === fmt ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'
+                      exportFormat === fmt ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground hover:bg-muted/70'
                     }`}
                   >
                     {fmt.toUpperCase()}
@@ -789,14 +823,18 @@ export default function AGGridTable({ modelName, schema, dbAlias, focusRecord, o
             </div>
             <Button size="sm" variant="outline" onClick={handleExport} disabled={isExporting} className="gap-1.5 h-8">
               {isExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-              Export
+              Export {exportFormat.toUpperCase()}
             </Button>
           </div>
-          <div className="h-6 w-px bg-border" />
-          <Button size="sm" variant="outline" onClick={() => setImportOpen(true)} disabled={!canCreate} className="gap-1.5 h-8">
-            <Upload className="h-3.5 w-3.5" />
-            Import…
-          </Button>
+          {canImport && (
+            <>
+              <div className="h-6 w-px bg-border" />
+              <Button size="sm" variant="outline" onClick={() => setImportOpen(true)} className="gap-1.5 h-8">
+                <Upload className="h-3.5 w-3.5" />
+                Import…
+              </Button>
+            </>
+          )}
         </div>
       )}
 

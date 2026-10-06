@@ -166,10 +166,13 @@ cd internal/adminbench/browser && npm ci && npx playwright install chromium
 go test ./internal/adminbench/ -run TestBrowserBench -v
 ```
 
-**17 of 17 controls present**, plus the one that measures the instrument.
-`UIX-16` and `UIX-17` are the screens of two operators who are not
-superusers, added for OR-64; they found three defects of the panel's own, and
-arrived present with their fixes
+**18 of 18 controls present**, plus the one that measures the instrument.
+`UIX-18` reads the rest of Data Studio's doors for three operators who are
+not superusers, added for OR-65; it arrived present with the fixes it asked
+for ([below](#the-rest-of-data-studios-doors-or-65)).
+`UIX-16` and `UIX-17` are the screens of two of those operators, added for
+OR-64; they found three defects of the panel's own, and arrived present with
+their fixes
 ([below](#the-screens-of-an-operator-who-is-not-a-superuser-or-64)).
 `UIX-13` to `UIX-15` arrived present with the arc A12's session O1, each the
 browser half of a defect of the panel's own
@@ -209,6 +212,7 @@ the two stacks met, so the third session's kept its number.)
 | **UIX-15** | the panel's own scripts and stylesheets reach the browser compressed once, by the build |
 | **UIX-16** | an operator is offered a delete only where they hold one: no selection or Delete without it, and no batch Delete for one who may delete a record but not a batch |
 | **UIX-17** | an operator who may not update is offered no edit: the row opens the record read-only, and its menu and the record view hold only the actions granted |
+| **UIX-18** | an operator is offered a model, a record's history, an export, an import, the field settings and a saved view's removal only where they hold them, and each one asked anyway is refused |
 
 Three things worth keeping about how it is built:
 
@@ -1515,3 +1519,94 @@ Verified by breaking it:
 |---|---|
 | the parent commit's interface, with these specs | `UIX-16` (the viewer's screen: three contrast nodes; the actor's selection offers Delete), `UIX-17` (no way to open the record) |
 | the server's update handler asking for `retrieve` instead of `update` | `UIX-17`: the server wrote a record for an operator who may not update |
+
+## The rest of Data Studio's doors (OR-65)
+
+`UIX-16` and `UIX-17` read the deletes and the edit. Every other door Data
+Studio offers asks the server for a verb of its own, and the screen drew each
+of them for anybody: an operator without `export_data` was offered Export, one
+without `retrieve` a record's History. OR-65 compared every door of Data
+Studio and the record view with the verb its handler asks:
+
+| door | the verb its handler asks | offered before by |
+|---|---|---|
+| a model in the sidebar | `get_schema`, then `list` | nothing: every model was listed |
+| **Fields** (the field settings) | `update_schema`; `501` with no schema registry | nothing |
+| **New Record** | `create` | `create` |
+| **Export** and its download | `export_data` on `admin:*` | nothing |
+| **Import** (upload, validate, execute) | `import_data` on `admin:*` | `create`, which the import never asks |
+| search, filters, sort, page size, more rows, database | `list` | the grid itself (`list`) |
+| a saved view: save | `list` of its model; `501` with no database | nothing (the save was offered where views answer `501`) |
+| a saved view: removal | its owner, or a superuser | nothing |
+| a row's **History** | `retrieve` | nothing |
+| a row's **Edit**, **View**, **Delete** | `update`; `retrieve`; `delete` | the same (OR-64) |
+| a selection and its **Delete** | `bulk_delete` | the same (OR-64) |
+| an application action, on a selection or a record | its own verb and its placement; a destructive one is refused on a read-only model | the verb and the placement, not the read-only refusal |
+| the record view's save | `update` (`create` for a new record) | the same |
+| a child's **Add**, **Remove** and edit in the form | the child model's `create`, `delete`, `update`, checked before the parent is written | nothing; and every loaded child was sent as an update |
+| a foreign key's choices, a file upload | `list` of the target (the field falls back to the id when refused); `create` or `update` | the same: they degrade, or sit in a form only a writer is shown |
+
+The schema's `permissions` map now carries the four that were not in it —
+`get_schema` and `update_schema` asked of the model, `export_data` and
+`import_data` asked of `admin:*`, each through the same function the handler
+calls — and each saved view says whether this operator may change it
+(`can_edit`). Data Studio offers each door by its verb, offers a view's save
+only where the panel answers its views at all, and does not draw an empty
+Actions column for an operator who holds none of a row's doors.
+
+The driver adds a third operator and one grant. None of the three holds
+`update`, `bulk_delete`, `update_schema` or `import_data`:
+
+| operator | holds on `Note` (and `list_models` on `admin:*`) |
+|---|---|
+| the viewer | `get_schema`, `list`, `retrieve` |
+| the actor | the same, `delete`, `schedule`, `duplicate`, and `export_data` on `admin:*` |
+| the lister | `get_schema`, `list` |
+
+**`UIX-18`** reads, for each operator, what is offered beside what is not,
+runs the panel's accessibility rules over each screen, and makes from the page
+the calls the screen left out:
+
+- **the viewer** is offered Notes and none of the models the payload says
+  they may not open; the model's heading and no Fields; the toolbar's
+  Filters and no Export or Import; the admin's shared view and not its
+  removal, while the view they save beside it is theirs to remove. The forced
+  export, import, field settings, schema of another model and removal of the
+  shared view are each refused with `403`.
+- **the actor** is offered Export — the toggle and the export it opens — and
+  no Import. The export the screen offers answers `200`, the import it does
+  not answers `403`.
+- **the lister** sees the note's row and its column headers, and no History,
+  no View and no Actions column. The forced history is refused.
+
+### What the work found that was not on the plan
+
+- **FIXED — the export panel was not legible.** Nothing had opened it in a
+  browser before this control: the format not chosen was written in the muted
+  colour on the muted fill, 4.34:1. It is written in the full foreground now.
+- **FIXED — an import into a read-only model was not refused.** A create, an
+  update, a delete and a batch all refused a read-only model; an import, which
+  writes rows the same way, did not. Validate and execute refuse it now, and
+  Data Studio offers no Import on such a model.
+- **FIXED — a destructive action was offered on a read-only model.** The
+  server refuses it there whoever asks; the schema no longer offers it.
+- **FIXED — the children of a record were all sent as updates.** The form
+  sent every child it had loaded once any changed, and the server asks each
+  child it is sent for its verb, so an operator who may add a line and not
+  edit one was refused the save. A child nobody changed is not sent now (an
+  absent child is left as it is), and the form offers Add, Remove and the
+  saved lines' inputs by the child's own `create`, `delete` and `update`.
+  This one is measured by the interface's unit tests, not by `UIX-18`.
+
+Verified by breaking it:
+
+| mutation | what fails |
+|---|---|
+| the parent commit's interface, with this spec | `UIX-18`: the sidebar offers the viewer Articles, whose schema or list the server refuses them |
+| the history handler asking for `list` instead of `retrieve` | `UIX-18`: the server answered a record's history to an operator who may not open it |
+| `export_data` and `import_data` asked of the model instead of `admin:*` | `TestCapabilityHints_AnswerTheScreensOtherDoors`: an import granted on the model only is called held, and refused |
+| the saved-view list saying `can_edit` for every view | `TestSavedViews_ListSaysWhoMayChangeEach` |
+| no read-only check on the import, or on the destructive action's offer | `TestImport_ReadOnlyModelIsRefused`, `TestDestructiveActionNotOfferedOnAReadOnlyModel` |
+
+The browser half goes from 17 of 17 to 18 of 18; the HTTP bench is unchanged
+at 72 of 72.

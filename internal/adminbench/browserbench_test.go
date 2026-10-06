@@ -97,6 +97,10 @@ func browserCases() []browserCase {
 		// by whoever wrote them.
 		{id: "UIX-16", title: "an operator is offered a delete only where they hold one: no selection or Delete without it, and no batch Delete for one who may delete a record but not a batch", want: present},
 		{id: "UIX-17", title: "an operator who may not update is offered no edit: the row opens the record read-only, and its menu and the record view hold only the actions granted", want: present},
+		// The rest of Data Studio's doors, for the same operators and a
+		// third (OR-65): every one of them asks the server for a verb of
+		// its own, and until this control the screen drew them for anybody.
+		{id: "UIX-18", title: "an operator is offered a model, a record's history, an export, an import, the field settings and a saved view's removal only where they hold them, and each one asked anyway is refused", want: present},
 	}
 }
 
@@ -109,31 +113,38 @@ const (
 	dashboardOutsider = "dashboard-outsider"
 )
 
-// The two operators UIX-16 and UIX-17 sign in as. Neither is a superuser
-// and neither holds update or bulk_delete on Note. The viewer may look —
-// list a page, open a record — and nothing more. The actor also holds
-// delete (one record at a time, not a batch) and two of the application's
-// actions: schedule, which runs over a selection, and duplicate, which runs
-// on one record. Each is a screen the superuser is never shown.
+// The operators UIX-16 to UIX-18 sign in as. None is a superuser and none
+// holds update, bulk_delete, update_schema or import_data. The viewer may
+// look — list a page, open a record — and nothing more. The actor also holds
+// delete (one record at a time, not a batch), two of the application's
+// actions — schedule, which runs over a selection, and duplicate, which runs
+// on one record — and the panel's export (export_data on admin:*). The lister
+// (UIX-18) may list the page and not open a record, so a record's history is
+// not theirs either. Each is a screen the superuser is never shown.
 const (
 	noteViewer = "note-viewer"
 	noteActor  = "note-actor"
+	noteLister = "note-lister"
 )
 
-// partialOperators creates the two operators of UIX-16 and UIX-17 and grants
-// them what they hold, through the panel's own management API.
+// partialOperators creates the operators of UIX-16 to UIX-18 and grants them
+// what they hold, through the panel's own management API.
 func partialOperators(t *testing.T, e *env) {
 	t.Helper()
-	for _, name := range []string{noteViewer, noteActor} {
+	for _, name := range []string{noteViewer, noteActor, noteLister} {
 		op := e.newOperator(t, name, false)
 		e.grant(t, op.username, "admin:*", "list_models")
-		for _, act := range []string{"get_schema", "list", "retrieve"} {
+		for _, act := range []string{"get_schema", "list"} {
 			e.grant(t, op.username, "admin:Note", act)
 		}
+	}
+	for _, name := range []string{noteViewer, noteActor} {
+		e.grant(t, name, "admin:Note", "retrieve")
 	}
 	for _, act := range []string{"delete", "schedule", "duplicate"} {
 		e.grant(t, noteActor, "admin:Note", act)
 	}
+	e.grant(t, noteActor, "admin:*", "export_data")
 }
 
 // themedBranding is the second application UIX-10 opens: one that says its
@@ -180,7 +191,7 @@ func TestBrowserBench(t *testing.T) {
 		e.createNote(t, map[string]any{"title": fmt.Sprintf("uix-11 note %d", i), "status": "draft"})
 	}
 
-	// UIX-16 and UIX-17 need the two operators with partial permissions.
+	// UIX-16 to UIX-18 need the operators with partial permissions.
 	partialOperators(t, e)
 
 	// UIX-10 needs an application that configured a theme, and the one the
@@ -205,6 +216,7 @@ func TestBrowserBench(t *testing.T) {
 		"ORBIT_BENCH_DASHBOARD="+trendsDashboard,
 		"ORBIT_BENCH_VIEWER_USER="+noteViewer,
 		"ORBIT_BENCH_ACTOR_USER="+noteActor,
+		"ORBIT_BENCH_LISTER_USER="+noteLister,
 		// Playwright writes its browsers here in CI; keep the default on a
 		// developer machine.
 		"PLAYWRIGHT_JSON_OUTPUT_NAME=results.json",

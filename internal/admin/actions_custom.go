@@ -268,6 +268,11 @@ func (p *Panel) actionDescriptorsFor(r *http.Request, mi datasource.ModelInfo) [
 		if !caps.Permissions[action.Name] {
 			continue
 		}
+		// performModelAction refuses a destructive action on a read-only
+		// model whoever asks, so it is not a button anybody holds there.
+		if action.Destructive && mi.ReadOnly {
+			continue
+		}
 		out = append(out, actionDescriptor{
 			Name: action.Name, Label: action.Label, Description: action.Description,
 			Confirm: action.Confirm, Destructive: action.Destructive,

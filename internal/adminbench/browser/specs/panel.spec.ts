@@ -55,17 +55,20 @@ async function signInAt(page: Page, base: string): Promise<void> {
   await page.waitForURL(`${base}/admin/`, { timeout: 15_000 })
 }
 
-/** The operators UIX-16 and UIX-17 sign in as, created by the driver: the
+/** The operators UIX-16 to UIX-18 sign in as, created by the driver: the
  * viewer may list and open a note and nothing more; the actor also holds
- * delete (not bulk_delete), schedule and duplicate. Neither holds update. */
-function partialOperators(control: string): { viewer: string; actor: string; password: string } {
+ * delete (not bulk_delete), schedule, duplicate and the panel's export
+ * (export_data); the lister may list the notes and not open one. None holds
+ * update, update_schema or import_data. */
+function partialOperators(control: string): { viewer: string; actor: string; lister: string; password: string } {
   const viewer = process.env.ORBIT_BENCH_VIEWER_USER ?? ''
   const actor = process.env.ORBIT_BENCH_ACTOR_USER ?? ''
+  const lister = process.env.ORBIT_BENCH_LISTER_USER ?? ''
   const password = process.env.ORBIT_BENCH_OPERATOR_PASSWORD ?? ''
-  if (!viewer || !actor || !password) {
-    throw new Error(`${control} precondition: the driver passed no operators (ORBIT_BENCH_VIEWER_USER, ORBIT_BENCH_ACTOR_USER, ORBIT_BENCH_OPERATOR_PASSWORD)`)
+  if (!viewer || !actor || !lister || !password) {
+    throw new Error(`${control} precondition: the driver passed no operators (ORBIT_BENCH_VIEWER_USER, ORBIT_BENCH_ACTOR_USER, ORBIT_BENCH_LISTER_USER, ORBIT_BENCH_OPERATOR_PASSWORD)`)
   }
-  return { viewer, actor, password }
+  return { viewer, actor, lister, password }
 }
 
 /** noteAsAdmin creates one note as the bootstrap admin — the operators
@@ -124,11 +127,9 @@ async function forced(page: Page, method: string, path: string, body?: unknown):
   }, { method, path, body })
 }
 
-/** openNote opens Data Studio on Notes narrowed to one note, as the operator
- * signed in. The row's History button is the one every operator who may
- * open a record is offered: seeing it is what says the actions column was
- * drawn, so a button missing beside it is missing, not unrendered. */
-async function openNote(page: Page, title: string, id: string, who: string, control: string): Promise<void> {
+/** narrowToNote opens Data Studio on Notes narrowed to one note, as the
+ * operator signed in. */
+async function narrowToNote(page: Page, title: string, who: string, control: string): Promise<void> {
   await page.goto('/admin/data-studio')
   await page.waitForLoadState('networkidle')
   await page.getByRole('button', { name: /^Notes/ }).first().click({ timeout: 15_000 })
@@ -136,6 +137,14 @@ async function openNote(page: Page, title: string, id: string, who: string, cont
   await page.keyboard.press('Enter')
   await expect(page.locator(GRID_ROWS), `${control} precondition: the search did not narrow the ${who}'s grid to the note`)
     .toHaveCount(1, { timeout: 10_000 })
+}
+
+/** openNote is narrowToNote for an operator who may open the record. The
+ * row's History button is the one every such operator is offered (it asks
+ * the same verb, retrieve): seeing it is what says the actions column was
+ * drawn, so a button missing beside it is missing, not unrendered. */
+async function openNote(page: Page, title: string, id: string, who: string, control: string): Promise<void> {
+  await narrowToNote(page, title, who, control)
   await expect(page.getByRole('button', { name: `History of record ${id}` }), `${control} precondition: the ${who}'s row draws no actions column`)
     .toBeVisible({ timeout: 10_000 })
   await page.waitForFunction(() => document.getAnimations().length === 0, undefined, { timeout: 10_000 })
@@ -1207,5 +1216,133 @@ test.describe('UIX', () => {
       return String(out?.data?.title ?? out?.title ?? '')
     }, `/admin/api/models/Note/${id}`)
     expect(kept, 'UIX-17: the note no longer says what it said after the refused writes').toBe(title)
+  })
+
+  /*
+   * UIX-18 is the rest of Data Studio's doors (OR-65). UIX-16 and UIX-17
+   * read the deletes and the edit; every other door asks the server for a
+   * verb of its own, and the screen drew each of them for anybody: the
+   * sidebar every model (get_schema and list), a row its history
+   * (retrieve), the toolbar an export and an import (export_data and
+   * import_data, both of admin:*), the model's header its field settings
+   * (update_schema), and a shared view its removal (its owner's alone).
+   * For each operator the control reads what is offered beside what is
+   * not, holds the screen to the panel's rules, and asks the server for
+   * each door the screen left out.
+   */
+  test('UIX-18 an operator is offered a model, a record\'s history, an export, an import, the field settings and a saved view\'s removal only where they hold them, and each one asked anyway is refused', async ({ page }) => {
+    // Four sign-ins: the admin who sets the stage and three operators.
+    test.setTimeout(120_000)
+    const { viewer, actor, lister, password } = partialOperators('UIX-18')
+    const stamp = Date.now()
+    const title = `uix-18 note ${stamp}`
+    const id = await noteAsAdmin(page, { title, body: 'uix-18 body' }, 'UIX-18')
+
+    // A view of Notes the admin shares: every operator who may list notes
+    // is shown it, and only its owner (or a superuser) may remove it.
+    const shared = `uix-18 shared ${stamp}`
+    await signIn(page)
+    const sharedId = await page.evaluate(async (name) => {
+      const r = await fetch('/admin/api/views', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ model: 'Note', name, query: '', is_shared: true }),
+      })
+      const out = await r.json().catch(() => ({}))
+      return r.status < 300 ? String(out?.id ?? '') : ''
+    }, shared)
+    expect(sharedId, 'UIX-18 precondition: the admin could not share a view of Notes').not.toBe('')
+    await signOut(page)
+
+    const exportBody = { format: 'json', models: ['Note'] }
+    const importPath = '/admin/api/import/validate?key=_tmp/uix-18.json'
+    const importBody = { model: 'Note', format: 'json' }
+    const toolbarTransfer = page.getByRole('button', { name: /^(Export|Import)/ })
+
+    // 1. The viewer may list and open a note, and holds none of the panel's
+    // transfer, the field settings or any other model.
+    await signInAs(page, viewer, password)
+    const viewerHolds = await heldOnNote(page)
+    expect(
+      viewerHolds.permissions.retrieve === true && viewerHolds.permissions.export_data === false &&
+        viewerHolds.permissions.import_data === false && viewerHolds.permissions.update_schema === false,
+      `UIX-18 precondition: the viewer's schema does not say retrieve, and no export, import or field settings: ${JSON.stringify(viewerHolds)}`,
+    ).toBe(true)
+    // The models the panel lists and the viewer may not open, by the
+    // payload the sidebar is drawn from.
+    const closed = await page.evaluate(async () => {
+      const r = await fetch('/admin/api/models', { credentials: 'same-origin' })
+      const out = r.ok ? await r.json() : {}
+      return ((out.models ?? []) as Array<{ name: string; plural: string; permissions?: Record<string, boolean> }>)
+        .filter((m) => m.permissions?.get_schema === false || m.permissions?.list === false)
+        .map((m) => ({ name: m.name, label: m.plural || m.name }))
+    })
+    expect(closed.length, 'UIX-18 precondition: the model list names no model the viewer may not open').toBeGreaterThan(0)
+    await openNote(page, title, id, 'viewer', 'UIX-18')
+    const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const sidebarModel = (label: string) => page.getByRole('button', { name: new RegExp('^' + escaped(label)) })
+    await expect(sidebarModel('Notes'), 'UIX-18 precondition: the viewer\'s sidebar does not offer Notes').toBeVisible()
+    for (const model of closed) {
+      await expect(sidebarModel(model.label), `UIX-18: the sidebar offers the viewer ${model.label}, whose schema or list the server refuses them`).toHaveCount(0)
+    }
+    await expect(page.getByRole('heading', { name: 'Notes' }), 'UIX-18 precondition: the viewer\'s model header is not drawn').toBeVisible()
+    await expect(page.getByRole('button', { name: 'Configure fields' }), 'UIX-18: the header offers the viewer the field settings, which the server asks update_schema for').toHaveCount(0)
+    await expect(page.getByRole('button', { name: /^Filters/ }), 'UIX-18 precondition: the viewer\'s toolbar is not drawn').toBeVisible()
+    await expect(toolbarTransfer, 'UIX-18: the toolbar offers the viewer an export or an import, and the viewer holds neither').toHaveCount(0)
+    await expect(page.getByRole('button', { name: shared, exact: true }), 'UIX-18 precondition: the viewer is not shown the shared view').toBeVisible({ timeout: 5_000 })
+    await expect(page.getByRole('button', { name: `Remove the view ${shared}` }), 'UIX-18: the viewer is offered the removal of a view somebody else shared').toHaveCount(0)
+    // Their own view, saved beside it, is theirs to remove.
+    const own = `uix-18 own ${stamp}`
+    await page.getByRole('textbox', { name: 'Name for the current view' }).fill(own)
+    await page.getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(page.getByRole('button', { name: `Remove the view ${own}` }), 'UIX-18: the viewer is not offered the removal of the view they saved').toBeVisible({ timeout: 5_000 })
+    const viewerScreen = await axeIn(page, 'main', OPERATOR_VIEW_RULES)
+    expect(viewerScreen, `UIX-18: the viewer's Data Studio: ${JSON.stringify(viewerScreen, null, 2)}`).toEqual([])
+    // Asked anyway, the server says no to each.
+    expect(await forced(page, 'POST', '/admin/api/exports', exportBody), 'UIX-18: the server exported for an operator without export_data').toBe(403)
+    expect(await forced(page, 'POST', importPath, importBody), 'UIX-18: the server took an import from an operator without import_data').toBe(403)
+    expect(await forced(page, 'PUT', '/admin/api/models/Note/schema/fields', { fields: { Title: { label: 'uix-18 forced' } } }), 'UIX-18: the server changed the field settings for an operator without update_schema').toBe(403)
+    expect(await forced(page, 'GET', `/admin/api/models/${closed[0].name}/schema`), `UIX-18: the server opened ${closed[0].name} for an operator the sidebar did not offer it to`).toBe(403)
+    expect(await forced(page, 'DELETE', `/admin/api/views/${sharedId}`), 'UIX-18: the server removed a shared view for an operator who does not own it').toBe(403)
+
+    // 2. The actor holds the export and not the import: the toolbar offers
+    // the one and its panel has no Import.
+    await signOut(page)
+    await signInAs(page, actor, password)
+    const actorHolds = await heldOnNote(page)
+    expect(
+      actorHolds.permissions.export_data === true && actorHolds.permissions.import_data === false,
+      `UIX-18 precondition: the actor's schema does not say export and no import: ${JSON.stringify(actorHolds)}`,
+    ).toBe(true)
+    await openNote(page, title, id, 'actor', 'UIX-18')
+    const exportToggle = page.getByRole('button', { name: 'Export', exact: true })
+    await expect(exportToggle, 'UIX-18: the toolbar offers the actor no export, which the actor holds').toBeVisible()
+    await exportToggle.click()
+    await expect(page.getByRole('button', { name: /^Export (CSV|JSON|SQL)$/ }), 'UIX-18: the actor\'s export panel offers no export').toBeVisible({ timeout: 5_000 })
+    await expect(page.getByRole('button', { name: /^Import/ }), 'UIX-18: the actor is offered an import, and holds no import_data').toHaveCount(0)
+    const actorScreen = await axeIn(page, 'main', OPERATOR_VIEW_RULES)
+    expect(actorScreen, `UIX-18: the actor's Data Studio, with the export open: ${JSON.stringify(actorScreen, null, 2)}`).toEqual([])
+    expect(await forced(page, 'POST', '/admin/api/exports', exportBody), 'UIX-18: the server refused the actor the export it offered').toBe(200)
+    expect(await forced(page, 'POST', importPath, importBody), 'UIX-18: the server took an import from the actor, who holds no import_data').toBe(403)
+
+    // 3. The lister may list the notes and not open one: no history, no
+    // view, and no Actions column with nothing in it.
+    await signOut(page)
+    await signInAs(page, lister, password)
+    const listerHolds = await heldOnNote(page)
+    expect(
+      listerHolds.permissions.list === true && listerHolds.permissions.retrieve === false && listerHolds.actions.length === 0,
+      `UIX-18 precondition: the lister's schema does not say list and no retrieve: ${JSON.stringify(listerHolds)}`,
+    ).toBe(true)
+    await narrowToNote(page, title, 'lister', 'UIX-18')
+    await expect(page.locator(GRID_ROWS).first().getByText(title), 'UIX-18 precondition: the lister\'s row does not show the note').toBeVisible()
+    await expect(page.getByRole('columnheader', { name: 'Title' }), 'UIX-18 precondition: the lister\'s grid draws no header').toBeVisible()
+    await expect(page.getByRole('button', { name: `History of record ${id}` }), 'UIX-18: the row offers the lister a history, which the server asks retrieve for').toHaveCount(0)
+    await expect(page.getByRole('button', { name: `View record ${id}` }), 'UIX-18: the row offers the lister a record they may not open').toHaveCount(0)
+    await expect(page.getByRole('columnheader', { name: 'Actions' }), 'UIX-18: the grid draws the lister an Actions column with nothing to offer in it').toHaveCount(0)
+    const listerScreen = await axeIn(page, 'main', OPERATOR_VIEW_RULES)
+    expect(listerScreen, `UIX-18: the lister's Data Studio: ${JSON.stringify(listerScreen, null, 2)}`).toEqual([])
+    expect(await forced(page, 'GET', `/admin/api/models/Note/${id}/history`), 'UIX-18: the server answered a record\'s history to an operator who may not open it').toBe(403)
   })
 })

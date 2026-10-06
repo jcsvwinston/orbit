@@ -301,8 +301,10 @@ view is a shortcut to a URL, so one that stops making sense fails on the list
 endpoint with that endpoint's message rather than being silently dropped.
 
 A view belongs to whoever saved it. `is_shared` makes it visible to everyone;
-editing and removing stay with its owner (a superuser may tidy up any). There
-is no permission of its own — creating a view needs the **list** permission of
+editing and removing stay with its owner (a superuser may tidy up any), and
+each view the list returns says whether this operator may (`can_edit`), so
+Data Studio offers a view's removal only to whoever the server lets remove
+it. There is no permission of its own — creating a view needs the **list** permission of
 the model it points at, and a view of a model an operator cannot list is not
 shown to them, because the row would disclose both the model and what somebody
 filters it by. Every change is audited (`view.create`, `view.update`,
@@ -464,14 +466,42 @@ can disable what it may not instead of finding out by being refused:
 - each field of the schema carries `can_edit` (`can_read` is true for every
   field that arrives: the ones it is false for are not in the schema).
 
-Data Studio draws its grid from them. A row offers **Edit** with `update`,
-and **View** — the record read-only — with `retrieve` and no `update`; it
-offers **Delete** with `delete`. The grid offers a selection, and the
-selection a **Delete**, with `bulk_delete`, which is the verb the server asks
-of a batch — an operator who may delete one record at a time is not offered
-a batch they would be refused. A selection is also offered for an action that
-runs over one, so an operator who may publish and not delete can still pick
-what to publish. **New Record** needs `create`.
+The `permissions` map carries the record verbs, the actions this application
+declared, and the screen's other doors, each asked of the resource its
+handler asks it of: `get_schema` and `update_schema` of the model,
+`export_data` and `import_data` of the whole panel (`admin:*`). Those four are
+full grants only — an `#own` grant of them is not one, here or on the
+request. `update_schema` is false for everybody on a data source with no
+schema registry, which answers `501` to it.
+
+Data Studio draws its screens from them, and offers a door only to an
+operator the server will let through it:
+
+| What it offers | The verb it needs |
+|---|---|
+| a model in the sidebar | `get_schema` and `list` |
+| **Fields**, the field settings | `update_schema` |
+| **New Record** | `create` |
+| **Export** (the panel's export of the model) | `export_data` on `admin:*` |
+| **Import** | `import_data` on `admin:*`, on a model that is not read-only |
+| a row's **History** | `retrieve`, the record's own verb |
+| a row's **Edit** | `update` |
+| a row's **View**, the record read-only | `retrieve` and no `update` |
+| a row's **Delete** | `delete` |
+| a selection, and its **Delete** | `bulk_delete`, the verb the server asks of a batch |
+| an application action | its own verb, where it is placed; a destructive one not on a read-only model |
+| a saved view's removal | being its owner, or a superuser (`can_edit` on the view) |
+| a child's **Add**, **Remove** and edit in the record's form | the child model's `create`, `delete` and `update` |
+
+An operator who may delete one record at a time is not offered a batch they
+would be refused. A selection is also offered for an action that runs over
+one, so an operator who may publish and not delete can still pick what to
+publish. A row an operator holds none of its doors for draws no Actions
+column. The children of a record are sent with the parent only when they
+changed, since the server asks each child it is sent for its verb: an
+operator who may add a line and not edit one is not refused the line for the
+lines they only looked at. An import into a read-only model is refused like
+every other write.
 
 They are a rendering aid. Every one of them is enforced again on the request
 that follows, and a client that ignores them is refused exactly as before.
@@ -756,7 +786,8 @@ less there.
 Set `AllowEmptySelection: true` for an action whose subject is the table
 rather than a selection ("rebuild the index"); its button is then always
 there. `Destructive: true` marks it dangerous in the UI and makes it refuse a
-read-only model, which is what read-only means.
+read-only model, which is what read-only means — and the schema of a
+read-only model does not offer it, to anybody.
 
 A declaration the panel cannot honour stops the application at startup: an
 unknown model, a duplicate verb, one of the panel's own verbs (`delete`,

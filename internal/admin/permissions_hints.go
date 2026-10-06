@@ -32,6 +32,25 @@ var recordActions = []string{
 	"export_csv", "bulk_delete", "bulk_export",
 }
 
+// screenVerbs are the other doors a model screen offers, which their
+// handlers authorize through authorizeAction — the full grant, never an #own
+// one. Each is asked of the resource its handler asks it of: get_schema
+// (opening the model) and update_schema (its field settings) of the model,
+// export_data and import_data of the whole panel (admin:*), because those
+// two are panel-wide grants (ADR-007). Without their answer a screen offers
+// an Export, an Import or a Fields dialog to an operator the server then
+// refuses.
+var screenVerbs = []struct {
+	verb string
+	// panelWide asks the verb of admin:* instead of admin:<Model>.
+	panelWide bool
+}{
+	{verb: "get_schema"},
+	{verb: "update_schema"},
+	{verb: "export_data", panelWide: true},
+	{verb: "import_data", panelWide: true},
+}
+
 // modelCapabilities is what one operator may do with one model.
 type modelCapabilities struct {
 	// Permissions is action -> whether this operator holds it.
@@ -87,7 +106,8 @@ func (p *Panel) capabilitiesForUser(user *auth.User, mi datasource.ModelInfo) mo
 	// any other, so it belongs in the same hint map — that is what lets a
 	// grid know whether to draw the button at all.
 	verbs := p.verbsFor(mi.Name)
-	caps := modelCapabilities{Permissions: make(map[string]bool, len(verbs))}
+	caps := modelCapabilities{Permissions: make(map[string]bool, len(verbs)+len(screenVerbs))}
+	caps.fillScreenVerbs(p, user, mi)
 	grantAll := func() modelCapabilities {
 		for _, action := range verbs {
 			caps.Permissions[action] = true
@@ -128,6 +148,33 @@ func (p *Panel) capabilitiesForUser(user *auth.User, mi datasource.ModelInfo) mo
 	sort.Strings(caps.RowScope)
 	caps.fill()
 	return caps
+}
+
+// fillScreenVerbs answers the screen's other doors (screenVerbs) the way
+// authorizeAction answers them, before the record verbs are written: an
+// action this application declared under one of their names keeps its own
+// answer, exactly as it did before these were in the map.
+func (c *modelCapabilities) fillScreenVerbs(p *Panel, user *auth.User, mi datasource.ModelInfo) {
+	for _, sv := range screenVerbs {
+		scope := mi.Name
+		if sv.panelWide {
+			scope = "*"
+		}
+		switch {
+		case p.config.Auth == nil:
+			c.Permissions[sv.verb] = true
+		case user == nil:
+			c.Permissions[sv.verb] = false
+		default:
+			c.Permissions[sv.verb] = p.userCan(user, scope, sv.verb)
+		}
+	}
+	// The field settings are a feature of Nucleus's schema registry: a panel
+	// mounted on a data source without one answers 501 to every operator,
+	// superuser included, so nobody is offered the dialog that would ask.
+	if p.registry == nil {
+		c.Permissions["update_schema"] = false
+	}
 }
 
 func (c *modelCapabilities) fill() {

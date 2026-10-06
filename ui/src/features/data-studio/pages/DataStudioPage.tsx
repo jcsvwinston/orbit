@@ -9,7 +9,7 @@ import type { ModelSummary, ModelSchema, RuntimeInfo } from '@/types'
 import ModelSidebar from '../components/ModelSidebar'
 import AGGridTable from '../components/AGGridTable'
 import FieldConfigPanel from '../components/FieldConfigPanel'
-import { screenCapabilities } from '../lib/capabilities'
+import { canOpenModel, screenCapabilities } from '../lib/capabilities'
 import { Database, Loader2, Server, Settings2 } from 'lucide-react'
 
 export default function DataStudioPage() {
@@ -43,7 +43,10 @@ export default function DataStudioPage() {
       try {
         const res = await api.getModelsWithRuntime(true)
         if (cancelled) return
-        setModels(res.models ?? [])
+        // The sidebar offers the models this operator may open: one whose
+        // schema or list the server refuses leads to an error page and
+        // nothing else.
+        setModels((res.models ?? []).filter(canOpenModel))
         setRuntime(res.runtime ?? null)
       } catch (err) {
         if (!cancelled) setModelsError(err)
@@ -165,7 +168,7 @@ export default function DataStudioPage() {
               <p className="text-sm">Select a model from the sidebar to browse its records</p>
               {models.length > 0 && (
                 <p className="text-xs">
-                  {models.length} model{models.length !== 1 ? 's' : ''} registered
+                  {models.length} model{models.length !== 1 ? 's' : ''} to browse
                   {runtime?.databases && runtime.databases.length > 1
                     ? ` across ${runtime.databases.length} databases (${runtime.engines.join(', ')})`
                     : runtime?.engines?.length
@@ -233,18 +236,22 @@ export default function DataStudioPage() {
                     </span>
                   )}
 
-                  {/* Field config button */}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs gap-1.5"
-                    onClick={() => setFieldConfigOpen(true)}
-                    title="Configure fields (list, search, filter...)"
-                    aria-label="Configure fields"
-                  >
-                    <Settings2 className="h-3.5 w-3.5" />
-                    Fields
-                  </Button>
+                  {/* Field config button: the settings are saved with
+                      update_schema, which the schema says this operator
+                      holds or not. */}
+                  {screenCapabilities(schema).canConfigureFields && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs gap-1.5"
+                      onClick={() => setFieldConfigOpen(true)}
+                      title="Configure fields (list, search, filter...)"
+                      aria-label="Configure fields"
+                    >
+                      <Settings2 className="h-3.5 w-3.5" />
+                      Fields
+                    </Button>
+                  )}
                 </div>
               </div>
 

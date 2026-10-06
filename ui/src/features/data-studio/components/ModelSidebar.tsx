@@ -294,7 +294,7 @@ export default function ModelSidebar({ models, runtime, selectedModel, selectedD
         {viewMode === 'all' && (
           filtered.length === 0 ? (
             <p className="text-xs text-muted-foreground text-center py-6">
-              {search || dbFilter ? 'No models match your filter' : 'No models registered'}
+              {search || dbFilter ? 'No models match your filter' : 'No models to browse'}
             </p>
           ) : filtered.map((m) => renderModelItem(m, dbFilter ?? undefined)) /* null → undefined keeps the unfiltered isActive short-circuit */
         )}

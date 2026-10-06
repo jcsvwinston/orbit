@@ -296,7 +296,7 @@ func (p *Panel) handleListSavedViews(c *router.Context) error {
 	// A shared view of a model this operator cannot list is not theirs to
 	// see: the row would tell them the model exists and what somebody filters
 	// it by, which is exactly what the list permission withholds.
-	visible := make([]savedView, 0, len(views))
+	visible := make([]listedSavedView, 0, len(views))
 	for _, view := range views {
 		mi, ok := p.src.Get(view.Model)
 		if !ok {
@@ -305,9 +305,21 @@ func (p *Panel) handleListSavedViews(c *router.Context) error {
 		if _, err := p.authorizeRecordAction(c, mi, "list"); err != nil {
 			continue
 		}
-		visible = append(visible, view)
+		visible = append(visible, listedSavedView{
+			savedView: view,
+			CanEdit:   p.mayEditSavedView(c.Request, view, owner),
+		})
 	}
 	return c.JSON(http.StatusOK, map[string]interface{}{"views": visible})
+}
+
+// listedSavedView is a view as the list carries it: with whether this
+// operator may change or remove it. A shared view is listed to everyone who
+// may list its model and editable by its owner alone, so without the hint
+// a screen offers every operator a Remove on views the server then refuses.
+type listedSavedView struct {
+	savedView
+	CanEdit bool `json:"can_edit"`
 }
 
 type savedViewRequest struct {
