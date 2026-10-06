@@ -534,7 +534,10 @@ func (p *Panel) handleListRecords(c *router.Context) error {
 	if !ok {
 		return gferrors.NotFound("model", name)
 	}
-	rowScope, err := p.authorizeRecordAction(c, mi, "list")
+	// The rows and fields this operator may read of the model. The exports
+	// read through the same scope, so none of them shows more than this
+	// list does.
+	read, err := p.requestReadScope(c, mi, "list")
 	if err != nil {
 		return err
 	}
@@ -589,22 +592,11 @@ func (p *Panel) handleListRecords(c *router.Context) error {
 		return err
 	}
 
-	// Confine the list to the request's tenant when multi-tenant is enabled.
-	if scope := p.requestTenantScope(r, mi); scope.Enforced() {
-		if filters == nil {
-			filters = make(map[string]string)
-		}
-		filters[scope.Column()] = scope.Tenant
-	}
-	// And to the operator's own rows when the grant that let them here was
+	// Confine the list to the request's tenant when multi-tenant is enabled,
+	// and to the operator's own rows when the grant that let them here was
 	// on admin:<Model>#own. A filter the operator supplied on the same
 	// column is overwritten, not merged: the scope is not negotiable.
-	if rowScope.Enforced() {
-		if filters == nil {
-			filters = make(map[string]string)
-		}
-		filters[rowScope.Column()] = rowScope.Owner
-	}
+	filters = read.filters(filters)
 
 	// A data source that predates Query.Where ignores it, and a list that
 	// ignores a filter answers every row while looking filtered. Ask before
@@ -634,7 +626,7 @@ func (p *Panel) handleListRecords(c *router.Context) error {
 	if err != nil {
 		return err
 	}
-	p.requestFieldRules(r, mi).maskAll(mi, result.Items)
+	read.fields.maskAll(mi, result.Items)
 
 	return c.JSON(http.StatusOK, result)
 }

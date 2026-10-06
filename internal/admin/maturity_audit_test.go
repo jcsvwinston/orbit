@@ -219,6 +219,16 @@ func TestExportDownload_ConfinedToExportKeys(t *testing.T) {
 	store.objects["_tmp/export_20260903_x.csv"] = "id,name\n1,a\n"
 	store.objects["uploads/private/contract.pdf"] = "secret"
 	panel.store = store
+	// The export this operator cut: an operator who is not a superuser is
+	// handed the exports cut for them only (OR-66).
+	user, err := panel.config.Auth.Authenticate(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	panel.exportResults["_tmp/export_20260903_x.csv"] = ExportResult{
+		ID: "_tmp/export_20260903_x.csv", StorageKey: "_tmp/export_20260903_x.csv",
+		Status: "completed", Format: "csv", producer: exportProducer(user),
+	}
 
 	srv := httptest.NewServer(panel.Handler())
 	defer srv.Close()

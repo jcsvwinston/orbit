@@ -100,7 +100,7 @@ func browserCases() []browserCase {
 		// The rest of Data Studio's doors, for the same operators and a
 		// third (OR-65): every one of them asks the server for a verb of
 		// its own, and until this control the screen drew them for anybody.
-		{id: "UIX-18", title: "an operator is offered a model, a record's history, an export, an import, the field settings and a saved view's removal only where they hold them, and each one asked anyway is refused", want: present},
+		{id: "UIX-18", title: "an operator is offered a model, a record's history, an export, an import, the field settings and a saved view's removal only where they hold them, each one asked anyway is refused, and an export holds only what the operator may list", want: present},
 	}
 }
 
@@ -118,9 +118,12 @@ const (
 // look — list a page, open a record — and nothing more. The actor also holds
 // delete (one record at a time, not a batch), two of the application's
 // actions — schedule, which runs over a selection, and duplicate, which runs
-// on one record — and the panel's export (export_data on admin:*). The lister
-// (UIX-18) may list the page and not open a record, so a record's history is
-// not theirs either. Each is a screen the superuser is never shown.
+// on one record — and the panel's export (export_data on admin:*); for what
+// that export holds (OR-66, UIX-18) the actor may not read a note's meta and
+// may list their own articles (admin:Article#own), not anybody else's. The
+// lister (UIX-18) may list the page and not open a record, so a record's
+// history is not theirs either. Each is a screen the superuser is never
+// shown.
 const (
 	noteViewer = "note-viewer"
 	noteActor  = "note-actor"
@@ -145,6 +148,11 @@ func partialOperators(t *testing.T, e *env) {
 		e.grant(t, noteActor, "admin:Note", act)
 	}
 	e.grant(t, noteActor, "admin:*", "export_data")
+	// What the actor's export may hold (OR-66): a field kept from them, and
+	// a model they may list only their own rows of — and not open, so the
+	// sidebar UIX-16 to UIX-18 read is the one it was.
+	e.grant(t, noteActor, "admin:Note.meta", "deny")
+	e.grant(t, noteActor, "admin:Article#own", "list")
 }
 
 // themedBranding is the second application UIX-10 opens: one that says its

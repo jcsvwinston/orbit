@@ -45,7 +45,9 @@ work inside that tenant whatever `tenant_id` their request body carries — a
 row that names another tenant fails, a row whose id belongs to another
 tenant's record fails as *not found*, and an export job (`/api/exports`, its
 status and its download) is listed and served only to requests scoped to the
-tenant it was produced for. Models without a tenant column are not scoped. A
+tenant it was produced for — and, beyond the tenant, only to the operator who
+cut it ([What an export holds](#what-an-export-holds)). Models without a
+tenant column are not scoped. A
 request the host resolves no tenant for, with no default configured, is
 refused with a 403 rather than opened to every tenant — unless it comes from
 a superuser or a subject granted `tenant_switch`, who is then unscoped (every
@@ -414,7 +416,7 @@ and edits their own posts and does not see anybody else's. Lists are filtered
 by the owner column, a row owned by somebody else answers `404` on the record
 endpoints (the same answer as a row that does not exist, so ids are not
 disclosed), a create stamps the operator as the owner, and an update cannot
-hand a row over.
+hand a row over. Every export carries the same rows the list does.
 
 Which column says who owns a row is the application's answer, not a guess:
 
@@ -449,11 +451,37 @@ that action for the model; a subject with none keeps the model-level grant it
 always had. A write that names a field the operator may not write is refused
 with a `403` **naming the field** — not dropped silently, because a form that
 believes it saved a value it did not save is worse than one that is told. A
-field the operator may not read is left out of the record, the list, the CSV
+field the operator may not read is left out of the record, the list, every
 export and the schema.
 
 Field policies narrow a grant; they never widen one. An operator who cannot
 update the model at all is refused before any field is consulted.
+
+### What an export holds
+
+`export_data` is granted on `admin:*`: it says who may export, not what. The
+panel's export (`POST /api/exports`, in CSV, JSON and SQL) and the fixture
+dump (`POST /api/fixtures/dumpdata`), which rides on the same grant, carry for
+each model what that operator's `list` of it shows — the rows of their tenant,
+only their own rows under an `#own` grant, and only the fields they may read:
+a hidden field is neither a value nor a column of the CSV, a key of the JSON
+record, a column of the SQL table, or a field of the fixture. The model's own
+CSV export (`export_csv`) reads through the same scope. The export's own
+`filters` narrow it further and cannot widen it: one on a confined column is
+replaced by the scope's, and one on a field the operator may not read is
+refused with a `400`, since the rows it leaves would say what the field holds.
+
+A model the request names that the operator may not list is refused with the
+`403` the list gives — including the one an `#own` grant gets on a model with
+no owner column — and nothing is exported. An export of every model (no
+`models` in the request) leaves those models out, the way the sidebar does.
+
+An export, once cut, is a copy of what its producer could read. The job list,
+a job's status and its download are handed to the operator who cut it and to
+a superuser, and to no other holder of `export_data`. The panel keeps the job
+list in memory, so after a restart, or from another replica, an operator who
+is not a superuser cuts the export again; the signed URL a store returns with
+the export is unaffected.
 
 ### What a screen is told
 
@@ -471,8 +499,9 @@ declared, and the screen's other doors, each asked of the resource its
 handler asks it of: `get_schema` and `update_schema` of the model,
 `export_data` and `import_data` of the whole panel (`admin:*`). Those four are
 full grants only — an `#own` grant of them is not one, here or on the
-request. `update_schema` is false for everybody on a data source with no
-schema registry, which answers `501` to it.
+request. `export_data` is also false on a model the operator may not `list`,
+since its export is refused there. `update_schema` is false for everybody on
+a data source with no schema registry, which answers `501` to it.
 
 Data Studio draws its screens from them, and offers a door only to an
 operator the server will let through it:
@@ -482,7 +511,7 @@ operator the server will let through it:
 | a model in the sidebar | `get_schema` and `list` |
 | **Fields**, the field settings | `update_schema` |
 | **New Record** | `create` |
-| **Export** (the panel's export of the model) | `export_data` on `admin:*` |
+| **Export** (the panel's export of the model) | `export_data` on `admin:*`, and `list` of the model, whose rows and fields it holds |
 | **Import** | `import_data` on `admin:*`, on a model that is not read-only |
 | a row's **History** | `retrieve`, the record's own verb |
 | a row's **Edit** | `update` |
@@ -501,7 +530,8 @@ column. The children of a record are sent with the parent only when they
 changed, since the server asks each child it is sent for its verb: an
 operator who may add a line and not edit one is not refused the line for the
 lines they only looked at. An import into a read-only model is refused like
-every other write.
+every other write, and so is a fixture load that names one — whole, before
+any of its rows is written.
 
 They are a rendering aid. Every one of them is enforced again on the request
 that follows, and a client that ignores them is refused exactly as before.

@@ -19,7 +19,7 @@ func (p *Panel) handleExportCSV(c *router.Context) error {
 	if !ok {
 		return gferrors.NotFound("model", name)
 	}
-	rowScope, err := p.authorizeRecordAction(c, mi, "export_csv")
+	read, err := p.requestReadScope(c, mi, "export_csv")
 	if err != nil {
 		return err
 	}
@@ -42,28 +42,15 @@ func (p *Panel) handleExportCSV(c *router.Context) error {
 	}
 	idSet := parseIDSet(c.Query("ids"))
 
-	// Same tenant scope as the list endpoint, so an export never shows more
-	// than the grid it was requested from.
-	var filters map[string]string
-	if scope := p.requestTenantScope(r, mi); scope.Enforced() {
-		filters = map[string]string{scope.Column(): scope.Tenant}
-	}
-	// An export never carries more than the grid it was requested from: a
-	// row-scoped operator exports their own rows.
-	if rowScope.Enforced() {
-		if filters == nil {
-			filters = map[string]string{}
-		}
-		filters[rowScope.Column()] = rowScope.Owner
-	}
+	// The same scope as the list endpoint, so an export never shows more
+	// than the grid it was requested from: the request's tenant, and a
+	// row-scoped operator's own rows.
+	filters := read.filters(nil)
 
 	// Determine visible columns and the primary-key field for id filtering.
 	// A field this operator may not read is not a column of their export
 	// either — a CSV is the easiest way there is to read a value off a
 	// screen that does not show it.
-	fieldRules := p.requestFieldRules(r, mi)
-	var headers []string
-	var columns []datasource.FieldInfo
 	var pkField datasource.FieldInfo
 	var hasPK bool
 	for _, f := range mi.Fields {
@@ -71,14 +58,11 @@ func (p *Panel) handleExportCSV(c *router.Context) error {
 			pkField = f
 			hasPK = true
 		}
-		if f.IsExcluded {
-			continue
-		}
-		if !f.IsPK && !fieldRules.readable(runtimeColumn(f.Column)) {
-			continue
-		}
+	}
+	columns := read.readableFields(mi)
+	headers := make([]string, 0, len(columns))
+	for _, f := range columns {
 		headers = append(headers, f.Label)
-		columns = append(columns, f)
 	}
 
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
@@ -139,16 +123,12 @@ func (p *Panel) handleExportCSV(c *router.Context) error {
 
 	// A GET, but data leaving the system: audited like the other exports,
 	// with the scope and the row count, never the rows.
-	tenantID := ""
-	for _, v := range filters {
-		tenantID = v
-	}
 	p.recordAuditEntry(r, AuditEntry{
 		Action:    "export.csv",
 		ModelName: mi.Name,
 		NewValue: map[string]any{
 			"database":      databaseAlias,
-			"tenant_id":     tenantID,
+			"tenant_id":     read.tenant,
 			"requested_ids": len(idSet),
 			"rows":          rowsWritten,
 		},

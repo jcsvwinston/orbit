@@ -225,18 +225,11 @@ func (p *Panel) prepareRecordsRead(c *router.Context, list RecordList) (*records
 	if !ok {
 		return nil, false
 	}
-	rowScope, err := p.authorizeRecordAction(c, mi, "list")
+	read, err := p.requestReadScope(c, mi, "list")
 	if err != nil {
 		return nil, false
 	}
-	filters := map[string]string{}
-	if scope := p.requestTenantScope(c.Request, mi); scope.Enforced() {
-		filters[scope.Column()] = scope.Tenant
-	}
-	if rowScope.Enforced() {
-		filters[rowScope.Column()] = rowScope.Owner
-	}
-	return &recordsRead{model: mi, list: list, filters: filters, rules: p.requestFieldRules(c.Request, mi)}, true
+	return &recordsRead{model: mi, list: list, filters: read.filters(nil), rules: read.fields}, true
 }
 
 // fillRecords lists the newest rows of the card's model, as the operator who
