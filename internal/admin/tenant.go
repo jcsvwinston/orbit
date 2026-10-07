@@ -292,6 +292,31 @@ func (p *Panel) fieldJSONKey(modelName string, f datasource.FieldInfo) string {
 	return name
 }
 
+// fieldJSONKeys maps, in lower case, the JSON key each field of mi marshals
+// under to the field's runtime column — only for the fields whose JSON key
+// is a third spelling, neither the column nor the Go name, which is the one
+// dsResolveField does not know. It is what fieldRules resolves a record's or
+// a payload's key through after the other two. Nil for a panel without a
+// schema registry, a model not in it, and a model whose every field marshals
+// under a key the lookup already covers.
+func (p *Panel) fieldJSONKeys(mi datasource.ModelInfo) map[string]string {
+	if p.registry == nil {
+		return nil
+	}
+	var keys map[string]string
+	for _, f := range mi.Fields {
+		key := p.fieldJSONKey(mi.Name, f)
+		if key == "" || strings.EqualFold(key, f.Column) || strings.EqualFold(key, runtimeColumn(f.Column)) || strings.EqualFold(key, f.Name) {
+			continue
+		}
+		if keys == nil {
+			keys = map[string]string{}
+		}
+		keys[strings.ToLower(key)] = runtimeColumn(f.Column)
+	}
+	return keys
+}
+
 // requestTenantScope resolves the tenant confinement of r for model mi. It is
 // enforced only when multi-tenant mode is on, the request resolved a tenant
 // (AutoFilter stays on) and the model has the tenant column — a configured

@@ -1983,3 +1983,53 @@ Verified by breaking it:
 | a model the operator may not retrieve shown anyway | `TestAuditTrail_RowValuesNeedTheModelsRetrieve` |
 
 The HTTP bench is unchanged at 72 of 72; the browser half stays at 18 of 18.
+
+## What a field policy knows a field by (OR-77)
+
+A field policy (`admin:Model.field`) resolved the field it names, and the
+keys of the records it masks and of the payloads it guards, by the field's
+column and its Go name. The Nucleus adapter emits a record keyed by each
+field's json tag and accepts a payload under the same key, so a field whose
+json tag is a third spelling — neither the column nor the Go name — was
+known to the backend and not to the policy: a deny left it on the record,
+the list, the history and the trail, and a write naming it under that key
+was written where the same write under the column was refused. The tenant
+and the owner of a row were already resolved by their json key (OR-23); the
+field policies were not.
+
+The rules now resolve a key the way the adapter does (`fieldRules.resolve`):
+column and Go name first, the json key after, in any letter case — for what
+they mask (the record, the list, the exports, the history, the trail) and
+for what they guard (the record form, the import, a record's children, the
+fixture load), which all go through the same three functions. A policy may
+name the field by any of the three spellings; the `403` names the column.
+
+| surface | before | now |
+|---|---|---|
+| the record, the list, a record's history, the trail and its CSV copy | a denied field stayed in under its json key | masked under every key |
+| the CSV export | chose its columns by the policy already; the field was never in it | unchanged |
+| the record form, the import, a record's children, the fixture load | a write under the json key was written | `403` naming the column, nothing written |
+
+**`PERM-06`** (HTTP) now also denies its operator `Note.internal_note` — a
+field the bench's `Note` gains for it, spelled three ways: column
+`internal_note`, Go name `Internal`, json key `editor_note` — and reads that
+a write under `editor_note` is refused and that the record, the history and
+the trail carry the field under no key.
+
+### What the work found that was not on the plan
+
+- **CHANGED — a policy may name the field by its json key.**
+  `admin:Note.editor_note` and `admin:Note.internal_note` are the same rule.
+- A backend without a schema registry (a custom `DataSource`, Quark) keys
+  its records by column, which the rules knew; nothing changes there.
+
+Verified by breaking it:
+
+| mutation | what fails |
+|---|---|
+| the parent commit's server | `PERM-06`: the write under `editor_note` answers `200`; `TestFieldPerms_DenyMasksTheFieldUnderItsJSONKey` (the record, the list, the history, the trail and its CSV copy), `TestFieldPerms_DenyRefusesAWriteUnderAnyKey`, `TestFieldPerms_AllowListHoldsUnderTheJSONKey` |
+| the mask (`mask`, `maskValues`) resolving the column and the Go name only | `TestFieldPerms_DenyMasksTheFieldUnderItsJSONKey`, under each of the three spellings a policy may use |
+| the write guard (`guardPayload`) resolving the column and the Go name only | `TestFieldPerms_DenyRefusesAWriteUnderAnyKey`, `TestFieldPerms_AllowListHoldsUnderTheJSONKey` |
+| the policy's object resolved without the json key | `TestFieldPerms_DenyMasksTheFieldUnderItsJSONKey/policy_names_hidden`, and only that one |
+
+The HTTP bench is unchanged at 72 of 72; the browser half stays at 18 of 18.

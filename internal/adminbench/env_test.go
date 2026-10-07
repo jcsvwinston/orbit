@@ -49,6 +49,12 @@ type Note struct {
 	Body   string `json:"body"`
 	Status string `json:"status" admin:"list,filter"`
 	Views  int    `json:"views" admin:"list,filter"`
+	// Internal is spelled three ways — column internal_note, Go name
+	// Internal, json key editor_note — so PERM-06 can ask whether a field
+	// policy holds under the key the records carry the field by, which is
+	// the json key, and not only under the column a policy names (OR-77). A
+	// model whose json keys all equal their columns cannot ask it.
+	Internal string `json:"editor_note" db:"column:internal_note"`
 	// Cover and Meta are the fields a scalar form cannot hold: a file and a
 	// document. Both are columns of text — what they MEAN is the
 	// application's claim, declared through orbit.Config.FieldWidgets below,
