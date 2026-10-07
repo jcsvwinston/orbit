@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.1.1](https://github.com/jcsvwinston/orbit/compare/ui/v1.1.0...ui/v1.1.1) (2026-10-07)
+
+
+### Fixed
+
+* **admin:** a field the operator may not read is refused as a filter, a sort or a search, and no longer labels a lookup, lists a saved view or orders a records card (OR-69) ([#550](https://github.com/jcsvwinston/orbit/issues/550)) ([95f16ba](https://github.com/jcsvwinston/orbit/commit/95f16badcd2383e4bb43c027fcfc3c1dff27d996))
+* **admin:** an import and a fixture load write only what the operator could write by hand, and a file with one row they may not write is refused whole (OR-67) ([#551](https://github.com/jcsvwinston/orbit/issues/551)) ([6d84686](https://github.com/jcsvwinston/orbit/commit/6d8468681639c3efbb895d3c44a7d347b7dbbc0d))
+* **ui:** Data Studio offers a batch Delete only with bulk_delete, a read-only View to an operator without update, and an open model that reads at AA; the browser bench signs in as two partial operators (OR-64) ([#547](https://github.com/jcsvwinston/orbit/issues/547)) ([54ee0ac](https://github.com/jcsvwinston/orbit/commit/54ee0ac88b40ef7bd4f26d55cb8dbdfc80c3fb1d))
+* **ui:** Data Studio offers a model, a record's History, Export, Import, Fields and a saved view's removal only to an operator the server lets through; the browser bench reads them for three partial operators (OR-65) ([#548](https://github.com/jcsvwinston/orbit/issues/548)) ([7570390](https://github.com/jcsvwinston/orbit/commit/7570390cb264ea9c201e74e4d6f43b9dc138e9fb))
+
+
+### Performance
+
+* **ui:** the panel travels compressed and within a gzip budget, admin-server stops embedding it, and the icon font and error text pass the panel's own checks (A12 O1) ([#544](https://github.com/jcsvwinston/orbit/issues/544)) ([4cfc2db](https://github.com/jcsvwinston/orbit/commit/4cfc2db707c90494bf4f82691490b26933b2e846))
+
 ## [1.1.0](https://github.com/jcsvwinston/orbit/compare/ui/v1.0.0...ui/v1.1.0) (2026-10-05)
 
 

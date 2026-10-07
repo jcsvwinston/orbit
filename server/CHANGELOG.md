@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.3](https://github.com/jcsvwinston/orbit/compare/server/v0.20.2...server/v0.20.3) (2026-10-07)
+
+
+### Performance
+
+* **ui:** the panel travels compressed and within a gzip budget, admin-server stops embedding it, and the icon font and error text pass the panel's own checks (A12 O1) ([#544](https://github.com/jcsvwinston/orbit/issues/544)) ([4cfc2db](https://github.com/jcsvwinston/orbit/commit/4cfc2db707c90494bf4f82691490b26933b2e846))
+
 ## [0.20.2](https://github.com/jcsvwinston/orbit/compare/server/v0.20.1...server/v0.20.2) (2026-10-05)
 
 
