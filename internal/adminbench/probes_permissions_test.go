@@ -54,10 +54,15 @@ func probeFieldPermissions(t *testing.T, e *env) verdict {
 	e.grant(t, op.username, "admin:Note", "update")
 
 	const original = "field-perms"
-	id := e.createNote(t, map[string]any{"title": original, "status": "draft"})
+	const internal = "for-editors-only"
+	id := e.createNote(t, map[string]any{"title": original, "status": "draft", "editor_note": internal})
 	// Nothing grants this operator the title field; the only policy that
 	// could say so is the one below, in the grammar a field policy would use.
 	e.grant(t, op.username, "admin:Note.title", "deny")
+	// And a field the records carry under a key that is neither its column
+	// nor its Go name (OR-77): the policy names the column, the row says
+	// editor_note.
+	e.grant(t, op.username, "admin:Note.internal_note", "deny")
 
 	r := e.asOperator(t, op, http.MethodPut, "/admin/api/models/Note/"+id,
 		map[string]any{"title": "rewritten by an operator who should not"})
@@ -89,6 +94,25 @@ func probeFieldPermissions(t *testing.T, e *env) verdict {
 		map[string]any{"status": "reviewed"})
 	if allowed.code != http.StatusOK {
 		t.Logf("a field the operator DOES hold was refused too (%d): %s", allowed.code, allowed.text())
+		return partial
+	}
+
+	// The policy holds under the key the records carry the field by, on a
+	// write and on a read (OR-77): a policy that knew the column alone let
+	// editor_note through both ways.
+	under := e.asOperator(t, op, http.MethodPut, "/admin/api/models/Note/"+id,
+		map[string]any{"editor_note": "rewritten under the key the records carry"})
+	if under.code != http.StatusForbidden {
+		t.Logf("the policy on internal_note did not hold under editor_note, the key its records carry (%d): %s", under.code, under.text())
+		return partial
+	}
+	mine := e.asOperator(t, op, http.MethodGet, "/admin/api/models/Note/"+id, nil)
+	if mine.code != http.StatusOK {
+		t.Logf("the operator could not read the record (%d): %s", mine.code, mine.text())
+		return partial
+	}
+	if strings.Contains(mine.raw(), internal) {
+		t.Logf("the record carries internal_note under editor_note, which the operator may not read: %s", mine.text())
 		return partial
 	}
 
@@ -136,6 +160,10 @@ func probeFieldPermissions(t *testing.T, e *env) verdict {
 		}
 		if strings.Contains(trail.raw(), original) {
 			t.Logf("%s carries the title the operator may not read: %s", path, trail.text())
+			return partial
+		}
+		if strings.Contains(trail.raw(), internal) {
+			t.Logf("%s carries internal_note under editor_note, which the operator may not read: %s", path, trail.text())
 			return partial
 		}
 	}

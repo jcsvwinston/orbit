@@ -248,7 +248,7 @@ func hiddenSearchError(mi datasource.ModelInfo) error {
 // refuse.
 func (fr fieldRules) namesHiddenField(mi datasource.ModelInfo, values url.Values) bool {
 	hidden := func(key string) bool {
-		_, f, ok := dsResolveField(mi, key)
+		_, f, ok := fr.resolve(mi, key)
 		return ok && !fr.readsField(f)
 	}
 	for key := range values {

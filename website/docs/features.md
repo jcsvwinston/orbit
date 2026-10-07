@@ -470,7 +470,17 @@ always had. A write that names a field the operator may not write is refused
 with a `403` **naming the field** — not dropped silently, because a form that
 believes it saved a value it did not save is worse than one that is told. A
 field the operator may not read is left out of the record, the list, every
-export and the schema.
+export, the record's history, the trail and the schema.
+
+A policy names the field by its storage column, its Go field name or, for a
+Nucleus model, the JSON key its records carry, in any letter case — the same
+three spellings the tenant and the owner are resolved by — and the mask and
+the write guard resolve a record's or a payload's key by the same three, in
+the order the Nucleus adapter does (column and Go name first, then the JSON
+key). A field whose JSON key is neither its column nor its Go name is held to
+the policy under that key too; the `403` names the column. A backend without a
+schema registry (a custom `DataSource`, Quark) keys its records by column, and
+the policy knows them as it always did.
 
 ### What an operator may ask
 

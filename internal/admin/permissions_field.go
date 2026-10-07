@@ -54,10 +54,34 @@ type fieldRules struct {
 	// columns. A nil entry means "no allow-list for this action": every
 	// column the model-level grant covers stays reachable.
 	allow map[string]map[string]bool
+	// keys maps, in lower case, the JSON key a Nucleus model's records carry
+	// a field under to that field's runtime column — only for the fields
+	// whose JSON key is a third spelling, neither the column nor the Go name
+	// (Panel.fieldJSONKeys). dsResolveField knows the other two; a record
+	// the Nucleus adapter emits and a payload it accepts use this one.
+	keys map[string]string
 }
 
 // enforced reports whether any field policy applies to this request.
 func (fr fieldRules) enforced() bool { return len(fr.denied) > 0 || len(fr.allow) > 0 }
+
+// resolve finds the field key names — by its runtime column, its storage
+// column or its Go name (dsResolveField) and, failing those, by the JSON key
+// its records carry (fr.keys) — and returns its runtime column. Every guard
+// of these rules resolves through it: a payload key and a record key reach
+// the panel under any of the four spellings, and a guard that knew three of
+// them left a field named by the fourth unmasked on read and unrefused on
+// write. The order is the Nucleus adapter's own (fieldForInput): column and
+// Go name first, the JSON key after.
+func (fr fieldRules) resolve(mi datasource.ModelInfo, key string) (column string, field datasource.FieldInfo, ok bool) {
+	if col, f, found := dsResolveField(mi, key); found {
+		return col, f, true
+	}
+	if col, found := fr.keys[strings.ToLower(strings.TrimSpace(key))]; found {
+		return dsResolveField(mi, col)
+	}
+	return "", datasource.FieldInfo{}, false
+}
 
 // readable reports whether the subject may see runtime column col.
 func (fr fieldRules) readable(col string) bool {
@@ -96,7 +120,7 @@ func (fr fieldRules) guardPayload(mi datasource.ModelInfo, data map[string]any, 
 	}
 	var refused []string
 	for key := range data {
-		col, _, ok := dsResolveField(mi, key)
+		col, _, ok := fr.resolve(mi, key)
 		if !ok {
 			continue
 		}
@@ -119,7 +143,7 @@ func (fr fieldRules) mask(mi datasource.ModelInfo, rec datasource.Record) dataso
 		return rec
 	}
 	for key := range rec {
-		col, f, ok := dsResolveField(mi, key)
+		col, f, ok := fr.resolve(mi, key)
 		if !ok || f.IsPK {
 			continue
 		}
@@ -141,7 +165,7 @@ func (fr fieldRules) maskValues(mi datasource.ModelInfo, values map[string]any) 
 	}
 	out := make(map[string]any, len(values))
 	for key, v := range values {
-		col, f, ok := dsResolveField(mi, key)
+		col, f, ok := fr.resolve(mi, key)
 		if ok && !f.IsPK && !fr.readable(col) {
 			continue
 		}
@@ -193,7 +217,10 @@ func (p *Panel) requestFieldRules(r *http.Request, mi datasource.ModelInfo) fiel
 
 	prefix := "admin:" + mi.Name + "."
 	subjects := subjectsOf(user)
-	rules := fieldRules{}
+	// The rules know a field under every key a record or a payload may
+	// carry it, and so may a policy name it: admin:Note.org for a field
+	// whose column is tenant_id and whose records say "org".
+	rules := fieldRules{keys: p.fieldJSONKeys(mi)}
 	for _, pol := range policies {
 		if len(pol) < 3 {
 			continue
@@ -202,7 +229,7 @@ func (p *Panel) requestFieldRules(r *http.Request, mi datasource.ModelInfo) fiel
 		if !strings.HasPrefix(obj, prefix) {
 			continue
 		}
-		col, _, ok := dsResolveField(mi, strings.TrimPrefix(obj, prefix))
+		col, _, ok := rules.resolve(mi, strings.TrimPrefix(obj, prefix))
 		if !ok {
 			// A policy naming a field the model does not have restricts
 			// nothing. It is not an error either: a model loses a column

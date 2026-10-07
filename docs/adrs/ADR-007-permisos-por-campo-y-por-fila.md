@@ -329,6 +329,42 @@ esquema, de RBAC…) siguen como estaban.
 `retrieve` de un modelo leía en el rastro los valores de sus filas; ahora ve
 esas entradas sin ellos.
 
+## Enmienda de OR-77 (2026-10-07): un campo se conoce por todas sus claves
+
+Una política por campo (`admin:Modelo.campo`) resolvía el campo que nombra,
+y las claves de los registros que enmascara y de las cargas que guarda, por
+la columna y el nombre Go del campo. El adaptador de Nucleus emite cada
+registro con la clave JSON de cada campo (su etiqueta `json`) y acepta una
+carga bajo esa misma clave, así que un campo cuya clave JSON es una tercera
+grafía —ni la columna ni el nombre Go— era conocido por el backend y
+desconocido por la política: un `deny` no lo enmascaraba en el registro, la
+lista, el historial ni el rastro, y una escritura que lo nombraba por esa
+clave se escribía donde la misma escritura por la columna se rechazaba. El
+tenant y el propietario de una fila ya se resolvían por su clave JSON
+(OR-23, `fieldJSONKey`); las políticas por campo no.
+
+Se enmienda así:
+
+- **Las reglas por campo resuelven una clave como lo hace el adaptador**
+  (`fieldRules.resolve`): primero la columna y el nombre Go, después la clave
+  JSON del campo, en cualquier caja. Vale para lo que enmascaran —registro,
+  lista, exportación, historial y rastro— y para lo que guardan —formulario,
+  importación, hijos en línea y carga de fixtures—, porque todas esas
+  superficies pasan por las mismas tres funciones (`mask`, `maskValues`,
+  `guardPayload`).
+- **Una política puede nombrar el campo por cualquiera de las tres grafías**:
+  `admin:Nota.secret_note`, `admin:Nota.Secret` y `admin:Nota.hidden` son la
+  misma regla. El `403` sigue nombrando la columna.
+- Un modelo sin registro de esquemas (una `DataSource` propia, Quark) no
+  tiene clave JSON que resolver: sus registros van por columna, que las
+  reglas ya conocían.
+
+**Cambio de comportamiento**: una escritura que nombra por su clave JSON un
+campo que el operador no puede escribir responde ahora `403` en vez de
+escribirse, y un registro que lleva ese campo bajo su clave JSON lo pierde
+en las lecturas de ese operador. Un modelo cuyas claves JSON coinciden con
+sus columnas o sus nombres Go —la mayoría— no cambia.
+
 ## Preguntas abiertas
 
 - Un operador de filtro con más gramática (rango, contiene, en) llega en la
