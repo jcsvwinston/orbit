@@ -434,7 +434,13 @@ and edits their own posts and does not see anybody else's. Lists are filtered
 by the owner column, a row owned by somebody else answers `404` on the record
 endpoints (the same answer as a row that does not exist, so ids are not
 disclosed), a create stamps the operator as the owner, and an update cannot
-hand a row over. Every export carries the same rows the list does.
+hand a row over. Every export carries the same rows the list does, and so
+does the count on the model's card: the model list (`GET /api/models`)
+counts for each operator what their list would answer — their own rows under
+an ownership grant, the request's tenant's rows under tenant scope — and
+reports no count at all (`count_known: false`) for a model they may not list,
+rather than the size of a table they cannot open; `records_total` adds up
+only the counts the operator reads.
 
 Which column says who owns a row is the application's answer, not a guess:
 

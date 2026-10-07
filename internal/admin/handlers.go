@@ -98,13 +98,20 @@ func (p *Panel) handleListModels(c *router.Context) error {
 
 	models := p.src.All()
 	result := make([]modelInfo, 0, len(models))
+	// What of each model this operator's list reaches is what its count
+	// counts (OR-70): resolved once per model, from the capabilities below.
+	countScopes := make(map[string]countScope, len(models))
 	for _, m := range models {
 		count := int64(0)
 		if !includeCounts {
 			count = -1
 		}
+		caps := p.capabilitiesForUser(operator, m)
+		if includeCounts {
+			countScopes[m.Name] = p.modelCountScope(r, m, operator, caps)
+		}
 		info := modelInfo{
-			modelCapabilities: p.capabilitiesForUser(operator, m),
+			modelCapabilities: caps,
 
 			Name:       m.Name,
 			Plural:     m.Plural,
@@ -181,13 +188,20 @@ func (p *Panel) handleListModels(c *router.Context) error {
 					if !served {
 						continue
 					}
-					cr, err := st.Count(r.Context())
+					// The rows the operator's list reaches, or an unknown
+					// count (-1, as the light mode reports every count) for
+					// a model they may not list; the table's presence is
+					// probed either way, so attribution stays truthful.
+					cr, known, err := countScopes[m.Name].count(r.Context(), st)
 					if err != nil {
 						return fmt.Errorf("admin.ListModels count alias=%s model=%s: %w", alias, m.Name, err)
 					}
 					count, estimated, present := cr.Count, cr.IsEstimated, cr.Present
 					if !present {
 						continue
+					}
+					if !known {
+						count, estimated = -1, false
 					}
 					records[m.Name] = count
 					modelNames = append(modelNames, m.Name)
@@ -196,17 +210,21 @@ func (p *Panel) handleListModels(c *router.Context) error {
 						Plural:      m.Plural,
 						Table:       m.Table,
 						Count:       count,
-						CountKnown:  true,
+						CountKnown:  known,
 						IsEstimated: estimated,
 					})
 
 					if mi, ok := modelByName[m.Name]; ok {
-						if alias == defaultAlias || (mi.Count == 0 && !mi.CountKnown) {
-							mi.Count = count
-							mi.CountKnown = true
-							mi.IsEstimated = estimated
+						if known {
+							if alias == defaultAlias || !mi.CountKnown {
+								mi.Count = count
+								mi.CountKnown = true
+								mi.IsEstimated = estimated
+							}
+							mi.Counts[alias] = count
+						} else if !mi.CountKnown {
+							mi.Count = -1
 						}
-						mi.Counts[alias] = count
 
 						// Add database alias if not already present
 						found := false
@@ -293,7 +311,8 @@ func (p *Panel) handleListModels(c *router.Context) error {
 		if row == nil {
 			continue
 		}
-		if includeCounts {
+		// Only the counts the operator reads add up: an unknown one is -1.
+		if includeCounts && row.CountKnown {
 			recordsTotal += row.Count
 		}
 		// Presence probing found no home (unqueryable handles, missing
