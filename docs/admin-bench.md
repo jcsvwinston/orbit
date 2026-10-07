@@ -2033,3 +2033,50 @@ Verified by breaking it:
 | the policy's object resolved without the json key | `TestFieldPerms_DenyMasksTheFieldUnderItsJSONKey/policy_names_hidden`, and only that one |
 
 The HTTP bench is unchanged at 72 of 72; the browser half stays at 18 of 18.
+
+## What a model's count counts (OR-70)
+
+`GET /api/models` carries a record count per model — the number on the
+model's card and the panel's `records_total` — and took it from the store's
+`Count()`, unscoped, for anyone holding `list_models`: an operator confined
+to a tenant read how many rows the other tenants had, an `#own` operator the
+size of the whole table, and an operator with no `list` on a model how many
+rows it held. The list of the same model would have answered none of those
+numbers to them.
+
+The count is now what the operator's list would answer (`countScope`,
+resolved from the capabilities the model list already computes per model):
+
+| the operator's `list` on the model | what the count is |
+|---|---|
+| full | the store's count, within the request's tenant |
+| `#own` | the exact total of a list confined by the same filters the list applies (tenant and owner), asked with `ExactTotal` |
+| none, or an `#own` grant the panel cannot honour | unknown: `-1` with `count_known: false`, as the light mode reports every count — not zero, not the table's size; the model stays listed and attributed to its database |
+
+`records_total` adds up only the counts the operator reads. A superuser is
+held to the tenant alone, as on the list.
+
+**`PERM-07`** (HTTP) now also grants its row-scoped operator `list_models`
+and reads that Article's count on the model list is the total their own list
+answers — one row — and not the table's.
+
+### What the work found that was not on the plan
+
+- **CHANGED — an operator confined to a tenant or to their own rows sees
+  smaller numbers on the cards**, and no number for a model they may not
+  list. The open posture and a superuser outside a tenant are unchanged.
+- A list asked for one row without `ExactTotal` answers `Total -1` from the
+  Nucleus source, so a confined count has to ask for it — the pager's price,
+  paid once per confined model.
+
+Verified by breaking it:
+
+| mutation | what fails |
+|---|---|
+| the parent commit's server | `PERM-07`: Article's count is 2 while the operator's list holds 1; `TestModelCounts_FollowTheOwnGrant`, `TestModelCounts_AreUnknownWithoutTheModelsList`, `TestModelCounts_StayInTheRequestsTenant` |
+| the model's `list` not checked (every model counted) | `TestModelCounts_AreUnknownWithoutTheModelsList`, and only that one |
+| the tenant not applied to the count | `TestModelCounts_StayInTheRequestsTenant`, and only that one |
+| the `#own` grant not applied to the count | `TestModelCounts_FollowTheOwnGrant`, and only that one |
+| the confined list asked without `ExactTotal` | `TestModelCounts_FollowTheOwnGrant`, `TestModelCounts_StayInTheRequestsTenant` (the count comes back unknown) |
+
+The HTTP bench is unchanged at 72 of 72; the browser half stays at 18 of 18.

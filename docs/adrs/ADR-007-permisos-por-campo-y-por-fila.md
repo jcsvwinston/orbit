@@ -365,6 +365,37 @@ escribirse, y un registro que lleva ese campo bajo su clave JSON lo pierde
 en las lecturas de ese operador. Un modelo cuyas claves JSON coinciden con
 sus columnas o sus nombres Go —la mayoría— no cambia.
 
+## Enmienda de OR-70 (2026-10-07): el conteo de un modelo es el total de su lista
+
+`GET /api/models` lleva un conteo de filas por modelo —el número de la
+tarjeta del modelo y el `records_total` del panel— y lo calculaba con
+`Count()` del almacén, sin alcance, para cualquiera con `list_models`: un
+operador confinado a un tenant leía cuántas filas tenían los demás, uno con
+`#own` el tamaño de la tabla entera, y uno sin `list` sobre un modelo
+cuántas filas guardaba. La lista del mismo modelo no le habría contestado
+ninguno de esos números.
+
+Se enmienda así:
+
+- **El conteo de un modelo es lo que la lista contestaría a ese operador**
+  (`countScope`): con `list` pleno, el conteo del almacén dentro del tenant
+  de la petición; con `list` sobre `#own`, además sólo sus filas —el total
+  exacto de una lista confinada por los mismos filtros que aplica la lista
+  (`ExactTotal`)—; sin `list` sobre el modelo, **desconocido** (`-1`,
+  `count_known: false`, como deja todos los conteos el modo ligero), no cero
+  ni el total. El modelo sigue listado y atribuido a su base de datos (la
+  presencia de la tabla se sondea igual).
+- **`records_total` suma sólo los conteos que el operador lee.**
+- El superusuario queda confinado sólo por el tenant (punto 8), como en la
+  lista; una concesión `#own` que el panel no puede honrar deja el conteo
+  desconocido, como rechaza la lista.
+
+**Cambio de comportamiento**: un operador confinado ve en las tarjetas
+números menores que antes (los suyos), y un modelo que no puede listar sin
+número; en el panel abierto y para el superusuario fuera de un tenant nada
+cambia. Coste: una lista de una fila con conteo exacto por modelo confinado
+en vez de un `COUNT` pelado.
+
 ## Preguntas abiertas
 
 - Un operador de filtro con más gramática (rango, contiene, en) llega en la

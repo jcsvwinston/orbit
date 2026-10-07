@@ -208,6 +208,33 @@ func probeRowPermissions(t *testing.T, e *env) verdict {
 		return absent
 	}
 
+	// The model card's count is the list's total for this operator (OR-70):
+	// the model list used to count the whole table for anyone who could
+	// open the panel, which told a row-scoped operator how many rows the
+	// others had.
+	listed, _ := list.json(t)["total"].(float64)
+	e.grant(t, op.username, "admin:*", "list_models")
+	models := e.asOperator(t, op, http.MethodGet, "/admin/api/models?counts=1", nil)
+	if models.code != http.StatusOK {
+		t.Logf("the operator's model list answered %d: %s", models.code, models.text())
+		return partial
+	}
+	entries, _ := models.json(t)["models"].([]any)
+	var article map[string]any
+	for _, raw := range entries {
+		if m, ok := raw.(map[string]any); ok && m["name"] == "Article" {
+			article = m
+		}
+	}
+	if article == nil {
+		t.Logf("Article is missing from the operator's model list: %s", models.text())
+		return partial
+	}
+	if known, _ := article["count_known"].(bool); !known || article["count"] != listed {
+		t.Logf("Article's count on the model list is %v (known %v) while the operator's list holds %v rows", article["count"], article["count_known"], listed)
+		return partial
+	}
+
 	// The confinement has to hold on the row endpoints too, or the grid
 	// hides what the URL still serves.
 	if got := e.asOperator(t, op, http.MethodGet, "/admin/api/models/Article/"+theirs, nil); got.code != http.StatusNotFound {
