@@ -5,7 +5,7 @@ go 1.26.6
 toolchain go1.26.9
 
 require (
-	connectrpc.com/connect v1.20.0
+	connectrpc.com/connect v1.21.0
 	github.com/jcsvwinston/orbit/proto v0.8.0
 	github.com/jcsvwinston/orbit/ui v1.1.0
 )
@@ -13,11 +13,11 @@ require (
 require (
 	github.com/jcsvwinston/nucleus/drivers/mysql v0.1.0
 	github.com/jcsvwinston/nucleus/drivers/postgres v0.1.0
-	github.com/jcsvwinston/nucleus/drivers/sqlite v0.1.0
-	github.com/prometheus/client_golang v1.24.1
+	github.com/jcsvwinston/nucleus/drivers/sqlite v0.1.7
+	github.com/prometheus/client_golang v1.25.0
 	golang.org/x/net v0.60.0
 	google.golang.org/protobuf v1.36.12
-	modernc.org/sqlite v1.58.0
+	modernc.org/sqlite v1.60.1
 )
 
 require (
@@ -38,9 +38,9 @@ require (
 	github.com/microsoft/go-mssqldb v1.11.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
-	github.com/prometheus/client_model v0.6.2 // indirect
-	github.com/prometheus/common v0.70.1 // indirect
-	github.com/prometheus/procfs v0.21.1 // indirect
+	github.com/prometheus/client_model v0.6.3 // indirect
+	github.com/prometheus/common v0.72.0 // indirect
+	github.com/prometheus/procfs v0.22.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/sijms/go-ora/v2 v2.9.0 // indirect
@@ -48,7 +48,7 @@ require (
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
-	modernc.org/libc v1.75.6 // indirect
+	modernc.org/libc v1.77.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )
