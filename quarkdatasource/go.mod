@@ -11,14 +11,14 @@ toolchain go1.26.9
 // it is a separate module: Quark must never enter the orbit core's dependency
 // graph, and Quark itself must not depend on Orbit.
 require (
-	github.com/jcsvwinston/quark v1.16.0
+	github.com/jcsvwinston/quark v1.17.0
 	modernc.org/sqlite v1.58.0 // indirect
 )
 
 require (
 	github.com/google/uuid v1.6.0
-	github.com/jcsvwinston/nucleus v1.31.0
-	github.com/jcsvwinston/quark/drivers/sqlite v0.2.5
+	github.com/jcsvwinston/nucleus v1.32.0
+	github.com/jcsvwinston/quark/drivers/sqlite v0.3.0
 )
 
 require (

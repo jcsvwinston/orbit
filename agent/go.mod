@@ -7,7 +7,7 @@ toolchain go1.26.9
 require (
 	connectrpc.com/connect v1.20.0
 	github.com/google/uuid v1.6.0
-	github.com/jcsvwinston/nucleus v1.31.0
+	github.com/jcsvwinston/nucleus v1.32.0
 	github.com/jcsvwinston/orbit/proto v0.8.0
 	github.com/prometheus/client_golang v1.24.1
 	golang.org/x/net v0.60.0
