@@ -6,7 +6,7 @@ description: What changed in each Orbit release, in plain terms.
 
 # Release notes
 
-The current release is **v1.19.1**. <!-- x-release-please-version -->
+The current release is **v1.19.2**. <!-- x-release-please-version -->
 
 Every heading below is a version of the **root module**
 (`github.com/jcsvwinston/orbit`) — the one an application mounts for the
@@ -16,6 +16,187 @@ The fleet modules (`agent`, `server`, `proto`) release independently with their
 own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
+
+## v1.19.2 — 2026-10-12
+
+A patch that holds an operator to their grants on every surface that reads
+or writes rows for them. The list and the record form already applied the
+request's tenant, an `#own` grant and the field policies; the export, the
+fixture dump, the import, the fixture load, a record's children, a record's
+history, the audit trail and the model counts each skipped some of them.
+They now ask the same questions the list and the record form ask. No route,
+field or public type is removed: answers narrow to what the operator was
+already allowed to read, and a write is refused where the record form would
+refuse it. A superuser, and a panel in the open posture, are unaffected
+except where noted below.
+
+**The browser half ships in the `ui` module (v1.1.1), and this root still
+requires `ui` v1.1.0.** Every check below is enforced by the server in this
+release. The Data Studio screens that stop offering what the server refuses,
+and the compressed panel, reach an application with v1.19.3, which raises
+that requirement. Until then a screen can still show a button the server now
+refuses; pressing it gets the refusal.
+
+### Security: what an operator reads
+
+- **Export and fixture dump.** The panel's export (CSV, JSON and SQL) and
+  the fixture dump carry, for each model, what that operator's list of it
+  shows: their tenant's rows, only their own rows under an `#own` grant, and
+  only the fields they may read. Before, `export_data` exported every row and
+  every field, including models the operator could not open. A model named in
+  the request that the operator may not list is refused with the list's
+  `403`; an export of every model leaves it out. The export's own filters can
+  narrow the scope but not widen it, and a filter on a field the operator may
+  not read is refused with `400`.
+- **Filters, sort and search.** A field the operator may not read is refused
+  as a list filter (`400 invalid filter field`, the answer a field the model
+  does not have gets), as an `order_by` (`400 invalid order_by`) and as a
+  search that would reach it (`400`). It no longer labels a relation
+  lookup's options; a saved view that filters or sorts by it is not listed to
+  that operator; a dashboard records card ordered by it is not shown. Before,
+  the rows a filter or a sort returned told the hidden value one guess at a
+  time.
+- **A record's history and the audit trail.** A record's history is read
+  with the record view's scope: a row of another tenant answers `404`, as the
+  record does, and fields the operator may not read are masked in every
+  entry. The panel-wide trail and its CSV copy still list every entry to a
+  holder of `audit_view`, but show an entry's row values only to an operator
+  whose history of that row would show them — with the model's `retrieve`,
+  within their tenant and their own rows, without the fields they may not
+  read. Otherwise the values are `null`.
+- **Model counts.** The count per model in `GET /api/models`, the number on a
+  model's card, is the total that operator's list would answer. A model they
+  may not list has no count (`count_known: false`), and `records_total` adds
+  up only the counts they read. Before, every holder of `list_models` read
+  the size of the whole table.
+
+### Security: what an operator writes
+
+- **Import and fixture load.** `import_data` says who may import, not what.
+  Each row now needs what the record form would need: the model's `create`
+  for a new row and its `update` for an existing one, the request's tenant,
+  the operator's own rows under `#own`, and no field they may not write. The
+  file is planned before anything is written, and one row the operator may
+  not write refuses the whole file with a `403` that names the row (counted
+  from 1), the model and what is missing. The validate step answers the same
+  `403`. An import, or a fixture load, that names a read-only model is
+  refused, as every other write already was.
+- **A record's inline children.** Each child saved with its parent is held to
+  the child model's own write scope: its verb, the tenant, `#own` and the
+  field policies. A child named by id must belong to the record being edited
+  (`404` otherwise, for a superuser too), and a child that names another
+  record as its parent is refused with `400` instead of being moved under
+  this one. One refused child refuses the whole save before the parent is
+  written.
+- **Field policies by JSON key.** A field policy recognises a field by its
+  column, its Go name or, for a Nucleus model, its JSON key, in any letter
+  case, both in what it masks and in what it refuses to write. A field whose
+  JSON key was neither its column nor its Go name could be read and written
+  under that key past a `deny`. Models whose JSON keys match a column or a Go
+  name do not change.
+
+### Behaviour changes you may notice
+
+- An operator who holds `import_data` but not the model's `create` (or
+  `update`, for a file that updates existing rows) now gets `403` importing
+  into it or loading a fixture for it; grant those verbs on the models they
+  import into. A file that mixes rows they may and may not write is refused
+  whole, where it used to be half imported. A row of another tenant refuses
+  the whole file for every operator, superusers included; it used to fail on
+  its own while the rest landed.
+- An operator with `audit_view` but without a model's `retrieve` sees that
+  model's entries in the trail without row values. A superuser whose request
+  is confined to a tenant sees other tenants' entries without values, and
+  gets `404` for the history of their rows until they switch tenant.
+- A search answers `400` when a searchable field is hidden from the
+  operator. For a field the panel's configuration excludes, this applies to
+  superusers too, since nobody reads that field in the panel.
+- A save whose inline child names another record as its parent answers
+  `400`, and one that names another record's child by id answers `404`.
+  Data Studio's form sends neither.
+- An operator confined to a tenant or to their own rows sees smaller numbers
+  on the model cards, and none for a model they may not list. Each confined
+  model costs one single-row list with an exact count instead of a plain
+  count.
+- An export job, its status and its download are handed only to the operator
+  who cut it and to a superuser; another holder of `export_data` gets `404`.
+  The job list is kept in memory, so after a restart, or on another replica,
+  the operator cuts the export again. The signed URL a store returns is
+  unaffected.
+
+Not changed: entries in the trail do not record a tenant, so an operator
+confined to a tenant who holds `audit_view` still sees other tenants'
+entries — who, when, which record, IP and user agent — without their row
+values.
+
+### Fixed
+
+- Two exports started in the same second shared a storage key, and the
+  second overwrote the first. Each key now carries a random suffix.
+- A filter on a hidden field that is not one of the model's filters answered
+  that the filter was not enabled for that field, which said the field
+  existed. It answers `invalid filter field`, as for an unknown field.
+
+### Added
+
+- The `permissions` map of `GET /api/models` and of a model's schema also
+  answers `get_schema`, `update_schema`, `export_data` and `import_data`,
+  computed by the same function the handlers authorize with. The schema
+  carries `searchable`, each saved view in `GET /api/views` carries
+  `can_edit`, and a destructive application action is not offered on a
+  read-only model. These are what the Data Studio screens below draw from.
+
+### The screens (reach applications with v1.19.3)
+
+**Data Studio offers a door only to an operator the server lets through
+it.**
+
+- A model appears in the sidebar with `get_schema` and `list`. **Fields**
+  needs `update_schema`, **Export** needs `export_data` and the model's
+  `list`, **Import** needs `import_data` and `create` on a model that is not
+  read-only, and a row's **History** needs `retrieve`. A saved view's
+  removal is offered to its owner and to a superuser only.
+- A selection and its batch **Delete** need `bulk_delete`, the verb the
+  server asks of a batch; an operator with `delete` alone keeps the
+  one-record Delete. An operator with `retrieve` and no `update` gets
+  **View**, the record read-only; before, they had no way to open it.
+- The search box is disabled when the schema says the operator's search
+  would be refused.
+- A record's inline children offer Add, Remove and edit by the child
+  model's `create`, `delete` and `update`, and only changed children are
+  sent, so an operator who may add a line but not edit one is not refused
+  for the lines they only looked at.
+- The import dialog shows the server's refusal, with the row and the
+  reason, and counts rows from 1.
+- Text that read below the AA contrast ratio now meets it: the open model's
+  count, table name and engine label, the export panel's unselected formats,
+  and field errors on a form.
+
+**The panel travels compressed.** The `ui` build writes a Brotli and a gzip
+copy beside each text file, and the panel and the admin server answer with
+the one the browser accepts; nothing is compressed per request, and the
+panel no longer depends on the application's router to compress it. Data
+Studio's heaviest load drops from 315 KiB to 264 KiB gzip, and the grid's
+icons are drawn as SVG masks instead of a font. The fleet UI meets the AA
+contrast ratio in both themes, which closes the gap recorded in v1.17.0, and
+the admin-server binary no longer embeds the panel (25.6 MB to 23.8 MB).
+
+### Changed
+
+- The `admin-server` binaries of this release are built with Go 1.26.9,
+  which fixes GO-2026-6617 (an HPACK race that crashes the HTTP/2 server in
+  `net/http`) and nine other standard-library advisories. `agent` and
+  `server` require `golang.org/x/net` v0.60.0, which fixes the same advisory
+  and GO-2026-6603, GO-2026-6610, GO-2026-6611 and GO-2026-6612 in
+  `x/net/http2`. Every module declares `toolchain go1.26.9`; the `go`
+  directive stays at 1.26.6, so no consumer has to raise its minimum Go. An
+  application that mounts the panel builds it with its own toolchain and
+  gets the `net/http` fix when that toolchain is 1.26.9 or later.
+- The root, `agent`, `server`, `quarkbridge` and `quarkdatasource` require
+  Nucleus v1.32.0, and `quarkbridge` and `quarkdatasource` require Quark
+  v1.17.0, the versions the suite certifies next.
+
+Fleet and bridge tags cut alongside: `quarkbridge/v1.9.5`, `quarkdatasource/v1.12.3`, `proto/v0.8.1`, `agent/v0.15.2`, `server/v0.20.3`, `datasource/v1.0.1`, `ui/v1.1.1`.
 
 ## v1.19.1 — 2026-10-05
 
