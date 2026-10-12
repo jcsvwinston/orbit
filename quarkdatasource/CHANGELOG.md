@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.4](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v1.12.3...quarkdatasource/v1.12.4) (2026-10-12)
+
+
+### Fixed
+
+* **deps:** the root and server require orbit/ui v1.1.1, so v1.19.2's screens reach applications, and the internal pins move to the tags v1.19.2 cut ([#564](https://github.com/jcsvwinston/orbit/issues/564)) ([84d8416](https://github.com/jcsvwinston/orbit/commit/84d84164465d5168bdd6729eb51c3be05d1a4280))
+
 ## [1.12.3](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v1.12.2...quarkdatasource/v1.12.3) (2026-10-12)
 
 
