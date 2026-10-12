@@ -2,6 +2,8 @@ module github.com/jcsvwinston/orbit/datasource
 
 go 1.26.6
 
+toolchain go1.26.9
+
 require (
 	github.com/jcsvwinston/nucleus v1.30.1
 	github.com/jcsvwinston/nucleus/drivers/sqlite v0.1.7
