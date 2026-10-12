@@ -272,8 +272,14 @@ jobs:
   # covers the standard library, which is how GO-2026-5856 (an Encrypted Client
   # Hello leak in crypto/tls, reachable from every TLS dial the agent and the
   # Redis relay make) was found: the modules built on Go 1.26.4, where it is
-  # unfixed. The go directive is now 1.26.6, so setup-go installs a patched
-  # toolchain — this job is what stops it silently sliding back.
+  # unfixed, and how GO-2026-6617 (an HPACK encoder race that crashes the
+  # net/http HTTP/2 server) was found on 1.26.6. The toolchain directive is
+  # now go1.26.9 and setup-go installs it in preference to the go directive,
+  # which stays at 1.26.6 so no consumer of Orbit is forced onto a newer
+  # minimum Go — this job is what stops the build silently sliding back.
+  # The same advisory covers golang.org/x/net/http2, which agent/ and server/
+  # import directly, so their x/net floor is v0.60.0: the toolchain alone
+  # leaves both modules red here.
   #
   # One scan per module, like `standalone`. A single `govulncheck ./...` at the
   # repository root covers the root module's six packages and stops there: in
