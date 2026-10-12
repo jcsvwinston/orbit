@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.9.5](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v1.9.4...quarkbridge/v1.9.5) (2026-10-12)
+
+
+### Fixed
+
+* **deps:** align root, agent, server, quarkbridge, quarkdatasource to the set (nucleus v1.32.0, quark v1.17.0) ([#560](https://github.com/jcsvwinston/orbit/issues/560)) ([f8b1e7d](https://github.com/jcsvwinston/orbit/commit/f8b1e7df71f8427f63d79cd06e3d19d57df4c4f7))
+* **deps:** build and test with Go 1.26.9, which fixes GO-2026-6617 in net/http ([#556](https://github.com/jcsvwinston/orbit/issues/556)) ([9512944](https://github.com/jcsvwinston/orbit/commit/9512944f2d782f3dfe0161e104ebacb2e91e05d0))
+
 ## [1.9.4](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v1.9.3...quarkbridge/v1.9.4) (2026-10-05)
 
 

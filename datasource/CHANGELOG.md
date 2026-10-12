@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/jcsvwinston/orbit/compare/datasource/v1.0.0...datasource/v1.0.1) (2026-10-12)
+
+
+### Fixed
+
+* **deps:** build and test with Go 1.26.9, which fixes GO-2026-6617 in net/http ([#556](https://github.com/jcsvwinston/orbit/issues/556)) ([9512944](https://github.com/jcsvwinston/orbit/commit/9512944f2d782f3dfe0161e104ebacb2e91e05d0))
+
 ## 1.0.0 (2026-09-22)
 
 
