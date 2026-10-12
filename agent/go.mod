@@ -8,7 +8,7 @@ require (
 	connectrpc.com/connect v1.20.0
 	github.com/google/uuid v1.6.0
 	github.com/jcsvwinston/nucleus v1.32.0
-	github.com/jcsvwinston/orbit/proto v0.8.0
+	github.com/jcsvwinston/orbit/proto v0.8.1
 	github.com/prometheus/client_golang v1.24.1
 	golang.org/x/net v0.60.0
 	google.golang.org/protobuf v1.36.12
@@ -32,7 +32,7 @@ require (
 	github.com/go-playground/validator/v10 v10.30.4 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
-	github.com/jcsvwinston/orbit/datasource v1.0.0
+	github.com/jcsvwinston/orbit/datasource v1.0.1
 	github.com/knadh/koanf/maps v0.1.2 // indirect
 	github.com/knadh/koanf/parsers/yaml v1.1.1 // indirect
 	github.com/knadh/koanf/providers/env v1.1.0 // indirect
