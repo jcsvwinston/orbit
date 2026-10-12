@@ -17,6 +17,20 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.19.3 — 2026-10-12
+
+A patch that brings v1.19.2's screens to applications: the root and `server`
+now require `orbit/ui` v1.1.1, the module that carries the browser half of
+v1.19.2. With it, Data Studio offers only the doors the server lets the
+operator through, the read-only View, the gated import and inline children,
+the contrast fixes and the compressed panel are what an application
+installing the root serves, and the admin-server binary carries only the
+fleet UI. The other sibling requirements move to the tags v1.19.2 cut
+(`datasource` v1.0.1, `proto` v0.8.1), which differ from the previous ones
+only by their toolchain line. No Go code changes.
+
+Fleet and bridge tags cut alongside: `agent/v0.15.3`, `server/v0.20.4`, `quarkdatasource/v1.12.4`.
+
 ## v1.19.2 — 2026-10-12
 
 A patch that holds an operator to their grants on every surface that reads
