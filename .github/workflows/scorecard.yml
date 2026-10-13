@@ -64,14 +64,14 @@ jobs:
           publish_results: false
 
       - name: Upload the SARIF as a run artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: scorecard-results
           path: results.sarif
           retention-days: 5
 
       - name: Upload the SARIF to code scanning
-        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4
         with:
           sarif_file: results.sarif
 
@@ -95,7 +95,7 @@ jobs:
       - name: Upload the JSON as a run artifact
         # Named the same in quark, nucleus and orbit so a later guard can read
         # the scores without a per-repository special case.
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: scorecard-json
           path: results.json
