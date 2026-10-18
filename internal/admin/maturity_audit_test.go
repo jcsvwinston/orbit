@@ -325,33 +325,6 @@ func TestImportUpload_SanitisesFilenameAndBoundsSize(t *testing.T) {
 	}
 }
 
-// --- OR-19: custom data sources have no schema registry --------------------
-
-func TestUpdateFieldMeta_WithoutRegistry_Is501NotPanic(t *testing.T) {
-	panel, cleanup := setupPanelForTest(t, db.EngineSQL)
-	defer cleanup()
-	panel.registry = nil
-
-	srv := httptest.NewServer(panel.Handler())
-	defer srv.Close()
-	_, status := doJSON(t, http.MethodPut, srv.URL+"/api/models/AdminUser/schema/fields",
-		map[string]any{"fields": map[string]any{"email": map[string]any{"label": "E-mail"}}})
-	if status != http.StatusNotImplemented {
-		t.Fatalf("status %d, want 501", status)
-	}
-
-	// And the screen is not offered the dialog that would ask (OR-65): the
-	// 501 is everybody's answer here, so nobody holds update_schema.
-	schema, status := doJSON(t, http.MethodGet, srv.URL+"/api/models/AdminUser/schema", nil)
-	if status != http.StatusOK {
-		t.Fatalf("schema: status %d", status)
-	}
-	perms, _ := schema["permissions"].(map[string]interface{})
-	if held, _ := perms["update_schema"].(bool); held {
-		t.Fatalf("the schema offers update_schema on a panel that answers 501 to it: %v", perms)
-	}
-}
-
 // --- OR-65: a read-only model refuses an import, as it refuses every write --
 
 // Create, update, delete and a batch delete all refused a read-only model;
@@ -373,12 +346,7 @@ func TestImport_ReadOnlyModelIsRefused(t *testing.T) {
 		}
 	}
 
-	meta, ok := panel.registry.Get("AdminUser")
-	if !ok {
-		t.Fatal("AdminUser is not registered")
-	}
-	meta.Config.ReadOnly = true
-	defer func() { meta.Config.ReadOnly = false }()
+	setReadOnly(panel, "AdminUser", true)
 
 	for _, step := range []string{"validate", "execute"} {
 		resp, status := doJSON(t, http.MethodPost, srv.URL+"/api/import/"+step+"?key=_tmp/missing.json", target)

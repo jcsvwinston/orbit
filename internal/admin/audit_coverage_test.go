@@ -32,8 +32,9 @@ import (
 	"github.com/jcsvwinston/nucleus/pkg/auth"
 	"github.com/jcsvwinston/nucleus/pkg/authz"
 	"github.com/jcsvwinston/nucleus/pkg/db"
-	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/tasks"
+
+	"github.com/jcsvwinston/orbit/quarkdatasource"
 )
 
 // fakeTaskInspector answers every queue operation as applied.
@@ -221,23 +222,6 @@ func auditProbes() map[string][]auditProbe {
 		env.panel.flags.set("walk_put", false, "test")
 	}
 	return map[string][]auditProbe{
-		"PUT /api/models/{name}/schema/fields": {{
-			name:       "schema.update",
-			path:       literalPath("/api/models/AdminUser/schema/fields"),
-			body:       literalBody(`{"fields":{"email":{"label":"E-mail address","is_filter":true}}}`),
-			wantAction: "schema.update",
-			wantOld:    true,
-			wantNew:    true,
-			check: func(t *testing.T, _ *auditProbeEnv, e AuditEntry) {
-				if e.ModelName != "AdminUser" {
-					t.Errorf("schema.update model_name = %q, want the model, not a record", e.ModelName)
-				}
-				after, _ := e.NewValue["email"].(map[string]any)
-				if after["label"] != "E-mail address" {
-					t.Errorf("schema.update new_value = %v, want the new label", e.NewValue)
-				}
-			},
-		}},
 		"POST /api/models/{name}": {{
 			name:       "create",
 			path:       literalPath("/api/models/AdminUser"),
@@ -908,19 +892,20 @@ func TestAuditCoverage_EveryMutatingRouteLeavesAnEntry(t *testing.T) {
 // on top of the test fixture to prove the before/after values the Data
 // Studio entries carry are redacted.
 type auditSecretModel struct {
-	model.BaseModel
-	Email        string `db:"column:email;required" json:"email"`
-	PasswordHash string `db:"column:password_hash" json:"password_hash"`
-	APIToken     string `db:"column:api_token" json:"api_token"`
+	ID           int64      `db:"id" pk:"true"`
+	CreatedAt    time.Time  `db:"created_at"`
+	UpdatedAt    time.Time  `db:"updated_at"`
+	DeletedAt    *time.Time `db:"deleted_at"`
+	Email        string     `db:"email" quark:"not_null"`
+	PasswordHash string     `db:"password_hash"`
+	APIToken     string     `db:"api_token"`
 }
 
 func (auditSecretModel) TableName() string { return "audit_secret_models" }
 
 func TestAuditValues_DataStudioBeforeAfterAreRedacted(t *testing.T) {
 	panel, srv := adminTestServer(t)
-	if err := panel.registry.Register(&auditSecretModel{}); err != nil {
-		t.Fatalf("register model: %v", err)
-	}
+	registerModel(t, panel, quarkdatasource.Register[auditSecretModel])
 	sqlDB, err := panel.db.SqlDB()
 	if err != nil {
 		t.Fatal(err)

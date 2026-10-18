@@ -7,15 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"connectrpc.com/connect"
 
-	"github.com/jcsvwinston/nucleus/pkg/db"
-	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/observability"
 
 	"github.com/jcsvwinston/orbit/agent/buffer"
@@ -27,7 +24,6 @@ import (
 	"github.com/jcsvwinston/orbit/agent/rbac"
 	"github.com/jcsvwinston/orbit/agent/stream"
 	"github.com/jcsvwinston/orbit/datasource"
-	dsnucleus "github.com/jcsvwinston/orbit/datasource/nucleus"
 )
 
 // Config bundles every dependency the agent needs. The framework's
@@ -93,27 +89,13 @@ type Config struct {
 	// server on this address.
 	MetricsAddr string
 
-	// Registry is the framework's model registry. Required for Data
-	// Studio support; nil disables the Data Studio path on this agent.
-	Registry *model.Registry
-
-	// Databases are the framework's DB handles keyed by alias. The
-	// agent's Data Studio handler uses them to execute model.CRUD
-	// operations on behalf of UI requests routed through the admin
-	// server. Empty disables the Data Studio path.
-	Databases map[string]*db.DB
-
 	// DataSource is what Data Studio reads and writes through (ADR-002):
 	// the same contract the in-process panel speaks, so a Quark data source
-	// or a third-party implementation serves the fleet as it serves the
-	// panel. Nil builds the default Nucleus adapter over Registry and
-	// Databases — which is what every agent did before, minus the second
-	// CRUD implementation it used to carry.
-	//
-	// The default leaves at Orbit 2.0 with Nucleus's pkg/model
-	// (DEP-2026-002): the fleet then browses Quark models only, through the
-	// quarkdatasource adapter this field receives. An agent still on the
-	// default is told so at start, with one WARN.
+	// (a quarkdatasource adapter) or a third-party implementation serves
+	// the fleet as it serves the panel. Nil serves no Data Studio on this
+	// node: the agent registers no models and answers every Data Studio
+	// request as disabled. There is no default — the Nucleus adapter over
+	// the node's pkg/model registry left at Orbit 2.0 (DEP-2026-002).
 	DataSource datasource.DataSource
 
 	// Authorizer is a read-only view of the framework's RBAC state (the
@@ -271,13 +253,10 @@ func New(cfg Config) (*Agent, error) {
 		Logger:    cfg.Logger,
 	})
 
-	if cfg.DataSource == nil && cfg.Registry != nil {
-		// Said once, at start, while the default still works: the node
-		// that hears it has its 1.x window to move to Quark.
-		cfg.Logger.Warn("admin agent: "+dataSourceDeprecation, "hint", dataSourceDeprecationHint)
-	}
+	// A nil Source is a node with no Data Studio (dstudio.New returns nil
+	// and the stream advertises no models); nothing is built in its place.
 	dataStudio := dstudio.New(dstudio.Config{
-		Source:       dataSourceFor(cfg),
+		Source:       cfg.DataSource,
 		DefaultAlias: cfg.DefaultDatabaseAlias,
 		Authorizer:   cfg.Authorizer,
 		Logger:       cfg.Logger,
@@ -589,45 +568,4 @@ func (a *Agent) updateBufferGauges(ctx context.Context, stop <-chan struct{}) {
 			}
 		}
 	}
-}
-
-// dataSourceDeprecation is what a node on the default data source reads in
-// its log at start: the default — Data Studio over the Nucleus model
-// registry — leaves at Orbit 2.0 with Nucleus's pkg/model (DEP-2026-002),
-// and the way to stay is to hand the agent a Quark data source.
-const (
-	dataSourceDeprecation     = "Data Studio reads this node's pkg/model registry through the Nucleus adapter, which leaves at Orbit 2.0 (DEP-2026-002)"
-	dataSourceDeprecationHint = "define the models with Quark and set agent.Config.DataSource (ExtensionConfig.DataSource) to a quarkdatasource adapter before upgrading; at 2.0 a node without one serves no Data Studio"
-)
-
-// dataSourceFor is the DataSource Data Studio serves through: the one the
-// configuration hands over, else the Nucleus adapter over the registry and
-// the database handles — nil when there is no registry, which disables Data
-// Studio on this node as before.
-func dataSourceFor(cfg Config) datasource.DataSource {
-	if cfg.DataSource != nil {
-		return cfg.DataSource
-	}
-	if cfg.Registry == nil {
-		return nil
-	}
-	alias := strings.TrimSpace(cfg.DefaultDatabaseAlias)
-	if alias == "" {
-		alias = "default"
-	}
-	handles := cfg.Databases
-	return dsnucleus.New(dsnucleus.Config{
-		Registry:     cfg.Registry,
-		DefaultAlias: alias,
-		Resolve: func(a string) (*db.DB, string, error) {
-			if strings.TrimSpace(a) == "" {
-				a = alias
-			}
-			h, ok := handles[a]
-			if !ok || h == nil {
-				return nil, "", fmt.Errorf("admin agent: database alias %q is not configured", a)
-			}
-			return h, h.System(), nil
-		},
-	})
 }

@@ -14,7 +14,6 @@ import (
 
 	"connectrpc.com/connect"
 
-	"github.com/jcsvwinston/nucleus/pkg/db"
 	"github.com/jcsvwinston/nucleus/pkg/observability"
 
 	"github.com/jcsvwinston/orbit/agent"
@@ -215,10 +214,10 @@ func probeHostMetricsHistory(t *testing.T, e *env) verdict {
 
 // RET-04: the fleet audit trail survives a server restart.
 func probeAuditSurvivesRestart(t *testing.T, e *env) verdict {
-	d, reg := e.agentDB(t, false)
+	_, src := e.agentDB(t, false)
 	r := e.startRestartable(t,
 		server.Config{DataStudioAllowedModels: []string{"TestArticle"}, DataDir: t.TempDir()},
-		agent.Config{Registry: reg, Databases: map[string]*db.DB{"default": d}})
+		agent.Config{DataSource: src})
 	ctx := ctxFor(t)
 	if _, err := createArticle(ctx, e.dataStudio(r.srv.Server), "to be remembered"); err != nil {
 		t.Fatalf("create: %v", err)
@@ -255,8 +254,8 @@ func probeRetentionWindow(t *testing.T, e *env) verdict {
 		return absent
 	}
 	srv := e.startServer(t, server.Config{DataDir: t.TempDir(), Retention: time.Second, DataStudioAllowedModels: []string{"TestArticle"}})
-	d, reg := e.agentDB(t, false)
-	ag := e.startAgent(t, agent.Config{Endpoints: []string{"http://" + srv.AgentAddr()}, Registry: reg, Databases: map[string]*db.DB{"default": d}})
+	_, src := e.agentDB(t, false)
+	ag := e.startAgent(t, agent.Config{Endpoints: []string{"http://" + srv.AgentAddr()}, DataSource: src})
 	if !waitRegistered(srv.Server, ag.NodeID(), 4*time.Second) {
 		t.Fatal("agent did not register")
 	}

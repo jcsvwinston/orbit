@@ -9,6 +9,10 @@ supersedes: null
 tags: [orbit, data-studio, api, desacople]
 ---
 
+> **Nota (2.0, DEP-2026-002):** el adaptador Nucleus que esta acta diseñó
+> como primera implementación del contrato se eliminó en el major 2.0; el
+> contrato y `quarkdatasource` siguen. El acta se conserva como registro.
+
 # ADR-001 — Data Studio agnóstico del origen de datos
 
 > Primer ADR de Orbit. Orbit se extrajo del core de Nucleus (nucleus

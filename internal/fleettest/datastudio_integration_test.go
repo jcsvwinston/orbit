@@ -25,27 +25,46 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/jcsvwinston/nucleus/pkg/db"
-	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/observability"
 	"github.com/jcsvwinston/nucleus/pkg/observe"
+	"github.com/jcsvwinston/quark"
+	// The module, not the bare driver: it registers the driver and Quark's
+	// error classification predicates (quark ADR-0023).
+	_ "github.com/jcsvwinston/quark/drivers/sqlite"
+
 	"github.com/jcsvwinston/orbit/agent"
+	"github.com/jcsvwinston/orbit/datasource"
+	"github.com/jcsvwinston/orbit/quarkdatasource"
 
 	adminv1 "github.com/jcsvwinston/orbit/proto/gen/go/nucleus/admin/v1"
 	adminv1connect "github.com/jcsvwinston/orbit/proto/gen/go/nucleus/admin/v1/adminv1connect"
 	server "github.com/jcsvwinston/orbit/server"
 )
 
-// TestArticle is a minimal model used to drive the Data Studio
-// integration test end-to-end. We deliberately do NOT embed BaseModel:
-// some pkg/model internals serialize time.Time inconsistently across
-// drivers, which is orthogonal to what we want to test here. The
-// integration target is "the request reaches the agent's CRUD and the
-// response makes it back through the bidi stream", not the framework's
-// timestamp story.
+// TestArticle is a minimal Quark model used to drive the Data Studio
+// integration test end-to-end: the fleet's Data Studio reads it through
+// the quarkdatasource adapter, the one the suite ships with (DEP-2026-002).
+// No timestamps on purpose: the integration target is "the request reaches
+// the agent's store and the response makes it back through the bidi
+// stream", not the ORM's timestamp story.
 type TestArticle struct {
-	ID    uint   `db:"pk;column:id" json:"id"`
-	Title string `db:"column:title;required" json:"title"`
-	Body  string `db:"column:body" json:"body"`
+	ID    int64  `db:"id" pk:"true"`
+	Title string `db:"title" quark:"not_null"`
+	Body  string `db:"body"`
+}
+
+// quarkDriverName is the database/sql driver name behind a Nucleus handle,
+// which Quark reads its dialect from: the same three names Nucleus opens
+// its handles with.
+func quarkDriverName(system string) string {
+	switch system {
+	case "postgresql", "postgres":
+		return "pgx"
+	case "mysql", "mariadb":
+		return "mysql"
+	default:
+		return "sqlite"
+	}
 }
 
 // agentDBURL is the database the Data Studio integration tests run against.
@@ -93,7 +112,7 @@ func articleDDL(system string) (create, insert string) {
 	}
 }
 
-func setupAgentDB(t *testing.T) (*db.DB, *model.Registry) {
+func setupAgentDB(t *testing.T) (*db.DB, datasource.DataSource) {
 	t.Helper()
 	logger := observe.NewLogger("error", "text")
 	cfg := db.Config{
@@ -138,11 +157,18 @@ func setupAgentDB(t *testing.T) (*db.DB, *model.Registry) {
 			`SELECT setval(pg_get_serial_sequence('test_articles', 'id'), (SELECT MAX(id) FROM test_articles))`)
 	}
 
-	reg := model.NewRegistry()
-	if err := reg.Register(&TestArticle{}); err != nil {
-		t.Fatalf("register: %v", err)
+	// The agent's Data Studio source: a Quark client over the SAME pool
+	// the handle owns (quark.NewWithDB), so the seed rows above are what
+	// the fleet reads.
+	client, err := quark.NewWithDB(quarkDriverName(system), sqlDB)
+	if err != nil {
+		t.Fatalf("quark.NewWithDB: %v", err)
 	}
-	return d, reg
+	src := quarkdatasource.New(client)
+	if err := quarkdatasource.Register[TestArticle](src); err != nil {
+		t.Fatalf("quarkdatasource.Register: %v", err)
+	}
+	return d, src
 }
 
 func mustExec(t *testing.T, sqlDB *sql.DB, q string, args ...interface{}) {
@@ -180,14 +206,13 @@ func startServerAndAgent(t *testing.T, allowedModels ...string) (srv *server.Ser
 		t.Fatal("server did not bind")
 	}
 
-	d, reg := setupAgentDB(t)
+	_, src := setupAgentDB(t)
 	bus := observability.NewBus(slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	ag, err := agent.New(agent.Config{
 		Endpoints:         []string{"http://" + srv.AgentAddr()},
 		Bus:               bus,
-		Registry:          reg,
-		Databases:         map[string]*db.DB{"default": d},
+		DataSource:        src,
 		StateDir:          t.TempDir(),
 		HeartbeatInterval: 100 * time.Millisecond,
 		DrainTimeout:      500 * time.Millisecond,

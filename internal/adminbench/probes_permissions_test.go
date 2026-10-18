@@ -55,13 +55,12 @@ func probeFieldPermissions(t *testing.T, e *env) verdict {
 
 	const original = "field-perms"
 	const internal = "for-editors-only"
-	id := e.createNote(t, map[string]any{"title": original, "status": "draft", "editor_note": internal})
+	id := e.createNote(t, map[string]any{"title": original, "status": "draft", "internal_note": internal})
 	// Nothing grants this operator the title field; the only policy that
 	// could say so is the one below, in the grammar a field policy would use.
 	e.grant(t, op.username, "admin:Note.title", "deny")
-	// And a field the records carry under a key that is neither its column
-	// nor its Go name (OR-77): the policy names the column, the row says
-	// editor_note.
+	// And a field the backend accepts under a second spelling (OR-77): the
+	// policy names the column internal_note, a payload may say Internal.
 	e.grant(t, op.username, "admin:Note.internal_note", "deny")
 
 	r := e.asOperator(t, op, http.MethodPut, "/admin/api/models/Note/"+id,
@@ -97,13 +96,13 @@ func probeFieldPermissions(t *testing.T, e *env) verdict {
 		return partial
 	}
 
-	// The policy holds under the key the records carry the field by, on a
-	// write and on a read (OR-77): a policy that knew the column alone let
-	// editor_note through both ways.
+	// The policy holds under every key the backend accepts the field by,
+	// on a write and on a read (OR-77): a policy that knew the column alone
+	// let the Go name through.
 	under := e.asOperator(t, op, http.MethodPut, "/admin/api/models/Note/"+id,
-		map[string]any{"editor_note": "rewritten under the key the records carry"})
+		map[string]any{"Internal": "rewritten under the field's Go name"})
 	if under.code != http.StatusForbidden {
-		t.Logf("the policy on internal_note did not hold under editor_note, the key its records carry (%d): %s", under.code, under.text())
+		t.Logf("the policy on internal_note did not hold under Internal, the Go name the backend accepts (%d): %s", under.code, under.text())
 		return partial
 	}
 	mine := e.asOperator(t, op, http.MethodGet, "/admin/api/models/Note/"+id, nil)
@@ -112,7 +111,7 @@ func probeFieldPermissions(t *testing.T, e *env) verdict {
 		return partial
 	}
 	if strings.Contains(mine.raw(), internal) {
-		t.Logf("the record carries internal_note under editor_note, which the operator may not read: %s", mine.text())
+		t.Logf("the record carries internal_note, which the operator may not read: %s", mine.text())
 		return partial
 	}
 

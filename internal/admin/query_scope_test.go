@@ -23,7 +23,6 @@ import (
 
 	"github.com/jcsvwinston/nucleus/pkg/auth"
 	"github.com/jcsvwinston/nucleus/pkg/authz"
-	"github.com/jcsvwinston/nucleus/pkg/model"
 )
 
 // enforcerWith is an enforcer holding exactly policies.
@@ -125,17 +124,18 @@ func TestListQuery_ASortOnAHiddenFieldIsRefused(t *testing.T) {
 	}
 }
 
-// makeSearchable turns is_search on for fields of OwnedNote, the way Field
-// settings does at runtime.
-func makeSearchable(t *testing.T, panel *Panel, fields ...string) {
-	t.Helper()
-	on := true
-	updates := make(map[string]model.FieldMetaUpdate, len(fields))
-	for _, f := range fields {
-		updates[f] = model.FieldMetaUpdate{IsSearch: &on}
-	}
-	if err := panel.registry.BulkUpdateFieldMeta("OwnedNote", updates); err != nil {
-		t.Fatal(err)
+// onlySearchable declares, on the panel's source, that exactly fields of
+// OwnedNote are searchable — what an application's catalogue says of its
+// model (the Quark adapter searches every string column by default).
+func onlySearchable(panel *Panel, fields ...string) {
+	for _, column := range []string{"owner", "title", "secret"} {
+		on := false
+		for _, f := range fields {
+			if strings.EqualFold(f, column) {
+				on = true
+			}
+		}
+		setFieldFlags(panel, "OwnedNote", column, &on, nil)
 	}
 }
 
@@ -145,7 +145,7 @@ func makeSearchable(t *testing.T, panel *Panel, fields ...string) {
 // so, so the grid does not offer the box.
 func TestListSearch_ThatWouldReachAHiddenFieldIsRefused(t *testing.T) {
 	panel, _, srv := ownedPanel(t, hiddenOwnerPolicies()...)
-	makeSearchable(t, panel, "Secret")
+	onlySearchable(panel, "title", "secret")
 
 	for _, text := range []string{"mine-secret", "Mine"} {
 		resp, status := listQuery(t, srv, "search="+text)
@@ -172,7 +172,8 @@ func TestListSearch_ThatWouldReachAHiddenFieldIsRefused(t *testing.T) {
 
 // The search an operator keeps is the one that looks only where they read.
 func TestListSearch_OverReadableFieldsStillAnswers(t *testing.T) {
-	_, _, srv := ownedPanel(t, hiddenOwnerPolicies()...)
+	panel, _, srv := ownedPanel(t, hiddenOwnerPolicies()...)
+	onlySearchable(panel, "title")
 	resp, status := listQuery(t, srv, "search=Mine")
 	if status != http.StatusOK || !strings.Contains(mustJSON(resp), "Mine") || strings.Contains(mustJSON(resp), "Theirs") {
 		t.Fatalf("a search over title, which the operator reads: status %d body=%s", status, mustJSON(resp))
@@ -185,10 +186,11 @@ func TestListSearch_OverReadableFieldsStillAnswers(t *testing.T) {
 
 // The only searchable field kept from the operator: no search at all.
 func TestListSearch_TheOnlySearchableFieldHiddenIsRefused(t *testing.T) {
-	_, _, srv := ownedPanel(t,
+	panel, _, srv := ownedPanel(t,
 		[3]string{"operator", "admin:OwnedNote", "list"},
 		[3]string{"operator", "admin:OwnedNote.title", "deny"},
 	)
+	onlySearchable(panel, "title")
 	resp, status := listQuery(t, srv, "search=Mine")
 	if status != http.StatusBadRequest {
 		t.Fatalf("?search= over title, which the operator may not read: status %d body=%s, want 400", status, mustJSON(resp))
@@ -197,16 +199,12 @@ func TestListSearch_TheOnlySearchableFieldHiddenIsRefused(t *testing.T) {
 
 // A field the panel excludes is no operator's to read — a superuser's
 // neither — and a search that looks in it finds a row by its value all the
-// same. Nucleus searches every field tagged searchable, excluded or not.
+// same: a backend searches every field declared searchable, excluded or not.
 func TestListSearch_ThatWouldReachAnExcludedFieldIsRefused(t *testing.T) {
 	panel, _, srv := ownedPanel(t)
 	panel.config.Auth = superuserAuth()
 	on := true
-	if err := panel.registry.BulkUpdateFieldMeta("OwnedNote", map[string]model.FieldMetaUpdate{
-		"Secret": {IsSearch: &on, IsExcluded: &on},
-	}); err != nil {
-		t.Fatal(err)
-	}
+	setFieldFlags(panel, "OwnedNote", "secret", &on, &on)
 	resp, status := listQuery(t, srv, "search=mine-secret")
 	if status != http.StatusBadRequest {
 		t.Fatalf("?search= reaching an excluded field: status %d body=%s, want 400", status, mustJSON(resp))
@@ -220,6 +218,7 @@ func TestModelOptions_StayInTheFieldsTheOperatorReads(t *testing.T) {
 		[3]string{"operator", "admin:OwnedNote", "list"},
 		[3]string{"operator", "admin:OwnedNote.title", "deny"},
 	)
+	onlySearchable(panel, "title")
 	options := func() (map[string]interface{}, int) {
 		return doJSON(t, http.MethodGet, srv.URL+"/api/models/OwnedNote/options", nil)
 	}

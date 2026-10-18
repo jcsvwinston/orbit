@@ -318,10 +318,6 @@ func TestCapabilityHints_ExportDataNeedsTheModelsList(t *testing.T) {
 func TestLoaddata_ReadOnlyModelIsRefused(t *testing.T) {
 	panel, sqlDB, srv, store := exportScopePanel(t)
 	panel.config.Auth = superuserAuth()
-	meta, ok := panel.registry.Get("OwnedNote")
-	if !ok {
-		t.Fatal("OwnedNote is not registered")
-	}
 
 	store.objects["_tmp/fixture_ro.json"] = fixtureJSON(t,
 		map[string]any{"model": "OwnedNote", "pk": 1, "fields": map[string]any{"title": "Overwritten"}},
@@ -334,7 +330,7 @@ func TestLoaddata_ReadOnlyModelIsRefused(t *testing.T) {
 		map[string]any{"model": "OwnedNote", "pk": 1, "fields": map[string]any{"title": "Overwritten"}},
 	)
 
-	meta.Config.ReadOnly = true
+	setReadOnly(panel, "OwnedNote", true)
 	for _, key := range []string{"_tmp/fixture_ro.json", "_tmp/fixture_mixed.json"} {
 		resp, status := doJSON(t, http.MethodPost, srv.URL+"/api/fixtures/loaddata", map[string]any{"key": key, "on_conflict": "update"})
 		if status != http.StatusForbidden || !strings.Contains(mustJSON(resp), "read-only") {
@@ -356,7 +352,7 @@ func TestLoaddata_ReadOnlyModelIsRefused(t *testing.T) {
 	}
 
 	// Writable again, the same fixture loads: the refusal was the model's.
-	meta.Config.ReadOnly = false
+	setReadOnly(panel, "OwnedNote", false)
 	resp, status := doJSON(t, http.MethodPost, srv.URL+"/api/fixtures/loaddata", map[string]any{"key": "_tmp/fixture_ro.json", "on_conflict": "update"})
 	if status != http.StatusOK {
 		t.Fatalf("loaddata into a writable model: status %d body=%s", status, mustJSON(resp))

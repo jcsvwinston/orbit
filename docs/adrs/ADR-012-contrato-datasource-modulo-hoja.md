@@ -11,6 +11,16 @@ tags: [orbit, fleet, data-studio, módulos, tren]
 
 # ADR-012 — El contrato `datasource` es un módulo hoja
 
+> **Nota (2.0, DEP-2026-002):** el subpaquete `datasource/nucleus` que esta
+> acta extrajo junto al contrato se eliminó en el major 2.0; el módulo
+> `datasource` es sólo el contrato. La razón por la que esta acta mantenía a
+> Quark fuera del grafo del módulo raíz — que el panel corría sobre
+> `pkg/model` a través del adaptador Nucleus — desapareció con él: desde 2.0
+> el raíz requiere `quarkdatasource` (y Quark) para los tests del propio
+> panel, que montan Data Studio sobre Quark en SQLite. El código de producción
+> del raíz sigue sin importar Quark: la aplicación le entrega el adaptador.
+> El resto del acta se conserva como registro histórico.
+
 ## Contexto
 
 ADR-002 decidió que el plano fleet consuma el contrato `datasource` (ADR-001)

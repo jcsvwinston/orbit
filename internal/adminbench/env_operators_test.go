@@ -136,6 +136,7 @@ func (e *env) migrationsApp(t *testing.T) (*nucleustest.Server, *http.Client) {
 			"orbit": orbit.Module(orbit.Config{
 				Prefix:            "/admin",
 				Title:             "Admin Bench (migrations)",
+				DataSource:        benchDataSource(t, cfg),
 				BootstrapUsername: "admin",
 				BootstrapEmail:    "admin@example.test",
 				BootstrapPassword: bootstrapPassword,
@@ -223,6 +224,7 @@ func (e *env) runtimeApp(t *testing.T) (*nucleustest.Server, *http.Client, *benc
 			"orbit": orbit.Module(orbit.Config{
 				Prefix:            "/admin",
 				Title:             "Admin Bench (runtime)",
+				DataSource:        benchDataSource(t, cfg),
 				BootstrapUsername: "admin",
 				BootstrapEmail:    "admin@example.test",
 				BootstrapPassword: bootstrapPassword,

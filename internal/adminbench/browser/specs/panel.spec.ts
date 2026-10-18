@@ -61,7 +61,7 @@ async function signInAt(page: Page, base: string): Promise<void> {
  * (export_data) and import (import_data) and create on Note, may not read a
  * note's meta or views, and may list their own articles and no other; the
  * lister may list the notes and not open one, and holds the panel's import
- * with no write of Note. None holds update or update_schema. */
+ * with no write of Note. None holds update. */
 function partialOperators(control: string): { viewer: string; actor: string; lister: string; password: string } {
   const viewer = process.env.ORBIT_BENCH_VIEWER_USER ?? ''
   const actor = process.env.ORBIT_BENCH_ACTOR_USER ?? ''
@@ -1257,8 +1257,8 @@ test.describe('UIX', () => {
    * verb of its own, and the screen drew each of them for anybody: the
    * sidebar every model (get_schema and list), a row its history
    * (retrieve), the toolbar an export and an import (export_data and
-   * import_data, both of admin:*), the model's header its field settings
-   * (update_schema), and a shared view its removal (its owner's alone).
+   * import_data, both of admin:*), and a shared view its removal (its
+   * owner's alone).
    * For each operator the control reads what is offered beside what is
    * not, holds the screen to the panel's rules, and asks the server for
    * each door the screen left out. The actor's export is then read for what
@@ -1352,8 +1352,8 @@ test.describe('UIX', () => {
     const viewerHolds = await heldOnNote(page)
     expect(
       viewerHolds.permissions.retrieve === true && viewerHolds.permissions.export_data === false &&
-        viewerHolds.permissions.import_data === false && viewerHolds.permissions.update_schema === false,
-      `UIX-18 precondition: the viewer's schema does not say retrieve, and no export, import or field settings: ${JSON.stringify(viewerHolds)}`,
+        viewerHolds.permissions.import_data === false,
+      `UIX-18 precondition: the viewer's schema does not say retrieve, and no export or import: ${JSON.stringify(viewerHolds)}`,
     ).toBe(true)
     // The models the panel lists and the viewer may not open, by the
     // payload the sidebar is drawn from.
@@ -1373,7 +1373,6 @@ test.describe('UIX', () => {
       await expect(sidebarModel(model.label), `UIX-18: the sidebar offers the viewer ${model.label}, whose schema or list the server refuses them`).toHaveCount(0)
     }
     await expect(page.getByRole('heading', { name: 'Notes' }), 'UIX-18 precondition: the viewer\'s model header is not drawn').toBeVisible()
-    await expect(page.getByRole('button', { name: 'Configure fields' }), 'UIX-18: the header offers the viewer the field settings, which the server asks update_schema for').toHaveCount(0)
     await expect(page.getByRole('button', { name: /^Filters/ }), 'UIX-18 precondition: the viewer\'s toolbar is not drawn').toBeVisible()
     await expect(toolbarTransfer, 'UIX-18: the toolbar offers the viewer an export or an import, and the viewer holds neither').toHaveCount(0)
     await expect(page.getByRole('button', { name: shared, exact: true }), 'UIX-18 precondition: the viewer is not shown the shared view').toBeVisible({ timeout: 5_000 })
@@ -1393,7 +1392,6 @@ test.describe('UIX', () => {
     // Asked anyway, the server says no to each.
     expect(await forced(page, 'POST', '/admin/api/exports', exportBody), 'UIX-18: the server exported for an operator without export_data').toBe(403)
     expect(await forced(page, 'POST', importPath, importBody), 'UIX-18: the server took an import from an operator without import_data').toBe(403)
-    expect(await forced(page, 'PUT', '/admin/api/models/Note/schema/fields', { fields: { Title: { label: 'uix-18 forced' } } }), 'UIX-18: the server changed the field settings for an operator without update_schema').toBe(403)
     expect(await forced(page, 'GET', `/admin/api/models/${closed[0].name}/schema`), `UIX-18: the server opened ${closed[0].name} for an operator the sidebar did not offer it to`).toBe(403)
     expect(await forced(page, 'DELETE', `/admin/api/views/${sharedId}`), 'UIX-18: the server removed a shared view for an operator who does not own it').toBe(403)
 

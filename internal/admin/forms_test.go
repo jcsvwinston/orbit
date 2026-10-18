@@ -19,32 +19,39 @@ import (
 	"net/textproto"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jcsvwinston/nucleus/pkg/authz"
 	"github.com/jcsvwinston/nucleus/pkg/db"
-	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/observe"
 
 	"github.com/jcsvwinston/orbit/datasource"
-	dsnucleus "github.com/jcsvwinston/orbit/datasource/nucleus"
+	"github.com/jcsvwinston/orbit/quarkdatasource"
 )
 
 // Album is the parent, Track the child that points at it: the smallest pair
 // that makes "a record with its lines" a real question.
 type Album struct {
-	model.BaseModel
-	Title string `db:"column:title;required" json:"title" admin:"list,search"`
-	Notes string `db:"column:notes" json:"notes"`
-	Cover string `db:"column:cover" json:"cover"`
-	Meta  string `db:"column:meta" json:"meta"`
+	ID        int64      `db:"id" pk:"true"`
+	CreatedAt time.Time  `db:"created_at"`
+	UpdatedAt time.Time  `db:"updated_at"`
+	DeletedAt *time.Time `db:"deleted_at"`
+	Title     string     `db:"title" quark:"not_null"`
+	Notes     string     `db:"notes"`
+	Cover     string     `db:"cover"`
+	Meta      string     `db:"meta"`
 }
 
 func (Album) TableName() string { return "albums" }
 
 type Track struct {
-	model.BaseModel
-	AlbumID uint   `json:"album_id" db:"column:album_id;fk:model=Album,table=albums,column=id"`
-	Title   string `db:"column:title;required" json:"title" admin:"list,search"`
+	ID        int64      `db:"id" pk:"true"`
+	CreatedAt time.Time  `db:"created_at"`
+	UpdatedAt time.Time  `db:"updated_at"`
+	DeletedAt *time.Time `db:"deleted_at"`
+	AlbumID   int64      `db:"album_id"`
+	Album     *Album     `rel:"belongs_to" join:"album_id" json:"-"`
+	Title     string     `db:"title" quark:"not_null"`
 }
 
 func (Track) TableName() string { return "tracks" }
@@ -84,30 +91,11 @@ func formsPanel(t *testing.T, tune func(*PanelConfig)) (*Panel, *sql.DB, *httpte
 		t.Fatalf("album schema: %v", err)
 	}
 
-	registry := model.NewRegistry()
-	for _, m := range []any{&AdminUser{}, &Album{}, &Track{}} {
-		if err := registry.Register(m); err != nil {
-			t.Fatalf("register: %v", err)
-		}
-	}
-
-	var panel *Panel
-	src := dsnucleus.New(dsnucleus.Config{
-		Registry: registry,
-		Resolve: func(alias string) (*db.DB, string, error) {
-			h, err := panel.databaseHandle(alias)
-			if err != nil {
-				return nil, "", err
-			}
-			return h, h.System(), nil
-		},
-		BusConnected: func() bool { return true },
-	})
+	src := quarkSource(t, sqlDB, quarkdatasource.Register[AdminUser], quarkdatasource.Register[Album], quarkdatasource.Register[Track])
 	cfg := PanelConfig{
 		Prefix:          "/admin",
 		Title:           "Test Admin",
 		Auth:            operatorAuth(),
-		SchemaRegistry:  registry,
 		DatabaseHandles: map[string]*db.DB{"default": database},
 		AuditEnabled:    true,
 		AuditMaxSize:    200,
@@ -121,7 +109,7 @@ func formsPanel(t *testing.T, tune func(*PanelConfig)) (*Panel, *sql.DB, *httpte
 	if tune != nil {
 		tune(&cfg)
 	}
-	panel = NewPanel(src, logger, cfg)
+	panel := NewPanel(src, logger, cfg)
 	panel.store = newKeyedStore()
 
 	srv := httptest.NewServer(panel.Handler())

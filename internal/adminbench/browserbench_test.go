@@ -100,7 +100,7 @@ func browserCases() []browserCase {
 		// The rest of Data Studio's doors, for the same operators and a
 		// third (OR-65): every one of them asks the server for a verb of
 		// its own, and until this control the screen drew them for anybody.
-		{id: "UIX-18", title: "an operator is offered a model, a record's history, an export, an import, the field settings and a saved view's removal only where they hold them, each one asked anyway is refused, an export holds only what the operator may list, a field the operator may not read is neither offered nor answered as a sort, a filter or a saved view, and an import writes only what the operator could write by hand", want: present},
+		{id: "UIX-18", title: "an operator is offered a model, a record's history, an export, an import and a saved view's removal only where they hold them, each one asked anyway is refused, an export holds only what the operator may list, a field the operator may not read is neither offered nor answered as a sort, a filter or a saved view, and an import writes only what the operator could write by hand", want: present},
 	}
 }
 
@@ -114,7 +114,7 @@ const (
 )
 
 // The operators UIX-16 to UIX-18 sign in as. None is a superuser and none
-// holds update, bulk_delete or update_schema. The viewer may look — list a
+// holds update or bulk_delete. The viewer may look — list a
 // page, open a record — and nothing more. The actor also holds delete (one
 // record at a time, not a batch), two of the application's actions —
 // schedule, which runs over a selection, and duplicate, which runs on one

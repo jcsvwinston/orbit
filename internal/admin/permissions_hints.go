@@ -35,18 +35,16 @@ var recordActions = []string{
 // screenVerbs are the other doors a model screen offers, which their
 // handlers authorize through authorizeAction — the full grant, never an #own
 // one. Each is asked of the resource its handler asks it of: get_schema
-// (opening the model) and update_schema (its field settings) of the model,
-// export_data and import_data of the whole panel (admin:*), because those
-// two are panel-wide grants (ADR-007). Without their answer a screen offers
-// an Export, an Import or a Fields dialog to an operator the server then
-// refuses.
+// (opening the model) of the model, export_data and import_data of the
+// whole panel (admin:*), because those two are panel-wide grants (ADR-007).
+// Without their answer a screen offers an Export or an Import to an operator
+// the server then refuses.
 var screenVerbs = []struct {
 	verb string
 	// panelWide asks the verb of admin:* instead of admin:<Model>.
 	panelWide bool
 }{
 	{verb: "get_schema"},
-	{verb: "update_schema"},
 	{verb: "export_data", panelWide: true},
 	{verb: "import_data", panelWide: true},
 }
@@ -205,12 +203,6 @@ func (c *modelCapabilities) fillScreenVerbs(p *Panel, user *auth.User, mi dataso
 		default:
 			c.Permissions[sv.verb] = p.userCan(user, scope, sv.verb)
 		}
-	}
-	// The field settings are a feature of Nucleus's schema registry: a panel
-	// mounted on a data source without one answers 501 to every operator,
-	// superuser included, so nobody is offered the dialog that would ask.
-	if p.registry == nil {
-		c.Permissions["update_schema"] = false
 	}
 }
 

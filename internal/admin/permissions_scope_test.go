@@ -18,22 +18,25 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jcsvwinston/nucleus/pkg/authz"
 	"github.com/jcsvwinston/nucleus/pkg/db"
-	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/observe"
 
-	dsnucleus "github.com/jcsvwinston/orbit/datasource/nucleus"
+	"github.com/jcsvwinston/orbit/quarkdatasource"
 )
 
 // OwnedNote is the model row ownership is measured on: `owner` says which
 // operator a row belongs to.
 type OwnedNote struct {
-	model.BaseModel
-	Owner  string `db:"column:owner" json:"owner" admin:"list,filter"`
-	Title  string `db:"column:title;required" json:"title" admin:"list,search"`
-	Secret string `db:"column:secret" json:"secret" admin:"list"`
+	ID        int64      `db:"id" pk:"true"`
+	CreatedAt time.Time  `db:"created_at"`
+	UpdatedAt time.Time  `db:"updated_at"`
+	DeletedAt *time.Time `db:"deleted_at"`
+	Owner     string     `db:"owner"`
+	Title     string     `db:"title" quark:"not_null"`
+	Secret    string     `db:"secret"`
 }
 
 func (OwnedNote) TableName() string { return "owned_notes" }
@@ -72,30 +75,11 @@ func ownedPanel(t *testing.T, policies ...[3]string) (*Panel, *sql.DB, *httptest
 		t.Fatalf("owned_notes schema: %v", err)
 	}
 
-	registry := model.NewRegistry()
-	for _, m := range []any{&AdminUser{}, &OwnedNote{}} {
-		if err := registry.Register(m); err != nil {
-			t.Fatalf("register: %v", err)
-		}
-	}
-
-	var panel *Panel
-	src := dsnucleus.New(dsnucleus.Config{
-		Registry: registry,
-		Resolve: func(alias string) (*db.DB, string, error) {
-			h, err := panel.databaseHandle(alias)
-			if err != nil {
-				return nil, "", err
-			}
-			return h, h.System(), nil
-		},
-		BusConnected: func() bool { return true },
-	})
-	panel = NewPanel(src, logger, PanelConfig{
+	src := quarkSource(t, sqlDB, quarkdatasource.Register[AdminUser], quarkdatasource.Register[OwnedNote])
+	panel := NewPanel(src, logger, PanelConfig{
 		Prefix:          "/admin",
 		Title:           "Test Admin",
 		Auth:            operatorAuth(),
-		SchemaRegistry:  registry,
 		DatabaseHandles: map[string]*db.DB{"default": database},
 		AuditEnabled:    true,
 		AuditMaxSize:    100,
@@ -562,10 +546,9 @@ func TestCapabilityHints_NameTheRowScope(t *testing.T) {
 }
 
 // The screen's other doors are in the hints too (OR-65), each the answer its
-// handler gives: opening and configuring the model's schema, asked of the
-// model, and an export and an import, asked of the whole panel. Without them
-// Data Studio offered an Export, an Import and a Fields dialog to operators
-// the server then refused.
+// handler gives: opening the model's schema, asked of the model, and an
+// export and an import, asked of the whole panel. Without them Data Studio
+// offered an Export and an Import to operators the server then refused.
 func TestCapabilityHints_AnswerTheScreensOtherDoors(t *testing.T) {
 	panel, _, srv := ownedPanel(t,
 		[3]string{"operator", "admin:OwnedNote", "list"},
@@ -596,15 +579,15 @@ func TestCapabilityHints_AnswerTheScreensOtherDoors(t *testing.T) {
 	perms := held()
 	want(perms, "get_schema", true)
 	want(perms, "export_data", true)
-	want(perms, "update_schema", false)
 	want(perms, "import_data", false)
+	// The field settings left with the Nucleus adapter (DEP-2026-002):
+	// the hints name no verb for a door the screen no longer has.
+	if _, present := perms["update_schema"]; present {
+		t.Errorf("permissions carry update_schema, a verb no handler asks any more: %v", perms)
+	}
 
 	// The refusals the hints promise are the ones the handlers give, and
 	// the grant they call held is not refused.
-	fields := map[string]any{"fields": map[string]any{"Title": map[string]any{"label": "Headline"}}}
-	if _, status := doJSON(t, http.MethodPut, srv.URL+"/api/models/OwnedNote/schema/fields", fields); status != http.StatusForbidden {
-		t.Errorf("field settings without update_schema: status %d, want 403", status)
-	}
 	if _, status := doJSON(t, http.MethodPost, srv.URL+"/api/import/execute?key=_tmp/import_x.json",
 		map[string]any{"model": "OwnedNote", "format": "json"}); status != http.StatusForbidden {
 		t.Errorf("an import without import_data: status %d, want 403", status)
@@ -625,29 +608,20 @@ func TestCapabilityHints_AnswerTheScreensOtherDoors(t *testing.T) {
 		t.Errorf("an import granted on the model only: status %d, want 403", status)
 	}
 
-	// A grant of update_schema and import_data turns both on, and the
-	// field settings it now offers are saved. The import also needs a write
-	// of the model, since each row asks for one (OR-67): import_data alone
-	// is not held on a model the operator may neither create nor update.
-	for _, pol := range [][3]string{
-		{"operator", "admin:OwnedNote", "update_schema"},
-		{"operator", "admin:*", "import_data"},
-	} {
-		if err := panel.rbac.AddPolicy(pol[0], pol[1], pol[2]); err != nil {
-			t.Fatal(err)
-		}
+	// A grant of import_data on the panel turns the import on — once the
+	// operator may also write the model, since each row asks for one
+	// (OR-67): import_data alone is not held on a model the operator may
+	// neither create nor update.
+	if err := panel.rbac.AddPolicy("operator", "admin:*", "import_data"); err != nil {
+		t.Fatal(err)
 	}
 	perms = held()
-	want(perms, "update_schema", true)
 	want(perms, "import_data", false)
 	if err := panel.rbac.AddPolicy("operator", "admin:OwnedNote", "create"); err != nil {
 		t.Fatal(err)
 	}
 	perms = held()
 	want(perms, "import_data", true)
-	if resp, status := doJSON(t, http.MethodPut, srv.URL+"/api/models/OwnedNote/schema/fields", fields); status != http.StatusOK {
-		t.Errorf("field settings with update_schema: status %d body=%s", status, mustJSON(resp))
-	}
 
 	// A row-scoped grant of a screen verb is not one: authorizeAction asks
 	// the full grant only, and so does the hint.

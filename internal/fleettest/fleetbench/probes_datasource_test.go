@@ -15,8 +15,6 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 
 	"github.com/jcsvwinston/nucleus/pkg/auth"
-	"github.com/jcsvwinston/nucleus/pkg/db"
-	"github.com/jcsvwinston/nucleus/pkg/model"
 
 	"github.com/jcsvwinston/orbit/agent"
 	adminv1 "github.com/jcsvwinston/orbit/proto/gen/go/nucleus/admin/v1"
@@ -314,24 +312,21 @@ func probeIdentityCrossesStream(t *testing.T, e *env) verdict {
 	}
 
 	var seen atomic.Pointer[string]
-	d, reg := e.agentDBWith(t, false, model.ModelConfig{
-		BeforeCreate: func(hc model.HookContext, _ interface{}) error {
-			subject := ""
-			if claims, ok := auth.ClaimsFromContext(hc.Context); ok && claims != nil {
-				subject = claims.UserID
-				if subject == "" {
-					subject = claims.Username
-				}
+	_, src := e.agentDBWith(t, false, func(ctx context.Context) error {
+		subject := ""
+		if claims, ok := auth.ClaimsFromContext(ctx); ok && claims != nil {
+			subject = claims.UserID
+			if subject == "" {
+				subject = claims.Username
 			}
-			seen.Store(&subject)
-			return nil
-		},
+		}
+		seen.Store(&subject)
+		return nil
 	})
 	srv := e.startServer(t, server.Config{DataStudioAllowedModels: []string{"TestArticle"}})
 	ag := e.startAgent(t, agent.Config{
-		Endpoints: []string{"http://" + srv.AgentAddr()},
-		Registry:  reg,
-		Databases: map[string]*db.DB{"default": d},
+		Endpoints:  []string{"http://" + srv.AgentAddr()},
+		DataSource: src,
 	})
 	if !waitRegistered(srv.Server, ag.NodeID(), 4*time.Second) {
 		t.Fatal("agent did not register")
@@ -368,11 +363,10 @@ func (denyEverything) GetAllRoles() ([]string, error)         { return nil, nil 
 // the fleet operator.
 func probeAppPolicyAppliesToFleet(t *testing.T, e *env) verdict {
 	srv := e.startServer(t, server.Config{})
-	d, reg := e.agentDB(t, false)
+	_, src := e.agentDB(t, false)
 	ag := e.startAgent(t, agent.Config{
 		Endpoints:  []string{"http://" + srv.AgentAddr()},
-		Registry:   reg,
-		Databases:  map[string]*db.DB{"default": d},
+		DataSource: src,
 		Authorizer: denyEverything{},
 	})
 	if !waitRegistered(srv.Server, ag.NodeID(), 4*time.Second) {
@@ -397,11 +391,10 @@ func probeAppPolicyAppliesToFleet(t *testing.T, e *env) verdict {
 // tenant column and the operator is scoped to one tenant.
 func probeTenantFilteredReads(t *testing.T, e *env) verdict {
 	srv := e.startServer(t, server.Config{})
-	d, reg := e.agentDB(t, true)
+	_, src := e.agentDB(t, true)
 	ag := e.startAgent(t, agent.Config{
-		Endpoints: []string{"http://" + srv.AgentAddr()},
-		Registry:  reg,
-		Databases: map[string]*db.DB{"default": d},
+		Endpoints:  []string{"http://" + srv.AgentAddr()},
+		DataSource: src,
 	})
 	if !waitRegistered(srv.Server, ag.NodeID(), 4*time.Second) {
 		t.Fatal("agent did not register")

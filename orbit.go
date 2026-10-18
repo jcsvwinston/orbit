@@ -26,7 +26,6 @@ import (
 	"strings"
 
 	"github.com/jcsvwinston/orbit/datasource"
-	dsnucleus "github.com/jcsvwinston/orbit/datasource/nucleus"
 	"github.com/jcsvwinston/orbit/internal/admin"
 
 	"github.com/jcsvwinston/nucleus/pkg/app"
@@ -249,18 +248,14 @@ type Config struct {
 	// nobody translated reads in English rather than as its key.
 	Messages map[string]map[string]string `yaml:"messages" koanf:"messages"`
 
-	// DataSource overrides the source Data Studio browses and edits (ADR-001).
-	// Nil means the default: a Nucleus-backed adapter over the application's
-	// model registry and database handles. Set it to browse another backend —
-	// e.g. an app that runs the Quark ORM passes a quarkdatasource adapter
-	// (QADR-0006, Caso 2). Go-only wiring; not bindable from YAML. When set,
-	// the runtime field-metadata editor is disabled (it mutates the Nucleus
-	// registry, which a custom source does not necessarily have).
-	//
-	// The default leaves at Orbit 2.0 with Nucleus's pkg/model
-	// (DEP-2026-002): the panel then reads Quark models only, and a nil
-	// DataSource is a configuration error. An application still on the
-	// default is told so at start, with one WARN.
+	// DataSource is the source Data Studio browses and edits (ADR-001): an
+	// application that runs the Quark ORM passes a quarkdatasource adapter
+	// over its models (QADR-0006, Caso 2); any other implementation of the
+	// contract serves the same way. Required: the module refuses to start on
+	// a nil value, naming this field, the way it refuses an action on a model
+	// that does not exist. There is no default — the Nucleus adapter over the
+	// application's pkg/model registry left at Orbit 2.0 (DEP-2026-002) with
+	// the registry it read. Go-only wiring; not bindable from YAML.
 	DataSource datasource.DataSource `yaml:"-" koanf:"-"`
 }
 
@@ -508,15 +503,6 @@ func Module(cfg Config) nucleus.ModuleSpec {
 	}.Build()
 }
 
-// dataSourceDeprecation is what an application on the default data source
-// reads in its log at start: the default — Data Studio over the Nucleus
-// model registry — leaves at Orbit 2.0 with Nucleus's pkg/model
-// (DEP-2026-002), and the way to stay is to mount the panel on Quark.
-const (
-	dataSourceDeprecation     = "Data Studio reads the application's pkg/model registry through the Nucleus adapter, which leaves at Orbit 2.0 (DEP-2026-002)"
-	dataSourceDeprecationHint = "define the models with Quark and set orbit.Config.DataSource to a quarkdatasource adapter before upgrading; a nil DataSource is a configuration error at 2.0"
-)
-
 // start builds the admin Panel from the Runtime accessors, provisions the
 // bootstrap admin user, and connects the live SQL feed. Called from OnStart, so
 // the Panel exists before Routes mounts it.
@@ -584,41 +570,18 @@ func (m *module) start(ctx context.Context) error {
 		}
 	}
 
-	// Data Studio speaks Orbit's neutral datasource contract (ADR-001); build the
-	// Nucleus-backed adapter from the Runtime accessors and hand it to the panel.
-	// The observability bus feeds the live SQL view (ConsumeEventBus below), so
-	// the adapter reports the bus connected and installs no per-CRUD observer.
-	// Data Studio's backing source (ADR-001): the app's override when provided
-	// (e.g. a quarkdatasource adapter — QADR-0006 Caso 2), else the default
-	// Nucleus adapter over the Runtime's registry and handles. The field-meta
-	// editor (SchemaRegistry) only makes sense against the Nucleus registry, so
-	// it is wired only on the default path.
-	var src datasource.DataSource
-	var schemaRegistry = rt.Models()
-	if m.cfg.DataSource != nil {
-		src = m.cfg.DataSource
-		schemaRegistry = nil
-	} else {
-		// Said once, at start, while the default still works: the
-		// application that hears it has its 1.x window to move to Quark.
-		rt.Logger().Warn("orbit: "+dataSourceDeprecation, "hint", dataSourceDeprecationHint)
-		src = dsnucleus.New(dsnucleus.Config{
-			Registry:     rt.Models(),
-			DefaultAlias: "",
-			Resolve: func(alias string) (*db.DB, string, error) {
-				h := defaultHandle
-				if alias != "" {
-					if hh, ok := handles[alias]; ok && hh != nil {
-						h = hh
-					}
-				}
-				if h == nil {
-					return nil, "", fmt.Errorf("orbit: no database handle for alias %q", alias)
-				}
-				return h, h.System(), nil
-			},
-			BusConnected: func() bool { return true },
-		})
+	// Data Studio speaks Orbit's neutral datasource contract (ADR-001) and
+	// the application hands it the source: a quarkdatasource adapter over
+	// its Quark models (QADR-0006 Caso 2), or its own implementation. A
+	// mount without one is a configuration error, refused here with the
+	// field named rather than served as an empty Data Studio — the one
+	// default there was, the Nucleus adapter over the pkg/model registry,
+	// left at 2.0 (DEP-2026-002) with the registry it read. The live SQL
+	// view is fed by the observability bus (ConsumeEventBus below), not by
+	// the source.
+	src := m.cfg.DataSource
+	if src == nil {
+		return fmt.Errorf("orbit: Config.DataSource is required: Data Studio reads the application's models through a datasource.DataSource, and nothing was set (an application on the Quark ORM passes a quarkdatasource adapter)")
 	}
 
 	// What the application declared, checked against what this application
@@ -657,7 +620,6 @@ func (m *module) start(ctx context.Context) error {
 		Prefix:          m.cfg.Prefix,
 		Title:           m.cfg.Title,
 		Environment:     m.cfg.Environment,
-		SchemaRegistry:  schemaRegistry,
 		Databases:       databaseRuntimeInfo(handles, defaultHandle),
 		DatabaseHandles: handles,
 		// Admin auth uses authSQL (default handle, or AuthDatabase when set) +

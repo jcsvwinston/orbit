@@ -24,19 +24,25 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
 
 	"github.com/jcsvwinston/nucleus/pkg/db"
-	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/observability"
 	"github.com/jcsvwinston/nucleus/pkg/observe"
+	"github.com/jcsvwinston/quark"
+	// The module, not the bare driver: it registers the driver and Quark's
+	// error classification predicates (quark ADR-0023).
+	_ "github.com/jcsvwinston/quark/drivers/sqlite"
 
 	"github.com/jcsvwinston/orbit/agent"
+	"github.com/jcsvwinston/orbit/datasource"
 	adminv1 "github.com/jcsvwinston/orbit/proto/gen/go/nucleus/admin/v1"
 	adminv1connect "github.com/jcsvwinston/orbit/proto/gen/go/nucleus/admin/v1/adminv1connect"
+	"github.com/jcsvwinston/orbit/quarkdatasource"
 	server "github.com/jcsvwinston/orbit/server"
 )
 
@@ -370,18 +376,45 @@ func pollUntil(within time.Duration, cond func() bool) bool {
 // same shape the fleet integration tests use, so a probe here and a test
 // there disagree only when the product does.
 type TestArticle struct {
-	ID    uint   `db:"pk;column:id" json:"id"`
-	Title string `db:"column:title;required" json:"title"`
-	Body  string `db:"column:body" json:"body"`
+	ID    int64  `db:"id" pk:"true"`
+	Title string `db:"title" quark:"not_null"`
+	Body  string `db:"body"`
 }
 
-// TestTenantArticle declares a tenant column the way the framework
-// documents it (`tenant` in the db tag), so the tenancy probe can ask
-// whether the fleet plane honours the declaration.
+// articleCreateHook is what a probe attaches to TestArticle's lifecycle —
+// the way an application attaches a hook to its own Quark model — to see
+// what reaches the model layer (FDS-05 reads the operator's identity off
+// the context). Nil when no probe is looking.
+var articleCreateHook atomic.Pointer[func(context.Context) error]
+
+// BeforeCreate is TestArticle's Quark lifecycle hook (quark.BeforeCreateHook).
+func (*TestArticle) BeforeCreate(ctx context.Context) error {
+	if hook := articleCreateHook.Load(); hook != nil {
+		return (*hook)(ctx)
+	}
+	return nil
+}
+
+// TestTenantArticle declares a tenant column; the adapter is told its name
+// (WithTenantColumn), so the tenancy probe can ask whether the fleet plane
+// honours the declaration.
 type TestTenantArticle struct {
-	ID       uint   `db:"pk;column:id" json:"id"`
-	TenantID string `db:"column:tenant_id;tenant" json:"tenant_id"`
-	Title    string `db:"column:title;required" json:"title"`
+	ID       int64  `db:"id" pk:"true"`
+	TenantID string `db:"tenant_id" quark:"not_null"`
+	Title    string `db:"title" quark:"not_null"`
+}
+
+// quarkDriverName is the database/sql driver name behind a Nucleus handle,
+// which Quark reads its dialect from.
+func quarkDriverName(system string) string {
+	switch system {
+	case "postgresql", "postgres":
+		return "pgx"
+	case "mysql", "mariadb":
+		return "mysql"
+	default:
+		return "sqlite"
+	}
 }
 
 // agentDBURL keeps the fast lane fast: in-memory SQLite. The fleet
@@ -442,17 +475,23 @@ func tenantArticleDDL(system string) (create, insert string) {
 
 // agentDB opens the agent's database with three seeded TestArticle rows
 // and, when withTenant is set, a TestTenantArticle table with two rows
-// for tenant "a" and one for tenant "b". Returns the handle and the model
-// registry the agent registers with the server.
-func (e *env) agentDB(t *testing.T, withTenant bool) (*db.DB, *model.Registry) {
+// for tenant "a" and one for tenant "b". Returns the handle and the data
+// source the agent serves Data Studio through: a quarkdatasource adapter
+// over the handle's own pool.
+func (e *env) agentDB(t *testing.T, withTenant bool) (*db.DB, datasource.DataSource) {
 	t.Helper()
-	return e.agentDBWith(t, withTenant, model.ModelConfig{})
+	return e.agentDBWith(t, withTenant, nil)
 }
 
-// agentDBWith is agentDB with a model configuration for TestArticle — the
-// way an application attaches lifecycle hooks to its own model.
-func (e *env) agentDBWith(t *testing.T, withTenant bool, article model.ModelConfig) (*db.DB, *model.Registry) {
+// agentDBWith is agentDB with a create hook on TestArticle — the way an
+// application attaches a lifecycle hook to its own model. The hook is
+// detached when the test ends.
+func (e *env) agentDBWith(t *testing.T, withTenant bool, beforeCreate func(context.Context) error) (*db.DB, datasource.DataSource) {
 	t.Helper()
+	if beforeCreate != nil {
+		articleCreateHook.Store(&beforeCreate)
+		t.Cleanup(func() { articleCreateHook.Store(nil) })
+	}
 	logger := observe.NewLogger("error", "text")
 	d, err := db.New(db.Config{
 		Engine:          db.EngineSQL,
@@ -480,8 +519,12 @@ func (e *env) agentDBWith(t *testing.T, withTenant bool, article model.ModelConf
 		mustExec(t, sqlDB, `SELECT setval(pg_get_serial_sequence('test_articles', 'id'), (SELECT MAX(id) FROM test_articles))`)
 	}
 
-	reg := model.NewRegistry()
-	if err := reg.Register(&TestArticle{}, article); err != nil {
+	client, err := quark.NewWithDB(quarkDriverName(system), sqlDB)
+	if err != nil {
+		t.Fatalf("quark.NewWithDB: %v", err)
+	}
+	src := quarkdatasource.New(client, quarkdatasource.WithTenantColumn("tenant_id"))
+	if err := quarkdatasource.Register[TestArticle](src); err != nil {
 		t.Fatalf("register TestArticle: %v", err)
 	}
 	if withTenant {
@@ -494,11 +537,11 @@ func (e *env) agentDBWith(t *testing.T, withTenant bool, article model.ModelConf
 		if system == "postgresql" || system == "postgres" {
 			mustExec(t, sqlDB, `SELECT setval(pg_get_serial_sequence('test_tenant_articles', 'id'), (SELECT MAX(id) FROM test_tenant_articles))`)
 		}
-		if err := reg.Register(&TestTenantArticle{}); err != nil {
+		if err := quarkdatasource.Register[TestTenantArticle](src); err != nil {
 			t.Fatalf("register TestTenantArticle: %v", err)
 		}
 	}
-	return d, reg
+	return d, src
 }
 
 func mustExec(t *testing.T, sqlDB *sql.DB, q string, args ...interface{}) {
@@ -514,11 +557,10 @@ func mustExec(t *testing.T, sqlDB *sql.DB, q string, args ...interface{}) {
 func (e *env) startPair(t *testing.T, allowedModels ...string) (*runningServer, *runningAgent) {
 	t.Helper()
 	srv := e.startServer(t, server.Config{DataStudioAllowedModels: allowedModels})
-	d, reg := e.agentDB(t, false)
+	_, src := e.agentDB(t, false)
 	ag := e.startAgent(t, agent.Config{
-		Endpoints: []string{"http://" + srv.AgentAddr()},
-		Registry:  reg,
-		Databases: map[string]*db.DB{"default": d},
+		Endpoints:  []string{"http://" + srv.AgentAddr()},
+		DataSource: src,
 	})
 	if !waitRegistered(srv.Server, ag.NodeID(), 4*time.Second) {
 		t.Fatalf("agent did not register with the server in 4s")

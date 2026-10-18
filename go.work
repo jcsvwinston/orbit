@@ -15,14 +15,16 @@ toolchain go1.26.9
 // quarkbridge/ is an opt-in module that depends on both Quark and Nucleus
 // (it needs the public SQL ingest, nucleus ADR-020).
 //
-// quarkdatasource/ is the opt-in Quark implementation of the datasource
-// contract (ADR-001): it depends on Quark and on the orbit root module (the
-// contract package), keeping Quark out of the core's dependency graph.
+// quarkdatasource/ is the Quark implementation of the datasource contract
+// (ADR-001): it depends on Quark and on the datasource module (the contract
+// package). Since 2.0 it is the adapter Data Studio ships with (the Nucleus
+// adapter left, DEP-2026-002), and the root module requires it BY TAG for
+// the panel's own tests; Quark is in the core's test graph, not the panel's.
 //
-// datasource/ is the contract Data Studio speaks (ADR-001) and its Nucleus
-// adapter, in a module of its own since ADR-012 so the agent and any
-// alternative data source can require it without the panel. The root and
-// quarkdatasource require it BY TAG. Between its birth and its first tag
+// datasource/ is the contract Data Studio speaks (ADR-001), in a module of
+// its own since ADR-012 so the agent and any alternative data source can
+// require it without the panel. The root and quarkdatasource require it BY
+// TAG. Between its birth and its first tag
 // this file carried a versioned replace to this tree (listing the directory
 // is not enough: the required version still enters the module graph and Go
 // asks the proxy for its go.mod); the cut that published datasource/v1.0.0

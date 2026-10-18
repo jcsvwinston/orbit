@@ -211,12 +211,7 @@ func TestDestructiveActionNotOfferedOnAReadOnlyModel(t *testing.T) {
 		t.Fatal("precondition: the destructive action is not offered on a writable model")
 	}
 
-	meta, ok := env.panel.registry.Get("AdminUser")
-	if !ok {
-		t.Fatal("AdminUser is not registered")
-	}
-	meta.Config.ReadOnly = true
-	t.Cleanup(func() { meta.Config.ReadOnly = false })
+	setReadOnly(env.panel, "AdminUser", true)
 
 	if offered() {
 		t.Error("the schema offers a destructive action on a read-only model, which the server refuses")

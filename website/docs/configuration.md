@@ -78,8 +78,9 @@ with a message naming the key.
 What an application adds to the panel that carries a function or a file
 system cannot be written in `nucleus.yml`, so it has no key here: `Actions`,
 `Pages`, `Widgets` and `Dashboards`, `Client` (its own scripts, stylesheets
-and field renderers), and the `Cache` and `DataSource` an application hands
-the panel, are set on `orbit.Config` in Go (see
+and field renderers), the `Cache` an application hands the panel, and the
+`DataSource` it must hand it (the panel does not start without one), are set
+on `orbit.Config` in Go (see
 [What your application adds to the panel](./features.md#what-your-application-adds-to-the-panel)
 and [More than one dashboard](./features.md#more-than-one-dashboard)). An
 action, a page, a card, a dashboard or a file of client code the panel

@@ -32,9 +32,6 @@ export interface ScreenCapabilities {
   // row it reads — so it is offered to an operator who holds both.
   canExport: boolean
   canImport: boolean
-  // canConfigureFields is the field settings dialog (update_schema). It is
-  // also false where the data source has no schema registry to change.
-  canConfigureFields: boolean
   // True when at least one verb is granted over the operator's OWN rows only,
   // which is worth saying on screen: the list is not the whole table.
   rowScoped: boolean
@@ -62,7 +59,6 @@ export function screenCapabilities(schema: ModelSchema): ScreenCapabilities {
     // import was offered with create: those are the fallbacks.
     canExport: holds(schema, 'export_data'),
     canImport: canCreate && holds(schema, 'import_data', canCreate),
-    canConfigureFields: holds(schema, 'update_schema'),
     rowScoped: (schema.row_scope?.length ?? 0) > 0,
   }
 }

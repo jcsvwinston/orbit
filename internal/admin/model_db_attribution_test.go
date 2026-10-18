@@ -80,7 +80,10 @@ func TestHandleListModels_DatabasesReflectPresence(t *testing.T) {
 			got = m.Databases
 		}
 	}
-	if len(got) != 2 || got[0] != "default" || got[1] != "tenant_other" {
-		t.Fatalf("AdminUser databases = %v, want [default tenant_other] (probed presence on both handles)", got)
+	// The source (a Quark adapter) is bound to one database: presence is
+	// probed on the alias it serves, and a handle the panel holds for
+	// another database is not a database this model lives in.
+	if len(got) != 1 || got[0] != "default" {
+		t.Fatalf("AdminUser databases = %v, want [default] (the alias the source serves)", got)
 	}
 }

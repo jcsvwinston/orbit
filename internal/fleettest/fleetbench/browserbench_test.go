@@ -13,8 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jcsvwinston/nucleus/pkg/db"
-
 	"github.com/jcsvwinston/orbit/agent"
 	server "github.com/jcsvwinston/orbit/server"
 )
@@ -71,12 +69,11 @@ func TestFleetBrowserBench(t *testing.T) {
 	// A browser cannot set the trusted-proxy headers: the credential-less
 	// loopback operator is how a person opens this UI in development.
 	srv := e.startServer(t, server.Config{UIInsecureOpen: true, DataStudioAllowedModels: []string{"TestArticle"}})
-	d, reg := e.agentDB(t, false)
+	_, src := e.agentDB(t, false)
 	ag := e.startAgent(t, agent.Config{
 		Endpoints:      []string{"http://" + srv.AgentAddr()},
 		NodeIDOverride: "fb-browser",
-		Registry:       reg,
-		Databases:      map[string]*db.DB{"default": d},
+		DataSource:     src,
 	})
 	if !waitRegistered(srv.Server, ag.NodeID(), 4*time.Second) {
 		t.Fatal("the agent did not register")

@@ -308,8 +308,10 @@ func extensionApp(t *testing.T, cfg orbit.Config) nucleus.App {
 	cfg.BootstrapUsername = "admin"
 	cfg.BootstrapEmail = "admin@example.test"
 	cfg.BootstrapPassword = bootstrapPassword
+	appCfg := benchConfig(t)
+	cfg.DataSource = benchDataSource(t, appCfg)
 	return nucleus.App{
-		Config: benchConfig(t),
+		Config: appCfg,
 		Modules: map[string]nucleus.ModuleSpec{
 			"content": contentModule(),
 			"orbit":   orbit.Module(cfg),

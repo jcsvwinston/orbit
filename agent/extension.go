@@ -102,8 +102,6 @@ func (e *extension) Attach(a *app.App) error {
 		SessionBufferSize:    e.adminCfg.SessionBufferSize,
 		CustomBufferSize:     e.adminCfg.CustomBufferSize,
 		MetricsAddr:          e.adminCfg.MetricsAddr,
-		Registry:             a.Models,
-		Databases:            a.DBs,
 		DataSource:           e.adminCfg.DataSource,
 		Authorizer:           a.Authorizer,
 		DefaultDatabaseAlias: e.adminCfg.DefaultDatabaseAlias,

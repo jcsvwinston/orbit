@@ -102,7 +102,7 @@ jobs:
         # gets extracted.
         #
         #   .                 the in-process panel and its internals
-        #   datasource        the Data Studio contract and its Nucleus adapter
+        #   datasource        the Data Studio contract
         #   ui                the one frontend project, embedded (ADR-015)
         #   agent             the fleet agent
         #   server            the admin server, its auth and its routing

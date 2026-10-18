@@ -37,11 +37,10 @@ func recordValueByKeys(rec datasource.Record, keys []string) (any, bool) {
 }
 
 // fieldKeys lists the keys a backend emits or accepts for field f — its
-// storage column, runtime column and Go name — plus extra ones the caller
-// knows (the json key of a Nucleus model). Empty and repeated entries are
-// dropped; order is lookup precedence.
-func fieldKeys(f datasource.FieldInfo, extra ...string) []string {
-	candidates := append([]string{f.Column, runtimeColumn(f.Column), f.Name}, extra...)
+// storage column, runtime column and Go name. Empty and repeated entries
+// are dropped; order is lookup precedence.
+func fieldKeys(f datasource.FieldInfo) []string {
+	candidates := []string{f.Column, runtimeColumn(f.Column), f.Name}
 	keys := make([]string, 0, len(candidates))
 	for _, c := range candidates {
 		if c == "" {

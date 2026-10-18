@@ -20,7 +20,7 @@ ever choose two of them.
 | `github.com/jcsvwinston/orbit/server` | `server/vX.Y.Z` | You run the **admin-server binary** (usually installed, not imported). |
 | `github.com/jcsvwinston/orbit/proto` | `proto/vX.Y.Z` | Never directly — it is an internal dependency of agent and server. |
 | `github.com/jcsvwinston/orbit/quarkbridge` | `quarkbridge/vX.Y.Z` | Opt-in: Quark ORM statements in the live SQL feed. |
-| `github.com/jcsvwinston/orbit/quarkdatasource` | `quarkdatasource/vX.Y.Z` | Opt-in: Data Studio over Quark models. |
+| `github.com/jcsvwinston/orbit/quarkdatasource` | `quarkdatasource/vX.Y.Z` | Data Studio over Quark models — the adapter the panel's `DataSource` takes. |
 
 Sub-modules use Go's directory-prefixed tags. The tag `agent/v0.5.2` is what
 `go get github.com/jcsvwinston/orbit/agent@v0.5.2` resolves to. The

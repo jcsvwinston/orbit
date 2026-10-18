@@ -64,8 +64,14 @@ github.com/jcsvwinston/nucleus/drivers/sqlite v0.1.7 h1:iGpq6y9we1/1VrMaGt9PI7c5
 github.com/jcsvwinston/nucleus/drivers/sqlite v0.1.7/go.mod h1:U6QFD+5G0c0HoCPGQ3uW85mTPQgIDMGEh5GhCMrCdoM=
 github.com/jcsvwinston/orbit/datasource v1.1.0 h1:88CXNUz6H7uKTQcAvsT0ZBeFXZey2UFNy/9cCPt/BME=
 github.com/jcsvwinston/orbit/datasource v1.1.0/go.mod h1:XNRsuGaWKLvDQGxfztYNLHsZ5xzDJHhbQehx4w/ncCw=
+github.com/jcsvwinston/orbit/quarkdatasource v1.13.1 h1:X1VnNWtpwyCIFeSPT4lXCv2eAHDDuGefRb4XLBVDkvQ=
+github.com/jcsvwinston/orbit/quarkdatasource v1.13.1/go.mod h1:XN+0fAdUBWcB4TQy/Su2EFcL9oAN+Nxu0jUUwf2TxvQ=
 github.com/jcsvwinston/orbit/ui v1.2.0 h1:2hddBqoimOyIObpxMfX/ebhTstRxSwDN8E4Kl7LTYVU=
 github.com/jcsvwinston/orbit/ui v1.2.0/go.mod h1:qjr5le8btKAeuHfBZo3viJWCNsvbJFww/HwIC7nViTg=
+github.com/jcsvwinston/quark v1.17.0 h1:YftDYwsmmac9SSjYqP8NJXb8FvT+1UlvC8mAbMQNXeQ=
+github.com/jcsvwinston/quark v1.17.0/go.mod h1:KQBtBQIi5Yr5d6HjH39W+rRUTkBKuozTsfC+RhrpLKk=
+github.com/jcsvwinston/quark/drivers/sqlite v0.3.0 h1:qJo1yLg5PdsxKKmVSMCiOjAh0GFZUme6KdR7oCCQAFs=
+github.com/jcsvwinston/quark/drivers/sqlite v0.3.0/go.mod h1:CIT34lU94AtTZddmqD0Ck57tlLnqbC+Z0sY/iLXEeKE=
 github.com/klauspost/cpuid/v2 v2.2.10 h1:tBs3QSyvjDyFTq3uoc/9xFpCuOsJQFNPiAhYdw2skhE=
 github.com/klauspost/cpuid/v2 v2.2.10/go.mod h1:hqwkgyIinND0mEev00jJYCxPNVRVXFQeu1XKlok6oO0=
 github.com/knadh/koanf/maps v0.1.2 h1:RBfmAW5CnZT+PJ1CVc1QSJKf4Xu9kxfQgYVQSu8hpbo=

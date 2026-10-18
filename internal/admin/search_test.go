@@ -4,8 +4,8 @@ package admin
 // searchable field answered ?search= with 200 and every row — the backend
 // dropped the text — which reads as "no match" while showing everything.
 // The panel now answers 400 naming the model and how to enable search;
-// the check reads the live ModelInfo, so enabling is_search in Field
-// settings lifts it without a restart.
+// the check reads the live ModelInfo, so a source that declares a field
+// searchable lifts it without a restart.
 
 import (
 	"net/http"
@@ -53,15 +53,14 @@ func TestListRecords_SearchWithoutSearchableFieldsIs400(t *testing.T) {
 		t.Fatalf("AdminUser?search=x: status %d", status)
 	}
 
-	// Enabling is_search at runtime (Field settings) lifts the 400 — the
-	// check reads the live registry, not a snapshot.
-	resp, status = doJSON(t, http.MethodPut, srv.URL+"/api/models/Gadget/schema/fields", map[string]any{
-		"fields": map[string]any{"Label": map[string]any{"is_search": true}},
-	})
-	if status != http.StatusOK {
-		t.Fatalf("field meta update: status %d body=%s", status, mustJSON(resp))
+	// The check reads the live catalogue, not a snapshot taken at mount: a
+	// source that stops declaring any field of AdminUser searchable gets
+	// the same 400 for it.
+	off := false
+	for _, column := range []string{"email", "name"} {
+		setFieldFlags(panel, "AdminUser", column, &off, nil)
 	}
-	if resp, status := doJSON(t, http.MethodGet, srv.URL+"/api/models/Gadget?search=x", nil); status != http.StatusOK {
-		t.Fatalf("Gadget?search=x after enabling is_search: status %d body=%s", status, mustJSON(resp))
+	if resp, status := doJSON(t, http.MethodGet, srv.URL+"/api/models/AdminUser?search=x", nil); status != http.StatusBadRequest {
+		t.Fatalf("AdminUser?search=x once no field is searchable: status %d body=%s, want 400", status, mustJSON(resp))
 	}
 }
