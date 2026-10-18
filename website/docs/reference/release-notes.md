@@ -6,7 +6,7 @@ description: What changed in each Orbit release, in plain terms.
 
 # Release notes
 
-The current release is **v1.19.3**. <!-- x-release-please-version -->
+The current release is **v1.20.0**. <!-- x-release-please-version -->
 
 Every heading below is a version of the **root module**
 (`github.com/jcsvwinston/orbit`) — the one an application mounts for the
@@ -16,6 +16,155 @@ The fleet modules (`agent`, `server`, `proto`) release independently with their
 own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
+
+## v1.20.0 — 2026-10-18
+
+A minor that says what Orbit changes at its 2.0, in the places an operator
+and an application read, and ships the ways to stay where you are. The
+repository gets its register of deprecation notices, `docs/deprecations/`,
+and its first two: `DEP-2026-001` (a server that verifies client
+certificates binds the node identity to them by default at 2.0) and
+`DEP-2026-002` (the Nucleus data-source adapter leaves at 2.0). Nothing is
+removed and no default changes in this release: the notices announce, and
+the changes ship with the major. What changes today is a new server flag
+that keeps the current identity regime across the major, one WARN at start
+in a deployment that relies on what changes, a wildcard in a Quark-backed
+filter answered on every engine instead of refused on two, and the panel
+reading one more error shape. A deployment that runs v1.19.3 runs as
+before, except for the two behaviour changes under **Changed**: a Data
+Studio over Quark on SQLite or Oracle answers a filter or a search carrying
+`%` or `_` differently, and a panel over an application that answers
+problem details shows the backend's message.
+
+**The browser half ships in the `ui` module (v1.2.0) and the `// Deprecated:`
+markers in the `datasource` module (v1.1.0); this root still requires `ui`
+v1.1.1 and `datasource` v1.0.1.** The WARNs at start, the server flag and the
+godoc that announces the change are in this root, `agent` and `server`, so
+they reach an application with this tag. The panel's reading of problem
+details, and the markers an editor shows on the adapter, reach an
+application with the release that raises those requirements, as v1.19.1 and
+v1.19.3 did for the minors before them. The wildcard change is in
+`quarkdatasource` (v1.13.0), which an application requires on its own; a
+Data Studio over Quark gets it when the application moves to that tag.
+
+### Announced for 2.0
+
+- **The node identity is bound to the certificate by default
+  (`DEP-2026-001`).** Today a server whose agent listener verifies client
+  certificates (`--agent-client-ca`) registers the `node_id` an agent
+  declares and logs a WARN when it differs from the certificate's Common
+  Name; `--agent-identity-from-cert`
+  (`server.Config.AgentIdentityFromCertificate`) is the opt-in that refuses
+  the mismatch with `PermissionDenied`. At 2.0 a listener that verifies
+  client certificates binds unless told otherwise: a `node_id` that is not
+  the Common Name is refused, as the opt-in refuses it today.
+  `--agent-identity-from-cert` keeps its meaning and is no longer necessary
+  under mutual TLS; a fleet whose agents share one certificate says so with
+  the new `--allow-shared-agent-certificate` (below), which keeps today's
+  regime across the major. A listener that does not verify client
+  certificates has nothing to bind to, and nothing changes there. In 1.x the
+  default stays as it is.
+
+- **The Nucleus data-source adapter leaves (`DEP-2026-002`).** Data Studio
+  speaks Orbit's `datasource` contract, and the panel and the fleet agent
+  fill it by default with `github.com/jcsvwinston/orbit/datasource/nucleus`,
+  the adapter that serves Data Studio from the application's `pkg/model`
+  registry. Nucleus retires `pkg/model` as a public data layer at its 2.0
+  (its notice `DEP-2026-024`, in that repository's `docs/deprecations/`), and
+  the adapter leaves with it. At Orbit 2.0 the panel reads Quark models only,
+  through `quarkdatasource`; `orbit.Config.DataSource` is required, and a nil
+  value is a configuration error the module refuses to start on; an agent
+  with a registry and no `DataSource` serves no Data Studio on that node; and
+  the runtime field-metadata editor (`PUT /api/models/{name}/schema/fields`,
+  which only the default path serves) and the signal bus the adapter hands
+  to the CRUD (its `Config.Bus`) leave with it. The way to stay: define the
+  models with Quark and set `orbit.Config.DataSource` (on a fleet node,
+  `agent.Config.DataSource` or `ExtensionConfig.DataSource`) to a
+  `quarkdatasource` adapter, the one that already serves Data Studio over
+  Quark. In 1.x everything keeps working.
+
+Both notices live in `docs/deprecations/`, with the migration path, how to
+detect that a deployment relies on what changes, and the tests that pin the
+current behaviour. Each names v2.0.0 and a date no earlier than 2027-01-17.
+
+### Added
+
+- **`server.Config.AllowSharedAgentCertificate`**, and on the `admin-server`
+  binary `--allow-shared-agent-certificate` (env
+  `NUCLEUS_ADMIN_ALLOW_SHARED_AGENT_CERTIFICATE=1`): keeps registering the
+  declared `node_id` when it is not the certificate's Common Name — with the
+  WARN per registration naming both identities — now and across the major.
+  It contradicts `--agent-identity-from-cert`, and `Run` refuses to start
+  with both set, naming them. On a listener that does not verify client
+  certificates it changes nothing. The WARN per registration does not
+  change, and its hint still names only `--agent-identity-from-cert`.
+- **One WARN at start where a deployment relies on what changes.** A server
+  with `--agent-client-ca` and neither identity flag starts as before and
+  logs `agent listener verifies client certificates but does not bind node
+  identity to them`, with the two flags in its hint, so the choice is made
+  in your own time rather than at the upgrade; with either flag set it is
+  silent. An application that mounts the panel without `DataSource` logs
+  `orbit: Data Studio reads the application's pkg/model registry through the
+  Nucleus adapter, which leaves at Orbit 2.0 (DEP-2026-002)`, with the way
+  to stay as its hint. A fleet node with a registry and no `DataSource` logs
+  its own line under the `admin agent:` prefix — it names this node's
+  `pkg/model` registry, and its hint names `agent.Config.DataSource`. An
+  application on its own source, and a node without a registry, hear
+  nothing.
+- **The announcement where its surface is read.** The package
+  `datasource/nucleus`, its `Config`, `Adapter` and `New` carry
+  `// Deprecated:` markers that name the notice, the replacement, v2.0.0 and
+  the date. The godoc of `server.Config.AgentIdentityFromCertificate`,
+  `orbit.Config.DataSource` and `agent.Config.DataSource` says what changes
+  at 2.0 and how to stay, and the help text of `--agent-identity-from-cert`
+  says that Orbit 2.0 turns it on by default under `--agent-client-ca`.
+- **`docs/deprecations/`**, the repository's register of deprecation
+  notices, with the README that sets the rules: one notice per decision;
+  removals are major-only; a minimum of 90 calendar days of notice; a notice
+  is announced in the godoc of the symbol, in the register and, for a
+  default that changes, with one WARN at start in the deployment that still
+  relies on it.
+
+### Changed
+
+- **A wildcard in a Quark-backed filter is data on every engine.** A
+  `contains`, `startswith` or `endswith` filter, and the search box, over a
+  model served by `quarkdatasource` now build their `LIKE` with Quark's
+  `Contains`, `StartsWith` and `EndsWith`, which escape the value and declare
+  the escape character on the statement. A `%` or `_` in the value matches
+  that character. On SQLite and Oracle, whose `LIKE` has no default escape
+  character, such a filter used to be refused with `400` rather than widen
+  the match, and a search for `%` matched every row; both now answer the rows
+  that contain the character. On PostgreSQL, MySQL, MariaDB and SQL Server,
+  where the value was already escaped, the answers do not change.
+- **The panel reads RFC 9457 problem details.** Beside the framework's
+  envelope (`{"error": {"code", "message"}}` for a domain error,
+  `{"error": "message"}` for a plain one), the panel's client reads a
+  problem-details body by its keys, whatever the content type: `detail`,
+  then `title`, with `code` as an extension member — the shape Nucleus makes
+  its default at its 2.0 (its notice `DEP-2026-022`, in the same register).
+  An application that already answers problem details gets the backend's
+  own message in the panel instead of the raw JSON text of the problem; an
+  application on the envelope sees no difference. The embedded panel build
+  is rebuilt; the fleet UI does not change.
+- **The two places the panel wraps a response writer** — the audit trail
+  and the live feed, which record the status an admin request answered
+  with — call `router.Wrap(w)` in place of
+  `router.NewWrapResponseWriter(w, protoMajor)`, which Nucleus v1.33.0
+  deprecates (its `DEP-2026-023`); the same status and byte count are
+  recorded. With it the panel no longer calls anything Nucleus has marked.
+- The root, `agent`, `server`, `quarkbridge` and `quarkdatasource` require
+  Nucleus v1.33.0, the version the suite certifies next (from v1.32.0);
+  `quarkbridge` and `quarkdatasource` keep Quark v1.17.0, and `datasource`
+  keeps the floor its contract has carried since v1.0.0, Nucleus v1.30.1 —
+  an application that requires the root resolves v1.33.0 either way.
+- The Security page says what changes at 2.0 and how to stay, and its
+  hardening checklist offers either identity flag; the Server page says the
+  same in a sentence; the Features page says what a wildcard in a filter or
+  in the search box does now; the admin bench and fleet bench pages in the
+  repository record the same; the module matrix gains its v1.19.3 row.
+
+Fleet and bridge tags cut alongside: `quarkbridge/v1.9.6`, `quarkdatasource/v1.13.0`, `agent/v0.16.0`, `server/v0.21.0`, `datasource/v1.1.0`, `ui/v1.2.0`.
 
 ## v1.19.3 — 2026-10-12
 

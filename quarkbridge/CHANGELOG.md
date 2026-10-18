@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.6](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v1.9.5...quarkbridge/v1.9.6) (2026-10-18)
+
+
+### Fixed
+
+* **deps:** align root, agent, server, quarkbridge, quarkdatasource to the set (nucleus v1.33.0, quark v1.17.0) and call router.Wrap in place of NewWrapResponseWriter (A12 M0-O b) ([#570](https://github.com/jcsvwinston/orbit/issues/570)) ([65ef228](https://github.com/jcsvwinston/orbit/commit/65ef2287c5499628c62d629a7666ceb9755dc1d2))
+
 ## [1.9.5](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v1.9.4...quarkbridge/v1.9.5) (2026-10-12)
 
 

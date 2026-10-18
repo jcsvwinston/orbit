@@ -1,0 +1,2052 @@
+---
+title: Release notes
+sidebar_position: 1
+description: What changed in each Orbit release, in plain terms.
+---
+
+# Release notes
+
+The current release is **v1.20.0**. <!-- x-release-please-version -->
+
+Every heading below is a version of the **root module**
+(`github.com/jcsvwinston/orbit`) — the one an application mounts for the
+in-process panel.
+
+The fleet modules (`agent`, `server`, `proto`) release independently with their
+own tags, so each entry also lists the fleet tags cut alongside it. The
+complete tag history lives on the
+[GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
+
+## v1.20.0 — 2026-10-18
+
+A minor that says what Orbit changes at its 2.0, in the places an operator
+and an application read, and ships the ways to stay where you are. The
+repository gets its register of deprecation notices, `docs/deprecations/`,
+and its first two: `DEP-2026-001` (a server that verifies client
+certificates binds the node identity to them by default at 2.0) and
+`DEP-2026-002` (the Nucleus data-source adapter leaves at 2.0). Nothing is
+removed and no default changes in this release: the notices announce, and
+the changes ship with the major. What changes today is a new server flag
+that keeps the current identity regime across the major, one WARN at start
+in a deployment that relies on what changes, a wildcard in a Quark-backed
+filter answered on every engine instead of refused on two, and the panel
+reading one more error shape. A deployment that runs v1.19.3 runs as
+before, except for the two behaviour changes under **Changed**: a Data
+Studio over Quark on SQLite or Oracle answers a filter or a search carrying
+`%` or `_` differently, and a panel over an application that answers
+problem details shows the backend's message.
+
+**The browser half ships in the `ui` module (v1.2.0) and the `// Deprecated:`
+markers in the `datasource` module (v1.1.0); this root still requires `ui`
+v1.1.1 and `datasource` v1.0.1.** The WARNs at start, the server flag and the
+godoc that announces the change are in this root, `agent` and `server`, so
+they reach an application with this tag. The panel's reading of problem
+details, and the markers an editor shows on the adapter, reach an
+application with the release that raises those requirements, as v1.19.1 and
+v1.19.3 did for the minors before them. The wildcard change is in
+`quarkdatasource` (v1.13.0), which an application requires on its own; a
+Data Studio over Quark gets it when the application moves to that tag.
+
+### Announced for 2.0
+
+- **The node identity is bound to the certificate by default
+  (`DEP-2026-001`).** Today a server whose agent listener verifies client
+  certificates (`--agent-client-ca`) registers the `node_id` an agent
+  declares and logs a WARN when it differs from the certificate's Common
+  Name; `--agent-identity-from-cert`
+  (`server.Config.AgentIdentityFromCertificate`) is the opt-in that refuses
+  the mismatch with `PermissionDenied`. At 2.0 a listener that verifies
+  client certificates binds unless told otherwise: a `node_id` that is not
+  the Common Name is refused, as the opt-in refuses it today.
+  `--agent-identity-from-cert` keeps its meaning and is no longer necessary
+  under mutual TLS; a fleet whose agents share one certificate says so with
+  the new `--allow-shared-agent-certificate` (below), which keeps today's
+  regime across the major. A listener that does not verify client
+  certificates has nothing to bind to, and nothing changes there. In 1.x the
+  default stays as it is.
+
+- **The Nucleus data-source adapter leaves (`DEP-2026-002`).** Data Studio
+  speaks Orbit's `datasource` contract, and the panel and the fleet agent
+  fill it by default with `github.com/jcsvwinston/orbit/datasource/nucleus`,
+  the adapter that serves Data Studio from the application's `pkg/model`
+  registry. Nucleus retires `pkg/model` as a public data layer at its 2.0
+  (its notice `DEP-2026-024`, in that repository's `docs/deprecations/`), and
+  the adapter leaves with it. At Orbit 2.0 the panel reads Quark models only,
+  through `quarkdatasource`; `orbit.Config.DataSource` is required, and a nil
+  value is a configuration error the module refuses to start on; an agent
+  with a registry and no `DataSource` serves no Data Studio on that node; and
+  the runtime field-metadata editor (`PUT /api/models/{name}/schema/fields`,
+  which only the default path serves) and the signal bus the adapter hands
+  to the CRUD (its `Config.Bus`) leave with it. The way to stay: define the
+  models with Quark and set `orbit.Config.DataSource` (on a fleet node,
+  `agent.Config.DataSource` or `ExtensionConfig.DataSource`) to a
+  `quarkdatasource` adapter, the one that already serves Data Studio over
+  Quark. In 1.x everything keeps working.
+
+Both notices live in `docs/deprecations/`, with the migration path, how to
+detect that a deployment relies on what changes, and the tests that pin the
+current behaviour. Each names v2.0.0 and a date no earlier than 2027-01-17.
+
+### Added
+
+- **`server.Config.AllowSharedAgentCertificate`**, and on the `admin-server`
+  binary `--allow-shared-agent-certificate` (env
+  `NUCLEUS_ADMIN_ALLOW_SHARED_AGENT_CERTIFICATE=1`): keeps registering the
+  declared `node_id` when it is not the certificate's Common Name — with the
+  WARN per registration naming both identities — now and across the major.
+  It contradicts `--agent-identity-from-cert`, and `Run` refuses to start
+  with both set, naming them. On a listener that does not verify client
+  certificates it changes nothing. The WARN per registration does not
+  change, and its hint still names only `--agent-identity-from-cert`.
+- **One WARN at start where a deployment relies on what changes.** A server
+  with `--agent-client-ca` and neither identity flag starts as before and
+  logs `agent listener verifies client certificates but does not bind node
+  identity to them`, with the two flags in its hint, so the choice is made
+  in your own time rather than at the upgrade; with either flag set it is
+  silent. An application that mounts the panel without `DataSource` logs
+  `orbit: Data Studio reads the application's pkg/model registry through the
+  Nucleus adapter, which leaves at Orbit 2.0 (DEP-2026-002)`, with the way
+  to stay as its hint. A fleet node with a registry and no `DataSource` logs
+  its own line under the `admin agent:` prefix — it names this node's
+  `pkg/model` registry, and its hint names `agent.Config.DataSource`. An
+  application on its own source, and a node without a registry, hear
+  nothing.
+- **The announcement where its surface is read.** The package
+  `datasource/nucleus`, its `Config`, `Adapter` and `New` carry
+  `// Deprecated:` markers that name the notice, the replacement, v2.0.0 and
+  the date. The godoc of `server.Config.AgentIdentityFromCertificate`,
+  `orbit.Config.DataSource` and `agent.Config.DataSource` says what changes
+  at 2.0 and how to stay, and the help text of `--agent-identity-from-cert`
+  says that Orbit 2.0 turns it on by default under `--agent-client-ca`.
+- **`docs/deprecations/`**, the repository's register of deprecation
+  notices, with the README that sets the rules: one notice per decision;
+  removals are major-only; a minimum of 90 calendar days of notice; a notice
+  is announced in the godoc of the symbol, in the register and, for a
+  default that changes, with one WARN at start in the deployment that still
+  relies on it.
+
+### Changed
+
+- **A wildcard in a Quark-backed filter is data on every engine.** A
+  `contains`, `startswith` or `endswith` filter, and the search box, over a
+  model served by `quarkdatasource` now build their `LIKE` with Quark's
+  `Contains`, `StartsWith` and `EndsWith`, which escape the value and declare
+  the escape character on the statement. A `%` or `_` in the value matches
+  that character. On SQLite and Oracle, whose `LIKE` has no default escape
+  character, such a filter used to be refused with `400` rather than widen
+  the match, and a search for `%` matched every row; both now answer the rows
+  that contain the character. On PostgreSQL, MySQL, MariaDB and SQL Server,
+  where the value was already escaped, the answers do not change.
+- **The panel reads RFC 9457 problem details.** Beside the framework's
+  envelope (`{"error": {"code", "message"}}` for a domain error,
+  `{"error": "message"}` for a plain one), the panel's client reads a
+  problem-details body by its keys, whatever the content type: `detail`,
+  then `title`, with `code` as an extension member — the shape Nucleus makes
+  its default at its 2.0 (its notice `DEP-2026-022`, in the same register).
+  An application that already answers problem details gets the backend's
+  own message in the panel instead of the raw JSON text of the problem; an
+  application on the envelope sees no difference. The embedded panel build
+  is rebuilt; the fleet UI does not change.
+- **The two places the panel wraps a response writer** — the audit trail
+  and the live feed, which record the status an admin request answered
+  with — call `router.Wrap(w)` in place of
+  `router.NewWrapResponseWriter(w, protoMajor)`, which Nucleus v1.33.0
+  deprecates (its `DEP-2026-023`); the same status and byte count are
+  recorded. With it the panel no longer calls anything Nucleus has marked.
+- The root, `agent`, `server`, `quarkbridge` and `quarkdatasource` require
+  Nucleus v1.33.0, the version the suite certifies next (from v1.32.0);
+  `quarkbridge` and `quarkdatasource` keep Quark v1.17.0, and `datasource`
+  keeps the floor its contract has carried since v1.0.0, Nucleus v1.30.1 —
+  an application that requires the root resolves v1.33.0 either way.
+- The Security page says what changes at 2.0 and how to stay, and its
+  hardening checklist offers either identity flag; the Server page says the
+  same in a sentence; the Features page says what a wildcard in a filter or
+  in the search box does now; the admin bench and fleet bench pages in the
+  repository record the same; the module matrix gains its v1.19.3 row.
+
+Fleet and bridge tags cut alongside: `quarkbridge/v1.9.6`, `quarkdatasource/v1.13.0`, `agent/v0.16.0`, `server/v0.21.0`, `datasource/v1.1.0`, `ui/v1.2.0`.
+
+## v1.19.3 — 2026-10-12
+
+A patch that brings v1.19.2's screens to applications: the root and `server`
+now require `orbit/ui` v1.1.1, the module that carries the browser half of
+v1.19.2. With it, Data Studio offers only the doors the server lets the
+operator through, the read-only View, the gated import and inline children,
+the contrast fixes and the compressed panel are what an application
+installing the root serves, and the admin-server binary carries only the
+fleet UI. The other sibling requirements move to the tags v1.19.2 cut
+(`datasource` v1.0.1, `proto` v0.8.1), which differ from the previous ones
+only by their toolchain line. No Go code changes.
+
+Fleet and bridge tags cut alongside: `agent/v0.15.3`, `server/v0.20.4`, `quarkdatasource/v1.12.4`.
+
+## v1.19.2 — 2026-10-12
+
+A patch that holds an operator to their grants on every surface that reads
+or writes rows for them. The list and the record form already applied the
+request's tenant, an `#own` grant and the field policies; the export, the
+fixture dump, the import, the fixture load, a record's children, a record's
+history, the audit trail and the model counts each skipped some of them.
+They now ask the same questions the list and the record form ask. No route,
+field or public type is removed: answers narrow to what the operator was
+already allowed to read, and a write is refused where the record form would
+refuse it. A superuser, and a panel in the open posture, are unaffected
+except where noted below.
+
+**The browser half ships in the `ui` module (v1.1.1), and this root still
+requires `ui` v1.1.0.** Every check below is enforced by the server in this
+release. The Data Studio screens that stop offering what the server refuses,
+and the compressed panel, reach an application with v1.19.3, which raises
+that requirement. Until then a screen can still show a button the server now
+refuses; pressing it gets the refusal.
+
+### Security: what an operator reads
+
+- **Export and fixture dump.** The panel's export (CSV, JSON and SQL) and
+  the fixture dump carry, for each model, what that operator's list of it
+  shows: their tenant's rows, only their own rows under an `#own` grant, and
+  only the fields they may read. Before, `export_data` exported every row and
+  every field, including models the operator could not open. A model named in
+  the request that the operator may not list is refused with the list's
+  `403`; an export of every model leaves it out. The export's own filters can
+  narrow the scope but not widen it, and a filter on a field the operator may
+  not read is refused with `400`.
+- **Filters, sort and search.** A field the operator may not read is refused
+  as a list filter (`400 invalid filter field`, the answer a field the model
+  does not have gets), as an `order_by` (`400 invalid order_by`) and as a
+  search that would reach it (`400`). It no longer labels a relation
+  lookup's options; a saved view that filters or sorts by it is not listed to
+  that operator; a dashboard records card ordered by it is not shown. Before,
+  the rows a filter or a sort returned told the hidden value one guess at a
+  time.
+- **A record's history and the audit trail.** A record's history is read
+  with the record view's scope: a row of another tenant answers `404`, as the
+  record does, and fields the operator may not read are masked in every
+  entry. The panel-wide trail and its CSV copy still list every entry to a
+  holder of `audit_view`, but show an entry's row values only to an operator
+  whose history of that row would show them — with the model's `retrieve`,
+  within their tenant and their own rows, without the fields they may not
+  read. Otherwise the values are `null`.
+- **Model counts.** The count per model in `GET /api/models`, the number on a
+  model's card, is the total that operator's list would answer. A model they
+  may not list has no count (`count_known: false`), and `records_total` adds
+  up only the counts they read. Before, every holder of `list_models` read
+  the size of the whole table.
+
+### Security: what an operator writes
+
+- **Import and fixture load.** `import_data` says who may import, not what.
+  Each row now needs what the record form would need: the model's `create`
+  for a new row and its `update` for an existing one, the request's tenant,
+  the operator's own rows under `#own`, and no field they may not write. The
+  file is planned before anything is written, and one row the operator may
+  not write refuses the whole file with a `403` that names the row (counted
+  from 1), the model and what is missing. The validate step answers the same
+  `403`. An import, or a fixture load, that names a read-only model is
+  refused, as every other write already was.
+- **A record's inline children.** Each child saved with its parent is held to
+  the child model's own write scope: its verb, the tenant, `#own` and the
+  field policies. A child named by id must belong to the record being edited
+  (`404` otherwise, for a superuser too), and a child that names another
+  record as its parent is refused with `400` instead of being moved under
+  this one. One refused child refuses the whole save before the parent is
+  written.
+- **Field policies by JSON key.** A field policy recognises a field by its
+  column, its Go name or, for a Nucleus model, its JSON key, in any letter
+  case, both in what it masks and in what it refuses to write. A field whose
+  JSON key was neither its column nor its Go name could be read and written
+  under that key past a `deny`. Models whose JSON keys match a column or a Go
+  name do not change.
+
+### Behaviour changes you may notice
+
+- An operator who holds `import_data` but not the model's `create` (or
+  `update`, for a file that updates existing rows) now gets `403` importing
+  into it or loading a fixture for it; grant those verbs on the models they
+  import into. A file that mixes rows they may and may not write is refused
+  whole, where it used to be half imported. A row of another tenant refuses
+  the whole file for every operator, superusers included; it used to fail on
+  its own while the rest landed.
+- An operator with `audit_view` but without a model's `retrieve` sees that
+  model's entries in the trail without row values. A superuser whose request
+  is confined to a tenant sees other tenants' entries without values, and
+  gets `404` for the history of their rows until they switch tenant.
+- A search answers `400` when a searchable field is hidden from the
+  operator. For a field the panel's configuration excludes, this applies to
+  superusers too, since nobody reads that field in the panel.
+- A save whose inline child names another record as its parent answers
+  `400`, and one that names another record's child by id answers `404`.
+  Data Studio's form sends neither.
+- An operator confined to a tenant or to their own rows sees smaller numbers
+  on the model cards, and none for a model they may not list. Each confined
+  model costs one single-row list with an exact count instead of a plain
+  count.
+- An export job, its status and its download are handed only to the operator
+  who cut it and to a superuser; another holder of `export_data` gets `404`.
+  The job list is kept in memory, so after a restart, or on another replica,
+  the operator cuts the export again. The signed URL a store returns is
+  unaffected.
+
+Not changed: entries in the trail do not record a tenant, so an operator
+confined to a tenant who holds `audit_view` still sees other tenants'
+entries — who, when, which record, IP and user agent — without their row
+values.
+
+### Fixed
+
+- Two exports started in the same second shared a storage key, and the
+  second overwrote the first. Each key now carries a random suffix.
+- A filter on a hidden field that is not one of the model's filters answered
+  that the filter was not enabled for that field, which said the field
+  existed. It answers `invalid filter field`, as for an unknown field.
+
+### Added
+
+- The `permissions` map of `GET /api/models` and of a model's schema also
+  answers `get_schema`, `update_schema`, `export_data` and `import_data`,
+  computed by the same function the handlers authorize with. The schema
+  carries `searchable`, each saved view in `GET /api/views` carries
+  `can_edit`, and a destructive application action is not offered on a
+  read-only model. These are what the Data Studio screens below draw from.
+
+### The screens (reach applications with v1.19.3)
+
+**Data Studio offers a door only to an operator the server lets through
+it.**
+
+- A model appears in the sidebar with `get_schema` and `list`. **Fields**
+  needs `update_schema`, **Export** needs `export_data` and the model's
+  `list`, **Import** needs `import_data` and `create` on a model that is not
+  read-only, and a row's **History** needs `retrieve`. A saved view's
+  removal is offered to its owner and to a superuser only.
+- A selection and its batch **Delete** need `bulk_delete`, the verb the
+  server asks of a batch; an operator with `delete` alone keeps the
+  one-record Delete. An operator with `retrieve` and no `update` gets
+  **View**, the record read-only; before, they had no way to open it.
+- The search box is disabled when the schema says the operator's search
+  would be refused.
+- A record's inline children offer Add, Remove and edit by the child
+  model's `create`, `delete` and `update`, and only changed children are
+  sent, so an operator who may add a line but not edit one is not refused
+  for the lines they only looked at.
+- The import dialog shows the server's refusal, with the row and the
+  reason, and counts rows from 1.
+- Text that read below the AA contrast ratio now meets it: the open model's
+  count, table name and engine label, the export panel's unselected formats,
+  and field errors on a form.
+
+**The panel travels compressed.** The `ui` build writes a Brotli and a gzip
+copy beside each text file, and the panel and the admin server answer with
+the one the browser accepts; nothing is compressed per request, and the
+panel no longer depends on the application's router to compress it. Data
+Studio's heaviest load drops from 315 KiB to 264 KiB gzip, and the grid's
+icons are drawn as SVG masks instead of a font. The fleet UI meets the AA
+contrast ratio in both themes, which closes the gap recorded in v1.17.0, and
+the admin-server binary no longer embeds the panel (25.6 MB to 23.8 MB).
+
+### Changed
+
+- The `admin-server` binaries of this release are built with Go 1.26.9,
+  which fixes GO-2026-6617 (an HPACK race that crashes the HTTP/2 server in
+  `net/http`) and nine other standard-library advisories. `agent` and
+  `server` require `golang.org/x/net` v0.60.0, which fixes the same advisory
+  and GO-2026-6603, GO-2026-6610, GO-2026-6611 and GO-2026-6612 in
+  `x/net/http2`. Every module declares `toolchain go1.26.9`; the `go`
+  directive stays at 1.26.6, so no consumer has to raise its minimum Go. An
+  application that mounts the panel builds it with its own toolchain and
+  gets the `net/http` fix when that toolchain is 1.26.9 or later.
+- The root, `agent`, `server`, `quarkbridge` and `quarkdatasource` require
+  Nucleus v1.32.0, and `quarkbridge` and `quarkdatasource` require Quark
+  v1.17.0, the versions the suite certifies next.
+
+Fleet and bridge tags cut alongside: `quarkbridge/v1.9.5`, `quarkdatasource/v1.12.3`, `proto/v0.8.1`, `agent/v0.15.2`, `server/v0.20.3`, `datasource/v1.0.1`, `ui/v1.1.1`.
+
+## v1.19.1 — 2026-10-05
+
+A patch that brings v1.19.0's screens to applications: the root and `server`
+(v0.20.2) now require `orbit/ui` v1.1.0, the module that carries the browser
+half of v1.19.0. With it, the action form and the record menu, the
+dashboards, the theme applied on the first frame and the application's field
+renderers are what an application installing the root serves. No Go code
+changes.
+
+## v1.19.0 — 2026-10-05
+
+A minor that lets an application extend the panel without forking it:
+actions that ask for input and act on one record, built-in widgets and more
+than one dashboard, a theme and palette from the configuration, and the
+application's own client code and field renderers under the panel's
+Content-Security-Policy. Everything is additive: a panel configured for
+v1.18 renders and behaves as before.
+
+**The browser half of these changes ships in the `ui` module (v1.1.0), and
+this root still requires `ui` v1.0.0.** The server side is here; the screens
+that use it reach an application with v1.19.1, which raises that
+requirement.
+
+### Added
+
+- **Actions that ask before they run.** `ModelAction.Fields` declares typed
+  inputs (text, number, boolean, select with options, date), validated at
+  startup; the server validates what the operator submits and answers 422
+  naming each field, and the handler receives typed values through
+  `ActionRequest.Input`. The submitted input is in the audit entry.
+- **Actions on one record, and what they answer.** `ModelAction.Placement`
+  offers an action on the selection, on a record, or both; a record action
+  runs on that one record with the same permission, tenant confinement and
+  audit as the bulk path. An action can answer with a message, a redirect
+  inside the panel (absolute URLs, `//`, `..` and control characters are
+  refused), or a download with a declared type, a safe file name and a 32 MiB
+  ceiling.
+- **Built-in widgets and several dashboards.** `Widget.Kind` adds stat, line
+  and bar series, table and recent-records cards, each fed by a typed Go
+  callback; a callback's error shows in its card, not as a page failure.
+  `Config.Dashboards` declares named dashboards with their own layout, each
+  behind a `view` permission on `admin:dashboard:<id>`.
+- **Theme and palette from the configuration.** `branding.theme` (dark, light
+  or system) is applied before the first frame through a script served from
+  the panel's own origin (`script-src` stays `'self'`); the operator's own
+  choice still wins. `branding.light|dark.{primary,surface,text}_color`
+  are checked for contrast against their theme at startup.
+- **The application's client code.** `Config.Client` declares scripts and
+  stylesheets the panel serves under its prefix with SRI hashes, after its own
+  bundle, and field renderers they register through `window.orbit`
+  (version 1); a renderer that throws falls back to the panel's own drawing.
+
+### Fixed
+
+- `field_widgets` is validated at startup like every other declaration: an
+  unknown widget or a key that names no field refuses to start, naming it.
+- A branding logo or favicon on another origin is added to `img-src`, so the
+  URLs the configuration accepts load under the panel's CSP; the login screen
+  draws the logo.
+- The grid offers row selection when the operator can run any bulk action,
+  not only when it can delete.
+- `website/docs/configuration.md` documents every key the panel binds.
+
+### Changed
+
+- Every module requires Nucleus v1.31.0 and Quark v1.16.0, the versions the
+  suite certifies next; `quarkdatasource` pins the root at v1.18.1.
+
+Fleet and bridge tags cut alongside: `quarkbridge/v1.9.4`, `quarkdatasource/v1.12.2`, `proto/v0.8.0`, `agent/v0.15.1`, `server/v0.20.1`, `datasource/v1.0.0`, `ui/v1.1.0`.
+
+## v1.18.1 — 2026-10-05
+
+An alignment release with no product change: every module now requires
+Nucleus v1.31.0 and Quark v1.15.2, the versions the suite certifies next, and
+`quarkdatasource` pins the root at v1.18.0. Nothing in the binaries or the
+panel behaves differently from v1.18.0.
+
+Fleet and bridge tags cut alongside: `quarkbridge/v1.9.3`, `quarkdatasource/v1.12.1`, `proto/v0.8.0`, `agent/v0.15.1`, `server/v0.20.1`, `datasource/v1.0.0`, `ui/v1.0.0`.
+
+## v1.18.0 — 2026-09-25
+
+The second half of v1.17.0: what that release declared, this one fills, and
+the modules pin the tags it cut. Everything is additive; a deployment that
+ran v1.17.x runs unchanged.
+
+**The tenant is filled on the wire.** `GetSelf` answers the tenant the
+trusted proxy scoped the operator to, beside who they are audited as, and
+the agent names a model's tenant field in the model description — by its
+field name, which is what the UI matches its columns by. The fleet UI shows
+both; it read them empty in v1.17.0.
+
+**The server says which agent answered.** A model list and a page of records
+carry the node that produced them. They were declared to since the protocol
+began and left empty; with several nodes behind one server, a UI could not
+tell whose page it was reading.
+
+**Three agents behind two servers, tested.** The test module boots two
+peered servers and three agents with a database each and asks both servers
+the operator's questions — the inventory, the events, Data Studio, the
+audit, and which node is still connected — so the fleet is measured as a
+fleet and not as one server with one agent. That test found the empty node
+above.
+
+**The release build resolves the server's pins the way a consumer does.**
+v1.17.0 published no binaries: the `ui` module was born in that cut, the
+server's checksum file could not carry its entry before the tag existed,
+and the read-only build in the release workflow refused to start. The
+workflow now resolves the module as `go install` does; the checksum file is
+still kept honest by the tidy check on every change. If you install
+v1.17.0 from source, `go install` resolves it the same way.
+
+**The modules pin what the last cut published.** `agent` and `server`
+require `proto v0.8.0`; the tree of this release pins nothing older than its
+own tags.
+
+The fleet bench stands at 50 of 50 present.
+
+Fleet tags cut alongside: `agent/v0.15.0`, `server/v0.20.0`. `proto`
+(v0.8.0), `ui` (v1.0.0), `datasource` (v1.0.0), `quarkbridge` and
+`quarkdatasource` do not change.
+
+## v1.17.0 — 2026-09-25
+
+More than one admin server, and one web project behind both UIs. Everything
+is additive; a deployment that ran v1.16.x runs unchanged, with one server
+and its agents.
+
+**A fleet of servers.** Two or more admin servers that name each other
+(`--peers`, one agent-listener endpoint per peer, with `--server-id` to say
+who each one is) share their nodes and relay their events: a UI on any of
+them lists every node of the fleet, says which server a remote node is
+connected through, and receives the events of agents connected elsewhere,
+live and in the replay. A Data Studio request for a node connected to
+another server is refused naming its owner, rather than answered wrongly.
+The link between servers is the agent listener itself, under the same token
+or client certificate an agent presents (`--peer-token` when it differs).
+With `--assign-nodes` and `--agent-advertise-addr`, each node has one owner
+in the fleet, chosen deterministically from its id, and an agent that
+connects to the wrong server is redirected to the right one; an agent only
+follows a redirect to an endpoint it was configured with. A reconnect under
+the same node id now ends the previous stream instead of leaving it open.
+
+**One frontend project.** The panel and the fleet UI are two entries of one
+project, built into one distribution that a new module,
+`github.com/jcsvwinston/orbit/ui`, embeds and both binaries require; the
+panel served by an application and the UI served by the admin server come
+from the same build, with the same design tokens, tests, lint and size
+budget. Nothing changes for a deployment: the paths, the routes and the
+screens are the same.
+
+**The fleet UI speaks the current protocol stack.** The stubs of the fleet
+UI are generated with the second generation of the protocol tooling, from
+`proto/`. The UI also shows the tenant the operator is scoped to, beside
+who they are audited as, and marks a tenant-scoped model and its column in
+Data Studio. The two fields that carry them are declared in this release
+and filled by the server and the agent once they pin it — the same two-step
+as every protocol change — so this release's UI reads them empty.
+
+**The protocol declares the fleet.** `proto/v0.8.0` adds the two tenant
+fields above and the peer service the servers speak to each other. Every
+existing message is unchanged.
+
+The fleet bench moves to 49 of 50 present, with one partial (the tenant in
+the UI, until the fields are filled); a browser instrument now measures the
+fleet UI as it has measured the panel since v1.10.0, and records one gap:
+small muted text in the light theme falls short of the contrast ratio, kept
+for the re-skin onto the shared tokens.
+
+Fleet tags cut alongside: `proto/v0.8.0`, `agent/v0.14.0`,
+`server/v0.19.0`, and the first tag of the new module, `ui/v1.0.0`.
+`datasource` (v1.0.0), `quarkbridge` and `quarkdatasource` do not change.
+
+## v1.16.0 — 2026-09-24
+
+The server tells you when something crosses a line, and says what it is
+doing on its own metrics port. Everything is additive; a deployment that
+ran v1.15.x runs unchanged.
+
+**Threshold alerts.** Rules in a JSON file (`--alert-rules-file`) name a
+host metric, an operator, a threshold and how long the condition must hold;
+the server evaluates them against every heartbeat, fires once the condition
+has held, resolves when it stops, and notifies the channels the rule names:
+webhooks that receive the alert as a JSON POST (`--alert-webhooks
+name=url`), and an e-mail channel over SMTP (`--alert-smtp-*`). A rule that
+names a channel you did not configure stops the server at start, because a
+rule that would notify nobody by mistake is the quiet failure alerts exist
+to prevent. The UI API lists rules and alerts and streams state changes;
+alerts live in memory and are not retained across a restart.
+
+**The server's own metrics.** `--metrics-addr` now serves, beside the Go
+runtime's collectors, what the server does: nodes connected and known,
+frames, events and heartbeats received, Data Studio requests by outcome,
+alerts firing, fired and resolved, replay buffered events, and events
+published and dropped to UI subscriptions.
+
+**Retained host metrics can be read.** The samples the server keeps since
+v1.15.0 are served per node, oldest first, within the retention window and
+since the instant asked. A server without a data directory answers an
+empty list.
+
+**The modules pin what the last cut published.** `agent` and `server`
+require `proto v0.7.0`: this is the second half of what v1.15.0 declared,
+and the tree of this release pins nothing older than its own tags.
+
+The fleet bench moves to 38 of 50 present; the alerts and retention
+families are complete.
+
+Fleet tags cut alongside: `agent/v0.13.0`, `server/v0.18.0`. `proto`
+(v0.7.0), `datasource` (v1.0.0), `quarkbridge` and `quarkdatasource` do not
+change.
+
+## v1.15.0 — 2026-09-24
+
+The admin server can now remember, and the protocol says what the rest of
+the fleet plane will need. Everything is additive; a deployment that ran
+v1.14.x runs unchanged.
+
+**The server retains locally — when you ask it to.** Give it a data
+directory (`--data-dir`, env `NUCLEUS_ADMIN_DATA_DIR`) and it keeps, in one
+SQLite file it creates there, the events it forwards to the UI, the audit
+log and a host-metrics sample per heartbeat and node. A panel opened after
+a restart shows what the previous process saw, and the audit log does not
+lose who changed what. `--retention` (default 7 days) is the window: nothing
+older is served, whether or not the janitor that deletes old rows has run
+yet; a negative value keeps everything. Without a data directory the server
+is the in-memory one it was, and a restart starts empty — writing to disk
+where nothing was written is a change the operator asks for.
+
+**The audit log downloads.** `GET /api/audit/export?format=csv|json` on the
+UI listener, behind the same authentication as the rest of the UI API,
+newest first, up to 10000 rows. Deleting a record that is not there is now
+answered as not found rather than as done.
+
+**The agent keeps the events of an outage.** While its stream is down it
+keeps listening under the subscriptions the server had and parks the
+events in its ring buffer; the next stream sends them first. The buffer is
+bounded, so an outage longer than it keeps the newest events per type and
+counts the rest as dropped; what was parked is counted in
+`admin_agent_events_parked_total`.
+
+**The protocol declares what comes next, in one change.** A service to read
+the retained host-metrics samples per node; alert rules and alerts with a
+service to list and stream them; a redirect command so a server can send an
+agent to the server it belongs to; and a server-to-server stream for a fleet
+of admin servers to share nodes and relay events. Declared, not yet served:
+the next releases fill them in, and the bench says so control by control.
+
+The fleet bench moves to 33 of 50 present.
+
+Fleet tags cut alongside: `proto/v0.7.0`, `agent/v0.12.0`,
+`server/v0.17.0`. `datasource` (v1.0.0), `quarkbridge` and
+`quarkdatasource` do not change.
+
+## v1.14.0 — 2026-09-22
+
+The second half of what v1.13.0 declared, one release later because the
+fleet modules pin the protocol by tag: now that `proto/v0.6.0` is
+published, the audit entry is filled.
+
+**The audit entry says what changed.** Every mutation the admin server
+routes leaves an entry with the record's values before and after the
+action: what was written on a create, what was removed on a delete, both on
+an update, one record per row on a bulk action. The agent returns the
+record as it was together with its answer, so the server writes both sides
+without a second round trip. A side larger than 64 KiB is replaced by a
+marker that says so and how large it was. Deleting a record that is not
+there is now answered as not found rather than as done.
+
+**A Quark application's models are served by the fleet.** An agent whose
+data source is the `quarkdatasource` adapter — with no Nucleus registry or
+database behind it — serves those models through the admin server as the
+operator the server sends, tenant included. With that, the fleet's Data
+Studio and the panel's are one implementation over one contract, the
+direction chosen in August and now done.
+
+**The modules pin what the last cut published.** `agent` and `server`
+require `proto v0.6.0`; the root and `quarkdatasource` resolve
+`datasource v1.0.0` from its tag rather than from the workspace.
+
+The fleet bench moves to 28 of 50 present; the `datasource` family is
+complete.
+
+Fleet and bridge tags cut alongside: `agent/v0.11.0`, `server/v0.16.0`,
+`quarkdatasource/v1.12.0`. `proto` (v0.6.0), `datasource` (v1.0.0) and
+`quarkbridge` do not change.
+
+## v1.13.0 — 2026-09-22
+
+The fleet's Data Studio and the panel's stop being two implementations. A
+deployment that ran v1.12.x runs unchanged; an agent that predates this
+release still serves the same server, without the identity below.
+
+**The data contract is a module of its own.** `datasource` — the interface
+the panel's Data Studio has spoken since v1.3 — moves to
+`github.com/jcsvwinston/orbit/datasource`, with the Nucleus adapter as its
+`nucleus` subpackage. The import path of the contract does not change; what
+changes is that an agent, or an alternative data source such as
+`quarkdatasource`, requires the contract without pulling in the panel or its
+SPA. Its first tag is `datasource/v1.0.0`; the API is the one the panel has
+used, frozen.
+
+**The agent speaks the contract, as the operator the server sends.** The
+admin server puts the operator the UI auth chain resolved on every Data
+Studio request — subject, role, read-only, and a tenant taken from the
+trusted proxy's `X-Auth-Tenant` header (`--ui-tenant-header`, read on that
+path only). Under that operator the agent runs the request the way the
+panel would: the framework's claims are on the context, so a model hook sees
+who is asking; the application's own policy decides per model and verb
+(`list`, `retrieve`, `create`, `update`, `delete`, `bulk_delete`); and an
+operator with a tenant sees and writes only that tenant's rows — an equality
+filter on reads, the tenant stamped on a create, ownership confirmed before
+an update or a delete, and another tenant's row answered as not found. A
+request without an operator, from an older server, behaves as before. An
+application on the Quark ORM passes its `quarkdatasource` adapter to the
+agent's `ExtensionConfig.DataSource`, as it does to the panel.
+
+**The audit entry can say what changed — declared, not yet filled.** An
+`AuditEntry` gains `before_json` and `after_json`, and a `DataStudioResponse`
+gains `previous`, the record as it was before an update or a delete. The
+server and the agent fill them in the next release, once they pin this
+protocol version; until then `ListAudit` returns the entry attributed as
+before.
+
+The fleet bench moves to 26 of 50 present.
+
+Fleet and bridge tags cut alongside: `proto/v0.6.0`, `agent/v0.10.0`,
+`server/v0.15.0`, `datasource/v1.0.0`, `quarkdatasource/v1.11.0`.
+`quarkbridge` does not change.
+
+## v1.12.0 — 2026-09-21
+
+The second half of what v1.11.0 declared, one release later because the
+fleet modules pin the protocol by tag: now that `proto/v0.5.0` is published,
+the agent reads it.
+
+**Operator filters reach the agent.** A `ListRecordsRequest` carrying
+`where` — the same twelve operators the panel accepts — is applied by the
+agent through the model layer, and an operator the agent does not know is
+refused with the filter named rather than dropped: a filter quietly treated
+as "no filter" answers every row and looks like a result.
+
+**The modules pin what the last cut published.** `agent` and `server` require
+`proto v0.5.0`; `quarkdatasource` requires the root at `v1.11.0`. Nothing
+else changes; the identity on the wire is still declared and not yet filled.
+
+The fleet bench moves to 22 of 50 present.
+
+Fleet and bridge tags cut alongside: `agent/v0.9.0`, `server/v0.14.0`,
+`quarkdatasource/v1.10.0`. `proto` (v0.5.0) and `quarkbridge` do not change.
+
+## v1.11.0 — 2026-09-21
+
+The fleet plane starts closing the gaps its bench measured: who a node is,
+how long a certificate lives, and what the protocol can say. Everything is
+additive; a deployment that ran v1.10.x runs unchanged.
+
+**A node is who its certificate says it is — when you ask.** A mutual-TLS
+agent listener verified the client certificate and then registered the node
+under whatever `node_id` the agent declared, so a certificate for `node-a`
+could sit in the fleet as `node-b`. `--agent-identity-from-cert` (env
+`NUCLEUS_ADMIN_AGENT_IDENTITY_FROM_CERT=1`) refuses a registration whose
+`node_id` is not the verified certificate's Common Name, and the server
+refuses to start with the flag on a listener that does not verify client
+certificates. It is off by default, because a fleet that shares one
+certificate across its agents would stop registering; without it the server
+registers the declared name and logs a WARN naming both. The default flips
+in the next major.
+
+**The agent takes its certificate from files.** `tls_cert_file`,
+`tls_key_file`, `tls_ca_file` and `tls_server_name` in the agent's
+configuration replace building a `*tls.Config` in code. With a certificate
+from files and no `node_id`, the node registers as the certificate's Common
+Name: the identity is written once, where the server authenticates it.
+
+**Certificates rotate without a restart, on both sides.** The server serves
+its listener certificates from the files and re-reads them when a handshake
+finds them changed; the agent does the same and presents the new certificate
+on its next connection. A half-written rotation keeps the previous pair in
+use, with one WARN, until the pair is whole. The CA bundles are still read
+once.
+
+**The protocol declares what the fleet's Data Studio will carry.** A
+`ListRecordsRequest` can now name filters with an operator (`where`: the
+same twelve the panel accepts), and a `DataStudioRequest` can carry the
+operator's identity — subject, role, read-only, tenant. Declared, not yet
+acted on: the server does not fill the identity and the agent does not read
+the filters until they are pinned to this protocol version; the next release
+does that. What does act now: every list the fleet serves carries an exact
+total, filtered or not, so a pager can say how many pages there are.
+
+Where the contract will live is decided as well: the `datasource` contract
+becomes a module of its own, so an agent or an alternative data source can
+depend on it without pulling in the panel. The move itself ships with the
+release that makes the agent consume it.
+
+The fleet plane is measured rather than described: `internal/fleettest/fleetbench`
+is 50 controls, each a probe that boots a real server and a real agent, and
+this release moves it from 16 to 21 present. The numbers are in
+[the bench's page](https://github.com/jcsvwinston/orbit/blob/main/docs/fleet-bench.md).
+
+Fleet tags cut alongside: `proto/v0.5.0`, `agent/v0.8.0`, `server/v0.13.0`.
+`quarkbridge` and `quarkdatasource` do not change.
+
+## v1.10.3 — 2026-09-20
+
+An alignment release with no product change: every module now requires
+Nucleus v1.30.1 and Quark v1.15.0, the versions the suite certifies next, and
+`quarkdatasource` pins the root at v1.10.2. Nothing in the binaries or the
+panel behaves differently from v1.10.2.
+
+Fleet and bridge tags cut alongside: `quarkbridge/v1.9.2`, `quarkdatasource/v1.9.3`, `proto/v0.4.4`, `agent/v0.7.2`, `server/v0.12.2`.
+
+## v1.10.2 — 2026-09-19
+
+The queue view can see the queue, and the modules move to the set that
+publishes what it needs (`nucleus v1.30.0`).
+
+**The panel's job queues answer about a real queue (OR-53).** The screen was
+built in v1.10.0 and nothing ever handed the panel an inspector, so it reported
+on a queue it could not see: `enabled: false`, no queues, and every queue
+action refused with "task inspector is not configured (check redis_url)".
+
+Three things were in the way. The module never set the field. Setting it while
+the module starts would not have helped either — a module's `OnStart` runs
+before the framework builds its jobs runtime, so there is nothing to capture
+yet, and a value read then stays nil for the life of the process. The inspector
+is resolved **per call** now, through the optional interface nucleus exposes for
+it; a host that does not implement it leaves the view saying so, which is the
+honest answer rather than an empty screen.
+
+**And `enabled` means what it says.** It used to mean "a Redis URL is
+configured", which was the same thing as "there is a queue" only while every
+durable queue needed one. Nucleus v1.30.0 ships a queue that lives in the
+application's own database and needs no broker: that deployment works, and this
+view told its operator jobs were off. The Redis URL is still reported alongside,
+for whoever is reading a Redis deployment.
+
+Nothing about the panel's own contract changes: the endpoint, its shape and its
+permissions are the ones v1.10.0 published.
+
+## v1.10.1 — 2026-09-18
+
+One fix, in the module that browses a Quark-managed application
+(`quarkdatasource v1.9.1`), and the release of the root that carries it.
+
+**Filters with operators work over a Quark source.** The panel asks a data
+source whether it applies `Query.Where` before it sends any, and refuses the
+request when the answer is no — because a source that ignored the field would
+answer every row while looking like it filtered. The Quark-backed source said
+no, so every range, substring, set and null filter over a Quark-managed model
+came back refused. It answers them now.
+
+Two refusals stay, because both alternatives are worse than an error: an
+operator the store cannot express is refused by name rather than falling back
+to equality, and a `contains`/`startswith`/`endswith` whose value carries `%`
+or `_` is refused on SQLite and Oracle, whose `LIKE` has no default escape
+character — there the wildcard would widen the match instead of matching
+itself. On the engines with a default escape, the value is escaped with it.
+
+The module could not be fixed before v1.10.0 existed: it builds against the
+root tag it pins, and the filter contract is published by that tag.
+
+## v1.10.0 — 2026-09-18
+
+The release where the panel becomes the admin of the product, not a viewer
+with a CRUD on top. Everything below is additive: no configuration, policy or
+call that worked against v1.9.x behaves differently.
+
+**Operators are people you manage from the panel.** An account can be
+created, given roles, re-credentialled, deactivated and deleted from the
+Operators screen — until now it existed only in the database and in
+`nucleus createuser` on a server. Deactivating is not deleting: the account
+and its audit trail stay, and the operator stops being one on their next
+request. Two refusals live in the API rather than in the screen, because the
+screen is not the only client: you cannot deactivate, delete or demote your
+own account, and nobody can do it to the last active superuser.
+
+**Permissions reach the field and the row.** A policy's object can now name a
+field (`admin:Post.title`) or carry the `#own` qualifier (`admin:Post#own`),
+so "an editor may change the title but not the price" and "an author may edit
+their own posts" are things a policy can say. The payloads a screen loads
+carry the operator's verbs with them, so a UI disables what it may not do
+instead of discovering it by being refused.
+
+**The audit trail is a table, with retention, export and per-record history.**
+It used to be a ring buffer that went with the process. It is now kept in the
+database by default, with a retention window you can change while the
+application runs, a CSV export that carries the filters the screen was
+showing, and the history of one record read from the same trail.
+
+**Forms hold a relation, its children and a file.** A foreign key is picked
+from what it may point at, the children of a record are edited with it, and a
+JSON document, rich text or a file have something to be edited with.
+
+**Lists answer a question with an operator in it.** `?views__gt=100`,
+`?title__contains=hammer`, `?status__in=open,paused`, `?archived_at__isnull=true`
+— twelve operators, with a total a pager can divide, and the filter set an
+operator returns to can be saved.
+
+**Sessions say whose they are.** A row names its operator and the device it
+was opened from, marks the one you are reading it in, and one call ends every
+session of an account — keeping the caller's own, because "sign out
+everywhere else" is what that is for.
+
+**The operations views report state, not configuration.** The cache view
+shows the cache the application declared (`Config.Cache`) and withholds the
+flush button where there is nothing to empty; the email view reports
+delivery — the sender's own health check, and what is queued, failed or
+oldest in the outbox; the migrations view degrades to an empty list with a
+reason instead of a 500. And `/api/*` answers JSON: an endpoint that does not
+exist returns 404 rather than the single-page app's HTML.
+
+**An application adds its own verbs and its own screens.**
+`Config.Actions` declares an action for one of your models — the "publish
+these three" every admin grows — authorized as its own RBAC verb and confined
+to the rows that operator may touch. `Config.Pages` mounts a screen of your
+own inside the panel: under its prefix, behind its session, gated by its RBAC
+and listed in its navigation.
+
+**And it wears your clothes.** `Config.Branding` gives it your logo, favicon
+and accent colour, on every page including the login screen;
+`Config.Widgets` puts your own numbers on its overview; `Config.Locale` and
+`Config.Messages` make its chrome speak another language — Spanish ships with
+it, and you can add one it does not know.
+
+The panel is measured rather than described: `internal/adminbench` is 59
+controls, each one a probe that boots an application and asks the panel's own
+HTTP surface, and `internal/adminbench/browser` is the half that needs a
+browser — contrast, focus, keyboard reach. Both run in CI. The numbers are in
+[the bench's page](https://github.com/jcsvwinston/orbit/blob/main/docs/admin-bench.md).
+
+Fleet and bridge tags cut alongside: see the
+[GitHub release](https://github.com/jcsvwinston/orbit/releases/tag/v1.10.0).
+
+## v1.9.6 — 2026-09-12
+
+An alignment release with no product change: every module now requires
+Nucleus v1.28.0 and Quark v1.14.0, the versions the suite certifies next, and
+`quarkdatasource` pins the root at v1.9.5. Nothing in the binaries or the
+panel behaves differently from v1.9.5.
+
+Fleet and bridge tags cut alongside: `quarkbridge/v1.8.24`, `quarkdatasource/v1.8.25`, `proto/v0.4.4`, `agent/v0.6.20`, `server/v0.11.6`.
+
+## v1.9.5 — 2026-09-11
+
+An alignment release with no product change: every module now requires
+Nucleus v1.27.0 and Quark v1.14.0, the versions the suite certifies next, and
+`quarkdatasource` pins the root at v1.9.4. Nothing in the binaries or the
+panel behaves differently from v1.9.4.
+
+Fleet and bridge tags cut alongside: `quarkbridge/v1.8.23`, `quarkdatasource/v1.8.24`, `proto/v0.4.4`, `agent/v0.6.19`, `server/v0.11.5`.
+
+## v1.9.4 — 2026-09-10
+
+One fix in the Data Studio table, and the alignment to Quantum 1.30.0.
+
+**The table refuses three inputs it used to take.** A hidden column can no
+longer be used as a sort key — sorting by a column the caller cannot see is a
+way to read its order without reading its values. A status class has to be
+digits, and a number wider than the width its column declares is rejected
+rather than truncated. Found by the fuzz targets added over the request
+surfaces in this cycle.
+
+**Alignment.** Every module now requires Nucleus v1.26.0 and Quark v1.13.0,
+the versions Quantum 1.30.0 certifies, and `quarkdatasource` moves to
+`quark/drivers/sqlite v0.2.0`. That last pin had to move: Quark v1.13.0
+takes `internal/driverclassify` out of its root module, and the v0.1.x driver
+imports it, so the old pin does not build against the new library at all.
+
+Moving it is also a graph saving. Those predicates covered all six engines,
+so requiring one driver used to pull the other five in: `pgx`,
+`go-sql-driver/mysql`, `go-mssqldb` and `sijms/go-ora` leave
+`quarkdatasource`'s requirements with this release.
+
+Fleet tags cut alongside: `agent/v0.6.18`, `server/v0.11.4`,
+`quarkbridge/v1.8.22`, `quarkdatasource/v1.8.23`.
+
+## v1.9.3 — 2026-09-08
+
+An alignment release with no product change: every module now requires
+Nucleus v1.25.0 and Quark v1.12.0, the versions Quantum 1.29.0 certifies,
+and `quarkdatasource` pins the root at v1.9.2. Nothing in the binaries or
+the panel behaves differently from v1.9.2.
+
+Fleet tags cut alongside: `agent/v0.6.17`, `server/v0.11.3`,
+`quarkbridge/v1.8.21`, `quarkdatasource/v1.8.22`.
+
+## v1.9.2 — 2026-09-05
+
+An alignment release with no product change: every module now requires
+Nucleus v1.24.0 and Quark v1.11.0, the versions Quantum 1.28.0 certifies,
+and `quarkdatasource` pins the root at v1.9.1. Nothing in the binaries or
+the panel behaves differently from v1.9.1.
+
+Fleet tags cut alongside: `agent/v0.6.16`, `server/v0.11.2`,
+`quarkbridge/v1.8.20`, `quarkdatasource/v1.8.21`.
+
+## v1.9.1 — 2026-09-05
+
+The patch that pays Orbit's share of the maturity audit of 2026-09-03
+(arc A1), in two halves: the fleet and the in-process panel.
+
+**Fleet.** A `server` operator now holds at most `MaxStreamsPerOperator`
+(8) live streams; the ninth answers `ResourceExhausted` instead of adding a
+goroutine per browser tab. `include_recent` replays at most
+`MaxReplayEvents` (500) events, and the aggregate push to agents is
+coalesced within 100 ms, so a burst of subscriptions costs one push, not
+one per subscription. The live bus and the replay buffer share one node
+matcher, trimmed and case-insensitive: they used to differ (exact versus
+folded), so a filter could match live events and miss the replay of the
+same node. `quarkdatasource` treats the search text as data, not as a
+pattern: `%` and `_` are escaped with the engine's default escape on
+PostgreSQL, MySQL, MariaDB and SQL Server (SQLite and Oracle have none, so
+there a `%` still widens the match). On the agent, `reconnects_total`
+counts accepted streams after the first (it used to count every attempt,
+the first connection included), `cpu_percent` is divided by `NumCPU` so it
+reads 0–100 on every host, RSS outside Linux is documented as not reported
+rather than reported as zero, and commands run under a 16-slot semaphore
+instead of one goroutine per request.
+
+**Panel.** Record ids are strings end to end, as the datasource contract
+always said: bulk
+operations, the CSV export, fixtures and the SPA carry the id the backend
+handed out, so a UUID key works in Get, Update and Delete and an id the
+backend cannot narrow is a per-id failure, not a 500. The tenant is
+enforced on every Data Studio operation, not only on the list view: the
+panel resolves it from the request (`PanelConfig.TenantResolver`, wired to
+Nucleus) and Get, Update, Delete, bulk, fixtures, imports and export jobs
+are confined to it; a payload may name the tenant column only as its own
+tenant, under any spelling the backends accept (column, Go field name or
+the JSON key of a Nucleus model), and a request that resolves no tenant
+is refused with 403. `?tenant=<id>` and `?tenant=all` are accepted only
+from a superuser or a subject granted `tenant_switch`, and audited. A search against a model that
+declares no searchable field answers 400 naming the model and how to
+enable search, instead of 200 with every row (Quark models search every
+string column; a Nucleus model needs the `admin:"search"` tag). Every
+mutating route writes its own audit entry with the values before and after
+where there is a record — Data Studio, RBAC policies and roles, flags,
+job queues, migrations, cache flush, exports and imports, live excludes,
+`audit.clear` and login (success, failure, lockout) — replacing the path
+heuristic that only saw writes with a model name in the URL. The admin
+lookup on every authenticated request is one query bounded by the user's
+name or e-mail on every engine, not a scan of the whole table. The SPA
+loads its seven feature pages on demand
+(`React.lazy` behind one `Suspense` boundary that keeps the sidebar while
+a chunk loads) and strips the AG Grid theme variant nobody imports at
+build time, so the first load of the panel drops from about 1.7 MB of
+JavaScript and 252 kB of CSS to about 310 kB and 29 kB (100 kB and 6 kB
+gzipped);
+the grid stylesheet travels with the Data Studio chunk. Moving to AG
+Grid's Theming API, which would remove the grid CSS altogether, waits for
+the major bump reserved for arc A6.
+
+**Everywhere.** The Content-Security-Policy names the request host in
+`connect-src` for `ws:`/`wss:` instead of allowing any origin. Commit
+messages and pull-request titles are in English, and CI rejects a title
+that is not.
+
+Fleet tags cut alongside: `agent/v0.6.15`, `server/v0.11.1`,
+`quarkdatasource/v1.8.20`.
+
+## v1.9.0 — 2026-09-05
+
+A minor because the shape of the `server` module changes for whoever
+installs it: **`server` no longer requires `agent`**. The only code that
+imported it were four integration tests that start a real agent against the
+server; they now live in `internal/fleettest`, a test-only module that Go's
+`internal` rule keeps unimportable outside this repository and that is never
+published. Nothing in the `admin-server` binary changes.
+
+Why it matters: the fleet modules are tagged from one commit, so each was cut
+still requiring the previous tag of its sibling, and converging the pins
+cost two extra releases per train (five of the eight orbit releases of
+2026-09-04/05 published no product change). With this release a change in
+`agent` or `server` costs one release; a change in `proto`, the protocol
+contract every fleet module pins, costs two and the release train converges
+the second on its own.
+
+Also in this release: `proto`'s Go dependencies move by hand together with
+the regenerated stubs (Dependabot leaves them alone), and Dependabot bumps
+in the published modules are released with their module's tag in the same
+train, so the certified set never carries module code without a tag.
+
+Fleet tags cut alongside: `server/v0.11.0`.
+
+## v1.8.25 — 2026-09-05
+
+Releases `quarkdatasource` with the root pin Dependabot moved on
+2026-09-04 (its tag did not cover the bump) and brings that pin to the
+current root. Nothing else changes.
+
+Fleet tags cut alongside: `quarkdatasource/v1.8.19`.
+
+## v1.8.24 — 2026-09-05
+
+Convergence cut for the internal module pins after v1.8.22: the modules are
+tagged from the same commit as the ones they depend on, so each is cut still
+requiring the previous tag of its sibling. This release moves those pins
+forward. Nothing else changes.
+
+Fleet tags cut alongside: `server/v0.10.17`.
+
+## v1.8.23 — 2026-09-05
+
+Convergence cut for the internal module pins after v1.8.22: the modules are
+tagged from the same commit as the ones they depend on, so each is cut still
+requiring the previous tag of its sibling. This release moves those pins
+forward. Nothing else changes.
+
+Fleet tags cut alongside: `agent/v0.6.14`, `server/v0.10.16`.
+
+## v1.8.22 — 2026-09-05
+
+Releases the dependency bumps that Dependabot merged into `proto`, `agent`
+and `server` on 2026-09-04 (connect-go 1.20, modernc SQLite 1.58 and
+friends) — the suite's manifest guard refuses to certify a root whose
+module directories carry code their tags do not — and moves every module to
+Nucleus v1.23.2.
+
+One behaviour fix rode along: with only database handles configured (no
+database metadata), the panel derived the app's default alias from Go's map
+iteration order, so it could change on every process start; it is now
+`default` when present, otherwise the smallest alias.
+
+Fleet tags cut alongside: `proto/v0.4.4`, `agent/v0.6.13`,
+`server/v0.10.15`, `quarkbridge/v1.8.19`.
+
+## v1.8.21 — 2026-09-04
+
+Data Studio's model listing no longer fails when the app serves more than
+one database alias and a data source is bound to just one of them. The
+listing probes every alias to say where each model lives; since v1.8.18 the
+Quark adapter refuses aliases it does not serve instead of answering from
+the wrong database, and the panel turned that refusal into a 500. It is now
+what it means — the model is absent on that alias — while an error on the
+model's own alias still surfaces. Caught by the reference consumer
+(quantum-app) the day v1.8.18 shipped.
+
+## v1.8.20 — 2026-09-04
+
+The second and last convergence cut after v1.8.18: `server` now requires
+`agent/v0.6.12`, the tag cut alongside v1.8.19. With this the internal pins
+of every module point at the latest published sibling and the set can be
+certified. Nothing else changes.
+
+Fleet tags cut alongside: `server/v0.10.14`.
+
+## v1.8.19 — 2026-09-04
+
+A pin fix, the structural kind: `agent` and `server` are cut from the same
+commit as `proto`, so at the moment they are tagged they still require the
+previous `proto`; likewise `server` for `agent`. This release moves
+`agent` to `proto/v0.4.3` and `server` to `proto/v0.4.3` and `agent/v0.6.11`,
+so `go install .../admin-server` builds with the fleet code released in
+v1.8.18 (TLS on the listeners, https-capable agent). Nothing else changes.
+
+Fleet tags cut alongside: `agent/v0.6.12`, `server/v0.10.13`.
+
+## v1.8.18 — 2026-09-04
+
+The maturity audit of 2026-09-03, applied. Every module moves to Nucleus
+v1.23.1 and Quark v1.10.1, so the tags cut here certify against the same set
+as the umbrella.
+
+Fleet tags cut alongside: `proto/v0.4.3`, `agent/v0.6.11`, `server/v0.10.12`,
+`quarkbridge/v1.8.18`, `quarkdatasource/v1.8.18`.
+
+**Fleet: TLS is real now.** `--agent-cert/--agent-key` and `--ui-cert/--ui-key`
+used to be accepted and then ignored — the listeners always served plain
+h2c, and configuring a certificate even counted as authentication. The
+listeners now wrap TLS with ALPN, `--agent-client-ca` enables client
+certificate verification (identity `agent:<CN>`), and the agent speaks
+`https://` endpoints. The docs no longer promise mTLS where none existed.
+
+**Panel: no secrets in the system snapshot.** Environment values whose name
+suggests a URL, DSN, password or credential are masked, and `user:pass@` is
+redacted inside any URL-shaped value.
+
+**Data Studio validates.** Writes run the model's `validate` tags and answer
+`422` per field; a value of the wrong type is rejected instead of being
+coerced; unknown keys are refused; a non-numeric id answers `400`, not `500`.
+Export paginates until the end and respects tenant and database alias;
+export downloads are confined to the export area; imports are size-limited
+and file names sanitised.
+
+**Admin UI.** Import now runs validate and execute instead of showing success
+after the upload; "Load more" appends; batch sizes stop at the API's limit;
+JSON fields are shown and edited as JSON; `deny` policies are labelled;
+toasts close; audit filters and pagination work; server-side sorting; a
+403 shows a permission page. ESLint and Vitest run in CI.
+
+**Housekeeping.** `examples/minimal` imports the SQLite driver module and CI
+boots it; `go mod tidy` is a no-op in every module and CI checks it;
+reconnecting agents cancel the previous stream; Connect messages are capped
+at 4 MiB; `/api/health` reports the real version and uptime; and the
+direction is settled: the fleet plane will consume the same datasource
+contract as the in-process panel, so per-model permissions and tenant
+filtering apply in both.
+
+## v1.8.17 — 2026-09-02
+
+The Quark bridges move to Quark v1.10.0, closing the set. Nothing else
+changes.
+
+Fleet tags cut alongside: `quarkbridge/v1.8.17`, `quarkdatasource/v1.8.17`.
+
+Both bridges jump from the `0.x` line to `1.8.17`. A `Release-As` in the
+release train applied to every package in the repository, and by the time it
+was noticed the tags were published and served by the Go module proxy, which
+is immutable — and `@latest` always resolves to the highest version, so going
+back to `0.x` would have left a public `go get` returning something this set
+does not certify. The number stands; from here both modules follow the `1.x`
+line. Nothing about their code or their API changed in this release.
+
+## v1.8.16 — 2026-09-02
+
+A pin fix. `server` was requiring `agent v0.6.9` while `agent/v0.6.10` was
+already published — the alignment script runs before the tags are cut, so it
+fixes the sibling at whatever was current then and the cut publishes the next
+one immediately after.
+
+It matters here in a way the same lag would not elsewhere: `go install
+github.com/jcsvwinston/orbit/server/cmd/admin-server@server/vX` resolves the
+agent that `server` requires, and nothing else in that build raises it, so the
+binary would ship the older agent.
+
+Fleet tags cut alongside: `server/v0.10.11`. Everything else is unchanged from
+v1.8.15.
+
+## v1.8.15 — 2026-09-02
+
+An alignment release: Orbit moves to Nucleus v1.23.0 and Quark v1.9.0, which
+take the database drivers, the cloud storage backends and the telemetry
+exporters out of the framework and into modules of their own.
+
+**Nothing in Orbit changes.** The panel does not open databases — it uses the
+`*sql.DB` your application hands it — so all six modules build against the new
+versions untouched.
+
+**What your application needs to know.** The host application now links the
+driver for its own engine, one blank import:
+
+```go
+import _ "github.com/jcsvwinston/nucleus/drivers/postgres"
+```
+
+or `nucleus add postgres`, which writes it for you. Your configuration does
+not change. If you mount Orbit in an application that has not added its driver
+module, the application stops at startup with an error naming the import —
+before Orbit is reached.
+
+Worth knowing if you rely on the admin bootstrap: the driver module registers
+the driver **and** how that driver reports a unique-constraint violation.
+Without the classifier the framework's predicate does not fail, it answers
+"no", and a duplicate administrator username would surface as an internal
+error rather than as the duplicate it is. Importing the module — rather than
+the driver package on its own — gets both halves.
+
+Fleet tags cut alongside: `agent/v0.6.10`, `server/v0.10.10`,
+`quarkbridge/v0.4.10`, `quarkdatasource/v0.2.19`. `proto` stays at `v0.4.2`.
+
+## v1.8.14 — 2026-08-31
+
+The release that carries an end-to-end audit of the panel. Most of it is about
+the panel telling you the truth: about your data, about itself, and about what
+the fleet plane does and does not enforce.
+
+**The panel is Orbit.** It signed itself "Nucleus Admin" everywhere and ignored
+the `Title` you configured; both are fixed, and the docs now show what the
+panel actually looks like — the first screenshots this documentation has ever
+had, of Data Studio, the live inspector and the metrics view.
+
+**Data Studio over Quark shows your data.** Every cell rendered as "—" because
+the schema declared snake_case columns while the records arrived keyed by Go
+field names; records now expose each field under its schema column. Model
+counts were also crossed between models — a sort reordered the slice the
+counters pointed into — and rows deleted with soft-delete no longer inflate
+them.
+
+**The live inspector shows the traffic it promised.** It only accepted one
+event shape, so requests never appeared and the SQL statements Quark publishes
+were never drawn at all; both are rendered now, correlated by request, with
+durations in microseconds instead of a rounded zero.
+
+**Fixed.** A data race in the panel's tenant-field cache, reachable from every
+schema fetch. The session viewer served the full session token to any
+authenticated operator; it now shows an opaque handle. The audit log's JSON
+contract (`id`, `total_pages`, `record_id`) is coherent. Field labels no longer
+render as "I D".
+
+**Getting in is possible without a bootstrap password.** The admin schema is
+created whenever the module mounts, so `nucleus createuser` works instead of
+failing on a table that did not exist yet — and the quick start no longer ends
+on an empty panel: the minimal example registers a model, and the docs explain
+how a model reaches Data Studio.
+
+**Said plainly, not fixed.** The fleet plane's Data Studio does not apply
+per-model RBAC or tenant filtering; its package documentation claimed it did.
+The claim is gone, a deny-by-default gate for mutations is in place, and the
+direction that closes it properly is written down as a decision record.
+
+
+## v1.8.13 — 2026-08-30
+
+**Changed**
+
+- **The root module aligned on Nucleus v1.21.0.** The in-process panel now
+  builds against the certified framework release, completing the set
+  alignment the module releases began.
+
+## v1.8.12 — 2026-08-30
+
+**Changed**
+
+- **Fleet and datasource modules aligned on the current set.** `agent`,
+  `server`, `quarkbridge` and `quarkdatasource` now require Nucleus v1.21.0
+  and Quark v1.7.1, up from the previous set. The root module carries no code
+  change; this release exists to seal the aligned module tags as ancestors of
+  a certifiable root, which is what lets the suite certify with no declared
+  cross-repo lag.
+
+## v1.8.11 — 2026-08-30
+
+**Fixed**
+
+- **The storage browser confines the caller's path to the upload root.** With
+  a storage backend configured — the production path — the panel's file
+  browser passed the requested path straight to the store, so a session with
+  `storage_view` could list any prefix of the bucket, traversal (`../`) and
+  sibling prefixes included. The path is now confined the same way the
+  filesystem branch already was; a path outside the root is refused. The
+  guard function that promised this had existed all along but nothing called
+  it.
+
+**Changed**
+
+- **`quarkdatasource` pins the current root minor (v1.8.10, not v1.8.0).** The
+  edge from `quarkdatasource` to the root is topologically forced to lag, and
+  the pin guard tolerates one minor of it — but the pin had drifted ten
+  patches back within the same minor, one root minor bump away from failing a
+  certification mid-flight. Raised to the current minor to keep the edge
+  current.
+
+**Documentation**
+
+- Two archived documentation snapshots (v1.7.0 and v1.8.0) announced an
+  earlier version than their own, and still did so on the published site. Both
+  were corrected, and a guard — ported from the framework, which Orbit lacked
+  — now asserts every snapshot announces its own version.
+
+## v1.8.10 — 2026-08-30
+
+**Changed**
+
+- **Every module aligned on Nucleus v1.20.1.** Nothing in Orbit changes.
+  Until this release the root module tracked the framework while `agent`,
+  `server` and `quarkbridge` were still pinned three releases back, at
+  v1.17.1. That is invisible to an application — Go's minimal version
+  selection raises the requirement to whatever the application itself asks
+  for — but it is exactly what the suite manifest refuses to certify, and
+  for a reason: a module pinned to a framework release nobody tests it
+  against is a compatibility claim nobody has checked.
+
+  Cut alongside it: `agent` v0.6.7, `server` v0.10.7 and `quarkbridge`
+  v0.4.7, in that order, so each module tag is an ancestor of this one.
+
+## v1.8.9 — 2026-08-30
+
+**Changed**
+
+- **Aligned with Nucleus v1.20.0.** Nothing in Orbit changes; these are
+  fixes in the framework it requires, and three of them are behaviour
+  changes worth knowing about before you upgrade.
+
+  A third-party request interceptor now sees who is calling. The chain was
+  mounted outside the bearer decode, so an interceptor got nothing from the
+  request's claims while the handler behind it saw the same request
+  authenticated. It now runs after the decode and still before the
+  default-deny layer, so it also observes requests that are about to be
+  denied. Nothing moved relative to the request ID, the real-IP resolution,
+  the rate limiter or CSRF.
+
+  `X-Real-IP` is now filtered the way `X-Forwarded-For` already was: an
+  address that is itself a trusted proxy is not a client. Under a catch-all
+  `trusted_proxies` the unfiltered fallback was a spoofing vector — a forged
+  client IP, rate-limit evasion and an audit trail recording the attacker's
+  choice. A correctly configured deployment sees no change.
+
+  `nucleus doctor --json` now exits non-zero when the report says
+  `unhealthy`. The verdict came from the text renderer only, so the same
+  report exited 1 as text and 0 as JSON — and the mode that never failed was
+  the one CI consumes.
+
+## v1.8.8 — 2026-08-30
+
+**Fixed**
+
+- **Every `modules.orbit.*` key except three now reaches the panel.** Orbit's
+  `Config` declared only `yaml` struct tags, and Nucleus binds a module's
+  configuration subtree with the `koanf` tag. Sixteen of its nineteen keys
+  were dropped in silence — including `bootstrap_username`,
+  `bootstrap_password`, `auth_database` and the whole multi-tenant block.
+  Exactly the single-word keys survived (`prefix`, `title`, `environment`),
+  because the binder falls back to matching the field name when it finds no
+  tag, and nothing in `snake_case` can map that way.
+
+  Nothing warned about this. The panel started, mounted where it was told,
+  and used the values the host application had passed in code, so an
+  operator configuring the panel from `nucleus.yml` saw a working admin that
+  was quietly ignoring most of the file.
+
+- **A duplicate bootstrap admin no longer aborts startup on a database that
+  does not speak English.** Orbit decides whether the first admin already
+  exists by classifying the error the driver returns, and it was matching
+  English fragments of the message. PostgreSQL, MySQL, Oracle and SQL Server
+  all translate those messages when the server runs in another language, so
+  the duplicate went unrecognised and the module failed to start — taking
+  the whole application with it.
+
+  To be precise about when this bites: a normal restart never reached it,
+  because the row count short-circuits before the insert. It fires on a
+  first boot with several replicas starting at once against an empty admin
+  table. One wins; the others used to crash-loop.
+
+**Changed**
+
+- **Aligned with Nucleus v1.19.0.** Three of its fixes land directly in what
+  the panel does.
+
+  The active-sessions view works again on a configured session store. Nucleus
+  wrapped every store installed from configuration in an adapter that carried
+  only three methods, and enumeration is discovered by type assertion — so
+  with `session_store: redis` or `sql` the view answered 200 with "not
+  supported" and zero rows while sessions were sitting in the store.
+
+  A backend that rejects now ends the login attempt instead of falling
+  through to the next one. This is what Orbit's own README has always
+  promised when it says a local admin row is not a bypass: a revoked
+  directory account can no longer get in through a stale local row. Note the
+  consequence, because it is not optional — a chain is a fallback for an
+  unreachable backend, not a way to serve two separate user populations.
+
+  And `storage.cleanup.enabled: false` now actually disables the cleaner,
+  which until this release deleted aged objects under the cleanup prefix on
+  every boot.
+
+## v1.8.7 — 2026-08-29
+
+**Changed**
+
+- **Aligned with Nucleus v1.17.1 and Quark v1.7.0.** Nothing in Orbit
+  changes; both are fixes in the products it requires.
+
+  Quark now recognises PostgreSQL errors reported by `lib/pq`, not only by
+  `pgx`. It classifies those errors to decide three things on its own —
+  whether to retry a transaction the engine chose as a deadlock victim,
+  whether a duplicate link row can be ignored, and whether a read should
+  fail over off an unreachable replica — and under `lib/pq` none of the
+  three recognised anything, silently. Quark also exports that
+  classification now, so an application can tell a duplicate key from any
+  other failure without importing a database driver, and it no longer
+  reports a scan error in place of the engine's own error when SQL Server
+  rejects an insert.
+
+  Nucleus v1.17.1 corrects its published documentation: archived versions
+  announced the wrong release number, and the version marker was leaking
+  into the page description shown in search results and link previews.
+
+  The `agent` (`v0.6.6`), `server` (`v0.10.6`), `quarkbridge` (`v0.4.6`)
+  and `quarkdatasource` (`v0.2.15`) modules move with it, and `server`
+  pins the freshly cut `agent`.
+
+## v1.8.6 — 2026-08-29
+
+**Changed**
+
+- **Aligned with Nucleus v1.17.0**, which adds two extension seams —
+  federated sign-in for identity providers, and request interceptors that
+  register by name — and fixes a defect where installing a process-wide
+  SQL observer replaced any other. That last one matters here: Orbit's
+  live SQL view is fed by the framework's own observer, so an application
+  that watched SQL used to turn the panel's feed off by doing it. Nothing
+  in Orbit changes; the fix is in the framework it now requires. The
+  `agent` (`v0.6.5`), `server` (`v0.10.5`) and `quarkbridge` (`v0.4.5`)
+  modules move with it, and `server` pins the freshly cut `agent`.
+
+## v1.8.5 — 2026-08-29
+
+**Changed**
+
+- **Aligned with Nucleus v1.16.1**, a packaging release of the framework: it
+  is the first one that cuts the LDAP provider module and the framework
+  release that contains it from the same commit, so installing either one
+  resolves to the same tree. Nothing about Orbit's behaviour changes with it.
+  The `agent` (`v0.6.4`), `server` (`v0.10.4`) and `quarkbridge` (`v0.4.4`)
+  modules move with it, and `server` pins the freshly cut `agent`.
+
+## v1.8.4 — 2026-08-29
+
+**Changed**
+
+- **Aligned with Nucleus v1.16.0**, which moves the contracts a third-party
+  backend or storage provider implements into leaf packages and adds a
+  conformance suite for authentication backends. Nothing about Orbit's
+  behaviour changes with it: the names Orbit uses are aliases of the same
+  types. The `agent` (`v0.6.3`), `server` (`v0.10.3`) and `quarkbridge`
+  (`v0.4.3`) modules move with it, and `server` pins the freshly cut
+  `agent`.
+
+## v1.8.3 — 2026-08-28
+
+**Changed**
+
+- **Aligned with Nucleus v1.15.1.** A packaging release of the framework —
+  it unblocked the LDAP provider's own release machinery — so nothing about
+  Orbit's behaviour changes with it. The `agent` (`v0.6.2`), `server`
+  (`v0.10.2`) and `quarkbridge` (`v0.4.2`) modules move with it, and
+  `server` pins the freshly cut `agent`.
+
+## v1.8.2 — 2026-08-28
+
+**Changed**
+
+- **Aligned with Nucleus v1.15.0.** The root module and the `agent`,
+  `server` and `quarkbridge` modules now require the framework release that
+  introduces per-backend authentication configuration and the LDAP provider.
+  No behaviour of Orbit changes with it: the panel already delegates
+  authentication to the framework's chain, and the boundary that matters is
+  unchanged — a directory user who is not an administrator here is still
+  refused, so connecting a corporate directory does not silently turn the
+  whole company into panel administrators.
+- The `agent` (`v0.6.1`), `server` (`v0.10.1`) and `quarkbridge` (`v0.4.1`)
+  modules move with it. `server` also pins the freshly cut `agent`, so
+  installing either one standalone resolves to the same set.
+
+## v1.8.1 — 2026-08-27
+
+**Fixed**
+
+- **`orbit/quarkdatasource` now installs against the current root module.**
+  The optional Quark datasource module still required the root at `v1.6.0`,
+  two minor lines behind. Inside the repository nothing noticed — the
+  workspace resolves the root from the checkout — but anyone adding
+  `github.com/jcsvwinston/orbit/quarkdatasource` to a project pulled a root
+  two minors old alongside it. It now requires `v1.8.0`. The datasource
+  contract itself did not move (it has been frozen since v1.0), so nothing
+  you wrote against it changes.
+
+  Fleet tags cut alongside: `quarkdatasource/v0.2.14`.
+
+## v1.8.0 — 2026-08-26
+
+**Added**
+
+- **Sign in against your directory.** If the host application declares an
+  authentication chain, the admin panel uses it:
+
+  ```yaml
+  auth_backends: [ldap, local]
+  ```
+
+  Orbit ships no LDAP client. It asks the framework's chain, so whatever
+  the operator configured for the application applies to the panel too.
+
+  **Authentication is delegated; authorization is not.** The chain answers
+  who the credentials belong to; this panel's own admin table still decides
+  whether that person may enter. A directory account that is not an
+  administrator here is refused — otherwise connecting a corporate
+  directory would quietly make every employee in the company an
+  administrator of your admin panel.
+
+  It works in the other direction too: a local admin row is not a bypass.
+  With a chain configured the chain still has to accept the password, so a
+  revoked directory account cannot get in through a row nobody cleaned up.
+
+  Without `auth_backends`, nothing changes: the panel validates against its
+  own table exactly as before.
+
+## v1.7.4 — 2026-08-26
+
+**Changed**
+
+- **Aligned to nucleus v1.13.0**, which makes the parts of the framework
+  you are most likely to need to replace — storage backends, session
+  stores, authentication backends — pluggable by name. No orbit behaviour
+  changes.
+
+## v1.7.3 — 2026-08-25
+
+**Changed**
+
+- **Fleet modules aligned to the patched suite.** `agent`, `server`,
+  `quarkbridge` and `quarkdatasource` are republished against nucleus
+  v1.12.1 and quark v1.6.1, and `server` moves to `agent` v0.5.16. No orbit
+  behaviour changes; this release exists so the published module tags carry
+  the same dependency floor as the root.
+
+## v1.7.2 — 2026-08-25
+
+**Changed**
+
+- **Dependency alignment.** Every module moves to nucleus v1.12.1 and quark
+  v1.6.1, both of which carry fixes from an external audit of the published
+  suite: a row-level-security preflight that certified a real cross-tenant
+  leak as correct, a module unable to declare its own mount root, and a
+  storage delete that reported success without removing anything. No orbit
+  behaviour changes.
+
+## v1.7.1 — 2026-08-25
+
+**Fixed**
+
+- **Configuring the panel from `nucleus.yml` now works.** The README has
+  documented a `modules.orbit.*` subtree — prefix, title, environment and
+  the bootstrap user's credentials — and the framework did its part: it
+  extracted that subtree and handed the bound configuration to the module.
+  Orbit discarded it and used the values passed in Go instead, so anyone
+  configuring the panel through YAML got the defaults with nothing to
+  indicate it. Because the module *is* mounted, the framework's warning
+  about configuration aimed at an unmounted module stayed quiet too.
+
+  It was ignored in complete silence, and that includes
+  `bootstrap_password`: someone who believed they had set the admin
+  password had not set it.
+
+  The YAML subtree is now overlaid on whatever you passed in Go, key by
+  key — Go supplies the base, YAML wins for what it sets.
+
+  One exception, and it fails loudly rather than surprising you: `prefix`.
+  The framework mounts the module before it reads the subtree, so that key
+  cannot move the panel. Setting it to something other than the mount point
+  stops startup and names both values, instead of serving a panel whose own
+  links point where it is not.
+
+## v1.7.0 — 2026-08-25
+
+**Added**
+
+- **Versioned documentation.** The suite site now serves this documentation
+  under a version path as well as at `/orbit/`. Until now Orbit only ever
+  served its current docs, so anyone running an older release read the notes
+  for whatever version shipped last — with nothing on the page saying so.
+  Nucleus and Quark have worked this way for a while; Orbit was the odd one
+  out.
+
+  Nothing moved: `/orbit/…` still serves the current documentation, and the
+  snapshots appear alongside it. The version picker in the top bar switches
+  between them.
+
+  The archive starts at **1.6.7**, the release that was current when
+  versioning was installed. Earlier minors have no snapshot and none will be
+  fabricated: a back-dated snapshot would claim that today's documentation
+  was the documentation of the time.
+
+**Fixed**
+
+- **The module compatibility matrix no longer goes stale after a tag.** It was
+  generated from git tags alone, and a tag does not exist until the release
+  merges — so the committed copy went stale the moment a root tag was cut, and
+  the freshness check (which only runs on pull requests) slept until an
+  unrelated change tripped over it. It now also reads the release manifest, so
+  the release itself carries its own row.
+
+## v1.6.7 — 2026-08-25
+
+**Changed**
+
+- **Dependency alignment.** The root panel, `server`, `agent` and
+  `quarkbridge` move to nucleus v1.12.0. That release freezes the
+  framework's default security posture against a measured baseline, adds
+  `nucleus doctor --check security` for the settings that load fine and
+  expose you anyway, and judges cookie-name prefixes when the configuration
+  file is read instead of at boot. `quarkdatasource` and `proto` do not
+  depend on the framework and are unchanged. No orbit behaviour changes.
+
+**Documentation**
+
+- Each module's README now states that it builds against Nucleus and points
+  at its own `go.mod` for the exact floor, rather than repeating a version
+  number that would go stale.
+
+Fleet tags cut alongside this release line: `agent`, `server` and
+`quarkbridge` (`proto` and `quarkdatasource` unchanged).
+
+## v1.6.6 — 2026-08-24
+
+**Changed**
+
+- **Dependency alignment.** Every module — the root panel, `server`,
+  `agent`, `quarkbridge` and `quarkdatasource` — moves to nucleus v1.11.0
+  and quark v1.6.0. Those releases bring configuration that is validated
+  the same way wherever it is loaded, a test kit that reaches the database,
+  a graceful outbox shutdown, and a preflight for native row-level security.
+  No orbit behaviour changes.
+
+Fleet tags cut alongside this release line: `agent`, `server`,
+`quarkbridge` and `quarkdatasource` (`proto` unchanged).
+
+## v1.6.5 — 2026-08-23
+
+**Changed**
+
+- **`server` now pins `agent/v0.5.13`.** v1.6.4 published that agent tag, but
+  `server` was left requiring v0.5.12. Installing the server from a cold cache
+  now resolves the current agent code. No behaviour changes.
+
+Fleet tag cut alongside this release: `server/v0.9.9` (the rest of the
+fleet is unchanged from v1.6.4).
+
+## v1.6.4 — 2026-08-21
+
+**Changed**
+
+- **`agent` completes the dependency alignment to nucleus v1.10.0.** v1.6.3
+  moved the root panel, `server`, `quarkbridge` and `quarkdatasource`, but
+  shipped with `agent` still requiring nucleus v1.9.1 — and said nothing about
+  it. Every module now builds against the same framework version. No behaviour
+  changes.
+
+Fleet tag cut alongside this release: `agent/v0.5.13` (the rest of the
+fleet is unchanged from v1.6.3).
+
+## v1.6.3 — 2026-08-21
+
+**Changed**
+
+- **Dependency alignment.** The root panel and `server` move to nucleus
+  v1.10.0 (the vertical-slice module release: module-declared policy rows
+  and CSRF exemptions, applicable embedded migrations, embedded
+  templates); `quarkbridge` moves to nucleus v1.10.0 and quark v1.5.2;
+  `quarkdatasource` moves to quark v1.5.2 (the `migrate up` CLI fix). No
+  orbit behaviour changes. Known miss, fixed in v1.6.4: `agent` was left
+  on nucleus v1.9.1.
+
+Fleet tags cut alongside this release: `server/v0.9.8`,
+`quarkbridge/v0.3.12`, `quarkdatasource/v0.2.11` (`proto/v0.4.2`
+unchanged).
+
+## v1.6.2 — 2026-08-18
+
+**Changed**
+
+- **Dependency alignment.** The root panel and the fleet modules that build
+  on the framework (`agent`, `server`, `quarkbridge`) move to nucleus
+  v1.9.1 — the server-side render layer fixes (recursive template loading,
+  prefix modules receiving the engine and session manager, template
+  function registration from the builder) and the outbox dispatcher
+  starting after extensions attach. No orbit behaviour changes.
+
+Fleet tags cut alongside this release: `agent/v0.5.12`, `server/v0.9.7`,
+`quarkbridge/v0.3.11` (`proto/v0.4.2` and `quarkdatasource/v0.2.10`
+unchanged).
+
+## v1.6.1 — 2026-08-16
+
+**Fixed**
+
+- **These notes.** v1.6.0 shipped without its section on this page, and
+  `quarkdatasource` still required root v1.4.3 — two minors behind. Both are
+  corrected: the section below documents v1.6.0, and `quarkdatasource` builds
+  against root v1.6.0.
+
+Fleet tags cut alongside this release: `quarkdatasource/v0.2.10` (all
+other modules unchanged).
+
+## v1.6.0 — 2026-08-16
+
+The developer-experience minor: it closes the gaps a new user hit in Orbit's
+onboarding surface.
+
+**Added**
+
+- **Compatibility matrix, generated.** `website/docs/reference/module-matrix.md`
+  lists the six Go modules with their published versions and cross-module
+  pins, produced by a generator with a CI freshness check — the table can
+  no longer drift from the released tags.
+
+**Fixed**
+
+- **The quick start compiles.** The first snippet a new user copies used
+  `app.Start()` — a method that does not exist on the built application.
+  It now shows the real entry point (`nucleus.Run(app)`), matching the
+  README and the minimal example.
+- **`make test` covers the six modules.** The Makefile stopped at four;
+  `quarkbridge` and `quarkdatasource` — exactly the two modules that
+  materialize the Quark↔Orbit integration — are now in every target.
+
+**Changed**
+
+- **Dependency alignment.** Root and fleet modules build against
+  nucleus v1.8.0 and quark v1.5.0.
+
+Fleet tags cut alongside this release: `agent/v0.5.11`, `server/v0.9.6`,
+`quarkbridge/v0.3.10`, `quarkdatasource/v0.2.9` (`proto/v0.4.2`
+unchanged).
+
+## v1.5.4 — 2026-08-16
+
+**Changed**
+
+- **Dependency alignment.** The root panel and all fleet modules build
+  against nucleus v1.7.0 (global authorization sees JWT claims, S3 bucket
+  bootstrap, service health in `/healthz`); no orbit behaviour changes.
+
+Fleet tags cut alongside this release: `agent/v0.5.10`, `server/v0.9.5`,
+`quarkbridge/v0.3.9` (`quarkdatasource/v0.2.8` and `proto/v0.4.2`
+unchanged).
+
+## v1.5.3 — 2026-08-16
+
+**Changed**
+
+- **`proto/v0.4.2` joins the set.** The security toolchain bump (Go 1.26.6)
+  had touched `proto/go.mod` without a release, leaving unreleased module
+  code in the certified tree; `proto/v0.4.2` publishes it (no functional
+  changes). Its ripple re-pins the module graph: `agent/v0.5.9` and
+  `server/v0.9.4` (proto and agent pins current, nothing else changes).
+  This root cut contains all of them; `quarkbridge/v0.3.8` and
+  `quarkdatasource/v0.2.8` continue from v1.5.2.
+
+## v1.5.2 — 2026-08-16
+
+**Changed**
+
+- **Dependency alignment.** The root panel and all fleet modules build
+  against quark v1.4.1 (its CLI repair release) and nucleus v1.6.2 (its
+  scaffold-dialect and fixture-ordering repairs); no orbit behaviour
+  changes.
+- **Security.** Go toolchain floor moves to 1.26.6 (standard-library
+  advisories), `google.golang.org/grpc` to v1.82.1 and
+  `go.opentelemetry.io/otel` to v1.44.0 — all flagged as reachable by the
+  vulnerability scanner.
+
+Fleet tags cut alongside this release: `agent/v0.5.8`, `server/v0.9.3`,
+`quarkbridge/v0.3.8`, `quarkdatasource/v0.2.8` (`proto/v0.4.1` unchanged).
+
+## v1.5.1 — 2026-07-22
+
+**Changed**
+
+- **Dependency alignment.** The root panel and all fleet modules build
+  against nucleus v1.6.0 (its webhook-registration hardening); no orbit
+  behaviour changes. `golang.org/x/text` stays at v0.39.0.
+
+Fleet tags cut alongside this release: `agent/v0.5.6`, `server/v0.9.1`,
+`quarkbridge/v0.3.6` (`quarkdatasource/v0.2.7` and `proto/v0.4.1` unchanged).
+Not user-facing, but worth recording: the repository's own version checks
+became stricter. The one allowance for a module lagging behind the root is now
+confined to the single edge that structurally requires it
+(`root↔quarkdatasource`), and that edge is only accepted after the frozen
+`datasource` contract is verified identical across the lagging tag.
+
+## v1.5.0 — 2026-07-22
+
+**Fixed**
+
+- **The in-process live feed now shows HTTP traffic.** The panel consumed only
+  the SQL lane of the event bus, so `/api/live/snapshot` reported
+  `requests: 0` however much HTTP traffic the host app served. The feed now
+  consumes the bus's HTTP events too, and requests appear alongside queries.
+
+  The traffic middleware remains the sole source of the session lane, which
+  needs the `*http.Request` that the bus event does not carry, and it
+  de-duplicates the admin prefix so events are not counted twice.
+
+  **Correction to the v1.4.4 note:** that release described the in-process
+  live feed as working end to end. It did not — the HTTP lane was dead until
+  this version.
+- **Dependency alignment to the 1.9.0 set.** The root panel and all fleet
+  modules build against nucleus v1.5.0, the Quark integrations
+  (`quarkbridge`, `quarkdatasource`) require Quark v1.4.0, and
+  `golang.org/x/text` is raised to v0.39.0 (GO-2026-5970) across every
+  module.
+
+**Added**
+
+- **UI backlog closed.** The last three outstanding interface items land:
+  centralized i18n strings, table accessibility roles across the fleet
+  pages, and the in-process panel's two parallel tables consolidated to one.
+
+Fleet tags cut alongside this release: `agent/v0.5.5`, `server/v0.9.0`,
+`quarkbridge/v0.3.5`, `quarkdatasource/v0.2.7`.
+
+## v1.4.4 — 2026-07-20
+
+**Fixed**
+
+- The agent's **auth-suspicion warning is now per endpoint**. A frame accepted
+  on one endpoint proves that endpoint's auth path and nothing else, so it no
+  longer clears the frameless-cycle evidence of a sibling endpoint that keeps
+  rejecting every frame. In a failover pair, one healthy endpoint used to be
+  able to silence — or worse, mislabel — the warning that belonged to the
+  broken one. The warning now fires against the endpoint that earned it, with
+  its own evidence.
+- **Dependency alignment across every module.** The root panel and all
+  fleet modules build against nucleus v1.4.0, the Quark integrations
+  (`quarkbridge`, `quarkdatasource`) require Quark v1.3.3, and
+  `quarkdatasource` pins the current root. A cold-cache `go install` of
+  any module resolves to the same set the release was tested with — no
+  stale sibling versions.
+
+Fleet tags cut alongside this release: `agent/v0.5.4`, `server/v0.8.4`,
+`quarkbridge/v0.3.4`, `quarkdatasource/v0.2.6`.
+
+## v1.4.3 — 2026-07-19
+
+**New**
+
+- The agent raises an **auth-suspicion warning** when consecutive stream
+  cycles end without the server accepting a single frame. Some transport
+  failures swallow the explicit rejection, so "connects, then dies
+  frameless" is treated as evidence of a bad token even when no
+  authentication error is visible. The warning is rate-limited and is
+  never triggered by an unreachable endpoint — see the
+  [FAQ](../faq.md#the-agent-logs-consecutive-stream-cycles-ended-without-a-single-accepted-frame).
+
+**Fixed**
+
+- The `RequireConnection` boot gate now waits for real acceptance, not
+  reachability: `Connected()` only fires on the first frame the admin
+  server accepts under authentication. The dial probe hits the
+  auth-exempt `/healthz` endpoint, so a reachable server proves nothing
+  about the token — previously a wrong token could pass the gate and the
+  application booted "green" without ever being connected.
+- Module pins: the opt-in Quark integrations (`quarkbridge`,
+  `quarkdatasource`) now require Quark v1.3.1, and the server module pins
+  the agent at its latest tag — so cold-cache `go install` resolves to
+  current code.
+
+**Upgrade notes**
+
+- **A boot that passed with a rejected token will now fail.** If your
+  application sets `RequireConnection: true` and its agent token is
+  wrong, boots up to v1.4.2 could pass on mere reachability; from this
+  release the boot fails at `RequireConnectionTimeout`, with the
+  token-rejected warnings explaining why. That green was false — the
+  agent was never connected. Fix the token (see
+  [Security](../operations/security.md#rejected-tokens-are-loud)) rather
+  than widening the timeout or disabling the gate.
+
+Fleet tags: `agent/v0.5.3`, `server/v0.8.3`. Opt-in module tags:
+`quarkbridge/v0.3.3`, `quarkdatasource/v0.2.5`.
+
+## v1.4.2 — 2026-07-19
+
+**Fixed**
+
+- Internal version pins across the repo's modules now always reference the
+  latest sibling tags, and a continuous check keeps them that way — so
+  `go install github.com/jcsvwinston/orbit/server/cmd/admin-server@<tag>`
+  resolves cleanly from a cold cache.
+
+**Security**
+
+- A rejected agent token is now loud on both sides. The agent logs a
+  warning (`admin agent token rejected by admin server`), only announces
+  `connected` once the server has actually accepted the stream, and backs
+  off at growing intervals instead of retrying every second. The server
+  logs a rate-limited warning naming the remote IP. Previously a bad token
+  could fail almost silently while the health probe kept "succeeding".
+
+Fleet tags: `agent/v0.5.2`, `server/v0.8.2`.
+
+## v1.4.1 — 2026-07-15
+
+**Fixed**
+
+- The agent now attaches its bearer token to the telemetry stream itself,
+  not just to unary calls — agents can authenticate against a
+  token-protected server's stream endpoint.
+- The server module builds standalone again outside the repository
+  workspace, and continuous builds now verify that.
+- Dependency update: Nucleus v1.3.1, which carries a Postgres primary-key
+  fix relevant to Data Studio.
+
+**Security**
+
+- Built with Go 1.26.5, picking up the fix for a TLS vulnerability in the
+  Go standard library (GO-2026-5856).
+
+Fleet tags: `agent/v0.5.1`, `server/v0.8.1`.
+
+## v1.4.0 — 2026-07-14
+
+**New**
+
+- The fleet UI shows the admin server's version and the signed-in
+  operator's identity.
+- Filter bars on the live stream pages, plus a sampling control.
+- Data Studio in the fleet UI exposes operations the backend already
+  supported, including bulk actions.
+- Node detail gained a recent-activity view; model lists are searchable;
+  the slow-query highlight threshold is configurable.
+- Review tools for the fleet Audit log screen.
+
+Fleet tags: `server/v0.8.0`.
+
+## v1.3.0 — 2026-07-13
+
+**New**
+
+- Fleet UI usability round: action feedback (toasts), Data Studio result
+  feedback, pause-with-buffer on live streams, a clear signed-out screen on
+  session expiry, and accessibility and contrast improvements.
+- Fleet plane reliability: telemetry resumes after reconnects, events
+  carry a node identity that correlates with the fleet registry, real
+  server-driven sampling, node snapshots, and support for read-only
+  operators.
+
+**Fixed / Security (in-process panel)**
+
+- Admin actions are recorded under the authenticated user; sensitive
+  values are redacted; sign-in attempts are rate-limited with a lockout;
+  CSRF protection and browser security headers were added; and two
+  controls that looked functional but were not (session terminate, export)
+  now do what they say.
+
+Fleet tags: `agent/v0.5.0`, `server/v0.7.0`.
+
+## v1.2.1 — 2026-07-12
+
+**Security**
+
+- The statement that creates the bootstrap admin user is now fully
+  parameterized.
+- Hardened admin-server defaults (in `server/v0.6.0`, cut alongside): the
+  server refuses to start an unauthenticated agent listener on a
+  non-loopback interface unless explicitly overridden, and the
+  trusted-proxy mode gained the shared-secret check
+  (`X-Auth-Proxy-Secret`) so proxy-forwarded identities cannot be forged
+  from inside a trusted network range.
+
+**Upgrade notes**
+
+- Existing fleet deployments may need `--agent-token` (or TLS on the agent
+  listener), and proxies must echo the secret once `--ui-proxy-secret` is
+  set. See [Security](../operations/security.md).
+
+Fleet tags: `server/v0.6.0`.
+
+## v1.2.0 — 2026-07-11
+
+**New**
+
+- Access control and the Audit log are wired end-to-end on the fleet
+  plane: the fleet UI reads each node's policy snapshot, and operator
+  mutations performed through the server are recorded and attributed.
+- The live SQL stream shows the driver-reported row count per statement.
+
+Fleet tags: `proto/v0.2.0`–`proto/v0.3.0`, `agent/v0.3.0`–`agent/v0.4.0`,
+`server/v0.4.0`–`server/v0.5.0`.
+
+## v1.1.0 — 2026-07-11
+
+**New**
+
+- Opt-in Prometheus metrics listener on the admin server
+  (`--metrics-addr`), and `--version` now reports the real installed
+  version from build information.
+
+**Security**
+
+- Go toolchain pinned to 1.26.5 across all modules (TLS advisory
+  GO-2026-5856).
+
+Fleet tags: `server/v0.3.0` (plus the toolchain patches `agent/v0.2.1`,
+`server/v0.3.1`).
+
+## v1.0.0 — 2026-07-10
+
+The first stable release.
+
+- The public API — the root module and the `datasource` contract — is
+  **frozen for the life of v1.x**.
+- The fleet modules (`proto`, `agent`, `server`) became independently
+  released modules with their own tags, and every module now resolves and
+  builds standalone with plain `go get` / `go install` — no repository
+  checkout required.
+
+Fleet tags: `proto/v0.1.0`, `agent/v0.1.0`–`agent/v0.2.0`,
+`server/v0.1.0`–`server/v0.2.0`.
+
+## Before v1.0
+
+The 0.x line built the product's foundations: Data Studio was decoupled
+behind a neutral datasource contract, the opt-in Quark integrations
+arrived (`quarkbridge` for the live SQL feed, `quarkdatasource` for Data
+Studio over Quark models), and the admin UI was redesigned. Details are on
+the [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).

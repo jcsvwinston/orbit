@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.16.0](https://github.com/jcsvwinston/orbit/compare/agent/v0.15.3...agent/v0.16.0) (2026-10-18)
+
+
+### Added
+
+* announce the 2.0 changes with their notices, mark the Nucleus adapter as leaving, and add the ways to stay (A12 M0-O) ([#568](https://github.com/jcsvwinston/orbit/issues/568)) ([6822c9e](https://github.com/jcsvwinston/orbit/commit/6822c9e1ce9f51b7bda2d7abed5f59fca28458be))
+
+
+### Fixed
+
+* **deps:** align root, agent, server, quarkbridge, quarkdatasource to the set (nucleus v1.33.0, quark v1.17.0) and call router.Wrap in place of NewWrapResponseWriter (A12 M0-O b) ([#570](https://github.com/jcsvwinston/orbit/issues/570)) ([65ef228](https://github.com/jcsvwinston/orbit/commit/65ef2287c5499628c62d629a7666ceb9755dc1d2))
+
 ## [0.15.3](https://github.com/jcsvwinston/orbit/compare/agent/v0.15.2...agent/v0.15.3) (2026-10-12)
 
 
