@@ -35,8 +35,8 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hibiken/asynq v0.26.0 // indirect
-	github.com/jcsvwinston/orbit/datasource v1.0.1
-	github.com/jcsvwinston/orbit/ui v1.1.1
+	github.com/jcsvwinston/orbit/datasource v1.1.0
+	github.com/jcsvwinston/orbit/ui v1.2.0
 	github.com/knadh/koanf/maps v0.1.2 // indirect
 	github.com/knadh/koanf/parsers/json v1.0.1 // indirect
 	github.com/knadh/koanf/parsers/toml/v2 v2.2.2 // indirect
