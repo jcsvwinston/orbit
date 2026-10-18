@@ -394,7 +394,7 @@ func (p *Panel) auditLogin(next http.Handler) http.Handler {
 			return
 		}
 
-		ww := router.NewWrapResponseWriter(w, r.ProtoMajor)
+		ww := router.Wrap(w)
 		next.ServeHTTP(ww, r)
 
 		var action string

@@ -17,7 +17,7 @@ require (
 
 require (
 	github.com/google/uuid v1.6.0
-	github.com/jcsvwinston/nucleus v1.32.0
+	github.com/jcsvwinston/nucleus v1.33.0
 	github.com/jcsvwinston/quark/drivers/sqlite v0.3.0
 )
 
