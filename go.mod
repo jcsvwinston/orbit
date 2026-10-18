@@ -6,7 +6,7 @@ toolchain go1.26.9
 
 require (
 	github.com/alicebob/miniredis/v2 v2.39.0
-	github.com/jcsvwinston/nucleus v1.32.0
+	github.com/jcsvwinston/nucleus v1.33.0
 	github.com/jcsvwinston/nucleus/drivers/sqlite v0.1.7
 	github.com/redis/go-redis/v9 v9.22.0
 	github.com/shirou/gopsutil/v3 v3.24.5
