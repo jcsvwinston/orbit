@@ -95,7 +95,7 @@ func (s *store[T]) applyQuery(ctx context.Context, qb *quark.Query[T], q datasou
 	// this cannot express has to be an ERROR here, never a dropped clause.
 	for _, f := range q.Where {
 		var err error
-		qb, err = s.applyOperatorFilter(ctx, qb, f)
+		qb, err = s.applyOperatorFilter(qb, f)
 		if err != nil {
 			return nil, err
 		}
@@ -108,15 +108,11 @@ func (s *store[T]) applyQuery(ctx context.Context, qb *quark.Query[T], q datasou
 		}
 		// The search text is data, not a pattern: a `%` or `_` typed by the
 		// operator used to widen the match instead of matching itself (F13).
-		// Escaping is per engine, with the engine's default escape.
-		dialect := ""
-		if c, err := s.adapter.provider.GetClient(ctx); err == nil && c != nil {
-			dialect = c.Dialect().Name()
-		}
-		pattern := "%" + escapeLike(search, dialect) + "%"
+		// Quark's Contains escapes the text and declares the escape
+		// character on the statement, so it means the same on every engine.
 		parts := make([]quark.Expr, 0, len(s.searchCols))
 		for _, col := range s.searchCols {
-			parts = append(parts, quark.Cmp(quark.Col(col), "LIKE", quark.Lit(pattern)))
+			parts = append(parts, quark.Contains(quark.Col(col), search))
 		}
 		// One OR-group, AND-composed with the filters above (correct precedence).
 		qb = qb.WhereExpr(quark.Or(parts...))
@@ -127,7 +123,7 @@ func (s *store[T]) applyQuery(ctx context.Context, qb *quark.Query[T], q datasou
 // applyOperatorFilter translates one neutral operator filter onto the Quark
 // builder. Column names go through Quark's own SQLGuard inside the builder;
 // values are bound, never interpolated.
-func (s *store[T]) applyOperatorFilter(ctx context.Context, qb *quark.Query[T], f datasource.Filter) (*quark.Query[T], error) {
+func (s *store[T]) applyOperatorFilter(qb *quark.Query[T], f datasource.Filter) (*quark.Query[T], error) {
 	switch f.Op {
 	case datasource.OpEqual, datasource.OpNotEqual,
 		datasource.OpGreater, datasource.OpGreaterEqual,
@@ -176,7 +172,7 @@ func (s *store[T]) applyOperatorFilter(ctx context.Context, qb *quark.Query[T], 
 		return qb.WhereExpr(quark.In(quark.Col(f.Column), exprs...)), nil
 
 	case datasource.OpContains, datasource.OpStartsWith, datasource.OpEndsWith:
-		return s.applyPatternFilter(ctx, qb, f)
+		return s.applyPatternFilter(qb, f)
 	}
 	// An operator this store cannot express is refused by name. Falling
 	// back to equality would answer a different question than the one asked.
@@ -185,33 +181,23 @@ func (s *store[T]) applyOperatorFilter(ctx context.Context, qb *quark.Query[T], 
 
 // applyPatternFilter builds the LIKE for contains/startswith/endswith.
 //
-// The contract requires the value to match LITERALLY, and Quark's builder
-// cannot emit `LIKE … ESCAPE` (QK-25): on the engines whose LIKE has a
-// default escape character the text is escaped with it, and on SQLite and
-// Oracle — which have none — a value carrying % or _ is REFUSED. Answering it
-// would widen the match silently, which is the failure this whole contract
-// exists to prevent; refusing says which value and which engine.
-func (s *store[T]) applyPatternFilter(ctx context.Context, qb *quark.Query[T], f datasource.Filter) (*quark.Query[T], error) {
-	dialect := ""
-	if c, err := s.adapter.provider.GetClient(ctx); err == nil && c != nil {
-		dialect = c.Dialect().Name()
-	}
-	if !dialectEscapesLike(dialect) && strings.ContainsAny(f.Value, `%_`) {
-		return nil, gferrors.BadRequest(fmt.Sprintf(
-			"filter %s__%s=%q cannot be answered on %s: its LIKE has no default escape character, so the %% or _ in the value would widen the match instead of matching itself",
-			f.Column, f.Op, f.Value, dialectName(dialect)))
-	}
-	escaped := escapeLike(f.Value, dialect)
-	var pattern string
+// The contract requires the value to match LITERALLY. Quark's escaped forms
+// (Contains, StartsWith, EndsWith) escape the text and declare the escape
+// character on the statement, so a `%` or `_` in the value matches itself on
+// every engine — including SQLite and Oracle, whose LIKE has no default
+// escape and where this store used to refuse such a value rather than
+// widen the match (QK-25, closed from this side). The plain
+// Cmp(col, "LIKE", …) form is the one Quark changes at its 2.0 (its
+// DEP-2026-009); the escaped forms do not change.
+func (s *store[T]) applyPatternFilter(qb *quark.Query[T], f datasource.Filter) (*quark.Query[T], error) {
+	col := quark.Col(f.Column)
 	switch f.Op {
 	case datasource.OpStartsWith:
-		pattern = escaped + "%"
+		return qb.WhereExpr(quark.StartsWith(col, f.Value)), nil
 	case datasource.OpEndsWith:
-		pattern = "%" + escaped
-	default:
-		pattern = "%" + escaped + "%"
+		return qb.WhereExpr(quark.EndsWith(col, f.Value)), nil
 	}
-	return qb.WhereExpr(quark.Cmp(quark.Col(f.Column), "LIKE", quark.Lit(pattern))), nil
+	return qb.WhereExpr(quark.Contains(col, f.Value)), nil
 }
 
 // sqlComparison maps a comparison operator to its SQL spelling.
@@ -229,25 +215,6 @@ func sqlComparison(op datasource.FilterOp) string {
 		return "<="
 	}
 	return "="
-}
-
-// dialectEscapesLike reports whether the engine's LIKE has a default escape
-// character, which is what escapeLike relies on.
-func dialectEscapesLike(dialect string) bool {
-	switch dialect {
-	case "postgres", "postgresql", "pgx", "mysql", "mariadb", "mssql", "sqlserver":
-		return true
-	}
-	return false
-}
-
-// dialectName is the engine's name for an error message, for the case where
-// the provider could not be asked.
-func dialectName(dialect string) string {
-	if strings.TrimSpace(dialect) == "" {
-		return "this engine"
-	}
-	return dialect
 }
 
 // HonoursFilterOperators reports that this store applies Query.Where
@@ -839,22 +806,4 @@ func isTableMissingErr(err error) bool {
 		strings.Contains(msg, "does not exist") ||
 		strings.Contains(msg, "unknown table") ||
 		strings.Contains(msg, "undefined table")
-}
-
-// escapeLike neutralises LIKE wildcards in operator-typed text using the
-// engine's DEFAULT escape character, since the builder emits no ESCAPE
-// clause: backslash on PostgreSQL, MySQL and MariaDB; bracket classes on
-// SQL Server. SQLite and Oracle have no default escape, so the text goes
-// through as typed there — a `%` widens the match, it never reaches the
-// engine as SQL.
-func escapeLike(text, dialect string) string {
-	switch dialect {
-	case "postgres", "postgresql", "pgx", "mysql", "mariadb":
-		r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
-		return r.Replace(text)
-	case "mssql", "sqlserver":
-		r := strings.NewReplacer(`[`, `[[]`, `%`, `[%]`, `_`, `[_]`)
-		return r.Replace(text)
-	}
-	return text
 }

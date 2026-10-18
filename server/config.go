@@ -53,12 +53,27 @@ type Config struct {
 	// verify client certificates; Run refuses to start otherwise, because
 	// a binding to an identity nobody verified binds to nothing.
 	//
-	// Off by default: the server verifies the certificate and registers
-	// the node_id the agent declares, logging a WARN when the two
-	// disagree. Deployments whose certificates name something other than
-	// the node (one certificate shared by a fleet) keep working; the
-	// default flips in the next major.
+	// Off by default in 1.x: the server verifies the certificate and
+	// registers the node_id the agent declares, logging a WARN when the
+	// two disagree. Deployments whose certificates name something other
+	// than the node (one certificate shared by a fleet) keep working.
+	// Orbit 2.0 binds by default whenever the agent listener verifies
+	// client certificates (DEP-2026-001); a fleet that shares one
+	// certificate says so with AllowSharedAgentCertificate, which keeps
+	// today's regime across the major. Until then, a listener that
+	// verifies client certificates with neither field set logs one WARN
+	// at start saying which of the two to choose.
 	AgentIdentityFromCertificate bool
+
+	// AllowSharedAgentCertificate keeps registering the node_id an agent
+	// declares even when it is not the Common Name of its verified client
+	// certificate — the 1.x default, kept across the major for a fleet
+	// whose agents share one certificate (DEP-2026-001). A mismatch is
+	// still logged as a WARN naming both identities: tolerated, never
+	// silent. It contradicts AgentIdentityFromCertificate, so Run refuses
+	// to start with both set; without client-certificate verification
+	// there is nothing to allow, and it changes nothing.
+	AllowSharedAgentCertificate bool
 
 	// InsecureAgentListener overrides the fail-closed guard that refuses
 	// to start the agent listener on a non-loopback interface when it has

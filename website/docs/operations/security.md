@@ -194,7 +194,19 @@ whose `node_id` is not the verified Common Name is refused with
 listener that does not verify client certificates. The binding is opt-in
 because a fleet that shares one certificate across its agents would stop
 registering; issue one certificate per node, named after it, and turn the
-flag on. The default flips in the next major.
+flag on.
+
+**The default flips at Orbit 2.0**: a listener that verifies client
+certificates binds the node identity to them unless told otherwise. A fleet
+that shares one certificate says so now with
+**`--allow-shared-agent-certificate`** (env
+`NUCLEUS_ADMIN_ALLOW_SHARED_AGENT_CERTIFICATE=1`), which keeps today's
+regime — registered as declared, with the WARN — across the major. The two
+flags contradict each other, and the server refuses to start with both. A
+server with `--agent-client-ca` and neither flag starts as before and logs one
+WARN at start naming the two, so the choice is made in your own time rather
+than at the upgrade. The notice is `DEP-2026-001` in the repository's
+`docs/deprecations/`.
 
 **Certificates rotate without a restart, on both sides.** The server serves
 its listener certificates (`--agent-cert`/`--agent-key`, `--ui-cert`/`--ui-key`)
@@ -223,7 +235,9 @@ you would any metrics port.
 ## Hardening checklist
 
 - [ ] `--agent-identity-from-cert` set when agents authenticate by
-      certificate, with one certificate per node named after it.
+      certificate, with one certificate per node named after it — or
+      `--allow-shared-agent-certificate` when the fleet shares one, so the
+      server does not have to ask at start.
 - [ ] `--agent-token` set (or mutual TLS via `--agent-client-ca`), and
       **not** passed on the command line in production — use
       `NUCLEUS_ADMIN_AGENT_TOKEN` from a root-only environment file.

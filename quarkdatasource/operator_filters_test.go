@@ -5,7 +5,6 @@ package quarkdatasource
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/jcsvwinston/orbit/datasource"
@@ -135,22 +134,51 @@ func TestOperatorFilters_Patterns(t *testing.T) {
 	}
 }
 
-// TestOperatorFilters_WildcardIsRefusedWhereItWouldWiden is QK-25 seen from
-// this side: Quark's builder cannot emit `LIKE … ESCAPE`, and SQLite's LIKE
-// has no default escape character, so a value carrying % would match every
-// row while looking like a filter. It is refused, by name, rather than
-// answered.
-func TestOperatorFilters_WildcardIsRefusedWhereItWouldWiden(t *testing.T) {
+// TestOperatorFilters_WildcardInTheValueIsData is the contract's rule seen
+// on SQLite, whose LIKE has no default escape character: a `%` or `_` in the
+// value matches itself, not every row. Quark's escaped forms declare the
+// escape on the statement, so this store answers the question on every
+// engine instead of refusing it on two (QK-25, closed from this side; the
+// refusal used to be pinned here).
+func TestOperatorFilters_WildcardInTheValueIsData(t *testing.T) {
 	store, ctx := filterStore(t)
 
-	_, err := store.List(ctx, datasource.Query{Page: 1, PageSize: 50, Where: []datasource.Filter{
-		{Column: "name", Op: datasource.OpContains, Value: "100%"},
-	}})
-	if err == nil {
-		t.Fatal("a % in the value was answered on SQLite: it would have widened the match")
+	for _, tc := range []struct {
+		name   string
+		filter datasource.Filter
+		want   []string
+	}{
+		{"a percent matches the per-cent sign", datasource.Filter{Column: "name", Op: datasource.OpContains, Value: "100%"}, []string{"100% cotton"}},
+		{"a lone percent is not every row", datasource.Filter{Column: "name", Op: datasource.OpContains, Value: "%"}, []string{"100% cotton"}},
+		{"an underscore matches an underscore", datasource.Filter{Column: "name", Op: datasource.OpContains, Value: "_"}, nil},
+		{"startswith keeps the wildcard literal", datasource.Filter{Column: "name", Op: datasource.OpStartsWith, Value: "100%"}, []string{"100% cotton"}},
+		{"endswith keeps the wildcard literal", datasource.Filter{Column: "name", Op: datasource.OpEndsWith, Value: "%"}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := names(t, listWhere(t, store, ctx, tc.filter))
+			if len(got) != len(tc.want) {
+				t.Fatalf("answered %v, want %v", got, tc.want)
+			}
+			for i := range tc.want {
+				if got[i] != tc.want[i] {
+					t.Fatalf("answered %v, want %v", got, tc.want)
+				}
+			}
+		})
 	}
-	if !strings.Contains(err.Error(), "escape") {
-		t.Fatalf("the refusal does not say why: %v", err)
+}
+
+// TestSearch_WildcardInTheTextIsData: the search box follows the same rule
+// as the operator filters — the text the operator typed is matched as typed.
+func TestSearch_WildcardInTheTextIsData(t *testing.T) {
+	store, ctx := filterStore(t)
+
+	page, err := store.List(ctx, datasource.Query{Page: 1, PageSize: 50, Search: "%"})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if got := names(t, page); len(got) != 1 || got[0] != "100% cotton" {
+		t.Fatalf("a search for %% answered %v, want only the row that contains one", got)
 	}
 }
 

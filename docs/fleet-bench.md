@@ -216,7 +216,10 @@ verified certificate's Common Name, and `Run` refuses to start with it on a
 listener that does not verify client certificates. The default still registers
 the declared `node_id` — with a WARN naming both — because deployments whose
 certificate names something other than the node (one certificate shared by a
-fleet) must keep working until the next major flips the default. The probe
+fleet) must keep working until the next major flips the default
+(`DEP-2026-001`: at 2.0 the binding is the default under client-certificate
+verification, and `AllowSharedAgentCertificate` keeps today's regime; the
+second fact of the probe and this paragraph change with it). The probe
 measures both regimes. `IDENT-05` boots a real agent through the extension from
 nothing but three file paths and no `node_id`; the node the server lists is the
 certificate's Common Name.

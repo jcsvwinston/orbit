@@ -23,6 +23,26 @@ export class ApiError extends Error {
   get isForbidden(): boolean {
     return this.status === 403
   }
+
+  // code is the backend's machine-readable error code in either shape it
+  // answers with: `error.code` in the framework's envelope, the `code`
+  // extension member in RFC 9457 problem details.
+  get code(): string | undefined {
+    const b = this.body
+    if (!b || typeof b !== 'object') return undefined
+    if ('error' in b) {
+      const e = (b as { error: unknown }).error
+      if (e && typeof e === 'object' && 'code' in e) {
+        const c = (e as { code: unknown }).code
+        if (typeof c === 'string' && c) return c
+      }
+    }
+    if ('code' in b) {
+      const c = (b as { code: unknown }).code
+      if (typeof c === 'string' && c) return c
+    }
+    return undefined
+  }
 }
 
 export function isApiError(err: unknown): err is ApiError {
@@ -40,16 +60,25 @@ export function errorMessage(err: unknown, fallback = 'Unexpected error'): strin
   return fallback
 }
 
-// The backend answers errors as {"error": {"code","message"}} (domain errors)
-// or {"error": "message"} (plain ones); read both, then fall back to text.
+// The backend answers errors in the framework's envelope — {"error":
+// {"code","message"}} for domain errors, {"error": "message"} for plain ones
+// — or, when the application chose RFC 9457 problem details (the default
+// from Nucleus 2.0 on), as application/problem+json: {"type", "title",
+// "status", "detail", "instance"} plus "code" as an extension member. Read
+// all three shapes, then fall back to text.
 function messageFromBody(body: unknown, raw: string, response: Response): string {
-  if (body && typeof body === 'object' && 'error' in body) {
-    const e = (body as { error: unknown }).error
-    if (typeof e === 'string' && e) return e
-    if (e && typeof e === 'object' && 'message' in e) {
-      const m = (e as { message: unknown }).message
-      if (typeof m === 'string' && m) return m
+  if (body && typeof body === 'object') {
+    if ('error' in body) {
+      const e = (body as { error: unknown }).error
+      if (typeof e === 'string' && e) return e
+      if (e && typeof e === 'object' && 'message' in e) {
+        const m = (e as { message: unknown }).message
+        if (typeof m === 'string' && m) return m
+      }
     }
+    const problem = body as { detail?: unknown; title?: unknown }
+    if (typeof problem.detail === 'string' && problem.detail) return problem.detail
+    if (typeof problem.title === 'string' && problem.title) return problem.title
   }
   if (raw.trim()) return raw.trim()
   return `${response.status} ${response.statusText}`.trim()
