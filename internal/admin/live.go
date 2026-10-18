@@ -537,7 +537,7 @@ func (p *Panel) liveTraffic(next http.Handler, mountPrefix string) http.Handler 
 		}
 
 		start := time.Now()
-		ww := router.NewWrapResponseWriter(w, r.ProtoMajor)
+		ww := router.Wrap(w)
 		next.ServeHTTP(ww, r.WithContext(contextWithLiveObserved(r)))
 		observed := r
 		if requested != r.URL.Path {
