@@ -19,12 +19,16 @@ complete tag history lives on the
 
 ## v1.20.1 — 2026-10-18
 
-An alignment release with no product change: every module now requires
-Nucleus v1.33.0 and Quark v1.17.0, the versions the suite certifies next, and
-`quarkdatasource` pins the root at v1.20.0. Nothing in the binaries or the
-panel behaves differently from v1.20.0.
+A patch that brings v1.20.0's browser half and markers to applications: the
+root and `server` now require `orbit/ui` v1.2.0, the module that carries
+the panel reading problem details, and the root, `agent` and
+`quarkdatasource` require `datasource` v1.1.0, the module that carries the
+`// Deprecated:` markers on the Nucleus adapter. With it, what an
+application installing the root serves is what v1.20.0 describes. No Go
+code changes; nothing in the binaries or the panel behaves differently
+from v1.20.0 beyond those two modules.
 
-Fleet and bridge tags cut alongside: `quarkbridge/v1.9.6`, `quarkdatasource/v1.13.1`, `proto/v0.8.1`, `agent/v0.16.1`, `server/v0.21.1`, `datasource/v1.1.0`, `ui/v1.2.0`.
+Fleet and bridge tags cut alongside: `agent/v0.16.1`, `server/v0.21.1`, `quarkdatasource/v1.13.1`.
 
 ## v1.20.0 — 2026-10-18
 
