@@ -1,7 +1,7 @@
 # Behaviour-Change Notice: the node identity is bound to the certificate by default at v2.0.0
 
 - ID: `DEP-2026-001`
-- Status: `active`
+- Status: `completed`
 - Announced in: the next minor after `v1.19.3` (A12 `M0-O`; the owner decided
   the flip on 2026-10-06 and listed it for the major on 2026-10-16)
 - Behaviour flip: `v2.0.0`, no earlier than 2027-01-17 — major-only per the
@@ -146,30 +146,47 @@ their nodes notices nothing.
 
 ## Validation
 
-- **The v1 behaviour is pinned** in `server/node_identity_test.go`:
+- **The v1 behaviour was pinned** in `server/node_identity_test.go`:
   `TestServer_AgentIdentityFromCertificate_Unbound_WarnsAndRegisters` (the
-  default registers the declared `node_id`, with the WARN) and
-  `TestServer_AgentIdentityFromCertificate_Bound` (what the default becomes).
+  default registered the declared `node_id`, with the WARN) and
+  `TestServer_AgentIdentityFromCertificate_Bound` (what the default became).
   The fleet bench control `IDENT-06`
   (`internal/fleettest/fleetbench/probes_identity_test.go`,
-  `probeNodeIdentityBoundToCert`) records the default as its second fact and
-  the page `docs/fleet-bench.md` says it.
+  `probeNodeIdentityBoundToCert`) recorded the default as its second fact and
+  the page `docs/fleet-bench.md` said it.
+- **The 2.0 behaviour is pinned** (applied on `dry-run/2.0`):
+  `TestServer_AgentIdentityFromCertificate_Bound` runs twice — `by_default`
+  (neither field set) and `stated_by_the_field` — and
+  `TestServer_AgentIdentityFromCertificate_Unbound_WarnsAndRegisters` is
+  gone; its assertions live in
+  `TestServer_AllowSharedAgentCertificate_KeepsTheDeclaredNodeID`, which also
+  asserts the per-registration hint names `--allow-shared-agent-certificate`.
+  `IDENT-06` records the default as its first fact (refused with
+  `PermissionDenied`) and `AllowSharedAgentCertificate` as its second.
 - **The exit is exercised**:
   `TestServer_AllowSharedAgentCertificate_KeepsTheDeclaredNodeID`,
-  `TestServer_MutualTLSWithoutABindingChoice_WarnsAtStartup` (the WARN with
-  neither field, silence with either) and
+  `TestServer_MutualTLS_BindingChoiceIsQuietAtStartup` (the 1.x name was
+  `TestServer_MutualTLSWithoutABindingChoice_WarnsAtStartup`; since 2.0 it
+  asserts silence at start in all three regimes, because the start-up WARN
+  asked for a choice the default now makes) and
   `TestServer_AllowSharedAgentCertificate_ContradictsBinding_RefusesToStart`.
 
   ```sh
   cd server && go test -count=1 \
-    -run 'TestServer_AgentIdentityFromCertificate|TestServer_AllowSharedAgentCertificate|TestServer_MutualTLSWithoutABindingChoice' .
+    -run 'TestServer_AgentIdentityFromCertificate|TestServer_AllowSharedAgentCertificate|TestServer_MutualTLS_BindingChoiceIsQuietAtStartup' .
   cd internal/fleettest && go test -count=1 -run 'TestFleetBench/IDENT-06' ./fleetbench/
   ```
 
-  The 2.0 PR changes `TestServer_AgentIdentityFromCertificate_Unbound_WarnsAndRegisters`
-  (the unbound regime then needs `AllowSharedAgentCertificate`), the second
-  fact of the `IDENT-06` probe and the paragraph of `docs/fleet-bench.md`
-  that explains it, in the same commit as the default.
+  The 2.0 PR flipped the default, changed those tests, the second fact of
+  the `IDENT-06` probe and the paragraph of `docs/fleet-bench.md` that
+  explains it, in the same commit (`server/server.go`:
+  `bindsNodeIdentityToCertificate()` =
+  `AgentIdentityFromCertificate || (tlsRequiresClientCert(AgentTLS) && !AllowSharedAgentCertificate)`).
+  Note for the train: `internal/fleettest/go.mod` pins `orbit/server` at
+  `v0.19.0`; harmless under the workspace (CI runs that module through
+  `go.work`), but a `GOWORK=off` run of the fleet bench would see the 1.x
+  server and report `IDENT-06` partial until the align step bumps that pin
+  to the 2.0 server release.
 - **Release note:** the release that carries this file announces it.
 - **Rollback plan:** not applicable in v1 — nothing changes.
 
@@ -181,3 +198,5 @@ their nodes notices nothing.
 - Review checkpoint: `2027-01-17`, when the window opens.
 - Change: at `v2.0.0` planning (`M1`), in one PR that flips the default
   under client-certificate verification and changes the pinned tests.
+- Applied: `dry-run/2.0`, 2026-10-18 (the 2.0 dry run; the start-up WARN
+  and `identityBindingUndecided()` are gone, the two `Run` refusals stay).

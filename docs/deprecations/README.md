@@ -79,7 +79,13 @@ specification and a changelog entry. Orbit has neither home:
 
 ## Register
 
-| ID | Surface | Announced | Change |
-|---|---|---|---|
-| [`DEP-2026-001`](DEP-2026-001-node-identity-bound-to-certificate-by-default.md) | `server.Config.AgentIdentityFromCertificate` defaults to on under mutual TLS; `AllowSharedAgentCertificate` keeps today's regime | the next minor after `v1.19.3` | behaviour flip at `v2.0.0`, no earlier than 2027-01-17 |
-| [`DEP-2026-002`](DEP-2026-002-nucleus-datasource-adapter-leaves.md) | the `datasource/nucleus` adapter and the nil default of `orbit.Config.DataSource` / `agent.Config.DataSource` | the next minor after `v1.19.3` | removal at `v2.0.0`, no earlier than 2027-01-17 |
+| ID | Surface | Announced | Change | Status |
+|---|---|---|---|---|
+| [`DEP-2026-001`](DEP-2026-001-node-identity-bound-to-certificate-by-default.md) | `server.Config.AgentIdentityFromCertificate` defaults to on under mutual TLS; `AllowSharedAgentCertificate` keeps the 1.x regime | `v1.20.0` | behaviour flip at `v2.0.0`, no earlier than 2027-01-17 | `completed` — applied on `dry-run/2.0`, 2026-10-18 |
+| [`DEP-2026-002`](DEP-2026-002-nucleus-datasource-adapter-leaves.md) | the `datasource/nucleus` adapter and the nil default of `orbit.Config.DataSource` / `agent.Config.DataSource` | `v1.20.0` | removal at `v2.0.0`, no earlier than 2027-01-17 | `removed` — applied on `dry-run/2.0`, 2026-10-18 |
+
+A notice whose change has landed on the major's branch moves from `active`
+to `completed` (a behaviour flip, a configuration negative, a packaging
+change) or `removed` (a symbol or package gone), with an `Applied:` line
+under its Timeline naming the branch and the date; the guard reads only the
+`active` ones.

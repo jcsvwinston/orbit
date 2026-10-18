@@ -1,7 +1,7 @@
 # Deprecation Notice: the Nucleus data-source adapter leaves at v2.0.0
 
 - ID: `DEP-2026-002`
-- Status: `active`
+- Status: `removed`
 - Announced in: the next minor after `v1.19.3` (A12 `M0-O`; decision D5b of
   the owner, 2026-10-16)
 - Earliest removal: `v2.0.0`, no earlier than 2027-01-17 — major-only per
@@ -169,6 +169,20 @@ application already on `quarkdatasource`.
 - Removal: at `v2.0.0` planning (`M1`), in one PR that deletes the package,
   makes `orbit.Config.DataSource` required and removes the field-metadata
   editor and the signal-bus plumbing.
+- Applied: `dry-run/2.0`, 2026-10-18 (the 2.0 dry run). The v1 pins named
+  above left with the package; what pins the 2.0 behaviour is
+  `TestModule_DataSourceIsRequired` (`datasource_required_test.go`, root:
+  nil refuses to start naming the field, an own source mounts),
+  `TestNew_DataSourceIsWhatTheApplicationHandsOver` (`agent/datasource_test.go`),
+  `TestUpdateFieldMeta_RouteIsGone` (`internal/admin/field_meta_removed_test.go`:
+  `PUT /api/models/{name}/schema/fields` answers 404) and the exit
+  `TestQuarkDataSourceInTheFleet`. The panel's own tests mount on
+  `quarkdatasource` over SQLite. Three defects of the adapter those tests
+  found (a missing row on `Get` and a `Delete` of zero rows answered as the
+  contract's not-found; an alias the adapter does not serve as a bad request
+  naming it) are 1.x fixes, pinned in `quarkdatasource/missing_rows_test.go`,
+  to ship as `fix(quarkdatasource)` in a 1.x set before the major: the
+  root's 2.0 cut requires the `quarkdatasource` release that carries them.
 
 ## Notes
 

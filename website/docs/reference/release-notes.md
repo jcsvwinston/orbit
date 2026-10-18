@@ -19,8 +19,29 @@ complete tag history lives on the
 
 ## v2.0.0 — unreleased
 
-The major the two notices of v1.20.0 announced. What the Nucleus data-source
-notice (`DEP-2026-002`) said changes, changes here:
+The major the two notices of v1.20.0 announced. A 2.0 application defines
+its models with Quark and hands the panel a `quarkdatasource` adapter; a
+2.0 server that verifies client certificates binds the node identity to
+them. What the node-identity notice (`DEP-2026-001`) said changes, changes
+here:
+
+- **A server that verifies client certificates binds the node identity to
+  them by default.** Under `--agent-client-ca`, a registration whose
+  `node_id` is not the certificate's Common Name is refused with
+  `PermissionDenied` — what `--agent-identity-from-cert` did on request in
+  1.x; that flag now states the binding explicitly and is unnecessary under
+  mutual TLS. The WARN at start that asked a server with neither flag to
+  choose is gone: there is nothing left to choose. A fleet whose agents share
+  one certificate says so with `--allow-shared-agent-certificate`
+  (`server.Config.AllowSharedAgentCertificate`): that server registers the
+  declared `node_id` as before, with a WARN per mismatch whose hint now
+  names that flag. Setting both flags still refuses to start, and the
+  binding on a listener that does not verify client certificates still
+  refuses to start. The fleet bench's `IDENT-06` records the default as
+  its first fact and the shared-certificate regime as its second.
+
+What the Nucleus data-source notice (`DEP-2026-002`) said changes, changes
+here:
 
 - **The Nucleus data-source adapter is gone.** The package
   `github.com/jcsvwinston/orbit/datasource/nucleus` no longer exists; the
@@ -47,15 +68,22 @@ notice (`DEP-2026-002`) said changes, changes here:
   Nucleus model left with the adapter.
 - **The panel's signal-bus seam is gone** (`Panel.SetSignalBus`, the
   adapter's `Config.Bus`): nothing in Orbit holds the untyped bus any more.
-- **What the migrated tests found.** The Quark adapter now answers a row
-  that does not exist with the contract's not-found (`404`) on a read and
-  on a delete that deleted nothing — a batch delete counts it as the failure
-  it is — and a database alias it does not serve as a bad request (`400`)
-  naming the alias. An import's CSV cells are handed to the store in the
-  kind the field declares, and a row that names its primary key for an
-  update is valid even where the source declares the key read-only. A child
-  written with its parent (an inline relation) carries the parent's key in
-  the field's own type.
+- **What the migrated tests found, in the panel.** An import's CSV cells
+  are handed to the store in the kind the field declares, a row that names
+  its primary key for an update is valid even where the source declares the
+  key read-only, and a child written with its parent (an inline relation)
+  carries the parent's key in the field's own type. The Nucleus adapter's
+  own coercion had covered all three.
+- **What the migrated tests found, in `quarkdatasource` — fixed in 1.x,
+  before the major.** The adapter answered a row that does not exist with
+  Quark's error unmapped (the panel said `500`), reported a delete that
+  deleted nothing as a success (a batch counted it as deleted), and refused
+  a database alias it does not serve with a plain error (`500`). Since the
+  `quarkdatasource` release that carries `fix(quarkdatasource)`, a missing
+  row is the contract's not-found (`404`) on a read and on a delete, and an
+  alias the adapter does not serve is a bad request (`400`) naming it. An
+  application on `quarkdatasource` gets these on that 1.x release; the 2.0
+  root requires it.
 
 The way to stay is the one the notice gave: define the models with Quark
 and set `orbit.Config.DataSource` (on a fleet node, `agent.Config.DataSource`
