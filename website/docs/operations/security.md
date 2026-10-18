@@ -184,28 +184,27 @@ satisfies the fail-closed startup rule on its own; a certificate without
 `--agent-client-ca` does not, so pair it with `--agent-token`.
 
 Verifying the certificate says who holds it; it does not, by itself, decide
-which node that is. By default the server registers the `node_id` the agent
-declares and logs a WARN when it differs from the certificate's Common Name
-— an agent holding a certificate for `node-a` can still sit in the fleet as
-`node-b`. **`--agent-identity-from-cert`** (env
-`NUCLEUS_ADMIN_AGENT_IDENTITY_FROM_CERT=1`) binds the two: a registration
-whose `node_id` is not the verified Common Name is refused with
-`PermissionDenied`, and the server refuses to start with the flag on a
-listener that does not verify client certificates. The binding is opt-in
-because a fleet that shares one certificate across its agents would stop
-registering; issue one certificate per node, named after it, and turn the
-flag on.
+which node that is. A listener that verifies client certificates binds the
+two: a registration whose `node_id` is not the verified Common Name is
+refused with `PermissionDenied`, and the server log names both identities —
+an agent holding a certificate for `node-a` cannot sit in the fleet as
+`node-b`. Issue one certificate per node, named after it; an agent whose
+certificate comes from files and that sets no `node_id` registers as its
+Common Name, so nothing is written twice.
+**`--agent-identity-from-cert`** (env
+`NUCLEUS_ADMIN_AGENT_IDENTITY_FROM_CERT=1`) states that binding in the
+configuration; it changes nothing under `--agent-client-ca`, and the server
+refuses to start with it on a listener that does not verify client
+certificates.
 
-**The default flips at Orbit 2.0**: a listener that verifies client
-certificates binds the node identity to them unless told otherwise. A fleet
-that shares one certificate says so now with
+A fleet that shares one certificate across its agents says so with
 **`--allow-shared-agent-certificate`** (env
-`NUCLEUS_ADMIN_ALLOW_SHARED_AGENT_CERTIFICATE=1`), which keeps today's
-regime — registered as declared, with the WARN — across the major. The two
-flags contradict each other, and the server refuses to start with both. A
-server with `--agent-client-ca` and neither flag starts as before and logs one
-WARN at start naming the two, so the choice is made in your own time rather
-than at the upgrade. The notice is `DEP-2026-001` in the repository's
+`NUCLEUS_ADMIN_ALLOW_SHARED_AGENT_CERTIFICATE=1`): the server then registers
+the `node_id` the agent declares and logs a WARN per registration when it
+differs from the certificate's Common Name — tolerated, never silent. The
+two flags contradict each other, and the server refuses to start with both.
+Before 2.0 the binding was opt-in and the shared-certificate regime was the
+default; the notice is `DEP-2026-001` in the repository's
 `docs/deprecations/`.
 
 **Certificates rotate without a restart, on both sides.** The server serves
@@ -214,8 +213,8 @@ from the files and re-reads them when a handshake finds them changed; the
 agent does the same with `tls_cert_file`/`tls_key_file` on its next
 connection. Write the pair together — a certificate whose key has not been
 rotated yet keeps the previous pair serving, with one WARN — and keep the
-Common Name when `--agent-identity-from-cert` is on. The CA bundles are read
-once: rotating the CA itself still needs a restart.
+Common Name of an agent certificate, since the server binds the node to it.
+The CA bundles are read once: rotating the CA itself still needs a restart.
 
 Agents accept `https://` endpoints and use the system trust store by
 default. For a private CA, or to present a client certificate, name the PEM
@@ -234,10 +233,10 @@ you would any metrics port.
 
 ## Hardening checklist
 
-- [ ] `--agent-identity-from-cert` set when agents authenticate by
-      certificate, with one certificate per node named after it — or
-      `--allow-shared-agent-certificate` when the fleet shares one, so the
-      server does not have to ask at start.
+- [ ] One certificate per node, named after it, when agents authenticate
+      by certificate: the server binds the `node_id` to the Common Name.
+      `--allow-shared-agent-certificate` **not** set unless the fleet
+      shares one certificate on purpose.
 - [ ] `--agent-token` set (or mutual TLS via `--agent-client-ca`), and
       **not** passed on the command line in production — use
       `NUCLEUS_ADMIN_AGENT_TOKEN` from a root-only environment file.

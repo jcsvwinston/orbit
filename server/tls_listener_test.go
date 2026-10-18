@@ -241,7 +241,9 @@ func TestServer_AgentMutualTLS_RequiresClientCertificate(t *testing.T) {
 	})
 
 	t.Run("with_client_cert_connects", func(t *testing.T) {
-		leaf, _ := ca.issue(t, "node-42", x509.ExtKeyUsageClientAuth)
+		// Named after the node it registers: a listener that verifies
+		// client certificates binds the node_id to the Common Name.
+		leaf, _ := ca.issue(t, "mtls-node", x509.ExtKeyUsageClientAuth)
 		cfg := base.Clone()
 		cfg.Certificates = []tls.Certificate{leaf}
 		client := adminv1connect.NewAgentServiceClient(tlsH2Client(cfg), "https://"+srv.AgentAddr())

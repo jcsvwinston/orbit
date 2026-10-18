@@ -71,8 +71,8 @@ func (c ExtensionConfig) tlsConfig(logger *slog.Logger) (*tls.Config, error) {
 // certificateNodeID is the node name the configured client certificate
 // carries — its Common Name — or "" when no certificate file is configured.
 // It is what the agent registers under when NodeIDOverride is empty, so an
-// admin server that binds identity to the certificate
-// (--agent-identity-from-cert) sees the two agree without the operator
+// admin server that verifies client certificates — and so binds the node
+// identity to the certificate — sees the two agree without the operator
 // writing the name twice.
 func (c ExtensionConfig) certificateNodeID() (string, error) {
 	if c.TLSCertFile == "" {

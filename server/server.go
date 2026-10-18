@@ -112,7 +112,7 @@ func New(cfg Config) *Server {
 		SendChanBuffer: 64,
 		HeartbeatGrace: cfg.AgentInactivityTimeout,
 
-		BindIdentityToCertificate: cfg.AgentIdentityFromCertificate,
+		BindIdentityToCertificate: cfg.bindsNodeIdentityToCertificate(),
 	}
 
 	// A (re)connecting agent immediately receives the current aggregate
@@ -293,10 +293,6 @@ func (s *Server) Run(ctx context.Context) error {
 		s.logger.Warn("agent listener is exposed without authentication",
 			"agent_addr", s.cfg.AgentAddr,
 			"reason", "--insecure-agent-listener set; ensure AgentAddr is restricted at the network layer")
-	}
-	if s.identityBindingUndecided() {
-		s.logger.Warn("agent listener verifies client certificates but does not bind node identity to them",
-			"hint", "Orbit 2.0 binds by default (DEP-2026-001): set --agent-identity-from-cert to bind now, or --allow-shared-agent-certificate to keep registering the declared node_id")
 	}
 	// Fail-fast: a malformed --ui-trusted-cidrs entry used to be dropped
 	// silently, which turned a typo into "trust nobody but loopback" (or
@@ -689,15 +685,18 @@ func tlsRequiresClientCert(cfg *tls.Config) bool {
 	return cfg != nil && cfg.ClientAuth == tls.RequireAndVerifyClientCert
 }
 
-// identityBindingUndecided reports a listener that verifies client
-// certificates while neither AgentIdentityFromCertificate nor
-// AllowSharedAgentCertificate says what a node_id that is not the
-// certificate's Common Name means. In 1.x the answer is "register it, with a
-// WARN"; Orbit 2.0 answers "refuse it" unless AllowSharedAgentCertificate
-// says otherwise (DEP-2026-001), so the deployment is told once, at start,
-// rather than at the upgrade.
-func (s *Server) identityBindingUndecided() bool {
-	return tlsRequiresClientCert(s.cfg.AgentTLS) && !s.cfg.AgentIdentityFromCertificate && !s.cfg.AllowSharedAgentCertificate
+// bindsNodeIdentityToCertificate reports whether a registration whose
+// node_id is not the Common Name of the verified client certificate is
+// refused. A listener that verifies client certificates binds by default;
+// AllowSharedAgentCertificate lifts the binding for a fleet whose agents
+// share one certificate, and AgentIdentityFromCertificate asks for it
+// explicitly (Run refuses the two together, and the explicit field without
+// client-certificate verification, before this answer matters).
+func (cfg Config) bindsNodeIdentityToCertificate() bool {
+	if cfg.AgentIdentityFromCertificate {
+		return true
+	}
+	return tlsRequiresClientCert(cfg.AgentTLS) && !cfg.AllowSharedAgentCertificate
 }
 
 // maxMessageBytes caps one inbound Connect message on every handler.

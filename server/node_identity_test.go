@@ -4,9 +4,11 @@ package server_test
 // listener verifies who holds the certificate and then, until this test
 // existed, registered the node under whatever node_id the first frame
 // declared — an agent with a certificate for node-a could sit in the fleet
-// as node-b. These tests pin both regimes of AgentIdentityFromCertificate:
-// bound (a mismatch is refused with PermissionDenied, a match registers) and
-// unbound, the default (registered as declared, but never silently).
+// as node-b. These tests pin both regimes of a listener that verifies client
+// certificates: bound, the default (a mismatch is refused with
+// PermissionDenied, a match registers; AgentIdentityFromCertificate states
+// the same thing explicitly) and unbound, which AllowSharedAgentCertificate
+// asks for (registered as declared, but never silently).
 
 import (
 	"bytes"
@@ -46,17 +48,10 @@ func (s *syncBuffer) String() string {
 	return s.b.String()
 }
 
-// startMTLSServer runs a server whose agent listener requires a client
-// certificate signed by ca, with the identity binding as asked, logging
-// into the returned buffer at WARN and above: what the tests assert is
-// that an operator reading a production log sees it.
-func startMTLSServer(t *testing.T, ca *testCA, bind bool) (*server.Server, *syncBuffer, func()) {
-	t.Helper()
-	return startMTLSServerWith(t, ca, func(cfg *server.Config) { cfg.AgentIdentityFromCertificate = bind })
-}
-
-// startMTLSServerWith is startMTLSServer with the identity fields left to
-// the caller, for the regimes that are not a single boolean.
+// startMTLSServerWith runs a server whose agent listener requires a client
+// certificate signed by ca, with the identity fields left to the caller,
+// logging into the returned buffer at WARN and above: what the tests assert
+// is that an operator reading a production log sees it.
 func startMTLSServerWith(t *testing.T, ca *testCA, identity func(*server.Config)) (*server.Server, *syncBuffer, func()) {
 	t.Helper()
 	logs := &syncBuffer{}
@@ -138,60 +133,47 @@ func registerWithCert(t *testing.T, ca *testCA, srv *server.Server, cn, nodeID s
 	return nil
 }
 
+// A listener that verifies client certificates binds the node identity to
+// them (DEP-2026-001): with neither identity field set, and with
+// AgentIdentityFromCertificate stating it, the same two facts hold.
 func TestServer_AgentIdentityFromCertificate_Bound(t *testing.T) {
 	ca := newTestCA(t)
-	srv, logs, stop := startMTLSServer(t, ca, true)
-	defer stop()
+	for name, identity := range map[string]func(*server.Config){
+		"by_default":          func(*server.Config) {},
+		"stated_by_the_field": func(c *server.Config) { c.AgentIdentityFromCertificate = true },
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv, logs, stop := startMTLSServerWith(t, ca, identity)
+			defer stop()
 
-	t.Run("certificate_and_node_id_agree", func(t *testing.T) {
-		if err := registerWithCert(t, ca, srv, "node-a", "node-a"); err != nil {
-			t.Fatalf("matching registration refused: %v", err)
-		}
-	})
+			t.Run("certificate_and_node_id_agree", func(t *testing.T) {
+				if err := registerWithCert(t, ca, srv, "node-a", "node-a"); err != nil {
+					t.Fatalf("matching registration refused: %v", err)
+				}
+			})
 
-	t.Run("mismatch_is_refused_with_permission_denied", func(t *testing.T) {
-		err := registerWithCert(t, ca, srv, "node-b", "node-impostor")
-		if err == nil {
-			t.Fatal("a node_id that is not the certificate's CN registered")
-		}
-		if connect.CodeOf(err) != connect.CodePermissionDenied {
-			t.Fatalf("code = %v, want PermissionDenied: %v", connect.CodeOf(err), err)
-		}
-		if !strings.Contains(err.Error(), `"node-impostor"`) || !strings.Contains(err.Error(), `"node-b"`) {
-			t.Fatalf("the refusal must name both identities: %v", err)
-		}
-		if _, ok := srv.State().Nodes.Lookup("node-impostor"); ok {
-			t.Fatal("the refused node is in the registry")
-		}
-		if _, ok := srv.State().Nodes.Lookup("node-b"); ok {
-			t.Fatal("the server renamed the node after the certificate instead of refusing")
-		}
-		if !strings.Contains(logs.String(), "node_id does not match its client certificate") {
-			t.Fatalf("the refusal must be logged; log was:\n%s", logs.String())
-		}
-	})
-}
-
-func TestServer_AgentIdentityFromCertificate_Unbound_WarnsAndRegisters(t *testing.T) {
-	ca := newTestCA(t)
-	srv, logs, stop := startMTLSServer(t, ca, false)
-	defer stop()
-
-	t.Run("mismatch_registers_as_declared", func(t *testing.T) {
-		if err := registerWithCert(t, ca, srv, "node-c", "node-declared"); err != nil {
-			t.Fatalf("unbound server refused a mismatched registration: %v", err)
-		}
-	})
-	if _, ok := srv.State().Nodes.Lookup("node-declared"); !ok {
-		t.Fatal("unbound server did not register the declared node_id")
-	}
-	// Tolerated, never silent: the operator can see which certificate
-	// registered under which name and how to stop it.
-	got := logs.String()
-	for _, want := range []string{"differs from its client certificate", "node_id=node-declared", "certificate_cn=node-c", "--agent-identity-from-cert"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("WARN lacks %q; log was:\n%s", want, got)
-		}
+			t.Run("mismatch_is_refused_with_permission_denied", func(t *testing.T) {
+				err := registerWithCert(t, ca, srv, "node-b", "node-impostor")
+				if err == nil {
+					t.Fatal("a node_id that is not the certificate's CN registered")
+				}
+				if connect.CodeOf(err) != connect.CodePermissionDenied {
+					t.Fatalf("code = %v, want PermissionDenied: %v", connect.CodeOf(err), err)
+				}
+				if !strings.Contains(err.Error(), `"node-impostor"`) || !strings.Contains(err.Error(), `"node-b"`) {
+					t.Fatalf("the refusal must name both identities: %v", err)
+				}
+				if _, ok := srv.State().Nodes.Lookup("node-impostor"); ok {
+					t.Fatal("the refused node is in the registry")
+				}
+				if _, ok := srv.State().Nodes.Lookup("node-b"); ok {
+					t.Fatal("the server renamed the node after the certificate instead of refusing")
+				}
+				if !strings.Contains(logs.String(), "node_id does not match its client certificate") {
+					t.Fatalf("the refusal must be logged; log was:\n%s", logs.String())
+				}
+			})
+		})
 	}
 }
 
@@ -216,46 +198,33 @@ func TestServer_AgentIdentityFromCertificate_WithoutMutualTLS_RefusesToStart(t *
 	}
 }
 
-// The default under mutual TLS is announced, not silent. Orbit 2.0 binds the
-// node identity to the certificate by default (DEP-2026-001), so a listener
-// that verifies client certificates and says nothing about the binding is
-// told once, at start, which of the two fields to set. Either field quiets
-// it: the deployment has chosen.
-func TestServer_MutualTLSWithoutABindingChoice_WarnsAtStartup(t *testing.T) {
+// The binding is the default under mutual TLS, so there is nothing to ask
+// the deployment at start: the 1.x WARN naming the two fields (the one the
+// DEP-2026-001 window existed for) is gone in every regime. The WARN that
+// stays is the per-registration one, on a tolerated mismatch.
+func TestServer_MutualTLS_BindingChoiceIsQuietAtStartup(t *testing.T) {
 	ca := newTestCA(t)
 	const announced = "does not bind node identity"
 
-	t.Run("neither_field_set", func(t *testing.T) {
-		_, logs, stop := startMTLSServerWith(t, ca, func(*server.Config) {})
-		defer stop()
-		got := logs.String()
-		for _, want := range []string{announced, "DEP-2026-001", "--agent-identity-from-cert", "--allow-shared-agent-certificate"} {
-			if !strings.Contains(got, want) {
-				t.Errorf("startup WARN lacks %q; log was:\n%s", want, got)
+	for name, identity := range map[string]func(*server.Config){
+		"neither_field_set":          func(*server.Config) {},
+		"binding_on":                 func(c *server.Config) { c.AgentIdentityFromCertificate = true },
+		"shared_certificate_allowed": func(c *server.Config) { c.AllowSharedAgentCertificate = true },
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, logs, stop := startMTLSServerWith(t, ca, identity)
+			defer stop()
+			if got := logs.String(); strings.Contains(got, announced) || strings.Contains(got, "DEP-2026-001") {
+				t.Fatalf("the server was asked to choose a binding at start; log was:\n%s", got)
 			}
-		}
-	})
-
-	t.Run("binding_on", func(t *testing.T) {
-		_, logs, stop := startMTLSServerWith(t, ca, func(c *server.Config) { c.AgentIdentityFromCertificate = true })
-		defer stop()
-		if strings.Contains(logs.String(), announced) {
-			t.Fatalf("a server that binds was warned about not binding; log was:\n%s", logs.String())
-		}
-	})
-
-	t.Run("shared_certificate_allowed", func(t *testing.T) {
-		_, logs, stop := startMTLSServerWith(t, ca, func(c *server.Config) { c.AllowSharedAgentCertificate = true })
-		defer stop()
-		if strings.Contains(logs.String(), announced) {
-			t.Fatalf("a server that chose the shared certificate was warned anyway; log was:\n%s", logs.String())
-		}
-	})
+		})
+	}
 }
 
-// AllowSharedAgentCertificate is the way to keep the 1.x regime across the
-// major: a node_id that is not the certificate's Common Name registers as
-// declared, with the WARN naming both — exactly what the default does today.
+// AllowSharedAgentCertificate is the one way to register a node_id that is
+// not the certificate's Common Name on a listener that verifies client
+// certificates: registered as declared, with the WARN naming both
+// identities and what tolerates it — never silently.
 func TestServer_AllowSharedAgentCertificate_KeepsTheDeclaredNodeID(t *testing.T) {
 	ca := newTestCA(t)
 	srv, logs, stop := startMTLSServerWith(t, ca, func(c *server.Config) { c.AllowSharedAgentCertificate = true })
@@ -268,7 +237,7 @@ func TestServer_AllowSharedAgentCertificate_KeepsTheDeclaredNodeID(t *testing.T)
 		t.Fatal("the declared node_id is not in the registry")
 	}
 	got := logs.String()
-	for _, want := range []string{"differs from its client certificate", "node_id=node-shared", "certificate_cn=node-d"} {
+	for _, want := range []string{"differs from its client certificate", "node_id=node-shared", "certificate_cn=node-d", "--allow-shared-agent-certificate"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the tolerated mismatch is not in the log (%q missing); log was:\n%s", want, got)
 		}
