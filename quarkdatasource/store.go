@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -288,9 +289,21 @@ func (s *store[T]) Get(ctx context.Context, id string) (datasource.Record, error
 	}
 	entity, err := quark.For[T](ctx, s.adapter.provider).Find(pk)
 	if err != nil {
-		return nil, err
+		return nil, s.notFoundErr(id, err)
 	}
 	return s.entityToRecord(&entity)
+}
+
+// notFoundErr turns Quark's "record not found" into the not-found the panel
+// answers a missing row with (404, the shape the record endpoints give a
+// row out of scope), and leaves every other error as it is. Without it a
+// GET of an id that does not exist reached the handler as an unknown
+// failure, which is a 500 that names nothing.
+func (s *store[T]) notFoundErr(id string, err error) error {
+	if errors.Is(err, quark.ErrNotFound) {
+		return gferrors.NotFound(s.info.Name, id)
+	}
+	return err
 }
 
 // Create inserts a record and returns the created row (with the
@@ -347,8 +360,17 @@ func (s *store[T]) Delete(ctx context.Context, id string) error {
 	if err := assignPK(pkField, pk); err != nil {
 		return err
 	}
-	_, err = quark.For[T](ctx, s.adapter.provider).Delete(entity)
-	return err
+	rows, err := quark.For[T](ctx, s.adapter.provider).Delete(entity)
+	if err != nil {
+		return s.notFoundErr(id, err)
+	}
+	if rows == 0 {
+		// Nothing was deleted: the row does not exist (or was already
+		// soft-deleted). Said as a not-found rather than as success, so a
+		// batch counts it as the failure it is.
+		return gferrors.NotFound(s.info.Name, id)
+	}
+	return nil
 }
 
 // Count returns the real row count. Present is false when the backing table

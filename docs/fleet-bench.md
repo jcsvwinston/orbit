@@ -130,7 +130,7 @@ left empty — counted as a gap and not as a detail.
 
 `FDS-05`, `FDS-06`, `FDS-07` and `FDS-10` are **present** since A9 `S4`: the
 agent serves Data Studio through the same `datasource` contract the panel
-speaks (its own module since ADR-012, with the Nucleus adapter inside), and
+speaks (its own module since ADR-012; the Nucleus adapter it carried left at 2.0), and
 the admin server sends the operator the UI auth chain resolved
 (`DataStudioRequest.operator`: subject, role, read-only, tenant). Under that
 identity the agent puts the framework claims on the context (a model hook

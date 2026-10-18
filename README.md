@@ -47,9 +47,11 @@ go get github.com/jcsvwinston/orbit@latest
 
 The current tagged release is **v1.20.1**; pin that tag for reproducible builds. <!-- x-release-please-version -->
 
-**v1.0 promise:** the public surfaces (the root module and
-`datasource`) are frozen for the life of v1.x — enforced by
-`contracts/freeze_test.go` (see `docs/V1_GATE.md`).
+**The frozen surfaces:** the public surfaces (the root module and the
+`datasource` contract) are frozen for the life of a major — enforced by
+`contracts/freeze_test.go` (see `docs/V1_GATE.md`). The 2.0 major removed
+the Nucleus adapter the `datasource` module carried and made
+`orbit.Config.DataSource` required (`docs/deprecations/`).
 
 > **Requires** Go 1.26+ and a [Nucleus](https://github.com/jcsvwinston/nucleus)
 > application to mount into.

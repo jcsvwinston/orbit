@@ -19,11 +19,16 @@ import (
 	"time"
 
 	"github.com/jcsvwinston/nucleus/pkg/app"
-	"github.com/jcsvwinston/nucleus/pkg/model"
+	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
 	"github.com/jcsvwinston/nucleus/pkg/nucleus"
 	"github.com/jcsvwinston/nucleus/pkg/nucleustest"
+	"github.com/jcsvwinston/quark"
+	// The module, not the bare driver: it registers the driver and Quark's
+	// error classification predicates (quark ADR-0023).
+	_ "github.com/jcsvwinston/quark/drivers/sqlite"
 
 	"github.com/jcsvwinston/orbit"
+	"github.com/jcsvwinston/orbit/quarkdatasource"
 )
 
 // bootstrapPassword is what the bench signs in with. It is the password the
@@ -31,13 +36,20 @@ import (
 // sets ADMIN_BOOTSTRAP_PASSWORD.
 const bootstrapPassword = "adminbench-bootstrap-password"
 
-// Note is the one domain model the probed application registers. Orbit reads
-// the HOST application's model registry, so a panel mounted on an app with no
-// models is an empty panel — every Data Studio probe needs something to
-// browse. The tags are the ones an application author writes: `validate` for
-// the constraint, `admin` for what the panel does with the field.
+// Note is the one domain model the probed application registers. Since 2.0
+// Orbit reads the models the application hands it through a
+// datasource.DataSource (DEP-2026-002) — the bench's are Quark models,
+// served through quarkdatasource — so a panel mounted with no models is an
+// empty panel: every Data Studio probe needs something to browse. The tags
+// are the ones an application author writes: Quark's `db`, `pk` and
+// `quark` tags. Quark does not flatten an embedded struct, so every model
+// spells out the primary key and the timestamps Quark stamps and
+// soft-deletes by.
 type Note struct {
-	model.BaseModel
+	ID        int64      `db:"id" pk:"true"`
+	CreatedAt time.Time  `db:"created_at"`
+	UpdatedAt time.Time  `db:"updated_at"`
+	DeletedAt *time.Time `db:"deleted_at"`
 
 	// Title and Views are filterable so the bench can ask a question with an
 	// operator in it — a substring, a range, a set. A model that offers only
@@ -45,31 +57,45 @@ type Note struct {
 	// keyhole: every operator but equality would be refused for the field, not
 	// for the operator, and the probe would read a capability where there was
 	// only a tag.
-	Title  string `db:"required" json:"title" validate:"required" admin:"list,search,filter"`
-	Body   string `json:"body"`
-	Status string `json:"status" admin:"list,filter"`
-	Views  int    `json:"views" admin:"list,filter"`
-	// Internal is spelled three ways — column internal_note, Go name
-	// Internal, json key editor_note — so PERM-06 can ask whether a field
-	// policy holds under the key the records carry the field by, which is
-	// the json key, and not only under the column a policy names (OR-77). A
-	// model whose json keys all equal their columns cannot ask it.
-	Internal string `json:"editor_note" db:"column:internal_note"`
+	Title  string `db:"title" quark:"not_null"`
+	Body   string `db:"body"`
+	Status string `db:"status"`
+	Views  int64  `db:"views"`
+	// Internal is spelled two ways — column internal_note, Go name
+	// Internal — so PERM-06 can ask whether a field policy holds under every
+	// key the backend accepts the field by, and not only under the column a
+	// policy names. A model whose Go names all equal their columns cannot
+	// ask it.
+	Internal string `db:"internal_note"`
 	// Cover and Meta are the fields a scalar form cannot hold: a file and a
 	// document. Both are columns of text — what they MEAN is the
 	// application's claim, declared through orbit.Config.FieldWidgets below,
 	// which is exactly how an author says it.
-	Cover string `json:"cover"`
-	Meta  string `json:"meta"`
+	Cover string `db:"cover"`
+	Meta  string `db:"meta"`
+}
+
+// BeforeCreate is the model's own validation, the way an application on
+// Quark writes it (a Quark lifecycle hook): a Note needs a title, and the
+// refusal names the field. The panel passes the hook's error through, so
+// what the operator reads is what the application said.
+func (n *Note) BeforeCreate(context.Context) error {
+	if strings.TrimSpace(n.Title) == "" {
+		return gferrors.ValidationFailed(map[string]string{"title": "title is required"})
+	}
+	return nil
 }
 
 // Author exists only so a foreign key does: Note has no relation, and a bench
 // that never registers two related models cannot measure what the panel does
 // with relations.
 type Author struct {
-	model.BaseModel
+	ID        int64      `db:"id" pk:"true"`
+	CreatedAt time.Time  `db:"created_at"`
+	UpdatedAt time.Time  `db:"updated_at"`
+	DeletedAt *time.Time `db:"deleted_at"`
 
-	Name string `db:"required" json:"name" admin:"list,search"`
+	Name string `db:"name" quark:"not_null"`
 }
 
 // Article is the model row permissions are measured on: it carries the column
@@ -77,41 +103,88 @@ type Author struct {
 // grant needs to mean anything. A bench whose every model belongs to nobody
 // cannot ask whether an author edits their own posts.
 type Article struct {
-	model.BaseModel
+	ID        int64      `db:"id" pk:"true"`
+	CreatedAt time.Time  `db:"created_at"`
+	UpdatedAt time.Time  `db:"updated_at"`
+	DeletedAt *time.Time `db:"deleted_at"`
 
-	Title string `db:"required" json:"title" validate:"required" admin:"list,search"`
-	Owner string `json:"owner" admin:"list,filter"`
-	Body  string `json:"body"`
+	Title string `db:"title" quark:"not_null"`
+	Owner string `db:"owner"`
+	Body  string `db:"body"`
 }
 
 // Credential exists for the redaction probe: a model whose field names say
 // "secret" the way a real one does.
 type Credential struct {
-	model.BaseModel
+	ID        int64      `db:"id" pk:"true"`
+	CreatedAt time.Time  `db:"created_at"`
+	UpdatedAt time.Time  `db:"updated_at"`
+	DeletedAt *time.Time `db:"deleted_at"`
 
-	Label    string `db:"required" json:"label" admin:"list,search"`
-	Password string `json:"password"`
-	APIToken string `json:"api_token" db:"column:api_token"`
+	Label    string `db:"label" quark:"not_null"`
+	Password string `db:"password"`
+	APIToken string `db:"api_token"`
 }
 
 // Comment points at both, which is what makes it the relation probe's model.
-// The foreign keys are declared the way the framework documents them
-// (`fk:model=…`). The bench learned this the hard way: with only a NoteID
-// field and no declaration, nothing marked it as a key and the first run read
-// that as "the panel has no relation metadata". It was measuring the model
-// the bench wrote, not the product.
+// The foreign keys are declared the way Quark documents them (a
+// `rel:"belongs_to"` field beside the key column). The bench learned this
+// the hard way: with only a NoteID field and no declaration, nothing marked
+// it as a key and the first run read that as "the panel has no relation
+// metadata". It was measuring the model the bench wrote, not the product.
 type Comment struct {
-	model.BaseModel
+	ID        int64      `db:"id" pk:"true"`
+	CreatedAt time.Time  `db:"created_at"`
+	UpdatedAt time.Time  `db:"updated_at"`
+	DeletedAt *time.Time `db:"deleted_at"`
 
-	NoteID   uint   `json:"note_id" db:"column:note_id;fk:model=Note,table=notes,column=id"`
-	AuthorID uint   `json:"author_id" db:"column:author_id;fk:model=Author,table=authors,column=id"`
-	Body     string `json:"body"`
+	NoteID   int64   `db:"note_id"`
+	Note     *Note   `rel:"belongs_to" join:"note_id" json:"-"`
+	AuthorID int64   `db:"author_id"`
+	Author   *Author `rel:"belongs_to" join:"author_id" json:"-"`
+	Body     string  `db:"body"`
+}
+
+// benchDataSource is what the probed application hands the panel: a
+// quarkdatasource adapter over the application's own SQLite file, with the
+// five models registered and their tables migrated before the application
+// boots. The adapter opens its own pool on the file — the application's
+// handle does not exist until the application runs, and the panel takes
+// its source at construction — with the same busy timeout the application
+// uses, so the two pools wait for each other rather than fail.
+func benchDataSource(tb testing.TB, cfg app.Config) *quarkdatasource.Adapter {
+	tb.Helper()
+	dsn := strings.TrimPrefix(cfg.Databases["default"].URL, "sqlite://")
+	client, err := quark.New("sqlite", dsn)
+	if err != nil {
+		tb.Fatalf("quark.New: %v", err)
+	}
+	tb.Cleanup(func() { _ = client.Close() })
+	if err := client.RegisterModel(&Note{}, &Author{}, &Comment{}, &Credential{}, &Article{}); err != nil {
+		tb.Fatalf("RegisterModel: %v", err)
+	}
+	if err := client.MigrateRegistered(context.Background()); err != nil {
+		tb.Fatalf("MigrateRegistered: %v", err)
+	}
+	src := quarkdatasource.New(client)
+	for _, reg := range []func(*quarkdatasource.Adapter) error{
+		quarkdatasource.Register[Note], quarkdatasource.Register[Author], quarkdatasource.Register[Comment],
+		quarkdatasource.Register[Credential], quarkdatasource.Register[Article],
+	} {
+		if err := reg(src); err != nil {
+			tb.Fatalf("quarkdatasource.Register: %v", err)
+		}
+	}
+	return src
 }
 
 func contentModule() nucleus.ModuleSpec {
 	return nucleus.Module[struct{}]{
-		Name:   "content",
-		Models: []any{Note{}, Author{}, Comment{}, Credential{}, Article{}},
+		Name: "content",
+		// The models are Quark's (benchDataSource registers and migrates
+		// them); the module declares what the framework still runs for
+		// the application — its job.
+		//
 		// A declared job is what gives the application a queue runtime at
 		// all, and without one there is nothing for the panel's queue view to
 		// be a view OF. OPS-14 passed for the whole of A6 without this,
@@ -124,9 +197,6 @@ func contentModule() nucleus.ModuleSpec {
 				Every:   time.Hour,
 				Handler: func(context.Context) error { return nil },
 			})
-		},
-		OnStart: func(_ context.Context, rt nucleus.Runtime, _ struct{}) error {
-			return rt.AutoMigrate(Note{}, Author{}, Comment{}, Credential{}, Article{})
 		},
 	}.Build()
 }
@@ -162,6 +232,8 @@ func (e *env) server() *nucleustest.Server {
 		cfg := benchConfig(e.tb)
 		e.dbs = cfg.Databases
 
+		orbitCfg := benchOrbitConfig()
+		orbitCfg.DataSource = benchDataSource(e.tb, cfg)
 		e.srv = nucleustest.StartApp(e.tb, nucleus.App{
 			Config: cfg,
 			Modules: map[string]nucleus.ModuleSpec{
@@ -181,7 +253,7 @@ func (e *env) server() *nucleustest.Server {
 				// are, and what this application adds to the panel — its
 				// own verb on Note and its own screen
 				// (env_extensions_test.go).
-				"orbit": orbit.Module(benchOrbitConfig()),
+				"orbit": orbit.Module(orbitCfg),
 			},
 		})
 	})

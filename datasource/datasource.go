@@ -1,8 +1,9 @@
 // Package datasource is Orbit's neutral, backend-agnostic contract for Data
 // Studio (ADR-001). The Data Studio panel speaks only these types and never
-// imports nucleus/pkg/model or pkg/db; a single adapter per backend translates
-// — the Nucleus adapter in the sibling package datasource/nucleus, and the
-// Quark adapter in the quarkdatasource module.
+// imports nucleus/pkg/model or pkg/db; a single adapter per backend
+// translates — the Quark adapter in the quarkdatasource module, or an
+// application's own. The Nucleus adapter that once lived in the sibling
+// package datasource/nucleus left at Orbit 2.0 (DEP-2026-002).
 //
 // These interfaces and types are Orbit public API and are frozen at Orbit v1.0
 // (quantum/QADR-0005). Design decisions (ADR-001):

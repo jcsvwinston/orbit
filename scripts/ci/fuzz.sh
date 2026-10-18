@@ -58,7 +58,6 @@ TARGETS=$(
 .	./internal/admin	FuzzImportValidation
 .	./internal/admin	FuzzPanelRedirect
 server	./routing	FuzzEventFilterMatches
-datasource	./nucleus	FuzzStoreParseID
 EOF
 )
 

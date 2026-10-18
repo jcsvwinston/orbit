@@ -17,6 +17,50 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v2.0.0 — unreleased
+
+The major the two notices of v1.20.0 announced. What the Nucleus data-source
+notice (`DEP-2026-002`) said changes, changes here:
+
+- **The Nucleus data-source adapter is gone.** The package
+  `github.com/jcsvwinston/orbit/datasource/nucleus` no longer exists; the
+  `datasource` module is the contract alone. Data Studio reads the source
+  the application hands it, and for Quark models that is `quarkdatasource`,
+  the adapter Orbit ships.
+- **`orbit.Config.DataSource` is required.** A panel mounted without one
+  does not start; the error names the field (`orbit: Config.DataSource is
+  required`), the way the module refuses an action on a model that does not
+  exist. On a fleet node, `agent.Config.DataSource` (and
+  `ExtensionConfig.DataSource`) nil means no Data Studio on that node: the
+  agent registers no models. The `Registry` and `Databases` fields of
+  `agent.Config`, which only served the default adapter, are gone.
+- **The runtime field-metadata editor is gone.** `PUT
+  /api/models/{name}/schema/fields` is no longer a route (it answers `404`),
+  the `update_schema` verb is no longer asked or answered in the
+  `permissions` map, the Data Studio header no longer offers **Fields**,
+  and `schema.update` is no longer an audit action. A field's settings —
+  which columns are listed, searched and filtered — are what the source
+  declares: the Quark adapter lists every column, searches every string
+  column and filters every scalar one.
+- **A field policy knows two spellings.** A record's key is its column or
+  its Go name, the two the Quark adapter accepts; the JSON-tag spelling of a
+  Nucleus model left with the adapter.
+- **The panel's signal-bus seam is gone** (`Panel.SetSignalBus`, the
+  adapter's `Config.Bus`): nothing in Orbit holds the untyped bus any more.
+- **What the migrated tests found.** The Quark adapter now answers a row
+  that does not exist with the contract's not-found (`404`) on a read and
+  on a delete that deleted nothing — a batch delete counts it as the failure
+  it is — and a database alias it does not serve as a bad request (`400`)
+  naming the alias. An import's CSV cells are handed to the store in the
+  kind the field declares, and a row that names its primary key for an
+  update is valid even where the source declares the key read-only. A child
+  written with its parent (an inline relation) carries the parent's key in
+  the field's own type.
+
+The way to stay is the one the notice gave: define the models with Quark
+and set `orbit.Config.DataSource` (on a fleet node, `agent.Config.DataSource`
+or `ExtensionConfig.DataSource`) to a `quarkdatasource` adapter.
+
 ## v1.20.1 — 2026-10-18
 
 A patch that brings v1.20.0's browser half and markers to applications: the

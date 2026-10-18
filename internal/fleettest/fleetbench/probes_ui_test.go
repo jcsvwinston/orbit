@@ -17,8 +17,6 @@ import (
 
 	"connectrpc.com/connect"
 
-	"github.com/jcsvwinston/nucleus/pkg/db"
-
 	"github.com/jcsvwinston/orbit/agent"
 	adminv1 "github.com/jcsvwinston/orbit/proto/gen/go/nucleus/admin/v1"
 	server "github.com/jcsvwinston/orbit/server"
@@ -592,11 +590,10 @@ func probeFleetTenantNotion(t *testing.T, e *env) verdict {
 	// And the other property the SPA reads — which column scopes a model —
 	// is filled by the agent: a model registered with a tenant field names
 	// it on the wire, and the name is one of the model's own fields.
-	d, reg := e.agentDB(t, true)
+	_, src := e.agentDB(t, true)
 	ag := e.startAgent(t, agent.Config{
-		Endpoints: []string{"http://" + srv.AgentAddr()},
-		Registry:  reg,
-		Databases: map[string]*db.DB{"default": d},
+		Endpoints:  []string{"http://" + srv.AgentAddr()},
+		DataSource: src,
 	})
 	if !waitRegistered(srv.Server, ag.NodeID(), 4*time.Second) {
 		t.Fatal("the agent did not register")

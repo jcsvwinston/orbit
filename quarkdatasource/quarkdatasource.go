@@ -53,6 +53,7 @@ import (
 	"strings"
 	"sync"
 
+	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
 	"github.com/jcsvwinston/quark"
 
 	"github.com/jcsvwinston/orbit/datasource"
@@ -143,7 +144,10 @@ func (a *Adapter) Get(name string) (datasource.ModelInfo, bool) {
 // a different name would show the operator the wrong data.
 func (a *Adapter) Store(modelName, dbAlias string) (datasource.RecordStore, error) {
 	if alias := strings.TrimSpace(dbAlias); alias != "" && alias != a.alias {
-		return nil, fmt.Errorf("quarkdatasource: database alias %q is not served by this adapter (serves %q)", alias, a.alias)
+		// The request's mistake, answered as one (400) rather than as a
+		// failure of the panel: the alias names a database this adapter
+		// does not serve.
+		return nil, gferrors.BadRequest(fmt.Sprintf("quarkdatasource: database alias %q is not served by this adapter (serves %q)", alias, a.alias))
 	}
 	a.mu.RLock()
 	defer a.mu.RUnlock()

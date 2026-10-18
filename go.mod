@@ -8,11 +8,16 @@ require (
 	github.com/alicebob/miniredis/v2 v2.39.0
 	github.com/jcsvwinston/nucleus v1.33.0
 	github.com/jcsvwinston/nucleus/drivers/sqlite v0.1.7
+	github.com/jcsvwinston/orbit/quarkdatasource v1.13.1
+	github.com/jcsvwinston/quark v1.17.0
+	github.com/jcsvwinston/quark/drivers/sqlite v0.3.0
 	github.com/redis/go-redis/v9 v9.22.0
 	github.com/shirou/gopsutil/v3 v3.24.5
 	golang.org/x/net v0.57.0
 	modernc.org/sqlite v1.58.0
 )
+
+require golang.org/x/sync v0.22.0 // indirect
 
 require (
 	github.com/alexedwards/scs/v2 v2.9.0 // indirect

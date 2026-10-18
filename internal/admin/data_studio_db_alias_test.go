@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/jcsvwinston/nucleus/pkg/db"
@@ -54,27 +55,48 @@ func TestHandleListRecords_DBAliasSelectsDatabase(t *testing.T) {
 	srv := httptest.NewServer(panel.Handler())
 	defer srv.Close()
 
-	// 1. The reserved parameter must not be rejected as a filter…
+	// 1. The reserved parameter must not be rejected as a filter: the
+	// alias reaches the source. The panel's source (a Quark adapter) is
+	// bound to ONE database, so an alias the panel knows and the source
+	// does not serve is refused by the source, as a 400 naming it — never
+	// answered from the default database under the other name.
 	res, err := http.Get(srv.URL + "/api/models/AdminUser?db_alias=tenant_other")
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
 	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200 listing via db_alias, got %d", res.StatusCode)
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for an alias the source does not serve, got %d", res.StatusCode)
+	}
+	var refusal map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&refusal); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body := mustJSON(refusal); !strings.Contains(body, "tenant_other") {
+		t.Fatalf("the refusal does not name the alias: %s", body)
 	}
 
-	// 2. …and must actually select the aliased database.
+	// 2. The alias the source serves lists its rows, and only its rows.
+	res1, err := http.Get(srv.URL + "/api/models/AdminUser?db_alias=default")
+	if err != nil {
+		t.Fatalf("request(default): %v", err)
+	}
+	defer res1.Body.Close()
+	if res1.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 listing via db_alias=default, got %d", res1.StatusCode)
+	}
 	var payload struct {
 		Items []struct {
 			Email string `json:"email"`
 		} `json:"items"`
 	}
-	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+	if err := json.NewDecoder(res1.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(payload.Items) != 1 || payload.Items[0].Email != "tenant-only@example.com" {
-		t.Fatalf("expected the tenant_other row, got %+v", payload.Items)
+	for _, item := range payload.Items {
+		if item.Email == "tenant-only@example.com" {
+			t.Fatalf("the default database listing carries the other database's row: %+v", payload.Items)
+		}
 	}
 
 	// 3. An unknown alias is a clean 400, not a fall-through to default.

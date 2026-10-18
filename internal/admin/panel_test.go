@@ -19,22 +19,171 @@ import (
 
 	"github.com/jcsvwinston/nucleus/pkg/auth"
 	"github.com/jcsvwinston/nucleus/pkg/db"
-	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/observe"
 	"github.com/jcsvwinston/nucleus/pkg/router"
+	"github.com/jcsvwinston/quark"
+	// The module, not the bare driver: it registers the driver and Quark's
+	// error classification predicates (quark ADR-0023).
+	_ "github.com/jcsvwinston/quark/drivers/sqlite"
 
-	dsnucleus "github.com/jcsvwinston/orbit/datasource/nucleus"
+	"github.com/jcsvwinston/orbit/datasource"
+	"github.com/jcsvwinston/orbit/quarkdatasource"
 )
 
+// The panel tests mount Data Studio on the adapter it ships with since 2.0,
+// quarkdatasource, over Quark models (DEP-2026-002). Quark does not flatten
+// an embedded struct, so every model spells out the primary key and the
+// three timestamps Quark stamps and soft-deletes by. The columns a field
+// maps to are the ones the tests' own DDL creates.
+//
+// AdminUser is the one model every fixture registers.
 type AdminUser struct {
-	model.BaseModel
-	Email  string `db:"column:email;required" json:"email" admin:"list,search"`
-	Name   string `db:"column:name;required" json:"name" admin:"list,search"`
-	Active bool   `db:"column:active" json:"active" admin:"list,filter"`
+	ID        int64      `db:"id" pk:"true"`
+	CreatedAt time.Time  `db:"created_at"`
+	UpdatedAt time.Time  `db:"updated_at"`
+	DeletedAt *time.Time `db:"deleted_at"`
+	Email     string     `db:"email" quark:"not_null"`
+	Name      string     `db:"name" quark:"not_null"`
+	Active    bool       `db:"active"`
 }
 
 func (AdminUser) TableName() string {
 	return "admin_users"
+}
+
+// quarkSource is the Data Studio source the panel tests mount on: a
+// quarkdatasource adapter over the SAME SQLite pool the panel's own handle
+// uses (quark.NewWithDB), so a row a test writes through the panel is a row
+// the test reads through sqlDB. The tables come from the tests' DDL, not
+// from Quark's migrations; register lists the models, one Register[T] each.
+func quarkSource(t *testing.T, sqlDB *sql.DB, register ...func(*quarkdatasource.Adapter) error) *quarkdatasource.Adapter {
+	t.Helper()
+	client, err := quark.NewWithDB("sqlite", sqlDB)
+	if err != nil {
+		t.Fatalf("quark.NewWithDB: %v", err)
+	}
+	src := quarkdatasource.New(client, quarkdatasource.WithTenantColumn("tenant_id"))
+	for _, reg := range register {
+		if err := reg(src); err != nil {
+			t.Fatalf("quarkdatasource.Register: %v", err)
+		}
+	}
+	return src
+}
+
+// metaOverlay is a data source whose catalogue is edited per model: what
+// the removed field-settings dialog did to the Nucleus registry at runtime
+// (is_search, is_excluded, read-only), a test now declares on the source it
+// hands the panel, since the panel reads those facts from ModelInfo and
+// never from the backend. Stores pass through untouched.
+type metaOverlay struct {
+	datasource.DataSource
+	edits map[string]func(*datasource.ModelInfo)
+}
+
+func (o metaOverlay) apply(mi datasource.ModelInfo) datasource.ModelInfo {
+	if edit, ok := o.edits[mi.Name]; ok {
+		fields := make([]datasource.FieldInfo, len(mi.Fields))
+		copy(fields, mi.Fields)
+		mi.Fields = fields
+		edit(&mi)
+	}
+	return mi
+}
+
+func (o metaOverlay) All() []datasource.ModelInfo {
+	all := o.DataSource.All()
+	out := make([]datasource.ModelInfo, 0, len(all))
+	for _, mi := range all {
+		out = append(out, o.apply(mi))
+	}
+	return out
+}
+
+func (o metaOverlay) Get(name string) (datasource.ModelInfo, bool) {
+	mi, ok := o.DataSource.Get(name)
+	if !ok {
+		return mi, false
+	}
+	return o.apply(mi), true
+}
+
+// editModel edits model name's catalogue entry on the panel's source, for
+// the rest of the test.
+func editModel(panel *Panel, name string, edit func(*datasource.ModelInfo)) {
+	overlay, ok := panel.src.(metaOverlay)
+	if !ok {
+		overlay = metaOverlay{DataSource: panel.src, edits: map[string]func(*datasource.ModelInfo){}}
+	}
+	prev := overlay.edits[name]
+	overlay.edits[name] = func(mi *datasource.ModelInfo) {
+		if prev != nil {
+			prev(mi)
+		}
+		edit(mi)
+	}
+	panel.src = overlay
+}
+
+// emptySource is a data source with nothing to browse: enough for a panel
+// to mount on when the test is about something other than Data Studio.
+type emptySource struct{}
+
+func (emptySource) All() []datasource.ModelInfo { return nil }
+
+func (emptySource) Get(string) (datasource.ModelInfo, bool) { return datasource.ModelInfo{}, false }
+
+func (emptySource) Store(string, string) (datasource.RecordStore, error) {
+	return nil, fmt.Errorf("empty source: no models")
+}
+
+// registerModel adds one more model to the panel's Quark source after the
+// fixture built it, the way an application registers its models before
+// mounting; the table is the test's to create.
+func registerModel(t *testing.T, panel *Panel, register func(*quarkdatasource.Adapter) error) {
+	t.Helper()
+	src := panel.src
+	if overlay, ok := src.(metaOverlay); ok {
+		src = overlay.DataSource
+	}
+	adapter, ok := src.(*quarkdatasource.Adapter)
+	if !ok {
+		t.Fatalf("the panel's source is a %T, not the fixture's Quark adapter", panel.src)
+	}
+	if err := register(adapter); err != nil {
+		t.Fatalf("quarkdatasource.Register: %v", err)
+	}
+}
+
+// setReadOnly marks model name read-only on the panel's source, the way a
+// composite-key Quark model or an application's own source is.
+func setReadOnly(panel *Panel, name string, readOnly bool) {
+	editModel(panel, name, func(mi *datasource.ModelInfo) { mi.ReadOnly = readOnly })
+}
+
+// editField edits one field of model name on the panel's source, found by
+// its column or Go name.
+func editField(panel *Panel, name, column string, edit func(*datasource.FieldInfo)) {
+	editModel(panel, name, func(mi *datasource.ModelInfo) {
+		for i := range mi.Fields {
+			if strings.EqualFold(mi.Fields[i].Column, column) || strings.EqualFold(mi.Fields[i].Name, column) {
+				edit(&mi.Fields[i])
+			}
+		}
+	})
+}
+
+// setFieldFlags edits the search and exclusion flags of field column on
+// model name; a nil pointer leaves the flag as the source declares it.
+func setFieldFlags(panel *Panel, name, column string, isSearch, isExcluded *bool) {
+	editField(panel, name, column, func(f *datasource.FieldInfo) {
+		if isSearch != nil {
+			f.IsSearch = *isSearch
+		}
+		if isExcluded != nil {
+			f.IsExcluded = *isExcluded
+		}
+	})
 }
 
 type testAdminAuth struct {
@@ -236,6 +385,9 @@ func TestPanel_ListAcceptsDatabaseQueryParam(t *testing.T) {
 func TestPanel_ListValidationRejectsInvalidQueryParams(t *testing.T) {
 	panel, cleanup := setupPanelForTest(t, db.EngineSQL)
 	defer cleanup()
+	// The source's catalogue says what a filter may name: name is a
+	// column of AdminUser that is not offered as a filter.
+	editField(panel, "AdminUser", "name", func(f *datasource.FieldInfo) { f.IsFilter = false })
 
 	srv := httptest.NewServer(panel.Handler())
 	defer srv.Close()
@@ -846,31 +998,11 @@ func setupPanelForTestWithAuth(t *testing.T, engine db.Engine, adminAuth AdminAu
 		t.Fatalf("schema setup failed: %v", err)
 	}
 
-	registry := model.NewRegistry()
-	if err := registry.Register(&AdminUser{}); err != nil {
-		t.Fatalf("registry.Register failed: %v", err)
-	}
-
-	// Resolve defers to the panel's own handle plumbing (reads config.DatabaseHandles
-	// at call time), so tests that inject extra aliases after construction — e.g.
-	// the db_alias routing guard — are honored.
-	var panel *Panel
-	src := dsnucleus.New(dsnucleus.Config{
-		Registry: registry,
-		Resolve: func(alias string) (*db.DB, string, error) {
-			h, err := panel.databaseHandle(alias)
-			if err != nil {
-				return nil, "", err
-			}
-			return h, h.System(), nil
-		},
-		BusConnected: func() bool { return true },
-	})
-	panel = NewPanel(src, logger, PanelConfig{
+	src := quarkSource(t, sqlDB, quarkdatasource.Register[AdminUser])
+	panel := NewPanel(src, logger, PanelConfig{
 		Prefix:          "/admin",
 		Title:           "Test Admin",
 		Auth:            adminAuth,
-		SchemaRegistry:  registry,
 		DatabaseHandles: map[string]*db.DB{"default": database},
 	})
 

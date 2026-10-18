@@ -29,7 +29,7 @@ today.
 | Consumes nucleus v1.0.0 by tag (all modules) | ✅ repinned (orbit#16) |
 | Six modules build + test standalone (`GOWORK=off`) | ✅ green |
 | Suite lockstep lane (orbit tests vs pinned nucleus) | ✅ green on every quantum push/PR |
-| `datasource` contract validated by 2 implementations | ✅ Nucleus adapter + quarkdatasource (ADR-001) |
+| `datasource` contract validated by 2 implementations | ✅ Nucleus adapter + quarkdatasource (ADR-001) — at 2.0 the Nucleus adapter left (DEP-2026-002); quarkdatasource and the in-tree fakes of the panel's tests are what validates the contract now |
 | Honest-data policy in the admin UI (no simulated data) | ✅ since the redesign (orbit#15) |
 
 ---

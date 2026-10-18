@@ -25,7 +25,7 @@ describe('screenCapabilities', () => {
     const caps = screenCapabilities(schema({}))
     expect(caps).toEqual({
       canCreate: true, canUpdate: true, canDelete: true, canBulkDelete: true, canRetrieve: true,
-      canExport: true, canImport: true, canConfigureFields: true, rowScoped: false,
+      canExport: true, canImport: true, rowScoped: false,
     })
   })
 
@@ -65,23 +65,21 @@ describe('screenCapabilities', () => {
     expect(caps.canBulkDelete).toBe(false)
   })
 
-  // OR-65: an export and an import are panel-wide grants of their own, and
-  // the field settings are update_schema — none of them is create.
-  it('offers export, import and the field settings by the verbs the server asks of them', () => {
+  // OR-65: an export and an import are panel-wide grants of their own —
+  // neither is create.
+  it('offers export and import by the verbs the server asks of them', () => {
     const none = screenCapabilities(schema({
       can_create: true,
-      permissions: { create: true, export_data: false, import_data: false, update_schema: false },
+      permissions: { create: true, export_data: false, import_data: false },
     }))
     expect(none.canExport).toBe(false)
     expect(none.canImport).toBe(false)
-    expect(none.canConfigureFields).toBe(false)
     const held = screenCapabilities(schema({
       can_create: true,
-      permissions: { create: true, export_data: true, import_data: true, update_schema: true },
+      permissions: { create: true, export_data: true, import_data: true },
     }))
     expect(held.canExport).toBe(true)
     expect(held.canImport).toBe(true)
-    expect(held.canConfigureFields).toBe(true)
   })
 
   // OR-67: each row of an import asks the model's create (or its update, for
@@ -106,7 +104,6 @@ describe('screenCapabilities', () => {
   it('falls back to what the screen did before the verbs were read when no map is sent', () => {
     expect(screenCapabilities(schema({ can_create: false })).canImport).toBe(false)
     expect(screenCapabilities(schema({ can_create: false })).canExport).toBe(true)
-    expect(screenCapabilities(schema({})).canConfigureFields).toBe(true)
   })
 
   it('reads the history as the record is read: by retrieve', () => {

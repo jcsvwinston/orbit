@@ -22,10 +22,9 @@ import (
 
 	"github.com/jcsvwinston/nucleus/pkg/authz"
 	"github.com/jcsvwinston/nucleus/pkg/db"
-	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/observe"
 
-	dsnucleus "github.com/jcsvwinston/orbit/datasource/nucleus"
+	"github.com/jcsvwinston/orbit/quarkdatasource"
 )
 
 // auditPanel builds a panel whose trail is kept in the database at dbPath —
@@ -52,30 +51,11 @@ func auditPanel(t *testing.T, dbPath string, tune func(*PanelConfig)) (*Panel, *
 		t.Fatalf("owned_notes schema: %v", err)
 	}
 
-	registry := model.NewRegistry()
-	for _, m := range []any{&AdminUser{}, &OwnedNote{}} {
-		if err := registry.Register(m); err != nil {
-			t.Fatalf("register: %v", err)
-		}
-	}
-
-	var panel *Panel
-	src := dsnucleus.New(dsnucleus.Config{
-		Registry: registry,
-		Resolve: func(alias string) (*db.DB, string, error) {
-			h, err := panel.databaseHandle(alias)
-			if err != nil {
-				return nil, "", err
-			}
-			return h, h.System(), nil
-		},
-		BusConnected: func() bool { return true },
-	})
+	src := quarkSource(t, sqlDB, quarkdatasource.Register[AdminUser], quarkdatasource.Register[OwnedNote])
 	cfg := PanelConfig{
 		Prefix:          "/admin",
 		Title:           "Test Admin",
 		Auth:            operatorAuth(),
-		SchemaRegistry:  registry,
 		DatabaseHandles: map[string]*db.DB{"default": database},
 		AuditEnabled:    true,
 		AuditMaxSize:    100,
@@ -84,7 +64,7 @@ func auditPanel(t *testing.T, dbPath string, tune func(*PanelConfig)) (*Panel, *
 	if tune != nil {
 		tune(&cfg)
 	}
-	panel = NewPanel(src, logger, cfg)
+	panel := NewPanel(src, logger, cfg)
 
 	srv := httptest.NewServer(panel.Handler())
 	t.Cleanup(srv.Close)
@@ -146,11 +126,7 @@ func TestAuditSQL_MemoryStoreIsStillAvailable(t *testing.T) {
 // A panel with no database handle keeps working, with the ring it always had.
 func TestAuditSQL_NoDatabaseHandleFallsBackToTheRing(t *testing.T) {
 	logger := observe.NewLogger("error", "text")
-	registry := model.NewRegistry()
-	if err := registry.Register(&AdminUser{}); err != nil {
-		t.Fatal(err)
-	}
-	panel := NewPanel(dsnucleus.New(dsnucleus.Config{Registry: registry}), logger, PanelConfig{
+	panel := NewPanel(emptySource{}, logger, PanelConfig{
 		Prefix: "/admin", Auth: operatorAuth(), AuditEnabled: true, AuditMaxSize: 10,
 	})
 	if panel.audit == nil {

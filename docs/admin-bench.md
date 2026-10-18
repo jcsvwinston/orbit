@@ -1541,7 +1541,7 @@ Studio and the record view with the verb its handler asks:
 | door | the verb its handler asks | offered before by |
 |---|---|---|
 | a model in the sidebar | `get_schema`, then `list` | nothing: every model was listed |
-| **Fields** (the field settings) | `update_schema`; `501` with no schema registry | nothing |
+| **Fields** (the field settings; removed at 2.0 with the Nucleus adapter, DEP-2026-002) | `update_schema`; `501` with no schema registry | nothing |
 | **New Record** | `create` | `create` |
 | **Export** and its download | `export_data` on `admin:*` | nothing |
 | **Import** (upload, validate, execute) | `import_data` on `admin:*` | `create`, which the import never asks |
@@ -1565,7 +1565,8 @@ only where the panel answers its views at all, and does not draw an empty
 Actions column for an operator who holds none of a row's doors.
 
 The driver adds a third operator and one grant. None of the three holds
-`update`, `bulk_delete`, `update_schema` or `import_data`:
+`update`, `bulk_delete` or `import_data` (nor `update_schema`, a verb no
+handler asks since 2.0):
 
 | operator | holds on `Note` (and `list_models` on `admin:*`) |
 |---|---|
@@ -1578,11 +1579,12 @@ runs the panel's accessibility rules over each screen, and makes from the page
 the calls the screen left out:
 
 - **the viewer** is offered Notes and none of the models the payload says
-  they may not open; the model's heading and no Fields; the toolbar's
-  Filters and no Export or Import; the admin's shared view and not its
-  removal, while the view they save beside it is theirs to remove. The forced
-  export, import, field settings, schema of another model and removal of the
-  shared view are each refused with `403`.
+  they may not open; the model's heading; the toolbar's Filters and no
+  Export or Import; the admin's shared view and not its removal, while the
+  view they save beside it is theirs to remove. The forced export, import,
+  schema of another model and removal of the shared view are each refused
+  with `403`. (The Fields dialog and its forced save left at 2.0 with the
+  Nucleus adapter, DEP-2026-002.)
 - **the actor** is offered Export — the toggle and the export it opens — and
   no Import. The export the screen offers answers `200`, the import it does
   not answers `403`.
@@ -1986,6 +1988,10 @@ Verified by breaking it:
 The HTTP bench is unchanged at 72 of 72; the browser half stays at 18 of 18.
 
 ## What a field policy knows a field by (OR-77)
+
+> Since 2.0 the json-tag spelling this section is about left with the Nucleus
+> adapter (DEP-2026-002): a record's key is its column or its Go name, and
+> the policy knows both. The section stays as the record of what was measured.
 
 A field policy (`admin:Model.field`) resolved the field it names, and the
 keys of the records it masks and of the payloads it guards, by the field's

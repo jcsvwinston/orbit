@@ -66,40 +66,59 @@ that prefix, so the panel is gated from the first request.
 
 ## 4. Register a model so Data Studio has something to show
 
-Orbit brings no data of its own: Data Studio browses the **host
-application's model registry**. If your app registers no models — as the
-bare snippet above does — the panel mounts and logs you in, but Data
+Orbit brings no data of its own: Data Studio browses the **data source
+your application hands it** (`orbit.Config.DataSource`, which the panel
+requires: it does not start without one). If that source holds no models
+— as an empty adapter does — the panel mounts and logs you in, but Data
 Studio lists zero models. That is expected, not a broken install.
 
-A model appears in Data Studio the moment your app registers it. In
-Nucleus that means listing the struct in a module's `Models` and making
-sure its table exists:
+A model appears in Data Studio the moment you register it on the source.
+With the [Quark](https://github.com/jcsvwinston/quark) ORM that means a
+`quarkdatasource` adapter over your client, one `Register` per model, and
+a table for it:
 
 ```go
 import (
     "context"
+    "log"
 
-    "github.com/jcsvwinston/nucleus/pkg/model"
-    "github.com/jcsvwinston/nucleus/pkg/nucleus"
+    "github.com/jcsvwinston/quark"
+    _ "github.com/jcsvwinston/quark/drivers/sqlite"
+
+    "github.com/jcsvwinston/orbit"
+    "github.com/jcsvwinston/orbit/quarkdatasource"
 )
 
 type Note struct {
-    model.BaseModel
-
-    Title string `db:"required" json:"title" validate:"required"`
-    Body  string `json:"body"`
+    ID    int64  `db:"id" pk:"true"`
+    Title string `db:"title" quark:"not_null"`
+    Body  string `db:"body"`
 }
 
-func notesModule() nucleus.ModuleSpec {
-    return nucleus.Module[struct{}]{
-        Name:   "notes",
-        Models: []any{Note{}}, // ← this line puts Note in Data Studio
-        OnStart: func(_ context.Context, rt nucleus.Runtime, _ struct{}) error {
-            // Dev-mode convenience; production apps use SQL migrations.
-            return rt.AutoMigrate(Note{})
-        },
-    }.Build()
+func notes() *quarkdatasource.Adapter {
+    client, err := quark.New("sqlite", "app.db")
+    if err != nil {
+        log.Fatal(err)
+    }
+    // Dev-mode convenience; production apps use SQL migrations.
+    if err := client.RegisterModel(&Note{}); err != nil {
+        log.Fatal(err)
+    }
+    if err := client.MigrateRegistered(context.Background()); err != nil {
+        log.Fatal(err)
+    }
+    src := quarkdatasource.New(client)
+    if err := quarkdatasource.Register[Note](src); err != nil { // ← this line puts Note in Data Studio
+        log.Fatal(err)
+    }
+    return src
 }
+```
+
+Hand the adapter to the panel where you mount it:
+
+```go
+orbit.Module(orbit.Config{Prefix: "/admin", DataSource: notes()})
 ```
 
 Mount it next to Orbit — order does not matter:

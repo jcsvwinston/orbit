@@ -281,7 +281,7 @@ func (p *Panel) fillRecords(ctx context.Context, read *recordsRead, payload *wid
 	for _, rec := range page.Items {
 		row := make([]string, 0, len(shown))
 		for _, f := range shown {
-			value, _ := recordValueByKeys(rec, fieldKeys(f, p.fieldJSONKey(mi.Name, f)))
+			value, _ := recordValueByKeys(rec, fieldKeys(f))
 			row = append(row, recordCell(value))
 		}
 		rows = append(rows, row)

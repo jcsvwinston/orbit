@@ -353,6 +353,7 @@ func probeMultiTenant(t *testing.T, e *env) verdict {
 			"orbit": orbit.Module(orbit.Config{
 				Prefix:             "/admin",
 				Title:              "Tenanted",
+				DataSource:         benchDataSource(t, cfg),
 				BootstrapUsername:  "admin",
 				BootstrapEmail:     "admin@example.test",
 				BootstrapPassword:  bootstrapPassword,

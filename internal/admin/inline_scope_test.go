@@ -19,32 +19,42 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jcsvwinston/nucleus/pkg/authz"
 	"github.com/jcsvwinston/nucleus/pkg/db"
-	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/observe"
 
-	dsnucleus "github.com/jcsvwinston/orbit/datasource/nucleus"
+	"github.com/jcsvwinston/orbit/quarkdatasource"
 )
 
 // Shelf is the parent and Book its child. Book carries everything a write
 // scope confines: a tenant, an owner and a field a policy can keep.
 type Shelf struct {
-	model.BaseModel
-	TenantID string `db:"column:tenant_id" json:"tenant_id"`
-	Name     string `db:"column:name;required" json:"name" admin:"list,search"`
+	ID        int64      `db:"id" pk:"true"`
+	CreatedAt time.Time  `db:"created_at"`
+	UpdatedAt time.Time  `db:"updated_at"`
+	DeletedAt *time.Time `db:"deleted_at"`
+	TenantID  string     `db:"tenant_id"`
+	Name      string     `db:"name" quark:"not_null"`
 }
 
 func (Shelf) TableName() string { return "shelves" }
 
 type Book struct {
-	model.BaseModel
-	TenantID string `db:"column:tenant_id" json:"tenant_id"`
-	Owner    string `db:"column:owner" json:"owner"`
-	ShelfID  uint   `json:"shelf_id" db:"column:shelf_id;fk:model=Shelf,table=shelves,column=id"`
-	Title    string `db:"column:title;required" json:"title" admin:"list,search"`
-	Secret   string `db:"column:secret" json:"secret"`
+	ID        int64      `db:"id" pk:"true"`
+	CreatedAt time.Time  `db:"created_at"`
+	UpdatedAt time.Time  `db:"updated_at"`
+	DeletedAt *time.Time `db:"deleted_at"`
+	TenantID  string     `db:"tenant_id"`
+	Owner     string     `db:"owner"`
+	ShelfID   int64      `db:"shelf_id"`
+	// The relation, declared the way Quark documents it, is what marks
+	// shelf_id as a foreign key in the catalogue; it is no column and no
+	// key of the record.
+	Shelf  *Shelf `rel:"belongs_to" join:"shelf_id" json:"-"`
+	Title  string `db:"title" quark:"not_null"`
+	Secret string `db:"secret"`
 }
 
 func (Book) TableName() string { return "books" }
@@ -97,30 +107,11 @@ func inlineScopePanel(t *testing.T, adminAuth AdminAuth, tune func(*PanelConfig)
 		t.Fatalf("shelves schema: %v", err)
 	}
 
-	registry := model.NewRegistry()
-	for _, m := range []any{&AdminUser{}, &Shelf{}, &Book{}} {
-		if err := registry.Register(m); err != nil {
-			t.Fatalf("register: %v", err)
-		}
-	}
-
-	var panel *Panel
-	src := dsnucleus.New(dsnucleus.Config{
-		Registry: registry,
-		Resolve: func(alias string) (*db.DB, string, error) {
-			h, err := panel.databaseHandle(alias)
-			if err != nil {
-				return nil, "", err
-			}
-			return h, h.System(), nil
-		},
-		BusConnected: func() bool { return true },
-	})
+	src := quarkSource(t, sqlDB, quarkdatasource.Register[AdminUser], quarkdatasource.Register[Shelf], quarkdatasource.Register[Book])
 	cfg := PanelConfig{
 		Prefix:          "/admin",
 		Title:           "Test Admin",
 		Auth:            adminAuth,
-		SchemaRegistry:  registry,
 		DatabaseHandles: map[string]*db.DB{"default": database},
 		AuditEnabled:    true,
 		AuditMaxSize:    200,
@@ -130,7 +121,7 @@ func inlineScopePanel(t *testing.T, adminAuth AdminAuth, tune func(*PanelConfig)
 	if tune != nil {
 		tune(&cfg)
 	}
-	panel = NewPanel(src, logger, cfg)
+	panel := NewPanel(src, logger, cfg)
 
 	if len(policies) > 0 {
 		enf, err := authz.New(slog.Default())

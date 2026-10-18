@@ -92,10 +92,10 @@ type ExtensionConfig struct {
 	Labels map[string]string `koanf:"labels"`
 
 	// DataSource is what the fleet's Data Studio reads and writes through
-	// (ADR-002): the same contract the in-process panel speaks. Nil builds
-	// the Nucleus adapter over the application's registry and database
-	// handles. An application on the Quark ORM passes its quarkdatasource
-	// adapter here, as it does in orbit.Config.DataSource. Not bound from a
+	// (ADR-002): the same contract the in-process panel speaks. An
+	// application on the Quark ORM passes its quarkdatasource adapter here,
+	// as it does in orbit.Config.DataSource. Nil serves no Data Studio on
+	// this node; there is no default (DEP-2026-002). Not bound from a
 	// config file (koanf:"-").
 	DataSource datasource.DataSource `koanf:"-"`
 

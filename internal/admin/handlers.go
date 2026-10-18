@@ -12,7 +12,6 @@ import (
 
 	"github.com/jcsvwinston/nucleus/pkg/auth"
 	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
-	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/router"
 
 	"github.com/jcsvwinston/orbit/datasource"
@@ -489,64 +488,6 @@ func (p *Panel) handleGetSchema(c *router.Context) error {
 		payload["actions"] = actions
 	}
 	return c.JSON(http.StatusOK, payload)
-}
-
-// handleUpdateFieldMeta updates field metadata properties at runtime (like Django ModelAdmin).
-func (p *Panel) handleUpdateFieldMeta(c *router.Context) error {
-	r := c.Request
-	name := c.Param("name")
-	// Runtime field-meta edits are a Nucleus registry feature. A panel
-	// mounted on a custom DataSource (Config.DataSource) has no
-	// SchemaRegistry; answer 501 instead of dereferencing nil (which
-	// panicked into a 500 before authorization even ran).
-	if p.registry == nil {
-		return &gferrors.DomainError{
-			Code:       "NOT_IMPLEMENTED",
-			Message:    "field metadata updates are not available for this data source",
-			StatusCode: http.StatusNotImplemented,
-		}
-	}
-	meta, ok := p.registry.Get(name)
-	if !ok {
-		return gferrors.NotFound("model", name)
-	}
-	if err := p.authorizeAction(c, meta.Name, "update_schema"); err != nil {
-		return err
-	}
-
-	var payload struct {
-		Fields map[string]model.FieldMetaUpdate `json:"fields"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		return gferrors.BadRequest("invalid JSON: " + err.Error())
-	}
-
-	if len(payload.Fields) == 0 {
-		return gferrors.BadRequest("no field updates provided")
-	}
-
-	// Snapshot the touched fields before and after, so the audit entry
-	// carries the schema change itself (a generic "update of <model>" with
-	// no record and no values told nothing).
-	before := auditFieldMetaSnapshot(meta, payload.Fields)
-	if err := p.registry.BulkUpdateFieldMeta(name, payload.Fields); err != nil {
-		return gferrors.BadRequest(err.Error())
-	}
-	var after map[string]any
-	if updated, ok := p.registry.Get(name); ok {
-		after = auditFieldMetaSnapshot(updated, payload.Fields)
-	}
-	p.recordAuditEntry(r, AuditEntry{
-		Action:    "schema.update",
-		ModelName: meta.Name,
-		OldValue:  before,
-		NewValue:  after,
-	})
-
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"ok":      true,
-		"message": fmt.Sprintf("Updated %d field(s) for %s", len(payload.Fields), name),
-	})
 }
 
 // handleListRecords returns a paginated list of records for a model.
@@ -1130,38 +1071,6 @@ func auditRecordSnapshot(r *http.Request, st datasource.RecordStore, id string) 
 		return nil
 	}
 	return rec
-}
-
-// auditFieldMetaSnapshot captures the runtime-editable properties of the
-// fields that updates names (matched by Go name or column, as the registry
-// matches them), keyed by the name the caller used.
-func auditFieldMetaSnapshot(meta *model.ModelMeta, updates map[string]model.FieldMetaUpdate) map[string]any {
-	if meta == nil || len(updates) == 0 {
-		return nil
-	}
-	out := make(map[string]any, len(updates))
-	for key := range updates {
-		for i := range meta.Fields {
-			f := &meta.Fields[i]
-			if f.Name != key && f.Column != key {
-				continue
-			}
-			out[key] = map[string]any{
-				"label":       f.Label,
-				"html_type":   f.HTMLType,
-				"is_list":     f.IsList,
-				"is_search":   f.IsSearch,
-				"is_filter":   f.IsFilter,
-				"is_excluded": f.IsExcluded,
-				"is_readonly": f.IsReadOnly,
-			}
-			break
-		}
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {

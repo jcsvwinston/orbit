@@ -22,8 +22,8 @@ import (
 //
 // Every mutating handler of the panel records its own entry (see
 // audit_coverage_test.go for the route-by-route contract). Action is the
-// verb: Data Studio uses create/update/delete/bulk_delete/bulk_export and
-// schema.update; the management surfaces use dotted names (rbac.policy.add,
+// verb: Data Studio uses create/update/delete/bulk_delete/bulk_export; the
+// management surfaces use dotted names (rbac.policy.add,
 // flag.set, migration.apply, cache.flush, export.create, import.execute,
 // live.exclude.add, audit.clear, ...); the session surfaces use login,
 // login.failed, login.locked, logout and session.terminate.

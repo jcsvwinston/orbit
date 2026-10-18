@@ -161,6 +161,7 @@ func probeAuditPersistence(t *testing.T, e *env) verdict {
 			"orbit": orbit.Module(orbit.Config{
 				Prefix:            "/admin",
 				Title:             "Admin Bench (restarted)",
+				DataSource:        benchDataSource(t, cfg),
 				BootstrapUsername: "admin",
 				BootstrapEmail:    "admin@example.test",
 				BootstrapPassword: bootstrapPassword,

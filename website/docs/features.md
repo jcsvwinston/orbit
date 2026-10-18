@@ -146,19 +146,22 @@ of reaching the writer.
 ![Data Studio with the Articles model selected: a sidebar listing the registered models with their record counts, and a grid showing seven article records with their real column values](./img/orbit-data-studio-light.png)
 
 What it lists comes entirely from the host application: a model appears
-here when your app registers it (in Nucleus, by listing the struct in a
-module's `Models`). An app that registers no models gets an empty Data
-Studio — see
+here when your app registers it on the data source it hands the panel. An
+app whose source holds no models gets an empty Data Studio — see
 [the quick start](./quick-start.md#4-register-a-model-so-data-studio-has-something-to-show)
-for the three lines that populate it.
+for the lines that populate it.
 
 Data Studio does not speak the framework's types directly. It reads and writes
-through a neutral data-source contract (`github.com/jcsvwinston/orbit/datasource`, a module of its own that neither the panel nor its SPA come with), with the Nucleus
-model registry as the default backend. Applications built on the
-[Quark](https://github.com/jcsvwinston/quark) ORM can point it at their Quark
-models instead: add the opt-in
+through a neutral data-source contract (`github.com/jcsvwinston/orbit/datasource`, a module of its own that neither the panel nor its SPA come with), and the application
+hands it the source: `orbit.Config.DataSource` is required, and a panel
+mounted without one does not start — the error names the field. Applications
+built on the [Quark](https://github.com/jcsvwinston/quark) ORM register their
+models on a
 [`quarkdatasource`](https://github.com/jcsvwinston/orbit/tree/main/quarkdatasource)
-module and set `orbit.Config.DataSource`.
+adapter, the implementation of the contract Orbit ships; any other
+implementation serves the same way. The Nucleus adapter over the
+application's `pkg/model` registry, which was the default through 1.x, left
+at 2.0 with the registry it read (`DEP-2026-002`).
 
 `datasource.Query` is a frozen shape, so the operator filters and the exact
 count arrived as new fields beside the old ones rather than as a richer
@@ -479,15 +482,12 @@ believes it saved a value it did not save is worse than one that is told. A
 field the operator may not read is left out of the record, the list, every
 export, the record's history, the trail and the schema.
 
-A policy names the field by its storage column, its Go field name or, for a
-Nucleus model, the JSON key its records carry, in any letter case — the same
-three spellings the tenant and the owner are resolved by — and the mask and
-the write guard resolve a record's or a payload's key by the same three, in
-the order the Nucleus adapter does (column and Go name first, then the JSON
-key). A field whose JSON key is neither its column nor its Go name is held to
-the policy under that key too; the `403` names the column. A backend without a
-schema registry (a custom `DataSource`, Quark) keys its records by column, and
-the policy knows them as it always did.
+A policy names the field by its storage column or its Go field name, in any
+letter case — the two spellings the tenant and the owner are resolved by —
+and the mask and the write guard resolve a record's or a payload's key by the
+same two, the way the Quark adapter does (column first, then Go name). A
+write naming the field under either spelling is held to the policy; the
+`403` names the column. The adapter keys the records it emits by column.
 
 ### What an operator may ask
 
@@ -599,13 +599,12 @@ can disable what it may not instead of finding out by being refused:
 
 The `permissions` map carries the record verbs, the actions this application
 declared, and the screen's other doors, each asked of the resource its
-handler asks it of: `get_schema` and `update_schema` of the model,
-`export_data` and `import_data` of the whole panel (`admin:*`). Those four are
-full grants only — an `#own` grant of them is not one, here or on the
-request. `export_data` is also false on a model the operator may not `list`,
-since its export is refused there, and `import_data` on a model they may
-neither `create` nor `update` rows of, since every row of its import is. `update_schema` is false for everybody on
-a data source with no schema registry, which answers `501` to it.
+handler asks it of: `get_schema` of the model, `export_data` and
+`import_data` of the whole panel (`admin:*`). Those three are full grants
+only — an `#own` grant of them is not one, here or on the request.
+`export_data` is also false on a model the operator may not `list`, since
+its export is refused there, and `import_data` on a model they may neither
+`create` nor `update` rows of, since every row of its import is.
 
 Data Studio draws its screens from them, and offers a door only to an
 operator the server will let through it:
@@ -613,7 +612,6 @@ operator the server will let through it:
 | What it offers | The verb it needs |
 |---|---|
 | a model in the sidebar | `get_schema` and `list` |
-| **Fields**, the field settings | `update_schema` |
 | **New Record** | `create` |
 | **Export** (the panel's export of the model) | `export_data` on `admin:*`, and `list` of the model, whose rows and fields it holds |
 | **Import** | `import_data` on `admin:*` and `create` on the model — the dialog's import creates every row it reads — on a model that is not read-only |
@@ -724,7 +722,7 @@ performed it. The `action` names the operation:
 
 | Surface | Actions |
 |---|---|
-| Data Studio | `create`, `update`, `delete` (each with the record's values before and/or after the change), `bulk_delete` (one summary plus one `delete` per row), `bulk_export`, `export.csv`, `schema.update` (field metadata edits, with the fields before and after) |
+| Data Studio | `create`, `update`, `delete` (each with the record's values before and/or after the change), `bulk_delete` (one summary plus one `delete` per row), `bulk_export`, `export.csv` |
 | Access control | `rbac.policy.add`, `rbac.policy.remove`, `rbac.role.assign`, `rbac.role.remove` |
 | Feature flags and jobs | `flag.create`, `flag.set`, `flag.delete`, `jobs.queue.<action>` |
 | Operations | `migration.apply`, `cache.flush`, `live.exclude.add`, `live.exclude.remove`, `audit.clear` (the one entry that survives the clear) |

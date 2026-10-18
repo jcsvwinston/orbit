@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"reflect"
 	"sort"
 	"strings"
 
@@ -98,10 +97,10 @@ type tenantScope struct {
 	Keys []string
 }
 
-// newTenantScope builds the confinement of tenant over field, adding
-// jsonKey (may be empty) to the keys the field is looked up by.
-func newTenantScope(field datasource.FieldInfo, tenant, jsonKey string) tenantScope {
-	return tenantScope{Field: field, Tenant: tenant, Keys: fieldKeys(field, jsonKey)}
+// newTenantScope builds the confinement of tenant over field, looked up by
+// every key a backend emits or accepts for it (fieldKeys).
+func newTenantScope(field datasource.FieldInfo, tenant string) tenantScope {
+	return tenantScope{Field: field, Tenant: tenant, Keys: fieldKeys(field)}
 }
 
 // Enforced reports whether the scope confines the request.
@@ -250,71 +249,9 @@ func (p *Panel) importTenantScope(mi datasource.ModelInfo, tenant string) tenant
 		return tenantScope{}
 	}
 	if _, field, ok := dsResolveField(mi, mi.TenantField); ok {
-		return newTenantScope(field, tenant, p.fieldJSONKey(mi.Name, field))
+		return newTenantScope(field, tenant)
 	}
-	return newTenantScope(datasource.FieldInfo{Column: mi.TenantField, Name: mi.TenantField}, tenant, "")
-}
-
-// fieldJSONKey returns the key a Nucleus model's records carry field f
-// under — the json tag of its struct field, which the Nucleus adapter also
-// accepts on input — or "" when the panel has no schema registry (a custom
-// DataSource, Quark), the model is not in it, or the field is excluded from
-// JSON (json:"-"). A field without a tag marshals under its Go name, which
-// the lookup already covers.
-//
-// The Quark adapter emits records keyed by storage column and resolves
-// update keys by column or Go name only; a json tag that differs from both
-// is unknown to this panel there, and a create naming it next to the
-// stamped tenant is refused by the adapter itself (two keys, one field).
-func (p *Panel) fieldJSONKey(modelName string, f datasource.FieldInfo) string {
-	if p.registry == nil || f.Name == "" {
-		return ""
-	}
-	meta, ok := p.registry.Get(modelName)
-	if !ok || meta == nil || meta.Type == nil {
-		return ""
-	}
-	typ := meta.Type
-	if typ.Kind() == reflect.Pointer {
-		typ = typ.Elem()
-	}
-	if typ.Kind() != reflect.Struct {
-		return ""
-	}
-	sf, ok := typ.FieldByName(f.Name)
-	if !ok {
-		return ""
-	}
-	name, _, _ := strings.Cut(sf.Tag.Get("json"), ",")
-	if name == "-" {
-		return ""
-	}
-	return name
-}
-
-// fieldJSONKeys maps, in lower case, the JSON key each field of mi marshals
-// under to the field's runtime column — only for the fields whose JSON key
-// is a third spelling, neither the column nor the Go name, which is the one
-// dsResolveField does not know. It is what fieldRules resolves a record's or
-// a payload's key through after the other two. Nil for a panel without a
-// schema registry, a model not in it, and a model whose every field marshals
-// under a key the lookup already covers.
-func (p *Panel) fieldJSONKeys(mi datasource.ModelInfo) map[string]string {
-	if p.registry == nil {
-		return nil
-	}
-	var keys map[string]string
-	for _, f := range mi.Fields {
-		key := p.fieldJSONKey(mi.Name, f)
-		if key == "" || strings.EqualFold(key, f.Column) || strings.EqualFold(key, runtimeColumn(f.Column)) || strings.EqualFold(key, f.Name) {
-			continue
-		}
-		if keys == nil {
-			keys = map[string]string{}
-		}
-		keys[strings.ToLower(key)] = runtimeColumn(f.Column)
-	}
-	return keys
+	return newTenantScope(datasource.FieldInfo{Column: mi.TenantField, Name: mi.TenantField}, tenant)
 }
 
 // requestTenantScope resolves the tenant confinement of r for model mi. It is
@@ -335,7 +272,7 @@ func (p *Panel) requestTenantScope(r *http.Request, mi datasource.ModelInfo) ten
 	if !ok {
 		return tenantScope{}
 	}
-	return newTenantScope(field, tc.TenantID, p.fieldJSONKey(mi.Name, field))
+	return newTenantScope(field, tc.TenantID)
 }
 
 // enforcedTenantID is the tenant every model-agnostic operation (exports,

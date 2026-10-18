@@ -132,7 +132,7 @@ func (p *Panel) ownerScopeFor(mi datasource.ModelInfo, user *auth.User) (ownerSc
 	if owner == "" {
 		return ownerScope{}, ownershipUnavailable(mi.Name, "this operator has no name to own rows by")
 	}
-	return ownerScope{Field: field, Owner: owner, Keys: fieldKeys(field, p.fieldJSONKey(mi.Name, field))}, nil
+	return ownerScope{Field: field, Owner: owner, Keys: fieldKeys(field)}, nil
 }
 
 // ownershipUnavailable is the 403 a #own grant gets when the panel cannot

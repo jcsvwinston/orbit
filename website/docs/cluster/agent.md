@@ -114,11 +114,13 @@ carries no token.
 ## Data Studio through the contract
 
 The agent serves the fleet's Data Studio through Orbit's `datasource`
-contract — the same one the in-process panel speaks. By default it builds
-the Nucleus adapter over the application's model registry and database
-handles; an application on the Quark ORM hands its `quarkdatasource`
-adapter to `ExtensionConfig.DataSource` (set in code, as for
-`orbit.Config.DataSource`) and the fleet browses and edits Quark models.
+contract — the same one the in-process panel speaks. An application on the
+Quark ORM hands its `quarkdatasource` adapter to
+`ExtensionConfig.DataSource` (set in code, as for `orbit.Config.DataSource`)
+and the fleet browses and edits Quark models. A node started without a
+`DataSource` serves no Data Studio: it registers no models, and the admin
+server lists it without any. There is no default — the Nucleus adapter over
+the node's model registry left at 2.0 (`DEP-2026-002`).
 
 Each request carries the operator the admin server resolved. The agent runs
 it as the panel would: the framework identity reaches your model hooks

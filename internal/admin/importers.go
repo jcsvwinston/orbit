@@ -157,7 +157,11 @@ func ValidateImportData(mi datasource.ModelInfo, records []map[string]interface{
 				continue
 			}
 
-			if field.IsReadOnly || field.IsExcluded {
+			// The primary key names the row an update targets; it is never
+			// written as a field, so a source that declares it read-only (the
+			// Quark adapter does, for every key the database assigns) does
+			// not make a row that carries it invalid.
+			if (field.IsReadOnly && !field.IsPK) || field.IsExcluded {
 				errors = append(errors, ImportError{
 					Row:     rowIdx,
 					Field:   col,
@@ -432,7 +436,7 @@ func (p *Panel) planImport(c *router.Context, st datasource.RecordStore, mi data
 
 	plan := make([]importWrite, 0, len(records))
 	for i, record := range records {
-		w := importWrite{row: i, action: fieldActionCreate, data: maps.Clone(record)}
+		w := importWrite{row: i, action: fieldActionCreate, data: coerceImportRecord(mi, maps.Clone(record))}
 		if target.Enforced() {
 			if err := target.guardPayload(w.data, true); err != nil {
 				return nil, importRefused(mi, i, err)
@@ -469,6 +473,59 @@ func (p *Panel) planImport(c *router.Context, st datasource.RecordStore, mi data
 		plan = append(plan, w)
 	}
 	return plan, nil
+}
+
+// coerceImportRecord turns the string cells of a row (every cell of a CSV)
+// into the kind the field declares — a number for a numeric field, a bool
+// for a boolean one — so the store is handed what it would be handed by a
+// form. The cells were validated against the same kinds already
+// (validateFieldValue); a cell that does not parse is left as it came, for
+// the store to refuse with its own message. The Nucleus adapter used to do
+// this conversion itself; the Quark adapter decodes a record into the model
+// and refuses a string where the field is a number.
+func coerceImportRecord(mi datasource.ModelInfo, record map[string]interface{}) map[string]interface{} {
+	for col, val := range record {
+		str, ok := val.(string)
+		if !ok || str == "" {
+			continue
+		}
+		field := dsFindFieldByColumn(mi, col)
+		if field == nil {
+			continue
+		}
+		if v, ok := coerceImportValue(*field, str); ok {
+			record[col] = v
+		}
+	}
+	return record
+}
+
+// coerceImportValue parses value as field's declared kind. It reports false
+// for a kind that is text (or unknown) and for a value that does not parse.
+func coerceImportValue(field datasource.FieldInfo, value string) (interface{}, bool) {
+	bits := declaredBits(field.GoType)
+	switch field.GoType {
+	case "int", "int8", "int16", "int32", "int64":
+		if n, err := strconv.ParseInt(value, 10, bits); err == nil {
+			return n, true
+		}
+	case "uint", "uint8", "uint16", "uint32", "uint64":
+		if n, err := strconv.ParseUint(value, 10, bits); err == nil {
+			return n, true
+		}
+	case "float32", "float64":
+		if n, err := strconv.ParseFloat(value, bits); err == nil {
+			return n, true
+		}
+	case "bool":
+		switch strings.ToLower(value) {
+		case "true", "1":
+			return true, true
+		case "false", "0":
+			return false, true
+		}
+	}
+	return nil, false
 }
 
 // importUpdates is what an update of an existing row writes: the row's

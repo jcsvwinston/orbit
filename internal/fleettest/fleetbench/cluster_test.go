@@ -11,8 +11,6 @@ import (
 
 	"connectrpc.com/connect"
 
-	"github.com/jcsvwinston/nucleus/pkg/db"
-
 	"github.com/jcsvwinston/orbit/agent"
 	adminv1 "github.com/jcsvwinston/orbit/proto/gen/go/nucleus/admin/v1"
 	server "github.com/jcsvwinston/orbit/server"
@@ -77,12 +75,11 @@ func (e *env) threeAgentCluster(t *testing.T) (a, b *runningServer, nodes []clus
 		t.Fatalf("the two servers did not peer in 5s (A sees %v, B sees %v)", a.State().Peers.LivePeers(), b.State().Peers.LivePeers())
 	}
 	start := func(id string, home, away *runningServer, homeID, ep string) clusterNode {
-		d, reg := e.agentDB(t, false)
+		_, src := e.agentDB(t, false)
 		ag := e.startAgent(t, agent.Config{
 			Endpoints:      []string{ep},
 			NodeIDOverride: id,
-			Registry:       reg,
-			Databases:      map[string]*db.DB{"default": d},
+			DataSource:     src,
 		})
 		return clusterNode{ag: ag, home: home, away: away, homeID: homeID}
 	}

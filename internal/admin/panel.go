@@ -24,10 +24,8 @@ import (
 	"github.com/jcsvwinston/nucleus/pkg/db"
 	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
 	"github.com/jcsvwinston/nucleus/pkg/mail"
-	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/outbox"
 	"github.com/jcsvwinston/nucleus/pkg/router"
-	"github.com/jcsvwinston/nucleus/pkg/signals"
 	"github.com/jcsvwinston/nucleus/pkg/storage"
 	"github.com/jcsvwinston/nucleus/pkg/tasks"
 
@@ -190,22 +188,14 @@ type PanelConfig struct {
 
 	// Storage for exports/imports
 	Store storage.Store
-
-	// SchemaRegistry is an optional Nucleus model registry used ONLY by the
-	// runtime field-metadata editor (handleUpdateFieldMeta), which mutates model
-	// metadata and has no equivalent in the neutral datasource contract. Data
-	// Studio CRUD does not use it — it speaks datasource.DataSource (ADR-001).
-	SchemaRegistry *model.Registry
 }
 
 // Panel is the admin panel instance that provides CRUD UI for registered models.
 type Panel struct {
 	db             *db.DB
-	registry       *model.Registry
 	src            datasource.DataSource
 	config         PanelConfig
 	logger         *slog.Logger
-	bus            *signals.Bus
 	live           *liveRuntime
 	liveExcludeMu  sync.RWMutex
 	liveExcludes   []string
@@ -276,10 +266,9 @@ type Panel struct {
 }
 
 // NewPanel creates a new admin panel. Data Studio reads and writes records
-// through the neutral datasource contract (ADR-001); the Nucleus-backed adapter
-// is built by the caller (orbit.go) from the same Runtime accessors and passed
-// in as src. The panel no longer imports the model registry for record access —
-// only the optional cfg.SchemaRegistry, for the field-metadata editor.
+// through the neutral datasource contract (ADR-001): src is what the
+// application handed the module (a quarkdatasource adapter, or its own
+// implementation), and the panel knows nothing of the models behind it.
 func NewPanel(src datasource.DataSource, logger *slog.Logger, cfg PanelConfig) *Panel {
 	cfg.Prefix = NormalizePrefix(cfg.Prefix)
 	if cfg.Title == "" {
@@ -292,7 +281,6 @@ func NewPanel(src datasource.DataSource, logger *slog.Logger, cfg PanelConfig) *
 
 	p := &Panel{
 		db:             defaultDatabaseHandle(cfg),
-		registry:       cfg.SchemaRegistry,
 		src:            src,
 		config:         cfg,
 		logger:         logger,
@@ -570,11 +558,6 @@ func normalizePanelNodeID(raw string) string {
 	return value
 }
 
-// SetSignalBus sets the signal bus for CRUD operations.
-func (p *Panel) SetSignalBus(bus *signals.Bus) {
-	p.bus = bus
-}
-
 // Handler returns a *router.Mux that can be mounted on the application router.
 func (p *Panel) Handler() *router.Mux {
 	r := router.NewMux()
@@ -705,7 +688,6 @@ func (p *Panel) mountAPIRoutes(m *router.Mux) {
 	// not a replacement.
 	m.Get("/api/models", p.handleListModels)
 	m.Get("/api/models/{name}/schema", p.handleGetSchema)
-	m.Put("/api/models/{name}/schema/fields", p.handleUpdateFieldMeta)
 	m.Get("/api/models/{name}", p.handleListRecords)
 	m.Post("/api/models/{name}", p.handleCreateRecord)
 	m.Get("/api/models/{name}/{id}", p.handleGetRecord)

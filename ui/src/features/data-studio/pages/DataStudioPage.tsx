@@ -3,18 +3,14 @@ import { useSearchParams } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ErrorState } from '@/components/ui/error-state'
-import { useToast } from '@/components/ui/use-toast'
 import * as api from '@/services/api'
 import type { ModelSummary, ModelSchema, RuntimeInfo } from '@/types'
 import ModelSidebar from '../components/ModelSidebar'
 import AGGridTable from '../components/AGGridTable'
-import FieldConfigPanel from '../components/FieldConfigPanel'
 import { canOpenModel, screenCapabilities } from '../lib/capabilities'
-import { Database, Loader2, Server, Settings2 } from 'lucide-react'
+import { Database, Loader2, Server } from 'lucide-react'
 
 export default function DataStudioPage() {
-  const { toast } = useToast()
-
   const [models, setModels] = useState<ModelSummary[]>([])
   const [runtime, setRuntime] = useState<RuntimeInfo | null>(null)
   const [loadingModels, setLoadingModels] = useState(true)
@@ -32,7 +28,6 @@ export default function DataStudioPage() {
   const [schema, setSchema] = useState<ModelSchema | null>(null)
   const [loadingSchema, setLoadingSchema] = useState(false)
   const [schemaError, setSchemaError] = useState<unknown>(null)
-  const [fieldConfigOpen, setFieldConfigOpen] = useState(false)
 
   // Load models on mount
   useEffect(() => {
@@ -117,11 +112,6 @@ export default function DataStudioPage() {
       return next
     }, { replace: true })
   }, [setSearchParams])
-
-  const handleFieldConfigSaved = () => {
-    toast({ title: 'Field configuration updated' })
-    if (selectedModel) loadSchema(selectedModel)
-  }
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)]">
@@ -235,23 +225,6 @@ export default function DataStudioPage() {
                       <span>({modelDbs[0].engine})</span>
                     </span>
                   )}
-
-                  {/* Field config button: the settings are saved with
-                      update_schema, which the schema says this operator
-                      holds or not. */}
-                  {screenCapabilities(schema).canConfigureFields && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-xs gap-1.5"
-                      onClick={() => setFieldConfigOpen(true)}
-                      title="Configure fields (list, search, filter...)"
-                      aria-label="Configure fields"
-                    >
-                      <Settings2 className="h-3.5 w-3.5" />
-                      Fields
-                    </Button>
-                  )}
                 </div>
               </div>
 
@@ -261,14 +234,6 @@ export default function DataStudioPage() {
                 dbAlias={dbAlias}
                 focusRecord={focusRecord}
                 onFocusDone={clearFocusRecord}
-              />
-
-              {/* Field Configuration Dialog */}
-              <FieldConfigPanel
-                open={fieldConfigOpen}
-                onClose={() => setFieldConfigOpen(false)}
-                schema={schema}
-                onSaved={handleFieldConfigSaved}
               />
             </>
           ) : (

@@ -194,9 +194,9 @@ func TestPanel_BulkDelete_InvalidIDReportedPerRow(t *testing.T) {
 
 	created := createAdminUser(t, srv.URL, map[string]interface{}{"email": "x@example.com", "name": "X", "active": true})
 
-	// "abc" is a valid boundary id; it is the Nucleus backend that cannot
-	// narrow it to its integer keys — a per-id failure with the backend's
-	// own message, while the good id still deletes.
+	// "abc" is a valid boundary id; it is the backend (the Quark adapter)
+	// that cannot narrow it to its integer keys — a per-id failure with the
+	// backend's own message, while the good id still deletes.
 	resp, status := doJSON(t, http.MethodPost, srv.URL+"/api/models/AdminUser/bulk", map[string]interface{}{
 		"action": "delete",
 		"ids":    []string{"abc", fmt.Sprint(created.ID)},
@@ -209,7 +209,7 @@ func TestPanel_BulkDelete_InvalidIDReportedPerRow(t *testing.T) {
 	}
 	errs := resp["errors"].([]interface{})
 	row := errs[0].(map[string]interface{})
-	if row["id"] != "abc" || !strings.Contains(fmt.Sprint(row["error"]), "positive integers") {
+	if row["id"] != "abc" || !strings.Contains(fmt.Sprint(row["error"]), "ids are integers") {
 		t.Fatalf("error row = %#v, want id abc with the backend's message", row)
 	}
 }

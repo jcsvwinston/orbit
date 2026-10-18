@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
@@ -189,16 +190,22 @@ type inlineParent struct {
 	column string
 	keys   []string
 	key    string
+	// field is the child's foreign-key field, when the catalogue names
+	// one: the stamp is written in its Go type, since a backend that
+	// decodes a record into the model (the Quark adapter) refuses a
+	// string where the field is a number.
+	field datasource.FieldInfo
 }
 
 // inlineParentFor resolves spec's key on the child model. The keys are the
-// ones the tenant guard knows a field by (fieldKeys plus the json key), so a
-// spelling the backend honours is never one the guard does not know.
+// ones the tenant guard knows a field by (fieldKeys), so a spelling the
+// backend honours is never one the guard does not know.
 func (p *Panel) inlineParentFor(child datasource.ModelInfo, spec inlineSpec, parentKey string) inlineParent {
 	ref := inlineParent{column: spec.Column, key: parentKey}
 	for _, name := range []string{spec.Field, spec.Column} {
 		if _, field, ok := dsResolveField(child, name); ok {
-			ref.keys = fieldKeys(field, p.fieldJSONKey(child.Name, field))
+			ref.keys = fieldKeys(field)
+			ref.field = field
 			return ref
 		}
 	}
@@ -357,7 +364,7 @@ func (ref inlineParent) guardPayload(mi datasource.ModelInfo, values map[string]
 		if !create {
 			return "", nil
 		}
-		values[ref.column] = ref.key
+		values[ref.column] = ref.stamp()
 		return ref.column, nil
 	case 1:
 		got, named := canonicalID(values[keys[0]])
@@ -367,12 +374,34 @@ func (ref inlineParent) guardPayload(mi datasource.ModelInfo, values map[string]
 			return "", gferrors.BadRequest(fmt.Sprintf("%s field %s must name the record being edited, got %q: a child is written under the record it is edited with",
 				mi.Name, ref.column, got))
 		}
-		values[keys[0]] = ref.key
+		values[keys[0]] = ref.stamp()
 		return keys[0], nil
 	default:
 		return "", gferrors.BadRequest(fmt.Sprintf("%s field %s appears more than once in the payload (%s)",
 			mi.Name, ref.column, strings.Join(keys, ", ")))
 	}
+}
+
+// stamp is the parent key as the child's foreign-key field holds it: a
+// number for a numeric field, the string otherwise. IDs are strings at the
+// contract's boundary (ADR-001 D1), but a record value is the field's.
+func (ref inlineParent) stamp() any {
+	goType := strings.ToLower(strings.TrimSpace(ref.field.GoType))
+	switch {
+	case strings.HasPrefix(goType, "uint"):
+		if n, err := strconv.ParseUint(ref.key, 10, 64); err == nil {
+			return n
+		}
+	case strings.HasPrefix(goType, "int"):
+		if n, err := strconv.ParseInt(ref.key, 10, 64); err == nil {
+			return n
+		}
+	case strings.HasPrefix(goType, "float"):
+		if n, err := strconv.ParseFloat(ref.key, 64); err == nil {
+			return n
+		}
+	}
+	return ref.key
 }
 
 // reaches confirms that the child id names may be written with scope and is
@@ -473,7 +502,8 @@ func (p *Panel) writeInlineChild(r *http.Request, plan inlinePlan, child inlineC
 		return nil
 	}
 
-	child.values[child.parentKey] = parentKey
+	// The parent's key, known only now, in the type the child's field holds.
+	child.values[child.parentKey] = p.inlineParentFor(plan.child, plan.spec, parentKey).stamp()
 	created, err := st.Create(ctx, datasource.Record(child.values))
 	if err != nil {
 		return err
