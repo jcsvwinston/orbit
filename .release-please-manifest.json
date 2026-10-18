@@ -1,10 +1,10 @@
 {
-  ".": "1.19.3",
-  "quarkbridge": "1.9.5",
-  "quarkdatasource": "1.12.4",
+  ".": "1.20.0",
+  "quarkbridge": "1.9.6",
+  "quarkdatasource": "1.13.0",
   "proto": "0.8.1",
-  "agent": "0.15.3",
-  "server": "0.20.4",
-  "datasource": "1.0.1",
-  "ui": "1.1.1"
+  "agent": "0.16.0",
+  "server": "0.21.0",
+  "datasource": "1.1.0",
+  "ui": "1.2.0"
 }
