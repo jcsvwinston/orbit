@@ -78,9 +78,9 @@ string column. A Nucleus model that declares none is not searchable today —
 the registry does not yet default search to its string columns — so a search
 on it answers `400` naming the model and how to enable search, rather than
 every row, and the grid disables its search box. The two backends match
-differently (Nucleus lower-cases both sides;
-Quark escapes `%` and `_` in the text per engine), so do not expect identical
-results across them.
+differently (Nucleus lower-cases both sides; Quark matches the text as
+typed, with `%` and `_` escaped the same way on every engine), so do not
+expect identical results across them.
 
 A search looks in every searchable field, and the panel cannot tell the
 backend to skip one. So a search that would also look in a field the
@@ -109,9 +109,10 @@ Three things to know before you rely on it:
 - **An operator this panel does not know is refused**, not read as equality. A
   filter that is quietly dropped answers every row and looks like a result.
 - **A wildcard in the value is data.** `?title__contains=50%25` looks for the
-  per-cent sign. On PostgreSQL, MySQL and SQL Server it is escaped; on an
-  engine whose `LIKE` has no escape character (SQLite, Oracle) the Quark-backed
-  data source refuses the query instead of answering it wrongly.
+  per-cent sign, on every engine: the Quark-backed data source escapes the
+  value and declares the escape character on the statement, so SQLite and
+  Oracle — whose `LIKE` has no default escape — answer it like the others
+  (earlier releases refused the query there rather than widen the match).
 - **An empty `in` matches nothing.** `?status__in=` is a question with an
   answer, not an absent filter.
 

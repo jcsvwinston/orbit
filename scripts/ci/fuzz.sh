@@ -4,7 +4,7 @@
 #
 #   bash scripts/ci/fuzz.sh                        # every seed, deterministic, ~1s
 #   bash scripts/ci/fuzz.sh 45s                    # 45s of mutation per target
-#   bash scripts/ci/fuzz.sh --only FuzzEscapeLike 45s
+#   bash scripts/ci/fuzz.sh --only FuzzStoreParseID 45s
 #   bash scripts/ci/fuzz.sh --list                 # the target names, as JSON
 #
 # The seed form is what CI runs on every pull request. The timed form is what
@@ -57,7 +57,6 @@ TARGETS=$(
 .	./internal/admin	FuzzRecordIDBoundary
 .	./internal/admin	FuzzImportValidation
 .	./internal/admin	FuzzPanelRedirect
-quarkdatasource	.	FuzzEscapeLike
 server	./routing	FuzzEventFilterMatches
 datasource	./nucleus	FuzzStoreParseID
 EOF

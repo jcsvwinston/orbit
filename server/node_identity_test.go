@@ -52,8 +52,15 @@ func (s *syncBuffer) String() string {
 // that an operator reading a production log sees it.
 func startMTLSServer(t *testing.T, ca *testCA, bind bool) (*server.Server, *syncBuffer, func()) {
 	t.Helper()
+	return startMTLSServerWith(t, ca, func(cfg *server.Config) { cfg.AgentIdentityFromCertificate = bind })
+}
+
+// startMTLSServerWith is startMTLSServer with the identity fields left to
+// the caller, for the regimes that are not a single boolean.
+func startMTLSServerWith(t *testing.T, ca *testCA, identity func(*server.Config)) (*server.Server, *syncBuffer, func()) {
+	t.Helper()
 	logs := &syncBuffer{}
-	srv := server.New(server.Config{
+	cfg := server.Config{
 		AgentAddr: "127.0.0.1:0",
 		UIAddr:    "127.0.0.1:0",
 		AgentTLS: &tls.Config{
@@ -62,9 +69,10 @@ func startMTLSServer(t *testing.T, ca *testCA, bind bool) (*server.Server, *sync
 			ClientCAs:    ca.pool,
 			ClientAuth:   tls.RequireAndVerifyClientCert,
 		},
-		AgentIdentityFromCertificate: bind,
-		Logger:                       slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelWarn})),
-	})
+		Logger: slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelWarn})),
+	}
+	identity(&cfg)
+	srv := server.New(cfg)
 	ctx, cancel := context.WithCancel(context.Background())
 	doneCh := make(chan error, 1)
 	go func() { doneCh <- srv.Run(ctx) }()
@@ -205,5 +213,88 @@ func TestServer_AgentIdentityFromCertificate_WithoutMutualTLS_RefusesToStart(t *
 	}
 	if !strings.Contains(err.Error(), "--agent-client-ca") {
 		t.Fatalf("the refusal must say what is missing: %v", err)
+	}
+}
+
+// The default under mutual TLS is announced, not silent. Orbit 2.0 binds the
+// node identity to the certificate by default (DEP-2026-001), so a listener
+// that verifies client certificates and says nothing about the binding is
+// told once, at start, which of the two fields to set. Either field quiets
+// it: the deployment has chosen.
+func TestServer_MutualTLSWithoutABindingChoice_WarnsAtStartup(t *testing.T) {
+	ca := newTestCA(t)
+	const announced = "does not bind node identity"
+
+	t.Run("neither_field_set", func(t *testing.T) {
+		_, logs, stop := startMTLSServerWith(t, ca, func(*server.Config) {})
+		defer stop()
+		got := logs.String()
+		for _, want := range []string{announced, "DEP-2026-001", "--agent-identity-from-cert", "--allow-shared-agent-certificate"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("startup WARN lacks %q; log was:\n%s", want, got)
+			}
+		}
+	})
+
+	t.Run("binding_on", func(t *testing.T) {
+		_, logs, stop := startMTLSServerWith(t, ca, func(c *server.Config) { c.AgentIdentityFromCertificate = true })
+		defer stop()
+		if strings.Contains(logs.String(), announced) {
+			t.Fatalf("a server that binds was warned about not binding; log was:\n%s", logs.String())
+		}
+	})
+
+	t.Run("shared_certificate_allowed", func(t *testing.T) {
+		_, logs, stop := startMTLSServerWith(t, ca, func(c *server.Config) { c.AllowSharedAgentCertificate = true })
+		defer stop()
+		if strings.Contains(logs.String(), announced) {
+			t.Fatalf("a server that chose the shared certificate was warned anyway; log was:\n%s", logs.String())
+		}
+	})
+}
+
+// AllowSharedAgentCertificate is the way to keep the 1.x regime across the
+// major: a node_id that is not the certificate's Common Name registers as
+// declared, with the WARN naming both — exactly what the default does today.
+func TestServer_AllowSharedAgentCertificate_KeepsTheDeclaredNodeID(t *testing.T) {
+	ca := newTestCA(t)
+	srv, logs, stop := startMTLSServerWith(t, ca, func(c *server.Config) { c.AllowSharedAgentCertificate = true })
+	defer stop()
+
+	if err := registerWithCert(t, ca, srv, "node-d", "node-shared"); err != nil {
+		t.Fatalf("a server allowing a shared certificate refused a mismatched registration: %v", err)
+	}
+	if _, ok := srv.State().Nodes.Lookup("node-shared"); !ok {
+		t.Fatal("the declared node_id is not in the registry")
+	}
+	got := logs.String()
+	for _, want := range []string{"differs from its client certificate", "node_id=node-shared", "certificate_cn=node-d"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the tolerated mismatch is not in the log (%q missing); log was:\n%s", want, got)
+		}
+	}
+}
+
+func TestServer_AllowSharedAgentCertificate_ContradictsBinding_RefusesToStart(t *testing.T) {
+	// Even without mutual TLS: the two fields answer the same question in
+	// opposite ways, and the server must not pick one in silence.
+	srv := server.New(server.Config{
+		AgentAddr:                    "127.0.0.1:0",
+		UIAddr:                       "127.0.0.1:0",
+		AgentToken:                   "token",
+		AgentIdentityFromCertificate: true,
+		AllowSharedAgentCertificate:  true,
+		Logger:                       discardLogger(),
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	err := srv.Run(ctx)
+	if err == nil {
+		t.Fatal("Run started with AgentIdentityFromCertificate and AllowSharedAgentCertificate both set")
+	}
+	for _, want := range []string{"--agent-identity-from-cert", "--allow-shared-agent-certificate", "contradict"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal must name both fields (%q missing): %v", want, err)
+		}
 	}
 }

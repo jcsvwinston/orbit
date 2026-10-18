@@ -331,9 +331,10 @@ reading as a filter.
 Four decisions the probes pin, each of them a way a filter can lie:
 
 - **A wildcard in the value is data.** `?title__contains=%` matches the
-  per-cent sign, not everything. On an engine whose `LIKE` has no escape
-  character the Quark-backed data source refuses the query rather than
-  answering it wrongly.
+  per-cent sign, not everything — on every engine, since the Quark-backed
+  data source declares the escape character on the statement (until A12
+  `M0-O` it refused the query on SQLite and Oracle rather than answer it
+  wrongly, QK-25).
 - **An empty `in` matches nothing.** `?status__in=` is a question with an
   answer; dropping it would return every row.
 - **The two halves compose.** `?status=open&views__gt=100` is one query, and

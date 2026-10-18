@@ -3,8 +3,16 @@
 // nucleus/pkg/model and pkg/db: it wraps a *model.Registry, per-alias *db.DB
 // handles, and model.NewCRUD, and translates them to datasource.ModelInfo /
 // datasource.RecordStore / datasource.Page. The Data Studio panel depends only
-// on the datasource contract; a Quark adapter will implement the same contract
-// later, proving the abstraction did not keep Nucleus's shape.
+// on the datasource contract; the Quark adapter (quarkdatasource) implements
+// the same contract, which is what proved the abstraction did not keep
+// Nucleus's shape.
+//
+// Deprecated: Nucleus retires pkg/model as a public data layer at its 2.0
+// (its DEP-2026-024), and this adapter leaves with it: the panel then reads
+// Quark models only, through quarkdatasource. Mount the panel on a
+// quarkdatasource adapter (orbit.Config.DataSource, agent.Config.DataSource)
+// instead. See DEP-2026-002. Scheduled for removal in v2.0.0, no earlier
+// than 2027-01-17.
 package nucleus
 
 import (
@@ -21,6 +29,10 @@ import (
 
 // Config wires the adapter from the same runtime accessors the panel used to
 // hold directly (registry, per-alias handles, the signals bus).
+//
+// Deprecated: the adapter leaves with Nucleus's pkg/model; use
+// quarkdatasource.Config. See DEP-2026-002. Scheduled for removal in
+// v2.0.0, no earlier than 2027-01-17.
 type Config struct {
 	// Registry is the application's shared model registry (rt.Models()).
 	Registry *model.Registry
@@ -45,6 +57,10 @@ type Config struct {
 }
 
 // Adapter implements datasource.DataSource over Nucleus.
+//
+// Deprecated: the adapter leaves with Nucleus's pkg/model; use
+// quarkdatasource.Adapter. See DEP-2026-002. Scheduled for removal in
+// v2.0.0, no earlier than 2027-01-17.
 type Adapter struct {
 	cfg Config
 
@@ -53,6 +69,10 @@ type Adapter struct {
 }
 
 // New returns a Nucleus-backed DataSource. Registry and Resolve are required.
+//
+// Deprecated: the adapter leaves with Nucleus's pkg/model; use
+// quarkdatasource.New. See DEP-2026-002. Scheduled for removal in v2.0.0,
+// no earlier than 2027-01-17.
 func New(cfg Config) *Adapter {
 	return &Adapter{cfg: cfg, stores: make(map[string]*store)}
 }

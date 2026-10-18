@@ -109,6 +109,11 @@ type Config struct {
 	// panel. Nil builds the default Nucleus adapter over Registry and
 	// Databases — which is what every agent did before, minus the second
 	// CRUD implementation it used to carry.
+	//
+	// The default leaves at Orbit 2.0 with Nucleus's pkg/model
+	// (DEP-2026-002): the fleet then browses Quark models only, through the
+	// quarkdatasource adapter this field receives. An agent still on the
+	// default is told so at start, with one WARN.
 	DataSource datasource.DataSource
 
 	// Authorizer is a read-only view of the framework's RBAC state (the
@@ -266,6 +271,11 @@ func New(cfg Config) (*Agent, error) {
 		Logger:    cfg.Logger,
 	})
 
+	if cfg.DataSource == nil && cfg.Registry != nil {
+		// Said once, at start, while the default still works: the node
+		// that hears it has its 1.x window to move to Quark.
+		cfg.Logger.Warn("admin agent: "+dataSourceDeprecation, "hint", dataSourceDeprecationHint)
+	}
 	dataStudio := dstudio.New(dstudio.Config{
 		Source:       dataSourceFor(cfg),
 		DefaultAlias: cfg.DefaultDatabaseAlias,
@@ -580,6 +590,15 @@ func (a *Agent) updateBufferGauges(ctx context.Context, stop <-chan struct{}) {
 		}
 	}
 }
+
+// dataSourceDeprecation is what a node on the default data source reads in
+// its log at start: the default — Data Studio over the Nucleus model
+// registry — leaves at Orbit 2.0 with Nucleus's pkg/model (DEP-2026-002),
+// and the way to stay is to hand the agent a Quark data source.
+const (
+	dataSourceDeprecation     = "Data Studio reads this node's pkg/model registry through the Nucleus adapter, which leaves at Orbit 2.0 (DEP-2026-002)"
+	dataSourceDeprecationHint = "define the models with Quark and set agent.Config.DataSource (ExtensionConfig.DataSource) to a quarkdatasource adapter before upgrading; at 2.0 a node without one serves no Data Studio"
+)
 
 // dataSourceFor is the DataSource Data Studio serves through: the one the
 // configuration hands over, else the Nucleus adapter over the registry and

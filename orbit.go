@@ -256,6 +256,11 @@ type Config struct {
 	// (QADR-0006, Caso 2). Go-only wiring; not bindable from YAML. When set,
 	// the runtime field-metadata editor is disabled (it mutates the Nucleus
 	// registry, which a custom source does not necessarily have).
+	//
+	// The default leaves at Orbit 2.0 with Nucleus's pkg/model
+	// (DEP-2026-002): the panel then reads Quark models only, and a nil
+	// DataSource is a configuration error. An application still on the
+	// default is told so at start, with one WARN.
 	DataSource datasource.DataSource `yaml:"-" koanf:"-"`
 }
 
@@ -503,6 +508,15 @@ func Module(cfg Config) nucleus.ModuleSpec {
 	}.Build()
 }
 
+// dataSourceDeprecation is what an application on the default data source
+// reads in its log at start: the default — Data Studio over the Nucleus
+// model registry — leaves at Orbit 2.0 with Nucleus's pkg/model
+// (DEP-2026-002), and the way to stay is to mount the panel on Quark.
+const (
+	dataSourceDeprecation     = "Data Studio reads the application's pkg/model registry through the Nucleus adapter, which leaves at Orbit 2.0 (DEP-2026-002)"
+	dataSourceDeprecationHint = "define the models with Quark and set orbit.Config.DataSource to a quarkdatasource adapter before upgrading; a nil DataSource is a configuration error at 2.0"
+)
+
 // start builds the admin Panel from the Runtime accessors, provisions the
 // bootstrap admin user, and connects the live SQL feed. Called from OnStart, so
 // the Panel exists before Routes mounts it.
@@ -585,6 +599,9 @@ func (m *module) start(ctx context.Context) error {
 		src = m.cfg.DataSource
 		schemaRegistry = nil
 	} else {
+		// Said once, at start, while the default still works: the
+		// application that hears it has its 1.x window to move to Quark.
+		rt.Logger().Warn("orbit: "+dataSourceDeprecation, "hint", dataSourceDeprecationHint)
 		src = dsnucleus.New(dsnucleus.Config{
 			Registry:     rt.Models(),
 			DefaultAlias: "",

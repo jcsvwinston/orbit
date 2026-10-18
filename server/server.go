@@ -279,6 +279,12 @@ func (s *Server) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// The two identity fields answer the same question in opposite ways;
+	// a server that held both would have to pick one in silence.
+	if s.cfg.AgentIdentityFromCertificate && s.cfg.AllowSharedAgentCertificate {
+		return errors.New("admin server: AgentIdentityFromCertificate (--agent-identity-from-cert) and AllowSharedAgentCertificate (--allow-shared-agent-certificate) contradict each other: " +
+			"the first refuses a node_id that is not the certificate's Common Name and the second keeps registering it; set one of them")
+	}
 	if s.cfg.AgentIdentityFromCertificate && !tlsRequiresClientCert(s.cfg.AgentTLS) {
 		return errors.New("admin server: AgentIdentityFromCertificate (--agent-identity-from-cert) requires the agent listener to verify client certificates " +
 			"(--agent-client-ca with --agent-cert/--agent-key): without a verified certificate there is no identity to bind the node to")
@@ -287,6 +293,10 @@ func (s *Server) Run(ctx context.Context) error {
 		s.logger.Warn("agent listener is exposed without authentication",
 			"agent_addr", s.cfg.AgentAddr,
 			"reason", "--insecure-agent-listener set; ensure AgentAddr is restricted at the network layer")
+	}
+	if s.identityBindingUndecided() {
+		s.logger.Warn("agent listener verifies client certificates but does not bind node identity to them",
+			"hint", "Orbit 2.0 binds by default (DEP-2026-001): set --agent-identity-from-cert to bind now, or --allow-shared-agent-certificate to keep registering the declared node_id")
 	}
 	// Fail-fast: a malformed --ui-trusted-cidrs entry used to be dropped
 	// silently, which turned a typo into "trust nobody but loopback" (or
@@ -677,6 +687,17 @@ func (c Config) agentListenerGuard() (warn bool, err error) {
 // it does not count.
 func tlsRequiresClientCert(cfg *tls.Config) bool {
 	return cfg != nil && cfg.ClientAuth == tls.RequireAndVerifyClientCert
+}
+
+// identityBindingUndecided reports a listener that verifies client
+// certificates while neither AgentIdentityFromCertificate nor
+// AllowSharedAgentCertificate says what a node_id that is not the
+// certificate's Common Name means. In 1.x the answer is "register it, with a
+// WARN"; Orbit 2.0 answers "refuse it" unless AllowSharedAgentCertificate
+// says otherwise (DEP-2026-001), so the deployment is told once, at start,
+// rather than at the upgrade.
+func (s *Server) identityBindingUndecided() bool {
+	return tlsRequiresClientCert(s.cfg.AgentTLS) && !s.cfg.AgentIdentityFromCertificate && !s.cfg.AllowSharedAgentCertificate
 }
 
 // maxMessageBytes caps one inbound Connect message on every handler.
