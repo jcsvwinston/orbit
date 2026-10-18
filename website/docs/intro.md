@@ -19,9 +19,12 @@ extension/module API.
 *Data Studio browsing a host application's models, light theme. The panel
 also ships a dark theme.*
 
-You add one dependency and one `Mount(...)` call. Orbit then reads everything
-it needs from the running application's `Runtime` and serves its **embedded**
-React interface. There is no separate asset deployment, no out-of-process
+You add one dependency and one `Mount(...)` call, and hand the panel the data
+source built from your application's models — a 2.0 application defines its
+models with the [Quark](https://github.com/jcsvwinston/quark) ORM and passes
+a `quarkdatasource` adapter as `orbit.Config.DataSource`. Orbit then reads
+everything else it needs from the running application's `Runtime` and serves
+its **embedded** React interface. There is no separate asset deployment, no out-of-process
 sidecar and no database of its own.
 
 Orbit is a separate Go module with its own release cadence. The admin panel was
@@ -32,7 +35,7 @@ as its own product.
 
 | Module | What it does |
 |--------|--------------|
-| **Data Studio** | Browse, create, edit, and delete records for every model in the app's registry — tenant-aware, with import/export. |
+| **Data Studio** | Browse, create, edit, and delete records for every Quark model the application registers on its data source — tenant-aware, with import/export. |
 | **Live runtime inspector** | Real-time feed of incoming HTTP requests and executed SQL across the whole app, with optional cross-node aggregation. |
 | **Session viewer** | List active server-side sessions — whose, from what device, which one is you — and revoke one or every session of an account. |
 | **Access control (RBAC)** | Inspect and manage the Casbin policies and roles backing the app's authorizer. |
@@ -67,13 +70,20 @@ requires the other.
 
 - **Go 1.26+**
 - A **[Nucleus](/nucleus/)** application to mount into.
+- The application's models defined with the
+  **[Quark](https://github.com/jcsvwinston/quark)** ORM, registered on a
+  `quarkdatasource` adapter the panel takes as `orbit.Config.DataSource`.
+  The panel does not start without a data source; there is no default
+  (the Nucleus adapter over the framework's model registry left at 2.0).
 - *(Optional)* **Redis** — only for the live-feed relay described above
   (`cluster_*` in [Configuration](./configuration.md)).
 
 ## Status
 
 The current tagged release is **v1.20.1**. <!-- x-release-please-version --> The
-public API — the root module and `datasource` — is stable for the life of v1.x:
-it will not change in a breaking way within v1.
+public API — the root module and `datasource` — is stable for the life of a
+major: it does not change in a breaking way within one. What the 2.0 major
+changed, and how to move an application onto it, is in
+[Upgrading](./operations/upgrade.md#upgrading-to-20).
 
 Next: [Quick start](./quick-start.md).

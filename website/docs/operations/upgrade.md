@@ -37,12 +37,56 @@ with each root release.
   module also pins the agent version it was tested against. Consumers only
   ever choose two versions: the root module and (if fleet) the agent.
 
-## The v1.x stability promise
+## The stability promise
 
 The root module's public API — `orbit` itself and the `datasource` contract —
-is **frozen for the life of v1.x**. There are no breaking changes within v1, so
-moving the root module across v1.x versions is a `go get`-and-rebuild
-operation.
+is **frozen for the life of a major**. There are no breaking changes within
+one, so moving the root module across the minor versions of a major is a
+`go get`-and-rebuild operation. A breaking change is announced in
+`docs/deprecations/` at least 90 days before the major that carries it, with
+the way to stay where you are.
+
+## Upgrading to 2.0
+
+Two things change at the major, and both were announced in v1.20.0.
+
+**A 2.0 application defines its models with Quark.** Data Studio reads the
+data source the application hands it, and that source is a
+[`quarkdatasource`](https://github.com/jcsvwinston/orbit/tree/main/quarkdatasource)
+adapter over the application's
+[Quark](https://github.com/jcsvwinston/quark) models: `orbit.Config.DataSource`
+is required, and a panel mounted without one does not start (the error names
+the field). The Nucleus adapter over the framework's model registry
+(`orbit/datasource/nucleus`), which was the default through 1.x, is gone with
+the registry it read, and so are `agent.Config.Registry` and
+`agent.Config.Databases`: a fleet node hands the same adapter to
+`ExtensionConfig.DataSource` (or `agent.Config.DataSource`), and a node with
+none serves no Data Studio. The runtime field-metadata editor (**Fields** in
+Data Studio, `PUT /api/models/{name}/schema/fields`) left with the adapter:
+which columns are listed, searched and filtered is what the source declares.
+An application still on `pkg/model` moves its model layer to Quark first, then
+sets the one field:
+
+```go
+src := quarkdatasource.New(client) // your *quark.Client
+if err := quarkdatasource.Register[Article](src); err != nil {
+    log.Fatal(err)
+}
+orbit.Module(orbit.Config{Prefix: "/admin", DataSource: src})
+```
+
+**A server that verifies client certificates binds the node identity to
+them.** Under `--agent-client-ca`, an agent registering a `node_id` that is
+not its certificate's Common Name is refused with `PermissionDenied` — what
+`--agent-identity-from-cert` did on request in 1.x, now the default. A fleet
+whose agents share one certificate says so with
+`--allow-shared-agent-certificate` and keeps registering as before, with a
+WARN per mismatch. An agent whose certificate comes from files and that sets
+no `node_id` already registers as its Common Name and notices nothing.
+Upgrade the server first, as always; add the flag to its unit file before
+the restart if the fleet shares a certificate.
+
+The [Release notes](../reference/release-notes.md) for v2.0.0 list the rest.
 
 The fleet modules (`agent`, `server`, `proto`) are pre-1.0 and version
 honestly: their surfaces may still change between minor versions. Anything of

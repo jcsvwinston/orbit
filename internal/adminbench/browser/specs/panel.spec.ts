@@ -1278,7 +1278,7 @@ test.describe('UIX', () => {
    * update a note is refused at both steps. The lister holds the import and
    * no write of Note, and is offered none.
    */
-  test('UIX-18 an operator is offered a model, a record\'s history, an export, an import, the field settings and a saved view\'s removal only where they hold them, each one asked anyway is refused, an export holds only what the operator may list, a field the operator may not read is neither offered nor answered as a sort, a filter or a saved view, and an import writes only what the operator could write by hand', async ({ page }) => {
+  test('UIX-18 an operator is offered a model, a record\'s history, an export, an import and a saved view\'s removal only where they hold them, each one asked anyway is refused, an export holds only what the operator may list, a field the operator may not read is neither offered nor answered as a sort, a filter or a saved view, and an import writes only what the operator could write by hand', async ({ page }) => {
     // Four sign-ins: the admin who sets the stage and three operators.
     test.setTimeout(120_000)
     const { viewer, actor, lister, password } = partialOperators('UIX-18')
@@ -1347,7 +1347,7 @@ test.describe('UIX', () => {
     const toolbarTransfer = page.getByRole('button', { name: /^(Export|Import)/ })
 
     // 1. The viewer may list and open a note, and holds none of the panel's
-    // transfer, the field settings or any other model.
+    // transfer or any other model.
     await signInAs(page, viewer, password)
     const viewerHolds = await heldOnNote(page)
     expect(

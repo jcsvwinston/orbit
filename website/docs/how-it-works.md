@@ -8,15 +8,17 @@ description: Orbit's in-process runtime model.
 
 Orbit is a `nucleus.ModuleSpec`, so it starts and stops with your application.
 On startup it captures the application's `Runtime` and builds its panel from
-the framework's **public accessors**: the model registry, all managed database
-handles, the session manager, the RBAC enforcer, the live event bus, and
-storage. It never reaches into framework internals.
+the framework's **public accessors**: all managed database handles, the
+session manager, the RBAC enforcer, the live event bus, and storage — and
+from the data source your application hands it (`orbit.Config.DataSource`,
+a `quarkdatasource` adapter over its Quark models). It never reaches into
+framework internals.
 
 ## In-process
 
 Because it runs inside the application process, Orbit sees live runtime state
-that an out-of-process sidecar could not — sessions, SQL, the model registry,
-metrics — and it sees it with no IPC surface in between.
+that an out-of-process sidecar could not — sessions, SQL, metrics — and it
+sees it with no IPC surface in between.
 
 ## Self-contained auth
 

@@ -11,7 +11,12 @@ admin panel at `/admin` — Data Studio, a live request and SQL feed, sessions,
 RBAC and metrics. It is served straight from your own binary: nothing separate
 to deploy, no sidecar process, no database of its own.
 
-You need Go 1.26 or newer and a Nucleus application to mount into.
+You need Go 1.26 or newer, a Nucleus application to mount into, and its
+models defined with the [Quark](https://github.com/jcsvwinston/quark) ORM:
+a 2.0 application defines its models with Quark, and Data Studio browses
+them through the `quarkdatasource` adapter you hand the panel
+([step 4](#4-register-a-model-so-data-studio-has-something-to-show)). The
+panel does not start without one.
 
 ## 1. Add the dependency
 
@@ -37,6 +42,10 @@ func main() {
         Mount(orbit.Module(orbit.Config{
             Prefix:            "/admin",
             Title:             "Acme Admin",
+            // The data source Data Studio browses: the quarkdatasource
+            // adapter step 4 builds from your Quark models. The panel does
+            // not start without one.
+            DataSource:        notes(),
             BootstrapUsername: "admin",
             BootstrapEmail:    "admin@acme.test",
             // When BootstrapPassword is empty, no admin user is created —
@@ -115,30 +124,24 @@ func notes() *quarkdatasource.Adapter {
 }
 ```
 
-Hand the adapter to the panel where you mount it:
+Hand the adapter to the panel where you mount it — the `DataSource: notes()`
+line of step 2:
 
 ```go
 orbit.Module(orbit.Config{Prefix: "/admin", DataSource: notes()})
 ```
 
-Mount it next to Orbit — order does not matter:
-
-```go
-nucleus.New().
-    FromConfigFile("nucleus.yml").
-    Mount(notesModule()).
-    Mount(orbit.Module(orbit.Config{ /* ... */ })).
-    Build()
-```
-
 Restart, open Data Studio, and `Note` is there — browse, create, edit,
-delete. Every model your application registers shows up the same way;
-Orbit needs no per-model configuration.
+delete. Every model you `Register` on the adapter shows up the same way;
+Orbit needs no per-model configuration. The adapter lists every column of a
+model, searches every string column and filters every scalar one; the
+primary key is read-only. Several databases are several adapters, one per
+Quark client, each serving its own alias (`quarkdatasource.WithDatabaseAlias`).
 
-Model registration is a Nucleus concept, not an Orbit one — see the
-[Nucleus quickstart](/nucleus/getting-started/quickstart) and
-[models and database](/nucleus/concepts/models-and-database) for tags,
-relations, and real migrations.
+Model definition is a Quark concept, not an Orbit one — see the
+[Quark](https://github.com/jcsvwinston/quark) documentation for tags,
+relations and real migrations. The panel's own tables (operators, sessions,
+the audit trail) are not models of the source and need nothing from it.
 
 ## The bootstrap user
 
@@ -160,13 +163,14 @@ one gets there, not how every one does.
 Reading the password from the environment, as the snippet above does, keeps it
 out of your source tree.
 
-## Every option has a default
+## Every option but one has a default
 
-`orbit.Config`'s zero value is valid. This mounts the panel under `/admin` with
-default settings and no bootstrap user:
+`orbit.Config`'s zero value is valid except for `DataSource`, which the panel
+requires (step 4). This mounts the panel under `/admin` with default settings
+and no bootstrap user:
 
 ```go
-.Mount(orbit.Module(orbit.Config{}))
+.Mount(orbit.Module(orbit.Config{DataSource: notes()}))
 ```
 
 Next: [Configuration](./configuration.md) for every option, or

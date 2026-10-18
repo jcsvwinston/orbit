@@ -12,9 +12,9 @@ keep in sync.
 
 ## Data Studio
 
-Browse, create, edit, and delete records for every model in the application's
-registry. It is **tenant-aware** (when multitenancy is enabled) and supports
-import/export.
+Browse, create, edit, and delete records for every model the application
+registers on its data source. It is **tenant-aware** (when multitenancy is
+enabled) and supports import/export.
 
 **Tenant scope.** With `multitenant_enabled` on, every Data Studio operation is
 confined to the tenant the host application resolves for the request (in
@@ -22,25 +22,24 @@ Nucleus, from the subdomain or the configured header), or to
 `multitenant_default` when it resolves none. Confined means: the list and the
 CSV export only show that tenant's rows; a record of another tenant is *not
 found* by id (get, update, delete, bulk delete); a create or an update cannot
-name another tenant under any key the backend resolves to the tenant field —
-its storage column, its Go field name or, for a Nucleus model, the JSON key
-its records carry, in any letter case — and a payload naming the field under
-two of those keys is a 400. The tenant value itself is compared exactly:
-both backends store it verbatim, so a padded spelling of the request's
-tenant (`" acme "`) is another tenant and is refused the same way, and a
-payload naming the request's tenant has that value replaced by the resolved
-tenant before it reaches the backend, so the stored column is always the
-tenant the request resolved. Both backends refuse a payload that names one
-field twice (Nucleus 422, Quark 400) whichever keys it uses, so a key the
-panel does not resolve cannot outvote the tenant it stamps; Quark's store
-applies the keys of an update by column and Go name only, so a JSON-tag
-alias in an update is dropped, never applied. A tenant column hidden from
-JSON (`json:"-"`) is confined the same way: the records both backends emit
-carry no tenant key, so a row is confirmed by id through a list filtered by
-tenant and primary key instead of read off the record, the guard knows the
-field by its column and Go name, and a create is stamped there — Quark's
-store sets a schema column hidden from JSON on the entity itself, since
-`json.Unmarshal` never would. Exports, imports and fixtures
+name another tenant under any key the source resolves to the tenant field —
+its storage column or its Go field name, in any letter case — and a payload
+naming the field under two of those keys is a 400. The tenant value itself
+is compared exactly: the source stores it verbatim, so a padded spelling of
+the request's tenant (`" acme "`) is another tenant and is refused the same
+way, and a payload naming the request's tenant has that value replaced by
+the resolved tenant before it reaches the source, so the stored column is
+always the tenant the request resolved. The Quark adapter refuses a payload
+that names one field twice (400) whichever keys it uses, so a key the panel
+does not resolve cannot outvote the tenant it stamps, and applies the keys
+of an update by column and Go name only, so a JSON-tag alias in an update
+is dropped, never applied. A tenant column hidden from JSON (`json:"-"`) is
+confined the same way: the records the adapter emits carry no tenant key,
+so a row is confirmed by id through a list filtered by tenant and primary
+key instead of read off the record, the guard knows the field by its column
+and Go name, and a create is stamped there — the adapter sets a schema
+column hidden from JSON on the entity itself, since `json.Unmarshal` never
+would. Exports, imports and fixtures
 work inside that tenant whatever `tenant_id` their request body carries — a
 row that names another tenant fails, a row whose id belongs to another
 tenant's record fails as *not found*, and an export job (`/api/exports`, its
@@ -71,16 +70,11 @@ still accepted on input. An id the backend cannot narrow to the model's key
 type is a 400 on a single-record call and a per-id entry in `errors[]` on a
 bulk one.
 
-**Search.** `?search=` looks in the fields a model declares searchable: in
-Nucleus, fields tagged `admin:"search"`, listed in `ModelConfig.SearchFields`,
-or switched on in the panel's Field settings; Quark models search every
-string column. A Nucleus model that declares none is not searchable today —
-the registry does not yet default search to its string columns — so a search
-on it answers `400` naming the model and how to enable search, rather than
-every row, and the grid disables its search box. The two backends match
-differently (Nucleus lower-cases both sides; Quark matches the text as
-typed, with `%` and `_` escaped the same way on every engine), so do not
-expect identical results across them.
+**Search.** `?search=` looks in the fields the source declares searchable:
+the Quark adapter searches every string column of a model. A model with no
+string column is not searchable, so a search on it answers `400` naming the
+model rather than every row, and the grid disables its search box. The match
+is the text as typed, with `%` and `_` escaped the same way on every engine.
 
 A search looks in every searchable field, and the panel cannot tell the
 backend to skip one. So a search that would also look in a field the

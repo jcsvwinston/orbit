@@ -221,7 +221,7 @@ the two stacks met, so the third session's kept its number.)
 | **UIX-15** | the panel's own scripts and stylesheets reach the browser compressed once, by the build |
 | **UIX-16** | an operator is offered a delete only where they hold one: no selection or Delete without it, and no batch Delete for one who may delete a record but not a batch |
 | **UIX-17** | an operator who may not update is offered no edit: the row opens the record read-only, and its menu and the record view hold only the actions granted |
-| **UIX-18** | an operator is offered a model, a record's history, an export, an import, the field settings and a saved view's removal only where they hold them, each one asked anyway is refused, an export holds only what the operator may list, a field the operator may not read is neither offered nor answered as a sort, a filter or a saved view, and an import writes only what the operator could write by hand |
+| **UIX-18** | an operator is offered a model, a record's history, an export, an import and a saved view's removal only where they hold them, each one asked anyway is refused, an export holds only what the operator may list, a field the operator may not read is neither offered nor answered as a sort, a filter or a saved view, and an import writes only what the operator could write by hand |
 
 Three things worth keeping about how it is built:
 
