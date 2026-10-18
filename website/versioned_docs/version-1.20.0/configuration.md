@@ -1,0 +1,129 @@
+---
+title: Configuration
+sidebar_position: 4
+description: The modules.orbit.* configuration reference.
+---
+
+# Configuration
+
+`orbit.Config` is bound from the `modules.orbit.*` subtree of your `nucleus.yml`
+(or set directly in Go). **Every field is optional** — the zero value mounts a
+working panel under `/admin`.
+
+The tables below group the keys by what they affect. For a plain in-process
+panel, only the first five groups can ever matter, and most apps set just
+[Mounting](#mounting) and [the bootstrap user](#the-bootstrap-admin-user).
+The `cluster_*` keys belong to the **opt-in live-feed relay**: they are
+inert until `cluster_enabled` is true, and in particular **no Redis is
+required to run the panel** — `cluster_redis_url` is read only by the
+relay.
+
+## Mounting
+
+| Key (`modules.orbit.*`) | Type | Default | Description |
+|---|---|---|---|
+| `prefix` | string | `/admin` | URL path Orbit mounts under. |
+| `title` | string | `Orbit` | Heading shown in the UI: the login page, the sidebar, and the browser tab. |
+| `environment` | string | — | Label shown in the UI (e.g. `production`). |
+
+## The bootstrap admin user
+
+| Key (`modules.orbit.*`) | Type | Default | Description |
+|---|---|---|---|
+| `bootstrap_username` | string | — | Admin user created on first boot. |
+| `bootstrap_email` | string | — | Email for the bootstrap user. |
+| `bootstrap_password` | string | — | Password for the bootstrap user. Leave it empty to skip creating the user and provision the admin account another way, e.g. `nucleus createuser`. The `nucleus_admin_users` schema is created at mount either way, so `createuser` works without ever setting a bootstrap password. |
+| `auth_database` | string | app default | Database alias whose handle backs admin login and the bootstrap user — point it at a dedicated database to keep the admin user store away from application data. Only login and bootstrapping are redirected; the panel itself always reads through the application's default handle. |
+
+## Data and views
+
+| Key (`modules.orbit.*`) | Type | Default | Description |
+|---|---|---|---|
+| `migrations_path` | string | `migrations` | Directory the migrations view reads. |
+| `audit_store` | string | `database` | Where the audit trail is kept: `database` writes a table the panel creates and owns, so the trail survives restarts and is shared by every replica; `memory` keeps the process-lifetime ring instead. An application with no database handle gets the ring either way (see [Audit log](./features.md#audit-log)). |
+| `audit_retention_days` | int | `0` | Drop trail entries older than this many days — a period, which is what a compliance window is. Applied when the panel comes up and at most hourly afterwards; zero keeps entries until the log is cleared. An operator can change the window in effect from the panel, and a restart comes back to this value. |
+| `audit_max_size` | int | `10000` | In-memory audit-log ring size. It bounds the `memory` store only — a trail in the database is bounded by `audit_retention_days`, not by a count. |
+| `multitenant_enabled` | bool | `false` | Confine Data Studio to the tenant the host application resolves for the request — every operation, exports and their jobs included, not only the list (see [Features](./features.md#data-studio)); a request with no resolved tenant and no default is a 403. `?tenant=<id>` / `?tenant=all` are accepted only from a superuser or a subject granted the `tenant_switch` RBAC action, and audited as `tenant.override`. The host's resolution must not be client-controlled (a header the client sets) for the confinement to hold. |
+| `multitenant_default` | string | — | Tenant applied when the host resolves none; without it such a request is refused unless the operator may switch tenants. |
+| `multitenant_ids` | []string | — | Known tenant IDs for the selector UI. |
+| `row_owner_fields` | map[string]string | — | Which column of each model says WHICH OPERATOR a row belongs to, keyed by model name, with `"*"` as the default for every model carrying the same column. It is what makes an `admin:<Model>#own` policy enforceable (see [Access control](./features.md#per-row-permissions)); a `#own` grant on a model with no entry here is refused with a 403, never widened to every row. |
+| `row_owner_subject` | string | `username` | Which name of the operator the owner column holds: `username` or `id`. |
+| `field_widgets` | map[string]string | — | How a field is edited when its type cannot say: `Model.Field` (or `Model.column`) to one of `json`, `richtext`, `file`, `image`. A JSON document is inferred from the type and needs no entry. A `file`/`image` field gets an upload route that stores the bytes in the application's storage and answers with the key the form writes (see [Features](./features.md#forms-that-hold-a-relation-a-document-and-a-file)). A value may instead name a field renderer the application declares in Go (`Client.FieldRenderers`), which draws the field in the list and on the record view (see [Code of your own in the browser](./features.md#code-of-your-own-in-the-browser)). An entry the panel cannot apply — a widget outside those four that is not a declared renderer, a key that names no field of your models, or two keys for one field with different widgets — stops the application at startup, naming the entry. |
+
+## How the panel looks and reads
+
+The panel in your product's clothes: its logo, icon and colours, the theme
+it opens in, and the language its own words are in (see
+[Features](./features.md#the-panel-in-your-products-clothes)). Every value is
+checked when the panel mounts, and one it cannot honour stops the application
+with a message naming the key.
+
+| Key (`modules.orbit.*`) | Type | Default | Description |
+|---|---|---|---|
+| `branding.logo_url` | string | — | The image in the sidebar, in place of the title (which becomes its alternative text), and on the login screen, above it. An absolute `http(s)` URL or a path your application already serves; the panel does not serve the file. Its origin is added to the `img-src` of the panel's Content-Security-Policy, so the browser loads it. A `javascript:` or `data:` URL, a protocol-relative one, or a host the policy cannot name (an IPv6 address, a wildcard) is refused. |
+| `branding.favicon_url` | string | — | The icon in the browser tab. Same rules as `branding.logo_url`. |
+| `branding.primary_color` | string | — | The accent colour as a CSS hex colour (`#0b5fff` or `#05f`): the buttons, the active navigation entry and the focus ring, in both themes. The text drawn on it is whichever of white or dark reads better on it. Anything else is refused. One that falls short of 3:1 against a theme's surface, or that no text reads on at 4.5:1, still starts — it was accepted before the palette was checked per theme — and the panel logs a warning naming the theme and the `branding.<theme>.primary_color` that fixes it. |
+| `branding.theme` | string | — | The theme the panel opens in before an operator has chosen one: `dark`, `light`, or `system` (the operator's system preference, read each time the panel opens). It decides the first frame: the document applies it before the panel's bundle runs, so nothing switches after the page appears. An operator who uses the panel's theme toggle keeps their choice over it, on every reload. Unset, the panel opens as it always has: in the operator's last theme, or else the browser's preference. Anything else is refused. |
+| `branding.light.primary_color` | string | `branding.primary_color` | The accent in the light theme only. Checked against that theme's surface: below 3:1, or with no text that reads on it at 4.5:1, the application does not start, and the message names the theme and the key. |
+| `branding.light.surface_color` | string | white | The ground the light theme draws on: the page, the cards and the menus. The light theme's text, the panel's secondary text and the accent must each keep their contrast on it (4.5:1, 4.5:1 and 3:1), or the application does not start. |
+| `branding.light.text_color` | string | the panel's ink | The text the light theme draws on its surface. Below 4.5:1 against it, the application does not start. |
+| `branding.dark.primary_color` | string | `branding.primary_color` | The accent in the dark theme only, with the same check against the dark surface. A dark brand colour that reads on white usually needs its own lighter shade here. |
+| `branding.dark.surface_color` | string | the panel's dark ground | The ground the dark theme draws on. Same checks as `branding.light.surface_color`, against the dark theme's colours. |
+| `branding.dark.text_color` | string | the panel's light ink | The text the dark theme draws on its surface. Below 4.5:1 against it, the application does not start. |
+| `locale` | string | English | The language the panel's own words open in (`es`, `pt-BR`), which also sets the document's `lang`. The panel ships English and Spanish; in another language, what `messages` does not translate reads in English. It never translates your data: model names, field labels and your errors stay as you wrote them. A value that is not a language tag is refused. |
+| `messages` | map[string]map[string]string | — | Phrases that add to or replace the panel's, by language tag and then key (`es: {nav.data_studio: Catálogo}`). They merge: yours win over the panel's translation, which wins over its English, and a phrase nobody translated reads in English rather than as its key. A language key that is not a language tag is refused. |
+
+## Wired in Go
+
+What an application adds to the panel that carries a function or a file
+system cannot be written in `nucleus.yml`, so it has no key here: `Actions`,
+`Pages`, `Widgets` and `Dashboards`, `Client` (its own scripts, stylesheets
+and field renderers), and the `Cache` and `DataSource` an application hands
+the panel, are set on `orbit.Config` in Go (see
+[What your application adds to the panel](./features.md#what-your-application-adds-to-the-panel)
+and [More than one dashboard](./features.md#more-than-one-dashboard)). An
+action, a page, a card, a dashboard or a file of client code the panel
+cannot draw or serve stops the application at startup, naming it, like a
+key above.
+
+## The live feed
+
+| Key (`modules.orbit.*`) | Type | Default | Description |
+|---|---|---|---|
+| `live_exclude_patterns` | []string | — | Path patterns excluded from the live HTTP feed — use it to keep health checks and static assets out. |
+| `trace_url_template` | string | — | External trace-explorer URL template, to deep-link each entry (supports `{trace_id}`). |
+
+## The live-feed relay (the `cluster_*` keys)
+
+By default the live feed shows **this node's** traffic. Turn these keys on and
+the nodes of one application relay their live events to each other over Redis,
+so the panel on any node shows the whole set.
+
+| Key (`modules.orbit.*`) | Type | Default | Description |
+|---|---|---|---|
+| `cluster_enabled` | bool | `false` | Aggregate the live feed across nodes via a Redis relay. |
+| `cluster_redis_url` | string | — | Redis URL for the relay. |
+| `cluster_channel` | string | `nucleus:admin:live:v1` | Pub/sub channel for the relay. |
+| `cluster_node_id` | string | runtime id | Explicit node identifier in the relay. |
+| `cluster_token` | string | — | Shared secret to reject untrusted relay messages. |
+
+:::note These keys are not the fleet plane
+The `cluster_*` keys stay inside your application process: same panel, same
+binary, one shared feed. The standalone agent-and-server
+[fleet plane](./cluster/overview.md) is a different, heavier option — a
+dedicated observability server that application nodes stream to, with no
+Redis involved. Most applications need neither.
+:::
+
+## Example
+
+```yaml
+# nucleus.yml
+modules:
+  orbit:
+    prefix: /admin
+    title: Acme Admin
+    environment: production
+    bootstrap_username: admin
+    bootstrap_email: admin@acme.test
+```
