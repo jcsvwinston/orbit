@@ -87,12 +87,14 @@ func TestModelCounts_AreUnknownWithoutTheModelsList(t *testing.T) {
 }
 
 // In a request the host resolved to a tenant, every count is that tenant's —
-// a superuser's included, as on the list, until ?tenant= switches it.
+// a superuser's included, as on the list, until ?tenant= switches it. The
+// tenant column hidden from JSON (HiddenNote) confines the count the same
+// way it confines the list.
 func TestModelCounts_StayInTheRequestsTenant(t *testing.T) {
 	_, _, srv := scopedPanel(t, superuserAuth())
 	models, _ := modelsWithCounts(t, srv.URL)
 
-	for _, name := range []string{"ScopedNote", "ScopedCode"} {
+	for _, name := range []string{"ScopedNote", "ScopedCode", "HiddenNote"} {
 		m := models[name]
 		if m["count_known"] != true || m["count"] != float64(1) {
 			t.Errorf("%s count = %v (known %v), want 1: the acme row, not both tenants'", name, m["count"], m["count_known"])
