@@ -141,13 +141,14 @@ keys on — the `Nodes` page, per-node stream filters, and the metrics cards.
 
 **With a client certificate from files and no `node_id`, the node is named
 after the certificate's Common Name.** The server authenticates that name at
-the handshake (`agent:<CN>`), so writing it once, in the certificate, is what
-lets a server that binds node identity to the certificate
-(`--agent-identity-from-cert`) accept the agent. An explicit `node_id` still
-wins — and is then what such a server compares with the certificate: if the
-two differ, the registration is refused with `PermissionDenied` and the
-server log names both. A server without that flag registers the declared
-`node_id` and logs a WARN when it differs from the certificate.
+the handshake (`agent:<CN>`) and binds the node identity to it, so writing
+it once, in the certificate, is what lets a server that verifies client
+certificates accept the agent. An explicit `node_id` still wins — and is
+then what the server compares with the certificate: if the two differ, the
+registration is refused with `PermissionDenied` and the server log names
+both. Only a server started with `--allow-shared-agent-certificate` (a
+fleet whose agents share one certificate) registers the declared `node_id`
+in that case, and it logs a WARN naming both.
 Events shipped over the stream carry the same NodeID, so an event's `node_id`
 always matches a registered node. (The agent stamps it over the in-process
 bus's own node label, which is host-local and does not correlate with the fleet

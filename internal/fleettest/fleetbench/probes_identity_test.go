@@ -125,7 +125,11 @@ func probeAgentListenerMTLS(t *testing.T, e *env) verdict {
 		return absent
 	}
 
-	if _, err := registerRaw(ctx, tlsH2Client(ca.clientTLSWithCert(t, "fb-node")), "https://"+srv.AgentAddr(), "fb-mtls"); err != nil {
+	// The certificate is named after the node it registers: a listener
+	// that verifies client certificates binds the node_id to the Common
+	// Name (IDENT-06 measures that binding; this control measures the
+	// handshake).
+	if _, err := registerRaw(ctx, tlsH2Client(ca.clientTLSWithCert(t, "fb-mtls")), "https://"+srv.AgentAddr(), "fb-mtls"); err != nil {
 		t.Logf("registration with a valid client certificate failed: %v", err)
 		return partial
 	}
@@ -182,7 +186,8 @@ func probeRealAgentOverMTLS(t *testing.T, e *env) verdict {
 	}
 	noCert.stop()
 
-	e.startAgent(t, agent.Config{Endpoints: []string{endpoint}, TLS: ca.clientTLSWithCert(t, "fb-agent"), NodeIDOverride: "fb-cert"})
+	// Certificate and node_id agree: the listener binds the two.
+	e.startAgent(t, agent.Config{Endpoints: []string{endpoint}, TLS: ca.clientTLSWithCert(t, "fb-cert"), NodeIDOverride: "fb-cert"})
 	if !waitRegistered(srv.Server, "fb-cert", 5*time.Second) {
 		t.Log("the agent with a valid client certificate did not register in 5s")
 		return partial
@@ -250,15 +255,16 @@ func probeNodeIdentityBoundToCert(t *testing.T, e *env) verdict {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Fact 1 — the product's binding, on the wire. A server that binds
-	// identity to the certificate must refuse a certificate for node-a
+	// Fact 1 — the product's binding, on the wire, as the DEFAULT of a
+	// listener that verifies client certificates (DEP-2026-001): neither
+	// identity field set. The server must refuse a certificate for node-a
 	// declaring node-b, and say so with PermissionDenied: the refusal is
 	// read from the stream, not inferred from a node that never appeared.
 	// A control agent whose name and certificate agree proves the setup
 	// registers at all.
-	bound, err := e.tryStartServer(t, server.Config{AgentTLS: ca.mutualTLS(), AgentIdentityFromCertificate: true})
+	bound, err := e.tryStartServer(t, server.Config{AgentTLS: ca.mutualTLS()})
 	if err != nil {
-		t.Logf("the server refused to start with identity binding: %v", err)
+		t.Logf("the server refused to start with client-certificate verification: %v", err)
 		return absent
 	}
 	e.startAgent(t, agent.Config{Endpoints: []string{"https://" + bound.AgentAddr()}, TLS: ca.clientTLSWithCert(t, "node-c"), NodeIDOverride: "node-c"})
@@ -271,27 +277,28 @@ func probeNodeIdentityBoundToCert(t *testing.T, e *env) verdict {
 	}
 	switch {
 	case err == nil:
-		t.Log("bound server served a certificate for node-a registered as node-b")
-		return absent
+		t.Log("the default server served a certificate for node-a registered as node-b: the binding is not the default")
+		return partial
 	case connect.CodeOf(err) != connect.CodePermissionDenied:
-		t.Logf("bound server refused the mismatch with %v, not PermissionDenied: %v", connect.CodeOf(err), err)
+		t.Logf("the default server refused the mismatch with %v, not PermissionDenied: %v", connect.CodeOf(err), err)
 		return partial
 	}
 	if _, ok := bound.State().Nodes.Lookup("node-b"); ok {
-		t.Log("bound server refused the stream and yet lists node-b")
+		t.Log("the default server refused the stream and yet lists node-b")
 		return absent
 	}
 
-	// Fact 2 — the default, recorded so the page says what it is. A
-	// server that only verifies the certificate registers the declared
-	// node_id: the binding is opt-in until the next major flips it.
-	plain := e.startServer(t, server.Config{AgentTLS: ca.mutualTLS()})
-	e.startAgent(t, agent.Config{Endpoints: []string{"https://" + plain.AgentAddr()}, TLS: ca.clientTLSWithCert(t, "node-a"), NodeIDOverride: "node-b"})
-	if !waitRegistered(plain.Server, "node-b", 5*time.Second) {
-		t.Log("the default server no longer registers a mismatched node_id: the note on the page is stale")
+	// Fact 2 — the exit, recorded so the page says what it is. A fleet
+	// whose agents share one certificate says so with
+	// AllowSharedAgentCertificate, and that server registers the declared
+	// node_id (with a WARN naming both); it is the only regime that does.
+	shared := e.startServer(t, server.Config{AgentTLS: ca.mutualTLS(), AllowSharedAgentCertificate: true})
+	e.startAgent(t, agent.Config{Endpoints: []string{"https://" + shared.AgentAddr()}, TLS: ca.clientTLSWithCert(t, "node-a"), NodeIDOverride: "node-b"})
+	if !waitRegistered(shared.Server, "node-b", 5*time.Second) {
+		t.Log("AllowSharedAgentCertificate no longer registers a mismatched node_id: the note on the page is stale")
 		return partial
 	}
-	t.Log("default: registered as declared (WARN in the server log); bound: refused with PermissionDenied")
+	t.Log("default: refused with PermissionDenied; AllowSharedAgentCertificate: registered as declared (WARN in the server log)")
 	return present
 }
 
@@ -403,9 +410,16 @@ func probeAgentCertRotation(t *testing.T, e *env) verdict {
 	// Server A sits behind a relay so that "A dies" severs the agent's
 	// connection the way a process death would (see env_test.go: an
 	// in-process stop leaves an open bidi stream serving).
-	srvA := e.startServer(t, server.Config{AgentTLS: mutual(recA)})
+	//
+	// The two certificates carry different Common Names (agent-v1,
+	// agent-v2) so the recorders can tell which one a handshake saw,
+	// while the node keeps one name across the rotation. The listeners
+	// bind node_id to the Common Name by default, so both servers allow a
+	// shared certificate: this control measures the rotation, not the
+	// binding (IDENT-06 does).
+	srvA := e.startServer(t, server.Config{AgentTLS: mutual(recA), AllowSharedAgentCertificate: true})
 	relayA := startRelay(t, srvA.AgentAddr())
-	srvB := e.startServer(t, server.Config{AgentTLS: mutual(recB)})
+	srvB := e.startServer(t, server.Config{AgentTLS: mutual(recB), AllowSharedAgentCertificate: true})
 
 	c1 := ca.clientTLSWithCert(t, "agent-v1").Certificates[0]
 	c2 := ca.clientTLSWithCert(t, "agent-v2").Certificates[0]

@@ -43,8 +43,8 @@ type ExtensionConfig struct {
 	// When they are set and NodeIDOverride is empty, the node registers
 	// under the certificate's Common Name — the name the server
 	// authenticates — so the identity is written once, in the
-	// certificate, and a server that binds node identity to it
-	// (--agent-identity-from-cert) accepts the agent.
+	// certificate, and a server that verifies client certificates, which
+	// binds the node identity to them, accepts the agent.
 	TLSCertFile string `koanf:"tls_cert_file"`
 	TLSKeyFile  string `koanf:"tls_key_file"`
 

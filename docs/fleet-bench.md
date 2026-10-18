@@ -210,19 +210,19 @@ not redirect (`HA-04`), a registry that ignores what a peer announces
 | `IDENT-09` | a shared token authenticates an agent; a wrong token is refused with one rate-limited WARN naming the remote IP | **present** | — |
 | `IDENT-10` | /healthz answers without credentials on both listeners while the same listeners refuse an uncredentialled RPC | **present** | — |
 
-`IDENT-06` is **present** through an opt-in: `server.Config.AgentIdentityFromCertificate`
-(`--agent-identity-from-cert`) refuses a registration whose `node_id` is not the
-verified certificate's Common Name, and `Run` refuses to start with it on a
-listener that does not verify client certificates. The default still registers
-the declared `node_id` — with a WARN naming both — because deployments whose
-certificate names something other than the node (one certificate shared by a
-fleet) must keep working until the next major flips the default
-(`DEP-2026-001`: at 2.0 the binding is the default under client-certificate
-verification, and `AllowSharedAgentCertificate` keeps today's regime; the
-second fact of the probe and this paragraph change with it). The probe
-measures both regimes. `IDENT-05` boots a real agent through the extension from
-nothing but three file paths and no `node_id`; the node the server lists is the
-certificate's Common Name.
+`IDENT-06` is **present** by default: a listener that verifies client
+certificates refuses a registration whose `node_id` is not the verified
+certificate's Common Name, with `PermissionDenied` (`DEP-2026-001`).
+`server.Config.AgentIdentityFromCertificate` (`--agent-identity-from-cert`)
+states that binding explicitly, and `Run` refuses to start with it on a
+listener that does not verify client certificates. A fleet whose certificate
+names something other than the node (one certificate shared by its agents)
+says so with `server.Config.AllowSharedAgentCertificate`
+(`--allow-shared-agent-certificate`), and that server registers the declared
+`node_id` — with a WARN naming both. The probe measures both regimes: the
+default refuses, the shared-certificate server registers. `IDENT-05` boots a
+real agent through the extension from nothing but three file paths and no
+`node_id`; the node the server lists is the certificate's Common Name.
 
 `IDENT-07` and `IDENT-08` are **present** because both sides serve their
 certificate *from* the files rather than copying it out of them once:

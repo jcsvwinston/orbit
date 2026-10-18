@@ -52,8 +52,9 @@ type State struct {
 
 	// BindIdentityToCertificate refuses a registration whose node_id is
 	// not the Common Name of the verified client certificate the stream
-	// arrived with (server.Config.AgentIdentityFromCertificate). When
-	// false a mismatch is registered as declared and logged as a WARN.
+	// arrived with: the default of a listener that verifies client
+	// certificates, lifted by server.Config.AllowSharedAgentCertificate.
+	// When false a mismatch is registered as declared and logged as a WARN.
 	BindIdentityToCertificate bool
 }
 
@@ -102,7 +103,7 @@ func (s *AgentService) Stream(ctx context.Context, stream *connect.BidiStream[ad
 		}
 		s.state.Logger.Warn("admin agent registered under a node_id that differs from its client certificate",
 			"node_id", nodeID, "certificate_cn", cn,
-			"hint", "set --agent-identity-from-cert to refuse such registrations")
+			"hint", "tolerated by --allow-shared-agent-certificate (or by a listener that does not require and verify client certificates); without it the registration is refused")
 	}
 
 	streamCtx, cancel := context.WithCancel(ctx)

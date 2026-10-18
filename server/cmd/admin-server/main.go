@@ -17,9 +17,10 @@
 //     With no --agent-token and no client-certificate requirement the
 //     server refuses to start unless the address is loopback or
 //     --insecure-agent-listener is passed (see server.Run).
-//     --agent-identity-from-cert binds each node to the Common Name of
-//     the certificate it presented: a registration under another node_id
-//     is refused (off by default: registered and WARNed).
+//     With --agent-client-ca each node is bound to the Common Name of the
+//     certificate it presented: a registration under another node_id is
+//     refused, unless --allow-shared-agent-certificate keeps registering
+//     it (with a WARN) for a fleet that shares one certificate.
 //   - --ui-addr (default :8080) — h2c + embedded UI; trusted-proxy headers
 //     and bearer fallback per --ui-* flags. --ui-proxy-secret adds a shared
 //     secret the proxy must echo before its identity header is trusted.
@@ -115,8 +116,8 @@ func run(args []string) error {
 	uiReadOnly := fs.Bool("ui-read-only", envBool("NUCLEUS_ADMIN_UI_READ_ONLY"), "make every UI operator read-only (Data Studio mutations refused)")
 	dsAllowedModels := fs.String("datastudio-allowed-models", os.Getenv("NUCLEUS_ADMIN_DATASTUDIO_ALLOWED_MODELS"), "comma-separated model names Data Studio may MUTATE (create/update/delete/bulk); empty refuses every mutation, \"*\" allows all models. Reads are not gated")
 	uiInsecureOpen := fs.Bool("ui-insecure-open", envBool("NUCLEUS_ADMIN_UI_INSECURE_OPEN"), "authenticate credential-less loopback UI requests as operator \"insecure-open\" (local development only; requires a loopback --ui-addr)")
-	agentIdentityFromCert := fs.Bool("agent-identity-from-cert", envBool("NUCLEUS_ADMIN_AGENT_IDENTITY_FROM_CERT"), "refuse an agent whose node_id differs from the Common Name of its verified client certificate (requires --agent-client-ca); off: register as declared and WARN on a mismatch. Orbit 2.0 turns it on by default under --agent-client-ca")
-	allowSharedAgentCert := fs.Bool("allow-shared-agent-certificate", envBool("NUCLEUS_ADMIN_ALLOW_SHARED_AGENT_CERTIFICATE"), "keep registering an agent under the node_id it declares when that is not the Common Name of its verified client certificate (a fleet sharing one certificate): today's default, kept across Orbit 2.0. Contradicts --agent-identity-from-cert")
+	agentIdentityFromCert := fs.Bool("agent-identity-from-cert", envBool("NUCLEUS_ADMIN_AGENT_IDENTITY_FROM_CERT"), "refuse an agent whose node_id differs from the Common Name of its verified client certificate (requires --agent-client-ca). This is the default under --agent-client-ca; the flag states it and refuses to start on a listener that cannot deliver it")
+	allowSharedAgentCert := fs.Bool("allow-shared-agent-certificate", envBool("NUCLEUS_ADMIN_ALLOW_SHARED_AGENT_CERTIFICATE"), "keep registering an agent under the node_id it declares when that is not the Common Name of its verified client certificate (a fleet sharing one certificate), with a WARN per mismatch; without it such a registration is refused. Contradicts --agent-identity-from-cert")
 	insecureAgentListener := fs.Bool("insecure-agent-listener", envBool("NUCLEUS_ADMIN_INSECURE_AGENT_LISTENER"), "allow the agent listener to bind a non-loopback interface without a token or TLS (secure the address at the network layer)")
 	agentCert := fs.String("agent-cert", os.Getenv("NUCLEUS_ADMIN_AGENT_CERT"), "PEM cert for agent listener (enables TLS)")
 	agentKey := fs.String("agent-key", os.Getenv("NUCLEUS_ADMIN_AGENT_KEY"), "PEM key for agent listener")
