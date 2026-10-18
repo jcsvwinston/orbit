@@ -6,7 +6,7 @@ description: What changed in each Orbit release, in plain terms.
 
 # Release notes
 
-The current release is **v1.20.0**. <!-- x-release-please-version -->
+The current release is **v1.20.1**. <!-- x-release-please-version -->
 
 Every heading below is a version of the **root module**
 (`github.com/jcsvwinston/orbit`) — the one an application mounts for the
@@ -16,6 +16,19 @@ The fleet modules (`agent`, `server`, `proto`) release independently with their
 own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
+
+## v1.20.1 — 2026-10-18
+
+A patch that brings v1.20.0's browser half and markers to applications: the
+root and `server` now require `orbit/ui` v1.2.0, the module that carries
+the panel reading problem details, and the root, `agent` and
+`quarkdatasource` require `datasource` v1.1.0, the module that carries the
+`// Deprecated:` markers on the Nucleus adapter. With it, what an
+application installing the root serves is what v1.20.0 describes. No Go
+code changes; nothing in the binaries or the panel behaves differently
+from v1.20.0 beyond those two modules.
+
+Fleet and bridge tags cut alongside: `agent/v0.16.1`, `server/v0.21.1`, `quarkdatasource/v1.13.1`.
 
 ## v1.20.0 — 2026-10-18
 

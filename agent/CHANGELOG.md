@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.1](https://github.com/jcsvwinston/orbit/compare/agent/v0.16.0...agent/v0.16.1) (2026-10-18)
+
+
+### Fixed
+
+* **deps:** pin ui v1.2.0 and datasource v1.1.0 in the root, agent, server and quarkdatasource (the tags v1.20.0 cut) ([#571](https://github.com/jcsvwinston/orbit/issues/571)) ([d5c1bc5](https://github.com/jcsvwinston/orbit/commit/d5c1bc5c826f890f660956a4ec899456ce1fa6d9))
+
 ## [0.16.0](https://github.com/jcsvwinston/orbit/compare/agent/v0.15.3...agent/v0.16.0) (2026-10-18)
 
 
