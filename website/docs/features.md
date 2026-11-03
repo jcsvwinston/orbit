@@ -160,6 +160,24 @@ models instead: add the opt-in
 [`quarkdatasource`](https://github.com/jcsvwinston/orbit/tree/main/quarkdatasource)
 module and set `orbit.Config.DataSource`.
 
+A record a form or an API client sends is held to the catalogue before it is
+written, whichever source serves the model: a required field left out or
+emptied, or a value that is not of the kind its field declares, is a `422`
+that names every field at fault, and nothing is written.
+
+```json
+{"error": {"code": "VALIDATION_FAILED", "message": "validation failed",
+           "details": {"title": "this field is required", "author_id": "must be an integer"}}}
+```
+
+The source checks what only it knows. The Nucleus adapter checks its models'
+`validate` tags and refuses a key that names no field; `quarkdatasource`
+refuses such a key too, checks a column's declared `size`, and answers a value
+a unique key already holds with a `409` that names the field — never with the
+database's own message. On both, a read, an update or a delete of a row that
+does not exist is a `404`, and the audit trail records only the writes that
+happened.
+
 `datasource.Query` is a frozen shape, so the operator filters and the exact
 count arrived as new fields beside the old ones rather than as a richer
 `Filters`: `Where []Filter` and `ExactTotal bool`. A data source written before

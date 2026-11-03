@@ -81,7 +81,11 @@ The panel **browses and operates well, and administers poorly**.
 - Everything an operator does to *data* works and is exercised here: CRUD with
   model validation, search, server-side ordering, bulk actions, import,
   export, fixtures, multi-tenant confinement, and a panel mounted over a
-  backend that is not the framework's.
+  backend that is not the framework's. The bench's models are served by the
+  Nucleus adapter, so model validation (`DS-03`) is measured there; the same
+  answer from `quarkdatasource` is pinned by that module's own tests, because
+  the bench lives in the root module and Quark stays out of the root's graph
+  until 2.0 (ADR-012).
 - Everything an operator does to *the application* works too, and this is the
   part no comparable product has: a live request and SQL feed, a runtime
   pulse, feature flags, migrations, storage, async exports.

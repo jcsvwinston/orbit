@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -554,12 +555,19 @@ func setupTenantNotes(t *testing.T) (datasource.RecordStore, context.Context) {
 	return st, ctx
 }
 
-func isBadRequest(t *testing.T, err error, stage string) {
+// fieldProblems asserts err is the 422 the Nucleus adapter answers a record
+// it refuses with, and returns its per-key messages.
+func fieldProblems(t *testing.T, err error, stage string) map[string]string {
 	t.Helper()
 	var de *gferrors.DomainError
-	if !errors.As(err, &de) || de.StatusCode != http.StatusBadRequest {
-		t.Fatalf("%s: want a 400 domain error, got %T: %v", stage, err, err)
+	if !errors.As(err, &de) || de.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("%s: want a 422 domain error, got %T: %v", stage, err, err)
 	}
+	fields, ok := de.Details.(map[string]string)
+	if !ok || len(fields) == 0 {
+		t.Fatalf("%s: details = %#v, want a message per key", stage, de.Details)
+	}
+	return fields
 }
 
 // TestRecord_FieldNamedTwiceIsRefused pins the write-side defense the
@@ -567,18 +575,25 @@ func isBadRequest(t *testing.T, err error, stage string) {
 // — its column and its json tag, or two letter cases — is refused instead
 // of resolved by map order. The panel stamps the tenant under its column and
 // knows a Quark field by column and Go name only, so a json-tag alias it
-// cannot see must never outvote the stamp.
+// cannot see must never outvote the stamp. The refusal is the Nucleus
+// adapter's: a 422 naming the second key.
 func TestRecord_FieldNamedTwiceIsRefused(t *testing.T) {
 	st, ctx := setupTenantNotes(t)
 
-	for _, rec := range []datasource.Record{
-		{"tenant_id": "acme", "org": "globex", "title": "smuggled"},
-		{"tenant_id": "acme", "ORG": "globex", "title": "smuggled"},
-		{"tenant_id": "acme", "TenantID": "globex", "title": "smuggled"},
-		{"title": "a", "TITLE": "b", "tenant_id": "acme"},
+	for _, tc := range []struct {
+		rec    datasource.Record
+		second string
+	}{
+		{datasource.Record{"tenant_id": "acme", "org": "globex", "title": "smuggled"}, "tenant_id"},
+		{datasource.Record{"tenant_id": "acme", "ORG": "globex", "title": "smuggled"}, "tenant_id"},
+		{datasource.Record{"tenant_id": "acme", "TenantID": "globex", "title": "smuggled"}, "tenant_id"},
+		{datasource.Record{"title": "a", "TITLE": "b", "tenant_id": "acme"}, "title"},
 	} {
-		_, err := st.Create(ctx, rec)
-		isBadRequest(t, err, "create "+mustKeys(rec))
+		_, err := st.Create(ctx, tc.rec)
+		fields := fieldProblems(t, err, "create "+mustKeys(tc.rec))
+		if !strings.HasPrefix(fields[tc.second], "names the same field as ") {
+			t.Fatalf("create %s: problems = %v, want %q reported as a second name", mustKeys(tc.rec), fields, tc.second)
+		}
 	}
 	page, err := st.List(ctx, datasource.Query{})
 	if err != nil || page.Total != 0 {
@@ -597,17 +612,19 @@ func TestRecord_FieldNamedTwiceIsRefused(t *testing.T) {
 	id := fmtID(created["id"])
 
 	// An update resolves keys by column and Go name only: the json-tag alias
-	// is not applied, so the row cannot move under a key the panel's guard
-	// does not know; two spellings of a column are refused.
-	if err := st.Update(ctx, id, datasource.Record{"org": "globex"}); err != nil {
-		t.Fatalf("update by json key: %v", err)
+	// is refused, so the row cannot move under a key the panel's guard does
+	// not know (it used to be ignored, and the update answered success for a
+	// change it did not make); two spellings of a column are refused.
+	err = st.Update(ctx, id, datasource.Record{"org": "globex"})
+	if fields := fieldProblems(t, err, "update by json key"); fields["org"] != "an update names this field by its column (tenant_id)" {
+		t.Fatalf("update by json key: problems = %v", fields)
 	}
 	got, err := st.Get(ctx, id)
 	if err != nil || got["tenant_id"] != "acme" {
 		t.Fatalf("after update by json key: %v (err %v), want tenant_id=acme unchanged", got, err)
 	}
 	err = st.Update(ctx, id, datasource.Record{"tenant_id": "acme", "TENANT_ID": "globex"})
-	isBadRequest(t, err, "update two spellings")
+	fieldProblems(t, err, "update two spellings")
 	got, _ = st.Get(ctx, id)
 	if got["tenant_id"] != "acme" {
 		t.Fatalf("after refused update: %v, want tenant_id=acme unchanged", got)
@@ -725,9 +742,11 @@ func TestHiddenJSONTenantColumn_ScopedLookupAndStampedCreate(t *testing.T) {
 	// Named twice, or of the wrong type, the record is refused and
 	// nothing is written.
 	_, err = st.Create(ctx, datasource.Record{"tenant_id": "acme", "TenantID": "globex", "title": "twice"})
-	isBadRequest(t, err, "create hidden column twice")
+	fieldProblems(t, err, "create hidden column twice")
 	_, err = st.Create(ctx, datasource.Record{"tenant_id": 7, "title": "number"})
-	isBadRequest(t, err, "create hidden column with a number")
+	if fields := fieldProblems(t, err, "create hidden column with a number"); fields["tenant_id"] != "must be a string" {
+		t.Fatalf("create hidden column with a number: problems = %v", fields)
+	}
 	page, err := st.List(ctx, datasource.Query{Filters: map[string]string{"tenant_id": "acme"}})
 	if err != nil || page.Total != 3 {
 		t.Fatalf("acme rows = %d (err %v), want the seed and the two creates", page.Total, err)

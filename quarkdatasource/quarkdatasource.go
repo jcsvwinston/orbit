@@ -38,7 +38,14 @@
 //     (including quark.Nullable) and keys outside the schema — relations,
 //     extra JSON — pass through unchanged.
 //   - Delete follows Quark's semantics: soft delete when the model has a
-//     deleted_at column, hard delete otherwise.
+//     deleted_at column, hard delete otherwise. A Get, Update or Delete of a
+//     row that does not exist is the contract's not-found (404).
+//   - A record is validated before it is written, and refused whole with the
+//     Nucleus adapter's 422 (one message per key) when a key names no field,
+//     a value does not fit its field's type or declared size, a field is
+//     named twice, or a required (NOT NULL) field is left out or empty. A
+//     write the database refuses on a unique key is a 409 naming the field;
+//     another constraint is a 409 too. No driver text reaches the response.
 //   - A Quark client is bound to one database, so an adapter serves exactly
 //     one database alias (WithDatabaseAlias, default "default"): every
 //     ModelInfo carries it, and Store refuses any other alias instead of
@@ -53,6 +60,7 @@ import (
 	"strings"
 	"sync"
 
+	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
 	"github.com/jcsvwinston/quark"
 
 	"github.com/jcsvwinston/orbit/datasource"
@@ -143,7 +151,10 @@ func (a *Adapter) Get(name string) (datasource.ModelInfo, bool) {
 // a different name would show the operator the wrong data.
 func (a *Adapter) Store(modelName, dbAlias string) (datasource.RecordStore, error) {
 	if alias := strings.TrimSpace(dbAlias); alias != "" && alias != a.alias {
-		return nil, fmt.Errorf("quarkdatasource: database alias %q is not served by this adapter (serves %q)", alias, a.alias)
+		// The request's mistake, answered as one (400) rather than as a
+		// failure of the panel (500): the alias names a database this
+		// adapter does not serve.
+		return nil, gferrors.BadRequest(fmt.Sprintf("quarkdatasource: database alias %q is not served by this adapter (serves %q)", alias, a.alias))
 	}
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -185,6 +196,11 @@ func Register[T any](a *Adapter) error {
 // carry storage-level facts (column, pk, not_null, unique); presentation
 // metadata Quark deliberately does not have (labels, HTML types, list/filter
 // flags) is derived from the Go type with permissive defaults.
+//
+// A NOT NULL field is required — the panel and this store refuse a record
+// that leaves it out or empty — except a created_at/updated_at timestamp,
+// which Quark stamps itself on a create when the entity leaves it zero: the
+// operator does not have to name it.
 func (a *Adapter) buildModelInfo(t reflect.Type, meta *quark.ModelMeta) datasource.ModelInfo {
 	readOnly := meta.HasCompositePK || !meta.HasPK
 
@@ -192,7 +208,8 @@ func (a *Adapter) buildModelInfo(t reflect.Type, meta *quark.ModelMeta) datasour
 	fkCols := belongsToColumns(meta)
 	tenantField := ""
 	for _, f := range meta.Fields {
-		goName := t.Field(f.Index).Name
+		sf := t.Field(f.Index)
+		goName := sf.Name
 		isTenant := a.tenantColumn != "" && strings.EqualFold(f.Column, a.tenantColumn)
 		if isTenant {
 			tenantField = f.Column
@@ -204,7 +221,7 @@ func (a *Adapter) buildModelInfo(t reflect.Type, meta *quark.ModelMeta) datasour
 			GoType:        goTypeName(f.Type),
 			HTMLType:      htmlType(f.Type),
 			IsPK:          f.IsPK,
-			IsRequired:    f.NotNull,
+			IsRequired:    f.NotNull && !stampedByQuark(f, sf.Type),
 			IsReadOnly:    f.IsPK || f.IsVersion,
 			IsList:        true,
 			IsSearch:      f.Kind == reflect.String,
