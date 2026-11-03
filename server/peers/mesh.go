@@ -178,7 +178,9 @@ func (m *Mesh) session(ctx context.Context, endpoint string) error {
 		}
 	}
 
-	// The peer answers with its own hello: that is acceptance.
+	// The peer answers with its own hello, which names it; a peer running
+	// --peer-allowlist answers before it decides, and a refusal follows as
+	// the stream's error.
 	recvErr := make(chan error, 1)
 	go func() {
 		for {
