@@ -173,6 +173,12 @@ pair to its peers and verifies theirs against `--agent-client-ca`;
 (`server.PeerTLSFromFiles` builds the same `Config.PeerTLS` in Go). The
 certificate presented must allow `clientAuth`.
 
+`--peer-allowlist` accepts `PeerService.Sync` only from the servers this one
+dials (the server id that answers at one of `--peers`) and, under mutual TLS,
+only from a certificate named after that server id; without it any caller
+that passes agent auth may be a peer, with one WARN per server id. Orbit 2.0
+always applies the check (`docs/deprecations/DEP-2026-005`).
+
 ## Sub-packages
 
 | Sub-package         | Responsibility                                                                                                            |

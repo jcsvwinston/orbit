@@ -231,6 +231,28 @@ type Config struct {
 	// listeners. Empty uses AgentToken: peers usually share one.
 	PeerToken string
 
+	// PeerAllowlist accepts a peer's PeerService.Sync only from a server
+	// this one dials: the server_id it announces must be the one that
+	// answered on this server's own link to one of PeerAddrs, and, when
+	// the peer arrived with a verified client certificate, the
+	// certificate's Common Name must be that server_id. Anything else is
+	// refused with PermissionDenied and a WARN. A server with no PeerAddrs
+	// then accepts no peer at all.
+	//
+	// Off by default in 1.x: any caller that passes the agent listener's
+	// authentication may open Sync, announce a server and the nodes and
+	// events behind it — the agent token or any certificate of the agents'
+	// CA is enough. Each such peer is still accepted, and logged once per
+	// server_id per process as a WARN naming the reason. Orbit 2.0
+	// applies the check on every server (DEP-2026-005); turning this on
+	// now is how a fleet finds out what the major refuses.
+	//
+	// Without client certificates the check compares names, not
+	// credentials: a holder of the agent token who knows a peer's
+	// server_id can still announce it. Under mutual TLS the certificate
+	// decides.
+	PeerAllowlist bool
+
 	// AssignNodes makes the fleet assign each node to one server by
 	// rendezvous hashing over this server and the peers it reaches, and
 	// redirect an agent that registered elsewhere to its owner. Off, an

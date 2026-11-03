@@ -31,6 +31,11 @@
 // A third, opt-in listener serves Prometheus /metrics (+/healthz) when
 // --metrics-addr is set; empty (the default) disables it.
 //
+// Peers speak on the agent listener. --peer-allowlist accepts a peer only
+// from the servers this one dials (--peers); off, any caller that passes
+// agent auth may be a peer, with a WARN — Orbit 2.0 applies the check
+// always (DEP-2026-005).
+//
 // Run "admin-server --help" for the full surface.
 package main
 
@@ -150,6 +155,7 @@ func configFromArgs(args []string, stderr io.Writer) (server.Config, error) {
 	agentAdvertise := fs.String("agent-advertise-addr", os.Getenv("NUCLEUS_ADMIN_AGENT_ADVERTISE_ADDR"), "the endpoint agents reach this server on (http(s)://host:port), as it appears in their endpoint lists; needed to receive node assignments")
 	peerAddrs := fs.String("peers", os.Getenv("NUCLEUS_ADMIN_PEERS"), "comma-separated agent-listener endpoints of the other admin servers; the servers share their nodes and relay events to each other")
 	peerToken := fs.String("peer-token", os.Getenv("NUCLEUS_ADMIN_PEER_TOKEN"), "bearer token presented to the peers' agent listeners; default the agent token")
+	peerAllowlist := fs.Bool("peer-allowlist", envBool("NUCLEUS_ADMIN_PEER_ALLOWLIST"), "accept a peer only when it is a server this one dials (the server_id that answers at one of --peers) and, with a verified client certificate, only when the certificate's Common Name is that server_id; off: accept any peer that passes agent auth and WARN once per peer the check would refuse. Orbit 2.0 always applies the check")
 	assignNodes := fs.Bool("assign-nodes", envBool("NUCLEUS_ADMIN_ASSIGN_NODES"), "assign each node to one server of the fleet deterministically and redirect agents to their owner (needs --agent-advertise-addr)")
 	alertRulesFile := fs.String("alert-rules-file", os.Getenv("NUCLEUS_ADMIN_ALERT_RULES_FILE"), "JSON file with the threshold rules the server evaluates against every heartbeat's host metrics (a rule: name, metric, op, threshold, for, severity, node_ids, channels); empty evaluates nothing")
 	alertWebhooks := fs.String("alert-webhooks", os.Getenv("NUCLEUS_ADMIN_ALERT_WEBHOOKS"), "comma-separated name=url webhook channels rules may notify; the server POSTs the alert as JSON")
@@ -215,6 +221,7 @@ func configFromArgs(args []string, stderr io.Writer) (server.Config, error) {
 		AgentAdvertiseAddr:           strings.TrimSpace(*agentAdvertise),
 		PeerAddrs:                    splitCSV(*peerAddrs),
 		PeerToken:                    strings.TrimSpace(*peerToken),
+		PeerAllowlist:                *peerAllowlist,
 		AssignNodes:                  *assignNodes,
 		Logger:                       logger,
 	}

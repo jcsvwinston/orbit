@@ -66,6 +66,14 @@ Treat access to the agent listener as fleet-write access. An unauthenticated
 one lets any host on the network register as an agent and feed the fleet
 plane.
 
+The servers of a fleet speak to each other on the same listener, and by
+default any caller that passes the agents' authentication may act as one
+of them: announce a server and the nodes and events behind it.
+**`--peer-allowlist`** accepts a peer only when it is a server this one
+dials (`--peers`) and, under mutual TLS, only when its certificate is named
+after that server; Orbit 2.0 applies it on every server. See
+[A fleet of servers](../cluster/server.md#a-fleet-of-servers).
+
 ## The /healthz exemption
 
 `/healthz` answers `200 ok` on **both** listeners, and on the metrics listener,
@@ -242,6 +250,9 @@ you would any metrics port.
       **not** passed on the command line in production — use
       `NUCLEUS_ADMIN_AGENT_TOKEN` from a root-only environment file.
 - [ ] `--insecure-agent-listener` **not** set.
+- [ ] In a fleet of servers, `--peer-allowlist` set, every server listed in
+      the `--peers` of the servers it exchanges nodes with, and — under
+      mutual TLS — each server's certificate named after its `--server-id`.
 - [ ] UI listener behind an SSO reverse proxy; `--ui-trusted-cidrs`
       narrowed to the proxy's real source range.
 - [ ] `--ui-proxy-secret` set and echoed by the proxy in

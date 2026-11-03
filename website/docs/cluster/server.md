@@ -317,6 +317,27 @@ evaluates it), and the audit log of what its own panels did. There is no
 leader and no discovery: the list of peers is configuration, and every
 server decides with what it sees.
 
+**Who may be a peer.** The peer service is mounted on every server's agent
+listener, behind the agents' authentication, so by default any caller with
+the agent token — or with any certificate the agents' CA signed — can open
+it, announce a server, and list nodes and relay events under any node id.
+`--peer-allowlist` (env `NUCLEUS_ADMIN_PEER_ALLOWLIST=1`) accepts a peer
+only when it is a server this one dials: the server id it announces must be
+the one that answers at one of this server's `--peers` endpoints, and, when
+it presents a verified client certificate, the certificate's Common Name
+must be that server id. Anything else is refused with `PermissionDenied`
+and a WARN. List every server in the `--peers` of every server it exchanges
+nodes with, and under mutual TLS name each server's certificate after its
+`--server-id`. Without client certificates the check compares names, not
+credentials: a holder of the agent token who knows a peer's server id can
+still announce it.
+
+Without the flag nothing is refused, and each peer the check would refuse
+is logged once per server id as a WARN. **Orbit 2.0 applies the check on
+every server**; turning the flag on now is how a fleet finds out what the
+major refuses. The notice is `DEP-2026-005` in the repository's
+`docs/deprecations/`.
+
 A reconnect under an existing node id ends the previous stream: the old
 peer gets an error, and anything it still sends is dropped rather than
 shown as the node.
