@@ -56,6 +56,16 @@ type Mesh struct {
 	cfg  Config
 	mu   sync.RWMutex
 	live map[string]*peerLink // endpoint → open outbound link
+
+	// answered is, per configured endpoint, the server_id the server there
+	// answered with on this server's own link — kept after the link drops,
+	// so a peer that reconnects is still known. It is what makes a peer
+	// "configured" (Configured, AwaitConfigured): the --peers list names
+	// endpoints, and only dialling one says which server sits behind it.
+	answered map[string]string
+	// learned is closed and replaced whenever answered changes, so a
+	// caller waiting for an answer wakes up without polling.
+	learned chan struct{}
 }
 
 type peerLink struct {
@@ -81,7 +91,7 @@ func New(cfg Config) *Mesh {
 	if cfg.MaxBackoff <= 0 {
 		cfg.MaxBackoff = 30 * time.Second
 	}
-	return &Mesh{cfg: cfg, live: map[string]*peerLink{}}
+	return &Mesh{cfg: cfg, live: map[string]*peerLink{}, answered: map[string]string{}, learned: make(chan struct{})}
 }
 
 // Enabled reports whether any peer is configured.
@@ -168,7 +178,9 @@ func (m *Mesh) session(ctx context.Context, endpoint string) error {
 		}
 	}
 
-	// The peer answers with its own hello: that is acceptance.
+	// The peer answers with its own hello, which names it; a peer running
+	// --peer-allowlist answers before it decides, and a refusal follows as
+	// the stream's error.
 	recvErr := make(chan error, 1)
 	go func() {
 		for {
@@ -181,6 +193,7 @@ func (m *Mesh) session(ctx context.Context, endpoint string) error {
 				m.mu.Lock()
 				link.serverID = h.GetServerId()
 				m.mu.Unlock()
+				m.learn(endpoint, h.GetServerId())
 			}
 		}
 	}()
@@ -306,6 +319,86 @@ func (m *Mesh) Self() string {
 		return ""
 	}
 	return strings.TrimSpace(m.cfg.AgentEndpoint)
+}
+
+// learn records the server_id that answered on the link to endpoint.
+func (m *Mesh) learn(endpoint, serverID string) {
+	serverID = strings.TrimSpace(serverID)
+	if serverID == "" {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.answered[endpoint] == serverID {
+		return
+	}
+	m.answered[endpoint] = serverID
+	close(m.learned)
+	m.learned = make(chan struct{})
+}
+
+// dialled is the configured endpoints this server opens a link to: every
+// --peers entry except its own.
+func (m *Mesh) dialled() []string {
+	self := strings.TrimSpace(m.cfg.AgentEndpoint)
+	out := make([]string, 0, len(m.cfg.Peers))
+	for _, ep := range Sorted(m.cfg.Peers) {
+		if ep != self {
+			out = append(out, ep)
+		}
+	}
+	return out
+}
+
+// Configured reports whether serverID is a configured peer: the server
+// that answered on this server's own link to one of its --peers endpoints.
+// pending is true while some configured endpoint has not answered yet.
+func (m *Mesh) Configured(serverID string) (configured, pending bool) {
+	if m == nil {
+		return false, false
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, ep := range m.dialled() {
+		id, ok := m.answered[ep]
+		if !ok {
+			pending = true
+			continue
+		}
+		if id == serverID {
+			return true, false
+		}
+	}
+	return false, pending
+}
+
+// AwaitConfigured is Configured for an inbound peer, which may call before
+// this server's own link to it has heard the answer — two servers that
+// start together dial each other at once. While a configured endpoint has
+// not answered, it waits for it, up to within; it returns as soon as the
+// answer is known either way.
+func (m *Mesh) AwaitConfigured(ctx context.Context, serverID string, within time.Duration) bool {
+	if m == nil {
+		return false
+	}
+	timer := time.NewTimer(within)
+	defer timer.Stop()
+	for {
+		m.mu.RLock()
+		learned := m.learned
+		m.mu.RUnlock()
+		configured, pending := m.Configured(serverID)
+		if configured || !pending {
+			return configured
+		}
+		select {
+		case <-learned:
+		case <-ctx.Done():
+			return false
+		case <-timer.C:
+			return false
+		}
+	}
 }
 
 func (m *Mesh) newClient(endpoint string) adminv1connect.PeerServiceClient {

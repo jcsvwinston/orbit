@@ -113,6 +113,7 @@ func New(cfg Config) *Server {
 		HeartbeatGrace: cfg.AgentInactivityTimeout,
 
 		BindIdentityToCertificate: cfg.AgentIdentityFromCertificate,
+		PeerAllowlist:             cfg.PeerAllowlist,
 	}
 
 	// A (re)connecting agent immediately receives the current aggregate
@@ -391,7 +392,8 @@ func (s *Server) Run(ctx context.Context) error {
 		}
 		go s.state.Peers.Run(ctx)
 		s.logger.Info("admin server joins a fleet of servers",
-			"server_id", s.cfg.ServerID, "peers", peers.Sorted(s.cfg.PeerAddrs), "assign_nodes", s.cfg.AssignNodes)
+			"server_id", s.cfg.ServerID, "peers", peers.Sorted(s.cfg.PeerAddrs), "assign_nodes", s.cfg.AssignNodes,
+			"peer_allowlist", s.cfg.PeerAllowlist)
 	}
 
 	errCh := make(chan error, 3)

@@ -55,6 +55,12 @@ type State struct {
 	// arrived with (server.Config.AgentIdentityFromCertificate). When
 	// false a mismatch is registered as declared and logged as a WARN.
 	BindIdentityToCertificate bool
+
+	// PeerAllowlist refuses a PeerService.Sync from a server this one
+	// does not dial, or whose verified client certificate names another
+	// server (server.Config.PeerAllowlist). When false such a peer is
+	// accepted and logged once per server_id as a WARN.
+	PeerAllowlist bool
 }
 
 // AgentService implements adminv1connect.AgentServiceHandler.
