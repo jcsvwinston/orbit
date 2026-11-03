@@ -20,6 +20,10 @@
 //     --agent-identity-from-cert binds each node to the Common Name of
 //     the certificate it presented: a registration under another node_id
 //     is refused (off by default: registered and WARNed).
+//     --peers links this server to the other servers' agent listeners;
+//     over https:// it trusts --peer-ca and presents --peer-cert/--peer-key,
+//     which default to --agent-client-ca and the --agent-cert/--agent-key
+//     pair when the agent listener runs mutual TLS.
 //   - --ui-addr (default :8080) — h2c + embedded UI; trusted-proxy headers
 //     and bearer fallback per --ui-* flags. --ui-proxy-secret adds a shared
 //     secret the proxy must echo before its identity header is trusted.
@@ -37,6 +41,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -87,8 +92,49 @@ func main() {
 }
 
 func run(args []string) error {
+	cfg, err := configFromArgs(args, os.Stderr)
+	if errors.Is(err, errExitEarly) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	logger := cfg.Logger
+
+	srv := server.New(cfg)
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	logger.Info("admin-server boot",
+		"agent_addr", cfg.AgentAddr,
+		"ui_addr", cfg.UIAddr,
+		"metrics_addr", cfg.MetricsAddr,
+		"agent_token_set", cfg.AgentToken != "",
+		"insecure_agent_listener", cfg.InsecureAgentListener,
+		"ui_bearer_set", cfg.UIBearerToken != "",
+		"ui_proxy_secret_set", cfg.UIProxySecret != "",
+		"agent_tls", cfg.AgentTLS != nil,
+		"agent_mtls", cfg.AgentTLS != nil && cfg.AgentTLS.ClientAuth == tls.RequireAndVerifyClientCert,
+		"ui_tls", cfg.UITLS != nil)
+
+	if err := srv.Run(ctx); err != nil {
+		return fmt.Errorf("admin-server: %w", err)
+	}
+	return nil
+}
+
+// errExitEarly is what configFromArgs returns when the arguments asked for
+// something other than a server: --help or --version, already answered.
+var errExitEarly = errors.New("exit early")
+
+// configFromArgs turns the command line and the environment into the
+// server's configuration, logging to stderr. It reads the files the flags
+// name (certificates, CA bundles, alert rules) but binds nothing, so a test
+// can build the configuration a deployment would run and start it itself.
+func configFromArgs(args []string, stderr io.Writer) (server.Config, error) {
 	fs := flag.NewFlagSet("admin-server", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(stderr)
 
 	agentAddr := fs.String("agent-addr", envOr("NUCLEUS_ADMIN_AGENT_ADDR", ":9090"), "agent listener address")
 	uiAddr := fs.String("ui-addr", envOr("NUCLEUS_ADMIN_UI_ADDR", ":8080"), "UI/operator listener address")
@@ -121,6 +167,9 @@ func run(args []string) error {
 	agentCert := fs.String("agent-cert", os.Getenv("NUCLEUS_ADMIN_AGENT_CERT"), "PEM cert for agent listener (enables TLS)")
 	agentKey := fs.String("agent-key", os.Getenv("NUCLEUS_ADMIN_AGENT_KEY"), "PEM key for agent listener")
 	agentClientCA := fs.String("agent-client-ca", os.Getenv("NUCLEUS_ADMIN_AGENT_CLIENT_CA"), "PEM CA bundle; when set, agents must present a client certificate signed by it (mutual TLS; requires --agent-cert/--agent-key)")
+	peerCA := fs.String("peer-ca", os.Getenv("NUCLEUS_ADMIN_PEER_CA"), "PEM CA bundle the agent-listener certificates of https:// peers must chain to; default the --agent-client-ca bundle when set, otherwise the system trust store")
+	peerCert := fs.String("peer-cert", os.Getenv("NUCLEUS_ADMIN_PEER_CERT"), "PEM client certificate presented to https:// peers, whose agent listeners require one under mutual TLS (with --peer-key; its extended key usage must include clientAuth); default the --agent-cert/--agent-key pair when --agent-client-ca is set")
+	peerKey := fs.String("peer-key", os.Getenv("NUCLEUS_ADMIN_PEER_KEY"), "PEM key for --peer-cert")
 	uiCert := fs.String("ui-cert", os.Getenv("NUCLEUS_ADMIN_UI_CERT"), "PEM cert for UI listener (enables TLS)")
 	uiKey := fs.String("ui-key", os.Getenv("NUCLEUS_ADMIN_UI_KEY"), "PEM key for UI listener")
 	logLevel := fs.String("log-level", envOr("NUCLEUS_ADMIN_LOG_LEVEL", "info"), "log level: debug | info | warn | error")
@@ -130,16 +179,16 @@ func run(args []string) error {
 
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			return nil
+			return server.Config{}, errExitEarly
 		}
-		return err
+		return server.Config{}, err
 	}
 	if *versionFlag {
 		fmt.Println("nucleus-admin-server " + buildVersion())
-		return nil
+		return server.Config{}, errExitEarly
 	}
 
-	logger := newLogger(*logLevel, *logFormat)
+	logger := newLogger(*logLevel, *logFormat, stderr)
 
 	cfg := server.Config{
 		AgentAddr:             *agentAddr,
@@ -172,12 +221,12 @@ func run(args []string) error {
 	if path := strings.TrimSpace(*alertRulesFile); path != "" {
 		f, err := os.Open(path)
 		if err != nil {
-			return fmt.Errorf("alert rules: %w", err)
+			return server.Config{}, fmt.Errorf("alert rules: %w", err)
 		}
 		rules, err := alerts.ParseRules(f)
 		_ = f.Close()
 		if err != nil {
-			return fmt.Errorf("alert rules %s: %w", path, err)
+			return server.Config{}, fmt.Errorf("alert rules %s: %w", path, err)
 		}
 		cfg.AlertRules = rules
 	}
@@ -186,7 +235,7 @@ func run(args []string) error {
 		for _, h := range hooks {
 			name, url, ok := strings.Cut(h, "=")
 			if !ok {
-				return fmt.Errorf("--alert-webhooks: want name=url, got %q", h)
+				return server.Config{}, fmt.Errorf("--alert-webhooks: want name=url, got %q", h)
 			}
 			cfg.AlertWebhooks[strings.TrimSpace(name)] = strings.TrimSpace(url)
 		}
@@ -204,11 +253,11 @@ func run(args []string) error {
 	if *agentCert != "" || *agentKey != "" || *agentClientCA != "" {
 		tc, err := loadTLS(*agentCert, *agentKey, logger)
 		if err != nil {
-			return fmt.Errorf("agent TLS: %w", err)
+			return server.Config{}, fmt.Errorf("agent TLS: %w", err)
 		}
 		if strings.TrimSpace(*agentClientCA) != "" {
 			if err := requireClientCerts(tc, *agentClientCA); err != nil {
-				return fmt.Errorf("agent TLS: %w", err)
+				return server.Config{}, fmt.Errorf("agent TLS: %w", err)
 			}
 		}
 		cfg.AgentTLS = tc
@@ -216,35 +265,90 @@ func run(args []string) error {
 	if *uiCert != "" || *uiKey != "" {
 		tc, err := loadTLS(*uiCert, *uiKey, logger)
 		if err != nil {
-			return fmt.Errorf("ui TLS: %w", err)
+			return server.Config{}, fmt.Errorf("ui TLS: %w", err)
 		}
 		cfg.UITLS = tc
 	}
-
-	srv := server.New(cfg)
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
-	logger.Info("admin-server boot",
-		"agent_addr", cfg.AgentAddr,
-		"ui_addr", cfg.UIAddr,
-		"metrics_addr", cfg.MetricsAddr,
-		"agent_token_set", cfg.AgentToken != "",
-		"insecure_agent_listener", cfg.InsecureAgentListener,
-		"ui_bearer_set", cfg.UIBearerToken != "",
-		"ui_proxy_secret_set", cfg.UIProxySecret != "",
-		"agent_tls", cfg.AgentTLS != nil,
-		"agent_mtls", cfg.AgentTLS != nil && cfg.AgentTLS.ClientAuth == tls.RequireAndVerifyClientCert,
-		"ui_tls", cfg.UITLS != nil)
-
-	if err := srv.Run(ctx); err != nil {
-		return fmt.Errorf("admin-server: %w", err)
+	peerTLS, err := resolvePeerTLS(peerTLSFiles{
+		ca: *peerCA, cert: *peerCert, key: *peerKey,
+		agentClientCA: *agentClientCA, agentCert: *agentCert, agentKey: *agentKey,
+		peers: cfg.PeerAddrs,
+	}, logger)
+	if err != nil {
+		return server.Config{}, fmt.Errorf("peer TLS: %w", err)
 	}
-	return nil
+	cfg.PeerTLS = peerTLS
+	return cfg, nil
 }
 
-func newLogger(level, format string) *slog.Logger {
+// peerTLSFiles is what resolvePeerTLS decides from: the --peer-* flags, the
+// agent listener's own TLS flags, and the peers they are for.
+type peerTLSFiles struct {
+	ca, cert, key                      string
+	agentClientCA, agentCert, agentKey string
+	peers                              []string
+}
+
+// resolvePeerTLS builds the client side of the links to the peers
+// (server.Config.PeerTLS). The --peer-* flags win, each for its own part.
+// What they leave unset comes from the agent listener when it runs mutual
+// TLS: a fleet that verifies its agents' certificates verifies its servers'
+// too, since peers speak on the agent listener, so the --agent-client-ca
+// bundle is the root the peers' certificates chain to and the
+// --agent-cert/--agent-key pair is the certificate this server presents.
+// With neither, the result is nil: the system trust store, no certificate.
+//
+// An explicit --peer-cert that cannot authenticate a client (its extended
+// key usage leaves out clientAuth) refuses to start: it was named for that
+// and only that. The agent certificate taken by default does not: it
+// serves the agent listener, which ran before this default existed, so a
+// certificate issued for serverAuth alone keeps the server starting, is
+// not presented, and leaves one WARN at start naming both ways out — when
+// there is an https:// peer for it to matter to.
+func resolvePeerTLS(f peerTLSFiles, logger *slog.Logger) (*tls.Config, error) {
+	ca, cert, key := strings.TrimSpace(f.ca), strings.TrimSpace(f.cert), strings.TrimSpace(f.key)
+	if (cert == "") != (key == "") {
+		return nil, errors.New("--peer-cert and --peer-key go together")
+	}
+	mutual := strings.TrimSpace(f.agentClientCA) != ""
+	if ca == "" && mutual {
+		ca = strings.TrimSpace(f.agentClientCA)
+	}
+	fromAgent := false
+	if cert == "" && mutual {
+		cert, key = strings.TrimSpace(f.agentCert), strings.TrimSpace(f.agentKey)
+		fromAgent = true
+	}
+	if ca == "" && cert == "" {
+		return nil, nil
+	}
+	tc, err := server.PeerTLSFromFiles(ca, cert, key, logger)
+	if fromAgent && errors.Is(err, server.ErrNotAClientCertificate) {
+		if httpsPeer(f.peers) {
+			logger.Warn("admin-server: the agent certificate cannot authenticate this server to its peers",
+				"agent_cert", cert,
+				"reason", "its extended key usage does not include clientAuth, and peers that verify client certificates refuse it in the handshake",
+				"hint", "reissue --agent-cert with clientAuth as well as serverAuth, or name a client certificate with --peer-cert/--peer-key")
+		}
+		return server.PeerTLSFromFiles(ca, "", "", logger)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("--peer-ca/--peer-cert/--peer-key: %w", err)
+	}
+	return tc, nil
+}
+
+// httpsPeer reports whether any peer endpoint is dialled over TLS.
+func httpsPeer(peers []string) bool {
+	for _, p := range peers {
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(p)), "https://") {
+			return true
+		}
+	}
+	return false
+}
+
+func newLogger(level, format string, w io.Writer) *slog.Logger {
 	var lvl slog.Level
 	switch strings.ToLower(strings.TrimSpace(level)) {
 	case "debug":
@@ -259,9 +363,9 @@ func newLogger(level, format string) *slog.Logger {
 	opts := &slog.HandlerOptions{Level: lvl}
 	switch strings.ToLower(strings.TrimSpace(format)) {
 	case "text":
-		return slog.New(slog.NewTextHandler(os.Stderr, opts))
+		return slog.New(slog.NewTextHandler(w, opts))
 	default:
-		return slog.New(slog.NewJSONHandler(os.Stderr, opts))
+		return slog.New(slog.NewJSONHandler(w, opts))
 	}
 }
 

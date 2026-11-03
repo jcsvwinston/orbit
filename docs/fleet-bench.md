@@ -88,17 +88,17 @@ left empty — counted as a gap and not as a detail.
 
 ## The result
 
-**50 of 50 controls present. 0 partial. 0 absent.**
+**51 of 51 controls present. 0 partial. 0 absent.**
 
 | family | present | partial | absent |
 |---|---|---|---|
 | alerts | 6 | 0 | 0 |
 | datasource | 12 | 0 | 0 |
-| ha | 5 | 0 | 0 |
+| ha | 6 | 0 | 0 |
 | identity | 10 | 0 | 0 |
 | retention | 7 | 0 | 0 |
 | ui | 10 | 0 | 0 |
-| **total** | **50** | **0** | **0** |
+| **total** | **51** | **0** | **0** |
 
 ### alerts — 6 present · 0 partial · 0 absent
 
@@ -166,7 +166,7 @@ declared one release before they were filled, for the reason `FDS-05` and
 `FDS-07` stayed partial after `S3`: the agent and the server pin the
 protocol by tag.
 
-### ha — 5 present · 0 partial · 0 absent
+### ha — 6 present · 0 partial · 0 absent
 
 | id | control | verdict | what is missing |
 |---|---|---|---|
@@ -175,6 +175,7 @@ protocol by tag.
 | `HA-03` | a UI subscribed on server B receives events from an agent connected to A | **present** | an event a local agent sends is relayed to every peer, which publishes it to its own UI subscribers and its replay ring; while a peer is connected the agents ship everything, since the mesh carries events, not the peers' filters (ADR-014). |
 | `HA-04` | agents are assigned across servers deterministically | **present** | with server.Config.AssignNodes each node is owned by one server, chosen by rendezvous hashing over this server and the peers it reaches; an agent that registers elsewhere is sent Command.redirect and reconnects to its owner, which it accepts only for an endpoint it is configured for. |
 | `HA-05` | a reconnect under the same node_id supersedes the previous stream: one node, no duplicates | **present** | the registry keeps one entry and the superseded stream is ENDED: the handler waits on its context as well as on Receive, returns Aborted to the old peer when a newer registration evicts it, and drops a frame that raced in after (OR-56). |
+| `HA-06` | two servers whose agent listeners verify client certificates form the mesh over https:// | **present** | peers speak on each other's agent listener, so under mutual TLS each server presents a client certificate (server.Config.PeerTLS, built by server.PeerTLSFromFiles); the admin-server binary defaults it to the --agent-client-ca bundle and the --agent-cert pair, or takes --peer-ca/--peer-cert/--peer-key. B lists the node an agent registered on A (OR-99: no flag filled PeerTLS and the links died in the handshake). |
 
 
 The `ha` family is **present** since A9 `S8`, and complete. Servers
@@ -194,6 +195,18 @@ since the mesh carries events and not the peers' filters. Three mutations
 turned probes red: a mesh that relays nothing (`HA-03`), a server that does
 not redirect (`HA-04`), a registry that ignores what a peer announces
 (`HA-02`).
+
+`HA-06` joined the family in A12 `M0-R`: the same mesh between two servers
+whose agent listeners require and verify a client certificate, the posture
+the security page recommends. Peers speak on each other's agent listener, so
+each one has to present a certificate; until then nothing in the binary gave
+the links one (`server.Config.PeerTLS` had no flag), every handshake failed,
+and no probe ran the mesh over TLS — the five controls above all peer over
+h2c. The probe configures each server the way the binary now does by
+default under `--agent-client-ca`: the listener from its certificate files,
+the peer links from the same CA bundle and certificate pair
+(`server.PeerTLSFromFiles`), and reads a node registered on A from B's
+registry.
 
 ### identity — 10 present · 0 partial · 0 absent
 

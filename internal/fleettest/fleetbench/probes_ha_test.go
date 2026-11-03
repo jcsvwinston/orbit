@@ -5,7 +5,14 @@ package fleetbench
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
+	"net"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -325,4 +332,77 @@ func probeSameNodeIDSupersedes(t *testing.T, e *env) verdict {
 		return present
 	}
 	return partial
+}
+
+// HA-06: two servers whose agent listeners require and verify a client
+// certificate form the mesh over https://. Each is configured the way the
+// admin-server binary configures itself by default under mutual TLS: the
+// listener from the certificate files with the CA bundle as ClientCAs, and
+// the peer links from the same CA bundle and certificate pair.
+func probeMeshOverMutualTLS(t *testing.T, e *env) verdict {
+	ca := newTestCA(t)
+	dir := t.TempDir()
+	caFile := filepath.Join(dir, "ca.crt")
+	if err := os.WriteFile(caFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.caCert.Raw}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// One certificate per server, valid on both ends of a link: serverAuth
+	// for its own listener, clientAuth for the links it opens.
+	files := func(name string) (certFile, keyFile string) {
+		leaf, _ := ca.issue(t, name, x509.ExtKeyUsageServerAuth, net.ParseIP("127.0.0.1"))
+		leaf.Leaf.ExtKeyUsage = append(leaf.Leaf.ExtKeyUsage, x509.ExtKeyUsageClientAuth)
+		der, err := x509.CreateCertificate(rand.Reader, leaf.Leaf, ca.caCert, leaf.Leaf.PublicKey, ca.caKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		certFile, keyFile = filepath.Join(dir, name+".crt"), filepath.Join(dir, name+".key")
+		writeKeyPair(t, certFile, keyFile, tls.Certificate{Certificate: [][]byte{der}, PrivateKey: leaf.PrivateKey}, time.Now())
+		return certFile, keyFile
+	}
+	mk := func(id, addr, peer, certFile, keyFile string) server.Config {
+		listener, err := server.TLSFromFiles(certFile, keyFile, discardLogger())
+		if err != nil {
+			t.Fatal(err)
+		}
+		listener.ClientCAs = ca.pool
+		listener.ClientAuth = tls.RequireAndVerifyClientCert
+		peerTLS, err := server.PeerTLSFromFiles(caFile, certFile, keyFile, discardLogger())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return server.Config{
+			AgentAddr: addr, ServerID: id, AgentAdvertiseAddr: "https://" + addr,
+			AgentTLS: listener, PeerAddrs: []string{peer}, PeerTLS: peerTLS,
+		}
+	}
+	pa, pb := "127.0.0.1:"+freePort(t), "127.0.0.1:"+freePort(t)
+	certA, keyA := files("fb-mtls-a")
+	certB, keyB := files("fb-mtls-b")
+	a := e.startServer(t, mk("fb-mtls-a", pa, "https://"+pb, certA, keyA))
+	b := e.startServer(t, mk("fb-mtls-b", pb, "https://"+pa, certB, keyB))
+
+	ag := e.startAgent(t, agent.Config{
+		Endpoints: []string{"https://" + pa}, TLS: ca.clientTLSWithCert(t, "fb-mtls-node"), NodeIDOverride: "fb-mtls-node",
+	})
+	if !waitRegistered(a.Server, ag.NodeID(), 4*time.Second) {
+		t.Fatal("the agent did not register with server A over mutual TLS")
+	}
+	var via string
+	listed := pollUntil(5*time.Second, func() bool {
+		e, ok := b.State().Nodes.Lookup(ag.NodeID())
+		if ok {
+			via = e.Info.Via
+		}
+		return ok
+	})
+	if !listed {
+		t.Logf("server B does not list the node registered on A: the links between servers under mutual TLS carry nothing (A reaches %v, B reaches %v)",
+			a.State().Peers.LivePeers(), b.State().Peers.LivePeers())
+		return absent
+	}
+	if via != "fb-mtls-a" {
+		t.Logf("B lists the node via %q, want fb-mtls-a", via)
+		return partial
+	}
+	return present
 }

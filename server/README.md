@@ -165,8 +165,13 @@ collectors beside the runtime's.
 node registries (remote nodes carry the label `orbit.server`), relay events
 to each other's UIs and, with `--assign-nodes` and `--agent-advertise-addr`,
 assign each node to one server by rendezvous hashing and redirect its agent
-there (`server/peers`, ADR-014). Peers authenticate like agents
-(`--peer-token` defaults to the agent token).
+there (`server/peers`, ADR-014). Peers authenticate like agents:
+`--peer-token` defaults to the agent token, and over `https://` a server
+whose agent listener runs mutual TLS presents its `--agent-cert`/`--agent-key`
+pair to its peers and verifies theirs against `--agent-client-ca`;
+`--peer-ca`, `--peer-cert` and `--peer-key` name other files
+(`server.PeerTLSFromFiles` builds the same `Config.PeerTLS` in Go). The
+certificate presented must allow `clientAuth`.
 
 ## Sub-packages
 

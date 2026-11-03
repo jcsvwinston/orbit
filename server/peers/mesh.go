@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -107,6 +109,7 @@ func (m *Mesh) Run(ctx context.Context) {
 
 func (m *Mesh) runPeer(ctx context.Context, endpoint string) {
 	backoff := m.cfg.MinBackoff
+	var lastErr string
 	for {
 		start := time.Now()
 		err := m.session(ctx, endpoint)
@@ -115,8 +118,19 @@ func (m *Mesh) runPeer(ctx context.Context, endpoint string) {
 		}
 		if time.Since(start) > m.cfg.MaxBackoff {
 			backoff = m.cfg.MinBackoff // a session that lasted resets the wait
+			lastErr = ""
 		}
-		m.cfg.Logger.Debug("admin server: peer session ended", "peer", endpoint, "error", err, "retry_in", backoff)
+		// The first failure, and each one that differs from the failure
+		// before it, is a WARN: a link that never opens — a peer refusing
+		// this server's certificate, say — has to say why on the side that
+		// dials, not only as a handshake error in the peer's log. A retry
+		// that fails the same way again stays at DEBUG.
+		if msg := fmt.Sprint(err); msg != lastErr {
+			lastErr = msg
+			m.cfg.Logger.Warn("admin server: peer link down", "peer", endpoint, "error", err, "retry_in", backoff)
+		} else {
+			m.cfg.Logger.Debug("admin server: peer session ended", "peer", endpoint, "error", err, "retry_in", backoff)
+		}
 		select {
 		case <-ctx.Done():
 			return
@@ -146,11 +160,11 @@ func (m *Mesh) session(ctx context.Context, endpoint string) error {
 		hello.NodeIds = append(hello.NodeIds, n.NodeID)
 	}
 	if err := stream.Send(&adminv1.PeerFrame{Body: &adminv1.PeerFrame_Hello{Hello: hello}}); err != nil {
-		return err
+		return whySendFailed(stream, err)
 	}
 	for _, n := range local {
 		if err := stream.Send(&adminv1.PeerFrame{Body: &adminv1.PeerFrame_Node{Node: NodeToProto(n)}}); err != nil {
-			return err
+			return whySendFailed(stream, err)
 		}
 	}
 
@@ -212,6 +226,20 @@ func (m *Mesh) session(ctx context.Context, endpoint string) error {
 			}
 		}
 	}
+}
+
+// whySendFailed returns the error that ended the stream when Send reports
+// only io.EOF — what a Connect client stream does once the request has
+// failed, a refused TLS handshake among the causes; Receive carries the
+// cause. It is called before anything else reads the stream.
+func whySendFailed(stream *connect.BidiStreamForClient[adminv1.PeerFrame, adminv1.PeerFrame], err error) error {
+	if !errors.Is(err, io.EOF) {
+		return err
+	}
+	if _, rerr := stream.Receive(); rerr != nil && !errors.Is(rerr, io.EOF) {
+		return rerr
+	}
+	return err
 }
 
 // RelayEvent pushes an event a local agent sent to every open peer link.

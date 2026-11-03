@@ -2,6 +2,7 @@ package server
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -33,6 +34,78 @@ func TLSFromFiles(certFile, keyFile string, logger *slog.Logger) (*tls.Config, e
 		MinVersion:     tls.VersionTLS12,
 		GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) { return src.current(), nil },
 	}, nil
+}
+
+// ErrNotAClientCertificate reports a certificate whose extended key usage
+// leaves out client authentication. A TLS server that verifies client
+// certificates — a peer's agent listener under --agent-client-ca among
+// them — refuses it in the handshake, so a server presenting it to its
+// peers never joins their mesh.
+var ErrNotAClientCertificate = errors.New("the certificate's extended key usage does not include clientAuth")
+
+// PeerTLSFromFiles builds the client side of the links this server opens to
+// its peers (Config.PeerTLS) from PEM files.
+//
+// caFile, when non-empty, is the bundle the peers' agent-listener
+// certificates must chain to; empty keeps the system trust store. certFile
+// and keyFile, given together or not at all, are the client certificate
+// this server presents — what a peer whose agent listener verifies client
+// certificates requires. Like TLSFromFiles, the pair is read from the files
+// on every handshake that finds them changed, so a rotation needs no
+// restart; the first load must succeed, and its certificate must allow
+// client authentication (an extended key usage that includes clientAuth,
+// or none at all), or the configuration is refused with an error wrapping
+// ErrNotAClientCertificate. The CA bundle is read once.
+func PeerTLSFromFiles(caFile, certFile, keyFile string, logger *slog.Logger) (*tls.Config, error) {
+	cfg := &tls.Config{MinVersion: tls.VersionTLS12}
+	if strings.TrimSpace(caFile) != "" {
+		pemBytes, err := os.ReadFile(caFile)
+		if err != nil {
+			return nil, fmt.Errorf("read the peer CA bundle: %w", err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(pemBytes) {
+			return nil, fmt.Errorf("peer CA bundle %q: no PEM certificates found", caFile)
+		}
+		cfg.RootCAs = pool
+	}
+	hasCert, hasKey := strings.TrimSpace(certFile) != "", strings.TrimSpace(keyFile) != ""
+	if hasCert != hasKey {
+		return nil, errors.New("a peer client certificate needs both the certificate and the key file")
+	}
+	if !hasCert {
+		return cfg, nil
+	}
+	src, err := newKeyPairFiles(certFile, keyFile, logger)
+	if err != nil {
+		return nil, err
+	}
+	leaf := src.cert.Leaf
+	if leaf == nil {
+		if leaf, err = x509.ParseCertificate(src.cert.Certificate[0]); err != nil {
+			return nil, fmt.Errorf("parse certificate %q: %w", certFile, err)
+		}
+	}
+	if !allowsClientAuth(leaf) {
+		return nil, fmt.Errorf("certificate %q: %w", certFile, ErrNotAClientCertificate)
+	}
+	cfg.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) { return src.current(), nil }
+	return cfg, nil
+}
+
+// allowsClientAuth answers what crypto/x509 asks when a server verifies a
+// client certificate: no extended key usage at all means any usage; a
+// list must name clientAuth (or anyExtendedKeyUsage).
+func allowsClientAuth(c *x509.Certificate) bool {
+	if len(c.ExtKeyUsage) == 0 && len(c.UnknownExtKeyUsage) == 0 {
+		return true
+	}
+	for _, u := range c.ExtKeyUsage {
+		if u == x509.ExtKeyUsageClientAuth || u == x509.ExtKeyUsageAny {
+			return true
+		}
+	}
+	return false
 }
 
 // keyPairFiles is the reloading source behind TLSFromFiles. A copy of the
