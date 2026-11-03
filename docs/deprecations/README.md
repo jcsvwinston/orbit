@@ -83,3 +83,4 @@ specification and a changelog entry. Orbit has neither home:
 |---|---|---|---|
 | [`DEP-2026-001`](DEP-2026-001-node-identity-bound-to-certificate-by-default.md) | `server.Config.AgentIdentityFromCertificate` defaults to on under mutual TLS; `AllowSharedAgentCertificate` keeps today's regime | the next minor after `v1.19.3` | behaviour flip at `v2.0.0`, no earlier than 2027-01-17 |
 | [`DEP-2026-002`](DEP-2026-002-nucleus-datasource-adapter-leaves.md) | the `datasource/nucleus` adapter and the nil default of `orbit.Config.DataSource` / `agent.Config.DataSource` | the next minor after `v1.19.3` | removal at `v2.0.0`, no earlier than 2027-01-17 |
+| [`DEP-2026-004`](DEP-2026-004-system-pulse-drops-the-environment.md) | the `environment` field of the system snapshot moves from `system_pulse` to its own action, `system_env` | the next minor after `v1.20.1` | behaviour flip at `v2.0.0`, no earlier than 2027-02-07 |

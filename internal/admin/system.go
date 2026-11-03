@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jcsvwinston/nucleus/pkg/auth"
 	"github.com/jcsvwinston/nucleus/pkg/db"
 	"github.com/jcsvwinston/nucleus/pkg/outbox"
 	"github.com/jcsvwinston/nucleus/pkg/router"
@@ -25,6 +26,25 @@ import (
 const (
 	defaultSystemEnvLimit = 200
 	maxSystemEnvLimit     = 2000
+)
+
+// systemEnvAction is the RBAC action (on resource "admin:*") that lets an
+// operator read the process environment in the system snapshot. The
+// snapshot itself is gated by system_pulse; system_env widens it and opens
+// nothing on its own.
+//
+// In 1.x an operator holding system_pulse without system_env still gets the
+// environment, and the panel logs one WARN per operator per process naming
+// DEP-2026-004: at Orbit 2.0 system_pulse no longer includes it, and that
+// operator gets an empty environment list. The tests that pin the 1.x
+// behaviour are named in docs/deprecations/DEP-2026-004-*.md.
+const systemEnvAction = "system_env"
+
+// systemEnvDeprecation is the WARN an operator reaching the environment
+// through system_pulse alone produces, once per operator per process.
+const (
+	systemEnvDeprecation     = "orbit: the system snapshot serves the process environment to an operator without system_env; system_pulse stops including it at Orbit 2.0 (DEP-2026-004)"
+	systemEnvDeprecationHint = "grant the system_env action on admin:* to the operators who need the environment; the others need nothing"
 )
 
 type systemSnapshotResponse struct {
@@ -163,10 +183,52 @@ func (p *Panel) handleSystemSnapshot(c *router.Context) error {
 			TraceLinksConfigured: strings.TrimSpace(p.config.TraceURLTemplate) != "",
 			TraceURLTemplate:     strings.TrimSpace(p.config.TraceURLTemplate),
 		},
-		Environment: p.systemEnvironmentRows(limit),
+		Environment: p.systemEnvironmentFor(r, limit),
 	}
 
 	return c.JSON(http.StatusOK, resp)
+}
+
+// systemEnvironmentFor is the environment the snapshot serves to r's
+// operator, who already holds system_pulse. A superuser, an operator
+// granted system_env and the open posture (no auth provider, warned at
+// mount) get it; an operator holding system_pulse alone gets it too in 1.x,
+// with the DEP-2026-004 WARN once per operator per process.
+func (p *Panel) systemEnvironmentFor(r *http.Request, limit int) []systemEnvVar {
+	if p.config.Auth == nil {
+		return p.systemEnvironmentRows(limit)
+	}
+	user, err := p.authenticatedUser(r)
+	if err != nil || user == nil {
+		return []systemEnvVar{}
+	}
+	if user.IsSuperuser || p.userCan(user, "*", systemEnvAction) {
+		return p.systemEnvironmentRows(limit)
+	}
+	p.warnSystemEnvThroughPulse(user)
+	return p.systemEnvironmentRows(limit)
+}
+
+// warnSystemEnvThroughPulse logs the DEP-2026-004 WARN the first time user
+// reads the environment without system_env in this process. The overview
+// and the system page poll the snapshot, so a WARN per request would bury
+// the log; once per operator names everyone the change at 2.0 affects.
+func (p *Panel) warnSystemEnvThroughPulse(user *auth.User) {
+	if p.logger == nil {
+		return
+	}
+	key := strings.TrimSpace(user.ID)
+	if key == "" {
+		key = "username:" + strings.TrimSpace(user.Username)
+	}
+	if _, seen := p.bootEnvWarned.LoadOrStore(key, struct{}{}); seen {
+		return
+	}
+	p.logger.Warn(systemEnvDeprecation,
+		"operator_id", user.ID,
+		"operator", user.Username,
+		"role", user.Role,
+		"hint", systemEnvDeprecationHint)
 }
 
 func (p *Panel) systemOutboxSnapshot() outbox.RuntimeSnapshot {

@@ -649,6 +649,40 @@ database connection pool.
 
 ![System Pulse showing live runtime metrics of the showcase application: goroutine and heap-allocation counters, a runtime trend chart, database pool health, and outbox delivery state](./img/orbit-system-pulse-light.png)
 
+### Who reads the process environment
+
+The snapshot behind this screen and the overview (`GET /api/system/snapshot`)
+is authorized by the `system_pulse` action on `admin:*`. It also carries the
+environment of the application's process (`environment`: up to `env_limit`
+variables, 200 by default and 2,000 at most), which has its own action,
+`system_env` on `admin:*`:
+
+| Operator | The snapshot | `environment` |
+|---|---|---|
+| superuser | served | served |
+| `system_pulse` and `system_env` | served | served |
+| `system_pulse` only | served | served, with a warning in the log (below) |
+| `system_env` only, or neither | `403` | — |
+
+`system_env` widens `system_pulse`; on its own it opens nothing, because the
+environment is read through the snapshot.
+
+A variable whose name marks it as secret-bearing — it contains `URL`, `URI`,
+`DSN`, `CONN`, `PASS`, `PWD`, `AUTH`, `CRED`, `PRIVATE`, `KEY`, `SECRET` or
+`TOKEN` — is served as `***`, and the password of a `user:password@` URL in
+any other value is redacted. The rest is served as the process holds it:
+`HOME`, `PATH`, `USER`, host names and whatever else the deployment exports.
+Grant `system_env` to the operators who need that, not to everyone who
+watches the runtime.
+
+**`system_pulse` stops including the environment at Orbit 2.0**: an operator
+who holds it without `system_env` then gets `"environment": []`, and the rest
+of the snapshot is unchanged. Until then that operator still reads the
+environment, and the panel logs one warning the first time each such
+operator does so in the process, naming the operator and `system_env` — the
+log lists who to grant it to. The notice is `DEP-2026-004` in the
+repository's `docs/deprecations/`.
+
 ## Audit log
 
 A trail of admin actions, kept **in the database** the panel already uses: a
