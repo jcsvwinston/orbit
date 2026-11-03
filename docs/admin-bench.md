@@ -2104,6 +2104,44 @@ records `partial` when the flow does not work there. `DS-13` reads the stored
 export and its download in that second run (its first run reads the
 streamed CSV, which never touches the store).
 
+## The operator's tenant (OR-80, OR-87)
+
+With `multitenant_enabled` on, the panel confined each request to the tenant
+the host resolved for it, and the operator account had no tenant of its own.
+With Nucleus' `header` resolver the resolved tenant is a header the client
+sends, so a plain operator of one tenant — no superuser rights, no
+`tenant_switch` — who was refused `?tenant=<other>` listed, exported, read by
+id and created rows in the other tenant by naming it in that header.
+
+An operator account now carries a tenant (`nucleus_admin_users.tenant_id`,
+`tenant_id` in the operator API). An operator bound to one who may not switch
+tenants is confined to it whatever the request resolves: a request that
+resolves another tenant is refused with `403`, as `?tenant=` naming it is,
+and one that resolves none opens their tenant. An operator with no tenant
+follows the resolver as before, with a WARN once per process; at v2.0.0 that
+operator is refused (`DEP-2026-003`).
+
+**`CUST-07`** (HTTP) measured none of this (OR-87): it booted a two-tenant
+application and called a `200` on `?tenant=globex` from the superuser
+"present". Its probe now boots one with Nucleus' header resolver, seeds a row
+in each tenant, creates through the operator API an operator bound to one of
+them with `list`, `retrieve`, `create` and `export_csv` on the model and no
+`tenant_switch`, and reads that their list and CSV export hold their
+tenant's row only, the other tenant's row by id is not found, and naming the
+other tenant in the header neither shows its rows (list, record, export,
+`?tenant=`) nor writes one there. Imports and fixtures under a tenant are not
+in it: they are OR-79's.
+
+### What the work found that was not on the plan
+
+- **CHANGED — a bound operator on a request that resolves no tenant works in
+  their tenant**, where an operator without one is refused for want of a
+  tenant. The tenant on a superuser's or a `tenant_switch` holder's account
+  does not confine them.
+- Nucleus lower-cases the tenant it resolves, and the panel compares tenants
+  exactly: a tenant bound as `Acme` is never the one a request resolves. The
+  documentation says to write it as the host resolves it.
+
 Verified by breaking it:
 
 | mutation | what fails |
@@ -2111,3 +2149,10 @@ Verified by breaking it:
 | the parent commit's server | `DS-13` (download `403`), `DS-14` (validate `500`, `acme/acme/_tmp/import_…`), `DS-15` (load `500`, `acme/acme/_tmp/fixture_…`); `TestTenantStorageKeys_*` in `internal/admin` |
 
 The HTTP bench is unchanged at 72 of 72; the browser half stays at 18 of 18.
+| the account's tenant not applied | `CUST-07`; `TestTenantBinding_BoundOperatorCannotReachAnotherTenantThroughTheResolver`, `TestTenantBinding_OperatorMissingFromTheStoreIsRefused`, `TestTenantBinding_UnboundOperatorFollowsTheResolverAndWarns` |
+| another resolved tenant confined to the account's instead of refused | `CUST-07`; `TestTenantBinding_BoundOperatorCannotReachAnotherTenantThroughTheResolver` |
+| the account's tenant applied to superusers and `tenant_switch` holders | `TestTenantBinding_SwitchersAreNotConfinedByTheirAccountTenant`, and the two tests that read the WARN |
+| the WARN said on every request | `TestTenantBinding_UnboundOperatorFollowsTheResolverAndWarns`, and only that one |
+
+The HTTP bench is unchanged at 72 of 72: `CUST-07` stays present, now for
+the reason its title gives.

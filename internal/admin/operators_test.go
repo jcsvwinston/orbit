@@ -344,3 +344,135 @@ func openAdminUsersTestDB(t *testing.T) *sql.DB {
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	return sqlDB
 }
+
+// An operator's tenant (OR-80, DEP-2026-003) is set at creation, kept by an
+// edit that does not name it — the panel's own screen sends email and
+// is_superuser only — changed or cleared by one that does, and audited.
+func TestOperators_TenantIsSetKeptAndCleared(t *testing.T) {
+	env := newOperatorEnv(t)
+
+	status, created := env.do(t, http.MethodPost, "/api/admin-users",
+		`{"username":"ana","email":"ana@example.com","password":"a-long-enough-password","tenant_id":" acme "}`)
+	if status != http.StatusCreated {
+		t.Fatalf("create = %d, want 201: %v", status, created)
+	}
+	if created["tenant_id"] != "acme" {
+		t.Fatalf("created tenant_id = %v, want the trimmed acme", created["tenant_id"])
+	}
+	id := created["id"].(string)
+	tenantColumn := func() sql.NullString {
+		t.Helper()
+		var v sql.NullString
+		if err := env.sqlDB.QueryRow(`SELECT tenant_id FROM nucleus_admin_users WHERE id = ?`, id).Scan(&v); err != nil {
+			t.Fatalf("read tenant_id: %v", err)
+		}
+		return v
+	}
+	if got := tenantColumn(); !got.Valid || got.String != "acme" {
+		t.Fatalf("stored tenant_id = %+v, want acme", got)
+	}
+
+	status, got := env.do(t, http.MethodGet, "/api/admin-users/"+id, "")
+	if status != http.StatusOK || got["tenant_id"] != "acme" {
+		t.Fatalf("get = %d %v, want tenant_id acme", status, got)
+	}
+
+	status, got = env.do(t, http.MethodPut, "/api/admin-users/"+id, `{"email":"ana@acme.example"}`)
+	if status != http.StatusOK || got["tenant_id"] != "acme" {
+		t.Fatalf("an edit that does not name the tenant = %d %v, want tenant_id kept", status, got)
+	}
+
+	status, got = env.do(t, http.MethodPut, "/api/admin-users/"+id, `{"tenant_id":"globex"}`)
+	if status != http.StatusOK || got["tenant_id"] != "globex" {
+		t.Fatalf("rebind = %d %v, want tenant_id globex", status, got)
+	}
+	entries := env.panel.audit.list(auditQueryOpts{Action: "operator.update", RecordID: id})
+	if len(entries) == 0 || entries[0].OldValue["tenant_id"] != "acme" || entries[0].NewValue["tenant_id"] != "globex" {
+		t.Fatalf("operator.update entry = %+v, want tenant_id acme -> globex", entries)
+	}
+
+	status, got = env.do(t, http.MethodPut, "/api/admin-users/"+id, `{"tenant_id":""}`)
+	if status != http.StatusOK || got["tenant_id"] != "" {
+		t.Fatalf("clear = %d %v, want tenant_id empty", status, got)
+	}
+	if v := tenantColumn(); v.Valid {
+		t.Fatalf("cleared tenant_id = %q, want NULL (an unbound operator reads like one from before the column)", v.String)
+	}
+
+	// "all" is every tenant on this panel, not a tenant to bind to.
+	for _, body := range []string{`{"tenant_id":"all"}`, `{"tenant_id":" ALL "}`} {
+		if status, got := env.do(t, http.MethodPut, "/api/admin-users/"+id, body); status != http.StatusBadRequest {
+			t.Errorf("PUT %s = %d %v, want 400", body, status, got)
+		}
+	}
+	if status, got := env.do(t, http.MethodPost, "/api/admin-users",
+		`{"username":"bob","email":"bob@example.com","password":"a-long-enough-password","tenant_id":"All"}`); status != http.StatusBadRequest {
+		t.Errorf("create with tenant_id All = %d %v, want 400", status, got)
+	}
+	if status, got := env.do(t, http.MethodPut, "/api/admin-users/"+id,
+		`{"tenant_id":"`+strings.Repeat("t", operatorTenantMaxLength+1)+`"}`); status != http.StatusBadRequest {
+		t.Errorf("an over-long tenant = %d %v, want 400", status, got)
+	}
+}
+
+// The schema gains tenant_id on a table created before the column existed,
+// and every operator already in it comes out unbound: the upgrade changes no
+// one's access.
+func TestEnsureAdminUsersTenantColumn_AddsItToAnOldTable(t *testing.T) {
+	sqlDB := openAdminUsersTestDB(t)
+	if _, err := sqlDB.Exec(`CREATE TABLE nucleus_admin_users (
+		id TEXT PRIMARY KEY, username TEXT, email TEXT,
+		password_hash TEXT, is_superuser INTEGER,
+		is_active INTEGER NOT NULL DEFAULT 1,
+		created_at TEXT, updated_at TEXT)`); err != nil {
+		t.Fatalf("create old table: %v", err)
+	}
+	if _, err := sqlDB.Exec(`INSERT INTO nucleus_admin_users VALUES ('1','old','old@example.com','h',0,1,'','')`); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	if err := EnsureBootstrapAdminUsersSchema(context.Background(), sqlDB, "sqlite"); err != nil {
+		t.Fatalf("ensure schema on an old table: %v", err)
+	}
+	store := &operatorStore{db: sqlDB, table: defaultAdminUsersTable, system: "sqlite"}
+	tenant, err := store.tenantOf(context.Background(), "1")
+	if err != nil || tenant != "" {
+		t.Fatalf("tenantOf(existing operator) = %q, %v; want unbound", tenant, err)
+	}
+	if _, err := store.tenantOf(context.Background(), "nobody"); err != errOperatorNotFound {
+		t.Fatalf("tenantOf(unknown id) error = %v, want errOperatorNotFound", err)
+	}
+	records, err := store.list(context.Background())
+	if err != nil || len(records) != 1 || records[0].TenantID != "" {
+		t.Fatalf("list after the upgrade = %+v, %v; want the operator, unbound", records, err)
+	}
+
+	// The fallback for a dialect without a placeholder style reads the same.
+	if _, err := sqlDB.Exec(`UPDATE nucleus_admin_users SET tenant_id = 'acme' WHERE id = '1'`); err != nil {
+		t.Fatal(err)
+	}
+	unbound := &operatorStore{db: sqlDB, table: defaultAdminUsersTable, system: ""}
+	if tenant, err := unbound.tenantOf(context.Background(), "1"); err != nil || tenant != "acme" {
+		t.Fatalf("tenantOf without a dialect = %q, %v; want acme", tenant, err)
+	}
+
+	if err := EnsureBootstrapAdminUsersSchema(context.Background(), sqlDB, "sqlite"); err != nil {
+		t.Fatalf("second ensure: %v", err)
+	}
+}
+
+// The column is in the CREATE of every dialect, nullable, so a fresh
+// install does not need the ALTER.
+func TestBootstrapAdminUsersTableDDL_TenantColumn(t *testing.T) {
+	for system, want := range map[string]string{
+		"sqlite":     "tenant_id VARCHAR(191)\n",
+		"postgresql": "tenant_id VARCHAR(191)\n",
+		"mysql":      "tenant_id VARCHAR(191)\n",
+		"mssql":      "tenant_id NVARCHAR(191) NULL",
+		"oracle":     "tenant_id VARCHAR2(191)\n",
+	} {
+		if ddl := bootstrapAdminUsersTableDDL(system); !strings.Contains(ddl, want) {
+			t.Errorf("%s DDL does not declare %q:\n%s", system, want, ddl)
+		}
+	}
+}

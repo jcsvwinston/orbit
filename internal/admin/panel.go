@@ -107,7 +107,11 @@ type PanelConfig struct {
 	// admin:*, may switch the request to another tenant or to all of them
 	// with ?tenant=; every switch is audited. The confinement trusts the
 	// resolver: a tenant read from a header the client controls is the
-	// client's choice, not the host's.
+	// client's choice, not the host's — except for an operator whose
+	// account names a tenant (OR-80): one who may not switch is confined to
+	// it, and a request that resolves another tenant is refused. An
+	// operator with no tenant follows the resolver, with a WARN once per
+	// process, until v2.0.0 refuses them (DEP-2026-003).
 	MultiTenantEnabled    bool     // whether multi-tenant mode is active
 	MultiTenantDefault    string   // default tenant ID when none resolved
 	MultiTenantAutoFilter bool     // confine Data Studio to the request's tenant (default true when multi-tenant enabled)
@@ -235,6 +239,12 @@ type Panel struct {
 	// HOST process, not just the panel.
 	tenantFieldsMu sync.RWMutex
 	tenantFields   map[string]string
+
+	// unboundOperators records, by operator id, the operators already
+	// warned about having no tenant in a multi-tenant application
+	// (DEP-2026-003): the WARN is said once per operator per process, not
+	// once per request.
+	unboundOperators sync.Map
 
 	// modelActions is the compiled table of application-defined actions,
 	// keyed by model and verb, and pages the screens an application added.
@@ -1043,11 +1053,52 @@ func (p *Panel) tenantContextMiddleware(next http.Handler) http.Handler {
 			AutoFilter: p.config.MultiTenantAutoFilter,
 		}
 
+		// Whether the operator may leave a tenant (superuser or
+		// tenant_switch) is asked at most once per request: three of the
+		// decisions below depend on it.
+		var mayLeave *bool
+		canSwitch := func() bool {
+			if mayLeave == nil {
+				v := p.canSwitchTenant(r)
+				mayLeave = &v
+			}
+			return *mayLeave
+		}
+
 		// The tenant the host application resolved for this request
 		// (subdomain/header — nucleus' request scope) wins over the default.
+		resolved := ""
 		if p.config.TenantResolver != nil {
 			if tenant, ok := p.config.TenantResolver(r); ok && strings.TrimSpace(tenant) != "" {
-				tenantCtx.TenantID = strings.TrimSpace(tenant)
+				resolved = strings.TrimSpace(tenant)
+				tenantCtx.TenantID = resolved
+			}
+		}
+
+		// The operator's own tenant (OR-80) wins over both, for an operator
+		// who may not switch: the account says which tenant they work in,
+		// and a request that resolves another one is refused exactly as
+		// ?tenant= naming it is. It used to be the resolver alone, so with
+		// a header resolver the client chose the tenant — a plain operator
+		// of one tenant listed, exported and created rows in another by
+		// sending its id. Refused rather than silently confined: the host
+		// has already scoped this request to the tenant it resolved (its
+		// database, its storage prefix), and answering it with another
+		// tenant's rows would mix the two. A superuser or a tenant_switch
+		// holder keeps the rules below; the tenant on their account does
+		// not confine them.
+		if tenantCtx.Enabled && !canSwitch() {
+			bound, err := p.boundOperatorTenant(r)
+			if err != nil {
+				writeErr(w, r, err)
+				return
+			}
+			if bound != "" {
+				if resolved != "" && resolved != bound {
+					writeErr(w, r, gferrors.Forbidden("this operator is bound to tenant "+bound+" and the request resolved another tenant; looking at another tenant requires a superuser or the "+tenantSwitchAction+" permission"))
+					return
+				}
+				tenantCtx.TenantID = bound
 			}
 		}
 
@@ -1062,7 +1113,7 @@ func (p *Panel) tenantContextMiddleware(next http.Handler) http.Handler {
 				target = ""
 			}
 			if target != tenantCtx.TenantID {
-				if !p.canSwitchTenant(r) {
+				if !canSwitch() {
 					writeErr(w, r, gferrors.Forbidden("switching tenant requires a superuser or the "+tenantSwitchAction+" permission"))
 					return
 				}
@@ -1079,7 +1130,7 @@ func (p *Panel) tenantContextMiddleware(next http.Handler) http.Handler {
 		// ?tenant=all. It used to fall open: AutoFilter went off and a
 		// plain operator on a bare host saw and edited every tenant's rows.
 		if tenantCtx.Enabled && tenantCtx.AutoFilter && tenantCtx.TenantID == "" && !tenantCtx.Overridden {
-			if !p.canSwitchTenant(r) {
+			if !canSwitch() {
 				writeErr(w, r, gferrors.Forbidden("no tenant resolved for this request: Data Studio is confined to the request's tenant, and seeing every tenant requires a superuser or the "+tenantSwitchAction+" permission"))
 				return
 			}

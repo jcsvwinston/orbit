@@ -57,12 +57,30 @@ switch: `?tenant=<id>` or `?tenant=all` on the request, accepted only from a
 superuser or a subject granted the `tenant_switch` action on `admin:*` (a
 policy granting every action, `*`, on `admin:*` includes it), and recorded in
 the [audit log](#audit-log) as `tenant.override`. Anyone else gets a 403. Without an auth provider (the open posture, warned at mount) there is no operator to gate: `?tenant=` is accepted from any client and a request with no resolved tenant is unscoped.
-The audit log itself is not filtered by tenant (see below). The confinement
-is only as strong as the host's resolution: a
-tenant read from a request header the client can set (Nucleus' `header`
-resolver with no proxy overwriting that header) is the client's choice, so
-resolve it from the host name, or from a header a trusted proxy sets, for the
-scope to hold.
+The audit log itself is not filtered by tenant (see below). For an operator
+with no tenant on their account, the confinement is only as strong as the
+host's resolution: a tenant read from a request header the client can set
+(Nucleus' `header` resolver with no proxy overwriting that header) is the
+client's choice, so resolve it from the host name, or from a header a trusted
+proxy sets — or bind the operator to their tenant, which no header moves.
+
+**The operator's tenant.** An operator account can name the tenant its
+operator works in (`tenant_id`, set through the [operator
+API](#operators)). An operator bound to a tenant who is not a superuser and
+holds no `tenant_switch` is confined to that tenant whatever the request
+resolves: a request that resolves another tenant — from the header, the
+subdomain or `?tenant=` — is refused with a 403, reads, exports and writes
+alike, and a request that resolves none opens their tenant (ahead of
+`multitenant_default`). The tenant is compared exactly, so write it as the
+host resolves it (Nucleus lower-cases the tenant it reads). On a superuser's
+or a `tenant_switch` holder's account the tenant does not confine; the
+switching rules above apply to them unchanged. An operator with **no**
+tenant who may not switch follows the tenant each request resolves, as
+before, and the panel logs one WARN per operator per process: at v2.0.0 such
+an operator is refused (the notice is `DEP-2026-003` in the repository's
+`docs/deprecations/`), so bind every one of them, or grant `tenant_switch`
+to the ones who work across tenants. In a single-tenant application the tenant on an account is
+kept and ignored.
 
 **Record ids.** Ids are strings everywhere the API exchanges them — record
 paths, the bulk endpoint's `ids` and `errors[].id`, the export's `?ids=`,
@@ -286,7 +304,7 @@ not the people they applied to — an account could only be created with
 |---|---|
 | List operators, with the roles each one holds | `GET /admin/api/admin-users` |
 | Create one (optionally with roles) | `POST /admin/api/admin-users` |
-| Change an email, promote or demote a superuser | `PUT /admin/api/admin-users/{id}` |
+| Change an email, promote or demote a superuser, bind to a tenant | `PUT /admin/api/admin-users/{id}` |
 | Set a new password | `POST /admin/api/admin-users/{id}/password` |
 | Deactivate / reactivate | `POST /admin/api/admin-users/{id}/disable` · `/enable` |
 | Grant or revoke a role | `POST` · `DELETE /admin/api/admin-users/{id}/roles` |
@@ -305,6 +323,13 @@ with the reason.
 
 Passwords set here are hashed like any other credential and are never written
 to the audit log — the entry records that a password changed, not what to.
+
+In a multi-tenant application an operator carries `tenant_id`, the tenant
+they are bound to ([Data Studio](#data-studio) says what that confines). It
+is set at creation or by a `PUT` that names it; a `PUT` that does not name
+it keeps it, and `"tenant_id": ""` clears it. `all` is refused: it means
+every tenant, which is what `tenant_switch` grants. Accounts created with
+`nucleus createuser` start with no tenant.
 
 Operator management needs an admin authentication provider that owns the
 accounts, which is the default one (backed by `nucleus_admin_users`). An

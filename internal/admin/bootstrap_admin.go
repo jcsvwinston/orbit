@@ -144,7 +144,10 @@ func ensureBootstrapAdminUsersTable(ctx context.Context, sqlDB *sql.DB, system s
 	if _, err := sqlDB.ExecContext(ctx, query); err != nil {
 		return fmt.Errorf("admin bootstrap ensure users table: %w", err)
 	}
-	return ensureAdminUsersActiveColumn(ctx, sqlDB, system)
+	if err := ensureAdminUsersActiveColumn(ctx, sqlDB, system); err != nil {
+		return err
+	}
+	return ensureAdminUsersTenantColumn(ctx, sqlDB, system)
 }
 
 // ensureAdminUsersActiveColumn adds is_active to a table created before the
@@ -175,6 +178,44 @@ func ensureAdminUsersActiveColumn(ctx context.Context, sqlDB *sql.DB, system str
 	}
 	if _, err := sqlDB.ExecContext(ctx, alter); err != nil {
 		return fmt.Errorf("admin bootstrap add is_active column: %w", err)
+	}
+	return nil
+}
+
+// ensureAdminUsersTenantColumn adds tenant_id to a table created before the
+// column existed. It is the tenant an operator is bound to in a multi-tenant
+// application (OR-80, DEP-2026-003): NULL — every existing row, and every
+// operator created without one — is an operator bound to no tenant, which is
+// what every operator was before the column. Nothing else writes it, so the
+// upgrade changes no one's access.
+//
+// Same probe-then-ALTER as ensureAdminUsersActiveColumn, and for the same
+// reasons; the column is nullable, so the ALTER needs no default and takes no
+// time on a large table.
+func ensureAdminUsersTenantColumn(ctx context.Context, sqlDB *sql.DB, system string) error {
+	probe := fmt.Sprintf("SELECT tenant_id FROM %s WHERE 1 = 0", defaultAdminUsersTable)
+	if rows, err := sqlDB.QueryContext(ctx, probe); err == nil {
+		_ = rows.Close()
+		return nil
+	}
+
+	var alter string
+	switch system {
+	case "mssql":
+		alter = fmt.Sprintf("ALTER TABLE %s ADD tenant_id NVARCHAR(191) NULL", defaultAdminUsersTable)
+	case "oracle":
+		alter = fmt.Sprintf("ALTER TABLE %s ADD (tenant_id VARCHAR2(191))", defaultAdminUsersTable)
+	default:
+		alter = fmt.Sprintf("ALTER TABLE %s ADD COLUMN tenant_id VARCHAR(191)", defaultAdminUsersTable)
+	}
+	if _, err := sqlDB.ExecContext(ctx, alter); err != nil {
+		// Two replicas upgrading at once both probe, both alter, and one of
+		// them loses: the column is there, which is all this asked for.
+		if rows, perr := sqlDB.QueryContext(ctx, probe); perr == nil {
+			_ = rows.Close()
+			return nil
+		}
+		return fmt.Errorf("admin bootstrap add tenant_id column: %w", err)
 	}
 	return nil
 }
@@ -214,7 +255,8 @@ func bootstrapAdminUsersTableDDL(system string) string {
 		is_superuser BIT NOT NULL DEFAULT 0,
 		is_active BIT NOT NULL DEFAULT 1,
 		created_at NVARCHAR(64) NOT NULL,
-		updated_at NVARCHAR(64) NOT NULL
+		updated_at NVARCHAR(64) NOT NULL,
+		tenant_id NVARCHAR(191) NULL
 	)`, defaultAdminUsersTable, defaultAdminUsersTable)
 	case "oracle":
 		return fmt.Sprintf(`BEGIN
@@ -226,7 +268,8 @@ func bootstrapAdminUsersTableDDL(system string) string {
 		is_superuser NUMBER(1) DEFAULT 0 NOT NULL,
 		is_active NUMBER(1) DEFAULT 1 NOT NULL,
 		created_at VARCHAR2(64) NOT NULL,
-		updated_at VARCHAR2(64) NOT NULL
+		updated_at VARCHAR2(64) NOT NULL,
+		tenant_id VARCHAR2(191)
 	)';
 EXCEPTION
 	WHEN OTHERS THEN
@@ -241,7 +284,8 @@ END;`, defaultAdminUsersTable)
 	is_superuser INTEGER NOT NULL DEFAULT 0,
 	is_active INTEGER NOT NULL DEFAULT 1,
 	created_at TEXT NOT NULL,
-	updated_at TEXT NOT NULL
+	updated_at TEXT NOT NULL,
+	tenant_id VARCHAR(191)
 )`, defaultAdminUsersTable)
 	}
 }
