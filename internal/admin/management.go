@@ -346,6 +346,10 @@ func (p *Panel) handleExportDownload(c *router.Context) error {
 	if key == "" {
 		return gferrors.BadRequest("key query parameter is required")
 	}
+	// The key is the logical one the export answered with (OR-79), or the
+	// physical one an earlier version answered with, read back as logical
+	// when it carries this request's own tenant prefix.
+	key = p.logicalStorageKey(r, key)
 	// The export_data permission grants access to EXPORTS, not to the
 	// whole object store: only keys the exporter itself produces are
 	// downloadable, and a key outside that namespace is a 403 rather
@@ -426,6 +430,7 @@ func (p *Panel) handleImportValidate(c *router.Context) error {
 	if key == "" {
 		return gferrors.BadRequest("key query parameter is required")
 	}
+	key = p.logicalStorageKey(r, key)
 
 	var cfg ImportConfig
 	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
@@ -489,6 +494,7 @@ func (p *Panel) handleImportExecute(c *router.Context) error {
 	if key == "" {
 		return gferrors.BadRequest("key query parameter is required")
 	}
+	key = p.logicalStorageKey(r, key)
 
 	var cfg ImportConfig
 	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
@@ -604,12 +610,17 @@ func (p *Panel) handleImportUpload(c *router.Context) error {
 		return fmt.Errorf("store upload: %w", err)
 	}
 
+	// The answer carries the LOGICAL key — the one the panel asked the
+	// store to write — because that is the key the validate and execute
+	// steps hand back to the same store. info.Key is the physical one,
+	// already prefixed with the tenant by a multi-tenant application's
+	// store, which prefixed it again on the way back (OR-79).
 	p.recordAuditEntry(r, AuditEntry{
 		Action:    "import.upload",
 		ModelName: "import",
-		RecordID:  info.Key,
+		RecordID:  key,
 		NewValue: map[string]any{
-			"key":      info.Key,
+			"key":      key,
 			"size":     info.Size,
 			"format":   format,
 			"filename": filename,
@@ -617,7 +628,7 @@ func (p *Panel) handleImportUpload(c *router.Context) error {
 	})
 
 	return c.JSON(http.StatusCreated, map[string]interface{}{
-		"key":      info.Key,
+		"key":      key,
 		"size":     info.Size,
 		"format":   format,
 		"filename": filename,

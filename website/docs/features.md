@@ -601,6 +601,19 @@ A superuser is unaffected, apart from the tenant: model grants, `#own` and
 field policies do not apply to them, and a row of another tenant refuses
 their file whole as it does anybody's.
 
+**Storage keys.** The key an upload, a stored export and a fixture dump answer
+with is the key the panel wrote (`_tmp/import_…`, `_tmp/export_…`,
+`_tmp/fixture_…`), and it is the key the next step takes back: the validate
+and execute steps, the download and the fixture load. In a multi-tenant
+application the store adds the tenant's prefix to it once, as it does to every
+key the application uses — the panel used to answer with the prefixed key,
+which the store then prefixed a second time, so none of those steps worked
+under a tenant. A prefixed key that an earlier version answered with is still
+accepted when the prefix is the request's own tenant; another tenant's key,
+prefixed or not, reaches nothing: the import file and the fixture are not
+found, and the download answers `404` (another tenant's export) or `403` (a key
+outside the exports' namespace).
+
 ### What a screen is told
 
 The payloads a model screen loads carry what this operator may do, so the panel
