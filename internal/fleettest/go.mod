@@ -2,7 +2,7 @@ module github.com/jcsvwinston/orbit/internal/fleettest
 
 go 1.26.6
 
-toolchain go1.26.9
+toolchain go1.26.10
 
 require (
 	connectrpc.com/connect v1.20.0
