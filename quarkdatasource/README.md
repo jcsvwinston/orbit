@@ -100,6 +100,28 @@ searchable, labels are humanized field names.
 - **Update** uses `UpdateMap`, so zero values are written (unlike a
   full-entity save). **Delete** follows Quark's semantics: soft delete when the
   model has a `deleted_at` column, hard otherwise.
+- **A missing row is a not-found** (`404`): a `Get`, an `Update` that touches
+  no row and a `Delete` that removes none. The update and the delete used to
+  answer success, which the panel reported as done and recorded in its audit
+  trail.
+- **A record is validated before it is written**, and a record the store
+  cannot write faithfully is refused whole with the Nucleus adapter's answer:
+  a `422` (`VALIDATION_FAILED`) with one message per key, in the same words —
+  a key that names no field (`unknown field`), a value that does not fit the
+  field's Go type (`must be a string`, `must be an integer`, out of the
+  type's range) or the column's declared `size` (`must be at most 20
+  characters`), a field named twice, and a required field left out or empty
+  (`this field is required`). Required means `quark:"not_null"`, except a
+  `created_at`/`updated_at` timestamp, which Quark stamps itself. A number
+  may arrive as its text and a timestamp as RFC 3339 or a bare date, as on
+  the Nucleus adapter; an empty string for a field that is not text is no
+  value. An update names a field by its column or Go name; the struct's JSON
+  key is refused there rather than ignored.
+- **What the database refuses is classified**, and no driver text reaches the
+  response: a value a unique key already holds is a `409` naming the field
+  (recognised by `quark.IsUniqueViolation`, which reads the driver's error
+  code, not its message), another constraint a `409` that says so. A model
+  hook that refuses a write with a domain error is answered with that error.
 - **Operator filters** (`Query.Where`: `gt`, `contains`, `in`, `isnull` and
   the rest of the twelve) are applied, and the store says so through
   `datasource.OperatorFilterSource` — which is what the panel asks before it
@@ -117,7 +139,9 @@ searchable, labels are humanized field names.
   runs under Quark's own scoping (WHERE-injection or native RLS). Additionally,
   `WithTenantColumn("tenant_id")` marks the tenant field so Data Studio's own
   tenant filter applies.
-- **`Store`'s dbAlias is ignored**: a Quark client is bound to one database.
+- **One database alias per adapter**: a Quark client is bound to one
+  database, so `Store` serves the adapter's alias (`WithDatabaseAlias`,
+  default `"default"`) and refuses any other with a `400` naming both.
 
 ## Status
 

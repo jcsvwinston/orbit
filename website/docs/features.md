@@ -31,10 +31,10 @@ tenant (`" acme "`) is another tenant and is refused the same way, and a
 payload naming the request's tenant has that value replaced by the resolved
 tenant before it reaches the backend, so the stored column is always the
 tenant the request resolved. Both backends refuse a payload that names one
-field twice (Nucleus 422, Quark 400) whichever keys it uses, so a key the
+field twice (a 422 naming the second key) whichever keys it uses, so a key the
 panel does not resolve cannot outvote the tenant it stamps; Quark's store
 applies the keys of an update by column and Go name only, so a JSON-tag
-alias in an update is dropped, never applied. A tenant column hidden from
+alias in an update is refused, never applied. A tenant column hidden from
 JSON (`json:"-"`) is confined the same way: the records both backends emit
 carry no tenant key, so a row is confirmed by id through a list filtered by
 tenant and primary key instead of read off the record, the guard knows the
@@ -159,6 +159,24 @@ model registry as the default backend. Applications built on the
 models instead: add the opt-in
 [`quarkdatasource`](https://github.com/jcsvwinston/orbit/tree/main/quarkdatasource)
 module and set `orbit.Config.DataSource`.
+
+A record a form or an API client sends is held to the catalogue before it is
+written, whichever source serves the model: a required field left out or
+emptied, or a value that is not of the kind its field declares, is a `422`
+that names every field at fault, and nothing is written.
+
+```json
+{"error": {"code": "VALIDATION_FAILED", "message": "validation failed",
+           "details": {"title": "this field is required", "author_id": "must be an integer"}}}
+```
+
+The source checks what only it knows. The Nucleus adapter checks its models'
+`validate` tags and refuses a key that names no field; `quarkdatasource`
+refuses such a key too, checks a column's declared `size`, and answers a value
+a unique key already holds with a `409` that names the field — never with the
+database's own message. On both, a read, an update or a delete of a row that
+does not exist is a `404`, and the audit trail records only the writes that
+happened.
 
 `datasource.Query` is a frozen shape, so the operator filters and the exact
 count arrived as new fields beside the old ones rather than as a richer

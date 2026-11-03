@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -281,6 +281,9 @@ func (s *store[T]) List(ctx context.Context, q datasource.Query) (datasource.Pag
 }
 
 // Get fetches one record by its string id, narrowed to the PK's Go kind (D1).
+// A row that does not exist is the contract's not-found (404), the answer
+// the record endpoints give a row out of scope: Quark's ErrNotFound used to
+// reach the panel unmapped, a 500 that named nothing.
 func (s *store[T]) Get(ctx context.Context, id string) (datasource.Record, error) {
 	pk, err := s.parseID(id)
 	if err != nil {
@@ -288,29 +291,35 @@ func (s *store[T]) Get(ctx context.Context, id string) (datasource.Record, error
 	}
 	entity, err := quark.For[T](ctx, s.adapter.provider).Find(pk)
 	if err != nil {
-		return nil, err
+		return nil, s.classify(err, id, nil)
 	}
 	return s.entityToRecord(&entity)
 }
 
 // Create inserts a record and returns the created row (with the
-// database-assigned id, which Quark writes back onto the entity).
+// database-assigned id, which Quark writes back onto the entity). The record
+// is read field by field and refused whole, with a 422 naming every
+// offending key, before anything is written (see readRecord); a write the
+// database refuses on a unique key is a 409.
 func (s *store[T]) Create(ctx context.Context, rec datasource.Record) (datasource.Record, error) {
 	if s.info.ReadOnly {
 		return nil, s.readOnlyErr()
 	}
-	entity, err := s.recordToEntity(rec)
+	entity, written, err := s.recordToEntity(rec)
 	if err != nil {
 		return nil, err
 	}
 	if err := quark.For[T](ctx, s.adapter.provider).Create(entity); err != nil {
-		return nil, err
+		return nil, s.classify(err, "", written)
 	}
 	return s.entityToRecord(entity)
 }
 
 // Update applies a partial change set by PK, via Quark's UpdateMap (which can
-// write zero values — unlike a full-entity save).
+// write zero values — unlike a full-entity save). A record naming nothing the
+// operator may write is a 400, as on the Nucleus adapter; an update that
+// touches no row is a not-found rather than a success, so the panel neither
+// answers {"updated": true} nor records a change that did not happen.
 func (s *store[T]) Update(ctx context.Context, id string, rec datasource.Record) error {
 	if s.info.ReadOnly {
 		return s.readOnlyErr()
@@ -319,21 +328,39 @@ func (s *store[T]) Update(ctx context.Context, id string, rec datasource.Record)
 	if err != nil {
 		return err
 	}
-	updates, err := s.recordToColumnMap(rec)
+	updates, written, err := s.recordToColumnMap(rec)
 	if err != nil {
 		return err
 	}
 	if len(updates) == 0 {
-		return nil
+		return gferrors.BadRequest("no updatable fields provided")
 	}
-	_, err = quark.For[T](ctx, s.adapter.provider).
+	rows, err := quark.For[T](ctx, s.adapter.provider).
 		Where(s.meta.PK.Column, "=", pk).
 		UpdateMap(updates)
-	return err
+	if err != nil {
+		return s.classify(err, id, written)
+	}
+	if rows == 0 {
+		// Zero rows affected is not proof of absence everywhere: MySQL
+		// counts the rows an UPDATE changed, not the ones it matched, so a
+		// write of the values the row already holds answers 0. Ask.
+		exists, err := quark.For[T](ctx, s.adapter.provider).Where(s.meta.PK.Column, "=", pk).Count()
+		if err != nil {
+			return s.classify(err, id, nil)
+		}
+		if exists == 0 {
+			return gferrors.NotFound(s.info.Name, id)
+		}
+	}
+	return nil
 }
 
 // Delete removes one record by id, honoring Quark's semantics: soft delete
-// when the model has a deleted_at column, hard delete otherwise.
+// when the model has a deleted_at column, hard delete otherwise. A delete
+// that removes nothing — the row does not exist, or was already
+// soft-deleted — is a not-found rather than a success, so a batch counts it
+// as the failure it is.
 func (s *store[T]) Delete(ctx context.Context, id string) error {
 	if s.info.ReadOnly {
 		return s.readOnlyErr()
@@ -347,8 +374,20 @@ func (s *store[T]) Delete(ctx context.Context, id string) error {
 	if err := assignPK(pkField, pk); err != nil {
 		return err
 	}
-	_, err = quark.For[T](ctx, s.adapter.provider).Delete(entity)
-	return err
+	rows, err := quark.For[T](ctx, s.adapter.provider).Delete(entity)
+	if err != nil {
+		var de *gferrors.DomainError
+		if !errors.As(err, &de) && !quark.IsUniqueViolation(err) && errors.Is(err, quark.ErrConstraintViolation) {
+			// What refuses a delete is, in practice, a foreign key: another
+			// row still points at this one.
+			return gferrors.Conflict(fmt.Sprintf("%s '%s' cannot be deleted: a constraint of the database protects it (another record may still reference it)", s.info.Name, id))
+		}
+		return s.classify(err, id, nil)
+	}
+	if rows == 0 {
+		return gferrors.NotFound(s.info.Name, id)
+	}
+	return nil
 }
 
 // Count returns the real row count. Present is false when the backing table
@@ -492,122 +531,43 @@ func (s *store[T]) entityToRecord(entity any) (datasource.Record, error) {
 	return rec, nil
 }
 
-// recordToEntity builds a *T from a Record via the inverse JSON round-trip,
-// after dropping PK and read-only (version) fields — the database owns those.
-// Schema keys (column, Go name or the struct's JSON key) are re-keyed to the
-// JSON key first: json.Unmarshal alone never matches a multi-word column
-// ("customer_id") to its Go field (CustomerID), which silently dropped those
-// values (PR-DS-01, write path). Unknown keys pass through for
-// json.Unmarshal to resolve.
+// recordToEntity builds a *T from a Record: every key is resolved to a schema
+// field (by column, Go name or the struct's JSON key) and its value coerced
+// to the field's type and set on the entity by its index — so a multi-word
+// column ("customer_id") reaches its Go field (CustomerID), and a field
+// excluded from JSON (json:"-") is stored like any other: the tenant a
+// scoped create stamps under its column key used to be dropped, which stored
+// the row under no tenant. The PK and read-only (version) fields are left to
+// the database.
 //
-// A field named more than once — under its column and its JSON key, or
-// under two letter cases json.Unmarshal folds together — is refused (400)
-// instead of resolved by map order: a caller that stamps one key (the
-// panel's tenant) must not be outvoted by another it does not know. Keys
-// are visited sorted so the key reported is deterministic.
+// A record the store cannot write faithfully is refused whole with one 422
+// naming every offending key (readRecord): a key that names no field (it
+// used to be dropped in silence), a value of the wrong type (it used to be a
+// 500 carrying the decoder's text), a field named twice — under its column
+// and its JSON key, or two letter cases — which used to be resolved by map
+// order, so a caller that stamps one key (the panel's tenant) could be
+// outvoted by another it does not know, and a required field left out or
+// empty.
 //
-// A schema field excluded from JSON (json:"-") never reaches json.Unmarshal,
-// so it is set on the entity by reflection afterwards: a column the panel
-// stamps under its column key (the tenant of a scoped create) is stored
-// whatever its JSON visibility — dropped, it stored the row under no tenant.
-func (s *store[T]) recordToEntity(rec datasource.Record) (*T, error) {
-	clean := make(map[string]any, len(rec))
-	origin := make(map[string]string, len(rec)) // folded object key -> record key
-	var hidden []hiddenValue                    // schema fields excluded from JSON
-	keys := make([]string, 0, len(rec))
-	for k := range rec {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		key := k
-		if fi, ok := s.fieldForInput(k); ok {
-			if fi.IsPK || fi.IsReadOnly {
-				continue
-			}
-			jsonKey, ok := s.jsonKeyByCol[fi.Column]
-			if !ok {
-				fm, ok := s.meta.FieldByCol[strings.ToLower(fi.Column)]
-				if !ok {
-					continue
-				}
-				folded := strings.ToLower(fi.Column)
-				if first, dup := origin[folded]; dup {
-					return nil, gferrors.BadRequest(fmt.Sprintf("invalid record for %s: %q names the same field as %q", s.info.Name, k, first))
-				}
-				origin[folded] = k
-				v, err := coerceJSONValue(rec[k], fm.Kind)
-				if err != nil {
-					return nil, gferrors.BadRequest(fmt.Sprintf("invalid record for %s: %s: %v", s.info.Name, k, err))
-				}
-				hidden = append(hidden, hiddenValue{index: fm.Index, key: k, value: v})
-				continue
-			}
-			key = jsonKey
-		}
-		folded := strings.ToLower(key)
-		if first, dup := origin[folded]; dup {
-			return nil, gferrors.BadRequest(fmt.Sprintf("invalid record for %s: %q names the same field as %q", s.info.Name, k, first))
-		}
-		origin[folded] = k
-		clean[key] = rec[k]
-	}
-	data, err := json.Marshal(clean)
-	if err != nil {
-		return nil, fmt.Errorf("quarkdatasource: marshal record: %w", err)
+// It returns the fields it set, for classify to name a unique one.
+func (s *store[T]) recordToEntity(rec datasource.Record) (*T, []fieldValue, error) {
+	values, problems := s.readRecord(rec, false)
+	if err := validationErr(problems); err != nil {
+		return nil, nil, err
 	}
 	entity := new(T)
-	if err := json.Unmarshal(data, entity); err != nil {
-		return nil, fmt.Errorf("quarkdatasource: invalid record for %s: %w", s.info.Name, err)
-	}
 	ev := reflect.ValueOf(entity).Elem()
-	for _, h := range hidden {
-		if err := setHiddenField(ev.Field(h.index), h.value); err != nil {
-			return nil, gferrors.BadRequest(fmt.Sprintf("invalid record for %s: %s: %v", s.info.Name, h.key, err))
+	for _, fv := range values {
+		if fv.null {
+			continue
 		}
+		ev.Field(fv.index).Set(fv.value)
 	}
-	return entity, nil
-}
-
-// hiddenValue is the coerced value of a schema field excluded from JSON,
-// addressed by its index in the struct, with the record key that named it.
-type hiddenValue struct {
-	index int
-	key   string
-	value any
-}
-
-// setHiddenField stores v, a value coerceJSONValue produced, in field. A
-// value of another type is refused rather than converted: reflect would turn
-// an integer into the string of its code point.
-func setHiddenField(field reflect.Value, v any) error {
-	if v == nil {
-		return nil
-	}
-	if field.Kind() == reflect.Pointer {
-		ptr := reflect.New(field.Type().Elem())
-		if err := setHiddenField(ptr.Elem(), v); err != nil {
-			return err
-		}
-		field.Set(ptr)
-		return nil
-	}
-	rv := reflect.ValueOf(v)
-	switch {
-	case rv.Type().AssignableTo(field.Type()):
-		field.Set(rv)
-	case rv.Kind() != reflect.String && field.Kind() != reflect.String && rv.Type().ConvertibleTo(field.Type()):
-		field.Set(rv.Convert(field.Type()))
-	default:
-		return fmt.Errorf("want %s, got %T", field.Type(), v)
-	}
-	return nil
+	return entity, values, nil
 }
 
 // fieldForInput resolves a record key to its schema field: by column or Go
-// name (ModelInfo.Field), or by the JSON key the struct field marshals under
-// — which json.Unmarshal matched anyway, in any letter case, when the key
-// passed through unresolved.
+// name (ModelInfo.Field), or by the JSON key the struct field marshals under.
 func (s *store[T]) fieldForInput(key string) (datasource.FieldInfo, bool) {
 	if fi, ok := s.info.Field(key); ok {
 		return fi, true
@@ -621,120 +581,77 @@ func (s *store[T]) fieldForInput(key string) (datasource.FieldInfo, bool) {
 }
 
 // recordToColumnMap resolves record keys (column or Go field name) to column
-// names and coerces JSON values to the column's Go type, for UpdateMap. A
-// JSON-key alias is not resolved here, on purpose: the panel's tenant guard
-// knows a Quark field by column and Go name only, so an update that honoured
-// a key the guard cannot see could move a row. A column named twice is
-// refused rather than resolved by map order.
-func (s *store[T]) recordToColumnMap(rec datasource.Record) (map[string]any, error) {
-	out := make(map[string]any, len(rec))
-	origin := make(map[string]string, len(rec)) // column -> first record key naming it
-	keys := make([]string, 0, len(rec))
-	for k := range rec {
-		keys = append(keys, k)
+// names and coerces their values to the column's Go type, for UpdateMap. A
+// JSON-key alias is refused here rather than honoured, on purpose: the
+// panel's tenant guard knows a Quark field by column and Go name only, so an
+// update that honoured a key the guard cannot see could move a row (it used
+// to be ignored in silence, which answered "updated" for a change that was
+// not made). The checks are readRecord's, so an update can no more empty a
+// required field or store a value of the wrong type than a create can.
+func (s *store[T]) recordToColumnMap(rec datasource.Record) (map[string]any, []fieldValue, error) {
+	values, problems := s.readRecord(rec, true)
+	if err := validationErr(problems); err != nil {
+		return nil, nil, err
 	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		fi, ok := s.info.Field(k)
-		if !ok || fi.IsPK || fi.IsReadOnly {
-			continue
-		}
-		if first, dup := origin[fi.Column]; dup {
-			return nil, gferrors.BadRequest(fmt.Sprintf("invalid record for %s: %q names the same field as %q", s.info.Name, k, first))
-		}
-		origin[fi.Column] = k
-		fm, ok := s.meta.FieldByCol[strings.ToLower(fi.Column)]
-		if !ok {
-			continue
-		}
-		cv, err := coerceJSONValue(rec[k], fm.Kind)
-		if err != nil {
-			return nil, fmt.Errorf("quarkdatasource: invalid value for %s: %w", k, err)
-		}
-		out[fi.Column] = cv
+	out := make(map[string]any, len(values))
+	for _, fv := range values {
+		out[fv.column] = bindValue(fv)
 	}
-	return out, nil
+	return out, values, nil
 }
 
-// coerceJSONValue converts a record value to the column's Go kind for binding.
-// Values usually arrive JSON-decoded (float64/bool/string/nil), but Record is
-// map[string]any, so native Go numerics are accepted too.
-func coerceJSONValue(v any, kind reflect.Kind) (any, error) {
-	if v == nil {
-		return nil, nil
+// classify turns what Quark answered a read or a write with into the answer
+// the panel gives a client: a missing row is a 404, a value a unique key
+// already holds a 409 naming the field when one can be named, another
+// constraint the row breaks a 409 too. The message is the adapter's, never
+// the engine's: the driver's text ("UNIQUE constraint failed: …",
+// "SQLSTATE 23505") is what reached the operator as a 500 before, and it
+// says more about the schema than a client of the panel needs.
+//
+// A unique violation is recognised by quark.IsUniqueViolation, the predicate
+// of the client that ran the statement — it classifies on the driver's error
+// code for every engine whose Quark driver module is linked, which an
+// application on Quark links to open its database at all. An engine it does
+// not classify still arrives as quark.ErrConstraintViolation and is answered
+// as a constraint, so a duplicate never falls through to a 500.
+//
+// An error that is already a domain error (a model hook refusing the write,
+// a tenant router's refusal) passes through unchanged, and so does every
+// other failure: an unreachable database is the server's problem, and a 500
+// says so.
+func (s *store[T]) classify(err error, id string, written []fieldValue) error {
+	var de *gferrors.DomainError
+	switch {
+	case err == nil:
+		return nil
+	case errors.As(err, &de):
+		return err
+	case errors.Is(err, quark.ErrNotFound):
+		return gferrors.NotFound(s.info.Name, id)
+	case quark.IsUniqueViolation(err):
+		return s.uniqueConflict(written)
+	case errors.Is(err, quark.ErrConstraintViolation):
+		return gferrors.Conflict(fmt.Sprintf("%s: the record breaks a constraint of the database (a unique key, a foreign key, a NOT NULL or a CHECK)", s.info.Name))
 	}
-	switch kind {
-	case reflect.Bool:
-		if b, ok := v.(bool); ok {
-			return b, nil
-		}
-		return nil, fmt.Errorf("want bool, got %T", v)
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		if n, ok := toInt64(v); ok {
-			return n, nil
-		}
-		if s, ok := v.(string); ok {
-			return strconv.ParseInt(strings.TrimSpace(s), 10, 64)
-		}
-		return nil, fmt.Errorf("want number, got %T", v)
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		if n, ok := toInt64(v); ok {
-			if n < 0 {
-				return nil, fmt.Errorf("negative value for unsigned column")
-			}
-			return uint64(n), nil
-		}
-		if s, ok := v.(string); ok {
-			return strconv.ParseUint(strings.TrimSpace(s), 10, 64)
-		}
-		return nil, fmt.Errorf("want number, got %T", v)
-	case reflect.Float32, reflect.Float64:
-		switch n := v.(type) {
-		case float64:
-			return n, nil
-		case float32:
-			return float64(n), nil
-		case string:
-			return strconv.ParseFloat(strings.TrimSpace(n), 64)
-		}
-		if n, ok := toInt64(v); ok {
-			return float64(n), nil
-		}
-		return nil, fmt.Errorf("want number, got %T", v)
-	default:
-		return v, nil
-	}
+	return err
 }
 
-// toInt64 widens any native integer (or integral float64, the JSON shape) to
-// int64.
-func toInt64(v any) (int64, bool) {
-	switch n := v.(type) {
-	case float64:
-		return int64(n), true
-	case int:
-		return int64(n), true
-	case int8:
-		return int64(n), true
-	case int16:
-		return int64(n), true
-	case int32:
-		return int64(n), true
-	case int64:
-		return n, true
-	case uint:
-		return int64(n), true
-	case uint8:
-		return int64(n), true
-	case uint16:
-		return int64(n), true
-	case uint32:
-		return int64(n), true
-	case uint64:
-		return int64(n), true
-	default:
-		return 0, false
+// uniqueConflict is the 409 of a unique violation. When exactly one unique
+// field was written it is named, with its key in the details the way a 422
+// names a field; otherwise the message says which kind of conflict it is
+// without guessing a field.
+func (s *store[T]) uniqueConflict(written []fieldValue) error {
+	var keys []string
+	for _, fv := range written {
+		if fv.unique && !fv.null {
+			keys = append(keys, fv.key)
+		}
 	}
+	if len(keys) == 1 {
+		return gferrors.Conflict(fmt.Sprintf("%s: a record with this %s already exists", s.info.Name, keys[0])).
+			WithDetails(map[string]string{keys[0]: "already exists"})
+	}
+	return gferrors.Conflict(fmt.Sprintf("%s: a record with the same unique value already exists", s.info.Name))
 }
 
 // assignPK writes a parsed id (int64/uint64/string from parseID, or a value

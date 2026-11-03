@@ -770,6 +770,11 @@ func (p *Panel) handleCreateRecord(c *router.Context) error {
 	// record being created has no children yet for one to name by id.
 	inlineSpecs := p.inlinesFor(mi)
 	inlinePayloads := takeInlinePayloads(data, inlineSpecs)
+	// The record is held to what the schema promises before anything is
+	// written, whatever the data source checks itself (OR-78).
+	if err := p.validateRecordPayload(mi, data, true); err != nil {
+		return err
+	}
 	inlinePlans, err := p.planInlines(c, inlinePayloads, inlineSpecs, "", databaseAlias)
 	if err != nil {
 		return err
@@ -829,6 +834,11 @@ func (p *Panel) handleUpdateRecord(c *router.Context) error {
 	}
 	inlineSpecs := p.inlinesFor(mi)
 	inlinePayloads := takeInlinePayloads(updates, inlineSpecs)
+	// An update cannot empty a required field or write a value of the wrong
+	// type, whatever the data source checks itself (OR-78).
+	if err := p.validateRecordPayload(mi, updates, false); err != nil {
+		return err
+	}
 
 	databaseAlias, err := p.requestDatabaseAlias(r)
 	if err != nil {
@@ -1062,16 +1072,22 @@ func (p *Panel) handleBulkAction(c *router.Context) error {
 				Error: deleteErr.Error(),
 			})
 		}
-		p.recordAuditEntry(r, AuditEntry{
-			Action:    "bulk_delete",
-			ModelName: mi.Name,
-			NewValue: map[string]any{
-				"requested": len(ids),
-				"deleted":   deleted,
-				"failed":    len(failures),
-				"ids":       deletedIDs,
-			},
-		})
+		// The batch is recorded when it removed something: a batch whose
+		// every id failed — none existed, none was the operator's — changed
+		// nothing, and the trail records changes (OR-83). Each failure is
+		// in the answer.
+		if deleted > 0 {
+			p.recordAuditEntry(r, AuditEntry{
+				Action:    "bulk_delete",
+				ModelName: mi.Name,
+				NewValue: map[string]any{
+					"requested": len(ids),
+					"deleted":   deleted,
+					"failed":    len(failures),
+					"ids":       deletedIDs,
+				},
+			})
+		}
 		return c.JSON(http.StatusOK, map[string]interface{}{
 			"action":    "delete",
 			"requested": len(ids),
