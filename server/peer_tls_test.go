@@ -219,9 +219,11 @@ func TestServer_PeerWithoutAClientCertificate_LogsTheRefusal(t *testing.T) {
 		t.Fatalf("a link refused in the handshake left no WARN on the dialling server; log:\n%s", logs.String())
 	}
 	// The WARN carries the cause, not the io.EOF a failed stream's Send
-	// reports.
-	if !strings.Contains(logs.String(), "certificate") {
-		t.Fatalf("the WARN does not say the handshake wanted a certificate; log:\n%s", logs.String())
+	// reports. Under load an attempt can end as "client conn is closed"
+	// before the peer's alert is read; each distinct error is a WARN of
+	// its own, so the retries that follow say it.
+	if !waitFor(10*time.Second, func() bool { return strings.Contains(logs.String(), "certificate") }) {
+		t.Fatalf("no WARN says the handshake wanted a certificate; log:\n%s", logs.String())
 	}
 }
 
