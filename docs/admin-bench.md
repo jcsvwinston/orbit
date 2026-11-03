@@ -2081,3 +2081,29 @@ Verified by breaking it:
 | the confined list asked without `ExactTotal` | `TestModelCounts_FollowTheOwnGrant`, `TestModelCounts_StayInTheRequestsTenant` (the count comes back unknown) |
 
 The HTTP bench is unchanged at 72 of 72; the browser half stays at 18 of 18.
+
+## Import, fixtures and the stored export under a tenant (OR-79)
+
+The bench's application is not multi-tenant, so `DS-13`, `DS-14` and `DS-15`
+ran over a store that writes keys as it is given them. A multi-tenant
+application's store prefixes every key with the request's tenant, and the
+panel handed out the prefixed (physical) key: the upload, the stored export
+and the fixture dump answered `acme/_tmp/…`, and the next step sent it back to
+the same store, which looked for `acme/acme/_tmp/…`. Validate and execute
+answered `500`, the fixture load `500`, and the download `403` ("not an export
+produced by this panel"). The panel now answers with the key it wrote
+(`_tmp/…`) and takes that one back.
+
+Each of the three probes now runs its flow a second time on the bench
+application started multi-tenant, with the tenant resolved from a header, and
+records `partial` when the flow does not work there. `DS-13` reads the stored
+export and its download in that second run (its first run reads the
+streamed CSV, which never touches the store).
+
+Verified by breaking it:
+
+| mutation | what fails |
+|---|---|
+| the parent commit's server | `DS-13` (download `403`), `DS-14` (validate `500`, `acme/acme/_tmp/import_…`), `DS-15` (load `500`, `acme/acme/_tmp/fixture_…`); `TestTenantStorageKeys_*` in `internal/admin` |
+
+The HTTP bench is unchanged at 72 of 72; the browser half stays at 18 of 18.

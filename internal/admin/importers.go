@@ -619,6 +619,9 @@ func (p *Panel) ImportFromFile(c *router.Context, storageKey string, cfg ImportC
 
 	reader, _, err := p.store.Get(ctx, storageKey)
 	if err != nil {
+		if storageNotFound(err) {
+			return nil, gferrors.NotFound("import file", storageKey)
+		}
 		return nil, fmt.Errorf("read import file: %w", err)
 	}
 	defer reader.Close()

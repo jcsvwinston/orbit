@@ -132,7 +132,7 @@ func (p *Panel) Dumpdata(ctx context.Context, cfg DumpdataConfig, targets []expo
 		return result, fmt.Errorf("dumpdata store fixture: %w", err)
 	}
 
-	return finalizeExport(result, info, totalRecords, fmt.Sprintf("fixture_%s.json", ts), p.store, ctx)
+	return finalizeExport(result, key, info, totalRecords, fmt.Sprintf("fixture_%s.json", ts), p.store, ctx)
 }
 
 // Loaddata imports data from a Django-compatible JSON fixture file for c's
@@ -166,6 +166,9 @@ func (p *Panel) Loaddata(c *router.Context, cfg LoaddataConfig) (*ImportReport, 
 	// Read fixture file from storage
 	reader, _, err := p.store.Get(ctx, cfg.StorageKey)
 	if err != nil {
+		if storageNotFound(err) {
+			return nil, gferrors.NotFound("fixture", cfg.StorageKey)
+		}
 		return nil, fmt.Errorf("loaddata read fixture: %w", err)
 	}
 	defer reader.Close()
@@ -439,6 +442,7 @@ func (p *Panel) handleLoaddata(c *router.Context) error {
 	if cfg.StorageKey == "" {
 		return gferrors.BadRequest("key is required")
 	}
+	cfg.StorageKey = p.logicalStorageKey(r, cfg.StorageKey)
 	if scoped := p.enforcedTenantID(r); scoped != "" {
 		cfg.TenantID = scoped
 	}

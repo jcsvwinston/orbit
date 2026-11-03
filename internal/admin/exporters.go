@@ -325,7 +325,7 @@ func (p *Panel) exportCSV(ctx context.Context, cfg ExportConfig, targets []expor
 		return result, fmt.Errorf("export CSV store: %w", err)
 	}
 
-	return finalizeExport(result, info, totalRecords, fmt.Sprintf("export_%s.csv", ts), p.store, ctx)
+	return finalizeExport(result, key, info, totalRecords, fmt.Sprintf("export_%s.csv", ts), p.store, ctx)
 }
 
 func (p *Panel) exportJSON(ctx context.Context, cfg ExportConfig, targets []exportTarget, result ExportResult) (ExportResult, error) {
@@ -374,7 +374,7 @@ func (p *Panel) exportJSON(ctx context.Context, cfg ExportConfig, targets []expo
 		return result, fmt.Errorf("export JSON store: %w", err)
 	}
 
-	return finalizeExport(result, info, totalRecords, fmt.Sprintf("export_%s.json", ts), p.store, ctx)
+	return finalizeExport(result, key, info, totalRecords, fmt.Sprintf("export_%s.json", ts), p.store, ctx)
 }
 
 func (p *Panel) exportSQL(ctx context.Context, cfg ExportConfig, targets []exportTarget, result ExportResult) (ExportResult, error) {
@@ -460,17 +460,26 @@ func (p *Panel) exportSQL(ctx context.Context, cfg ExportConfig, targets []expor
 		return result, fmt.Errorf("export SQL store: %w", err)
 	}
 
-	return finalizeExport(result, info, totalRecords, fmt.Sprintf("export_%s.sql", ts), p.store, ctx)
+	return finalizeExport(result, key, info, totalRecords, fmt.Sprintf("export_%s.sql", ts), p.store, ctx)
 }
 
-func finalizeExport(result ExportResult, info storage.ObjectInfo, records int, filename string, store storage.Store, ctx context.Context) (ExportResult, error) {
+// finalizeExport completes result for the object written under key.
+//
+// key is the LOGICAL key — the one the exporter asked the store to write —
+// and that is the one the result carries, the job registry files and the
+// download takes back. The ObjectInfo a tenant-prefixing store returns
+// (storage.TenantStore) names the PHYSICAL key, already prefixed with the
+// tenant; handed back to the same store it is prefixed a second time
+// ("t1/t1/_tmp/…"), so under a multi-tenant application the panel's own
+// keys could not be downloaded, loaded or signed (OR-79).
+func finalizeExport(result ExportResult, key string, info storage.ObjectInfo, records int, filename string, store storage.Store, ctx context.Context) (ExportResult, error) {
 	result.Status = "completed"
 	result.Filename = filename
-	result.StorageKey = info.Key
+	result.StorageKey = key
 	result.Size = info.Size
 	result.Records = records
 
-	url, err := store.SignedURL(ctx, info.Key, 24*time.Hour, storage.URLConfig{
+	url, err := store.SignedURL(ctx, key, 24*time.Hour, storage.URLConfig{
 		Disposition: "attachment",
 	})
 	if err == nil {

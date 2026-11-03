@@ -589,6 +589,11 @@ func probeExport(t *testing.T, e *env) verdict {
 		t.Logf("export body does not contain the row: %s", r.text())
 		return partial
 	}
+	// The stored export, downloaded later by its key, has to work where
+	// the store prefixes keys with the tenant too (OR-79).
+	if !storedExportUnderATenant(t) {
+		return partial
+	}
 	return present
 }
 
@@ -649,6 +654,11 @@ func probeImport(t *testing.T, e *env) verdict {
 		t.Logf("execute reported success and the row is not there: %s", landed.text())
 		return partial
 	}
+	// And on a multi-tenant application, whose store prefixes the key
+	// the upload answers with (OR-79).
+	if !importUnderATenant(t) {
+		return partial
+	}
 	return present
 }
 
@@ -672,6 +682,11 @@ func probeFixtures(t *testing.T, e *env) verdict {
 		map[string]any{"key": key, "on_conflict": "skip"})
 	if load.code != http.StatusOK {
 		t.Logf("loaddata answered %d: %s", load.code, load.text())
+		return partial
+	}
+	// And on a multi-tenant application, whose store prefixes the key
+	// the dump answers with (OR-79).
+	if !fixturesUnderATenant(t) {
 		return partial
 	}
 	return present
