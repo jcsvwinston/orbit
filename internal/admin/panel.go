@@ -212,6 +212,7 @@ type Panel struct {
 	startedAt      time.Time
 	flags          *featureFlagStore
 	bootEnv        []systemEnvVar
+	bootEnvWarned  sync.Map // operator -> struct{}: DEP-2026-004 WARN already logged
 	defaultDBAlias string
 	liveNode       string
 	liveClusterMu  sync.RWMutex
