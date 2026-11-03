@@ -262,10 +262,11 @@ admin-server --agent-addr :9090 --agent-advertise-addr http://b.internal:9090 \
   --peers http://a.internal:9090 --assign-nodes
 ```
 
-Each server keeps one stream to every peer, on the peers' agent listeners
-and with the same token or client certificate an agent uses (`--peer-token`
-when it differs). Down that stream it pushes its nodes, their host metrics
-and every event its agents send. So:
+Each server keeps one stream to every peer, on the peers' agent listeners,
+and authenticates there the way an agent does: with the agent token
+(`--peer-token` when it differs) or, when the peers' listeners verify client
+certificates, with a certificate of its own. Down that stream it pushes its
+nodes, their host metrics and every event its agents send. So:
 
 - **The node list is shared.** A node connected to A is listed on B, with
   the server it is connected to in the label `orbit.server`. Its metrics are
@@ -283,6 +284,32 @@ and every event its agents send. So:
   there — but only if that endpoint is in the agent's own list; the agent
   refuses a redirect to a server its operator did not configure, and stays.
   A server needs `--agent-advertise-addr` to receive assignments.
+
+Under mutual TLS the peers dial each other over `https://`, and each server
+has to present a client certificate the others accept. A server whose own
+agent listener verifies client certificates (`--agent-client-ca`) does that
+by default: it presents its `--agent-cert`/`--agent-key` pair to its peers
+and verifies theirs against its `--agent-client-ca` bundle, so a fleet with
+one CA needs no further flags:
+
+```bash
+# on server A (B is the mirror image)
+admin-server --agent-addr :9090 --agent-advertise-addr https://a.internal:9090 \
+  --agent-cert a.crt --agent-key a.key --agent-client-ca ca.crt \
+  --peers https://b.internal:9090
+```
+
+For that, each server's certificate must name the host its peers dial (a
+subject alternative name, as for any TLS server) and allow both uses:
+`serverAuth` for its own listener and `clientAuth` for the links it opens.
+`--peer-ca`, `--peer-cert` and `--peer-key` (env `NUCLEUS_ADMIN_PEER_CA`,
+`NUCLEUS_ADMIN_PEER_CERT`, `NUCLEUS_ADMIN_PEER_KEY`) name other files, each
+replacing its own default: a separate client certificate, or the CA a
+token-authenticated fleet's listener certificates chain to. A `--peer-cert`
+whose extended key usage leaves out `clientAuth` stops the server at start;
+an agent certificate that leaves it out keeps the server starting, is not
+presented, and leaves one WARN at start naming both ways out. A link that
+fails is logged as a WARN, with the cause, on the server that dials it.
 
 What stays per server: the retention file (two servers must not share a
 data directory), the alert rules (the server a node is connected to

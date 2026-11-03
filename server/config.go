@@ -213,9 +213,18 @@ type Config struct {
 	// server, as before.
 	PeerAddrs []string
 
-	// PeerTLS is the client TLS configuration for https:// peers (root CAs,
-	// a client certificate when the peers' listeners verify one). Nil
-	// uses the system trust store.
+	// PeerTLS is the client TLS configuration for https:// peers: the
+	// roots the peers' agent-listener certificates chain to, and the
+	// client certificate this server presents when the peers' listeners
+	// verify one — which they do under mutual TLS, so without it the link
+	// fails in the handshake and the servers never form the mesh.
+	// PeerTLSFromFiles builds it from PEM files. Nil uses the system trust
+	// store and presents no certificate.
+	//
+	// The admin-server binary fills it: --peer-ca, --peer-cert and
+	// --peer-key name the files, and a server whose agent listener runs
+	// mutual TLS (--agent-client-ca) defaults to that listener's own CA
+	// bundle and certificate pair.
 	PeerTLS *tls.Config
 
 	// PeerToken is the bearer this server presents to its peers' agent

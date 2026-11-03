@@ -37,7 +37,7 @@ core de Nucleus por su `ADR-019`; Nucleus ya no lleva código de admin.
   la mayoría de apps solo montan el panel raíz, pero el plano fleet NO es
   esqueleto. Tags de componente propios (`agent/vX`, `server/vX`, `proto/vX`).
 - **`internal/fleettest/fleetbench/`** — el banco medido del plano fleet
-  (numerador del arco A9): 50 controles en seis familias (identity,
+  (numerador del arco A9): 51 controles en seis familias (identity,
   datasource, retention, alerts, ha, ui), cada uno con una sonda que arranca
   servidor y agente reales (o lee los descriptores del protocolo y el árbol)
   y un veredicto REGISTRADO que la sonda comprueba; cerrar un hueco pone la

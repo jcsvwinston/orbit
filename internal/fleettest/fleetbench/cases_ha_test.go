@@ -32,5 +32,11 @@ func controlsHA() []control {
 				"as well as on Receive, returns Aborted to the old peer when a newer registration evicts it, and drops a frame that " +
 				"raced in after (OR-56).",
 			probe: probeSameNodeIDSupersedes},
+		{id: "HA-06", family: "ha", title: "two servers whose agent listeners verify client certificates form the mesh over https://",
+			want: present, note: "peers speak on each other's agent listener, so under mutual TLS each server presents a client " +
+				"certificate (server.Config.PeerTLS, built by server.PeerTLSFromFiles); the admin-server binary defaults it to the " +
+				"--agent-client-ca bundle and the --agent-cert pair, or takes --peer-ca/--peer-cert/--peer-key. B lists the node an " +
+				"agent registered on A (OR-99: no flag filled PeerTLS and the links died in the handshake).",
+			probe: probeMeshOverMutualTLS},
 	}
 }
