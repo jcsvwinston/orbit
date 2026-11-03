@@ -2,12 +2,14 @@ package admin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
 	"sort"
 	"strings"
 
+	"github.com/jcsvwinston/nucleus/pkg/auth"
 	gferrors "github.com/jcsvwinston/nucleus/pkg/errors"
 
 	"github.com/jcsvwinston/orbit/datasource"
@@ -18,8 +20,10 @@ type tenantContextKey struct{}
 
 // TenantContext holds the tenant resolution of one admin request. It is
 // built by tenantContextMiddleware from, in order of precedence, the
-// ?tenant= override (gated and audited), the tenant the host resolved for
-// the request (PanelConfig.TenantResolver) and the configured default.
+// ?tenant= override (gated and audited), the tenant the operator's account
+// is bound to when the operator may not switch tenants (a request resolving
+// another is refused), the tenant the host resolved for the request
+// (PanelConfig.TenantResolver) and the configured default.
 type TenantContext struct {
 	Enabled     bool   // Whether multi-tenant is enabled
 	TenantID    string // Current tenant ID (empty = global/all tenants)
@@ -80,6 +84,68 @@ func (p *Panel) canSwitchTenant(r *http.Request) bool {
 		}
 	}
 	return false
+}
+
+// unboundOperatorDeprecation and unboundOperatorHint are the WARN an
+// operator with no tenant in a multi-tenant application produces, once per
+// operator per process (DEP-2026-003). Today they follow the tenant each
+// request resolves; at v2.0.0 they are refused unless they may switch
+// tenants.
+const (
+	unboundOperatorDeprecation = "operator has no tenant in a multi-tenant application: the panel confines them to the tenant each request resolves, and at Orbit 2.0 an operator with no tenant, who is not a superuser and holds no " + tenantSwitchAction + ", is refused (DEP-2026-003)"
+	unboundOperatorHint        = "bind the operator to their tenant with PUT %s/api/admin-users/{id} {\"tenant_id\": \"<tenant>\"}, or grant " + tenantSwitchAction + " on admin:* to an operator who works across tenants"
+)
+
+// boundOperatorTenant returns the tenant the request's operator is bound to
+// (OR-80), "" when they are bound to none. Only an auth provider that owns
+// the operator accounts (operatorManager — the default, backed by
+// nucleus_admin_users) keeps the column; with any other there is nothing to
+// read and the operator is unbound. An operator the store no longer has —
+// deleted between authentication and this read — is refused rather than
+// let through unbound. The caller asks only for an operator who may not
+// switch tenants: for one who may, the binding does not confine.
+//
+// An operator who is unbound in a provider that could bind them produces
+// the DEP-2026-003 WARN, once per operator per process.
+func (p *Panel) boundOperatorTenant(r *http.Request) (string, error) {
+	user, err := p.authenticatedUser(r)
+	if err != nil || user == nil {
+		return "", nil
+	}
+	mgr, ok := p.config.Auth.(operatorManager)
+	if !ok || mgr == nil {
+		return "", nil
+	}
+	store := mgr.OperatorStore()
+	if store == nil {
+		return "", nil
+	}
+	tenant, err := store.tenantOf(r.Context(), strings.TrimSpace(user.ID))
+	if err != nil {
+		if errors.Is(err, errOperatorNotFound) {
+			return "", gferrors.Forbidden("the operator account behind this session no longer exists")
+		}
+		return "", err
+	}
+	if tenant == "" {
+		p.warnUnboundOperator(user)
+	}
+	return tenant, nil
+}
+
+// warnUnboundOperator says, once per operator per process, that the
+// operator relies on the regime that changes at v2.0.0 (DEP-2026-003).
+func (p *Panel) warnUnboundOperator(user *auth.User) {
+	if p.logger == nil || user == nil {
+		return
+	}
+	if _, seen := p.unboundOperators.LoadOrStore(strings.TrimSpace(user.ID), struct{}{}); seen {
+		return
+	}
+	p.logger.Warn("orbit: "+unboundOperatorDeprecation,
+		"operator", user.Username,
+		"operator_id", user.ID,
+		"hint", fmt.Sprintf(unboundOperatorHint, p.config.Prefix))
 }
 
 // tenantScope is the tenant confinement of one request for one model: the

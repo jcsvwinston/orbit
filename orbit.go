@@ -97,6 +97,16 @@ type Config struct {
 	// superuser or a subject granted the tenant_switch RBAC action can look at
 	// another tenant (?tenant=<id>) or at all of them (?tenant=all), and every
 	// switch is audited. Leave disabled for single-tenant apps.
+	//
+	// An operator account can name a tenant (tenant_id in the operator API,
+	// a column of nucleus_admin_users). An operator who is not a superuser
+	// and holds no tenant_switch is confined to it whatever tenant the host
+	// resolves, and a request that resolves another tenant is refused (403),
+	// so a header the client sets cannot move them (OR-80). An operator
+	// with no tenant follows the tenant each request resolves and logs one
+	// WARN per process: at v2.0.0 such an operator is refused unless they
+	// are a superuser or hold tenant_switch (DEP-2026-003). Set the tenant
+	// of every such operator before upgrading.
 	MultiTenantEnabled bool     `yaml:"multitenant_enabled" koanf:"multitenant_enabled"`
 	MultiTenantDefault string   `yaml:"multitenant_default" koanf:"multitenant_default"`
 	MultiTenantIDs     []string `yaml:"multitenant_ids" koanf:"multitenant_ids"`

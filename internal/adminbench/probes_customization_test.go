@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jcsvwinston/nucleus/pkg/model"
 	"github.com/jcsvwinston/nucleus/pkg/nucleus"
 	"github.com/jcsvwinston/nucleus/pkg/nucleustest"
 
@@ -341,15 +342,68 @@ func probeCustomDataSource(t *testing.T, e *env) verdict {
 	return present
 }
 
-// probeMultiTenant confines the panel to the tenant the host resolved. The
-// probe boots its own application because multi-tenancy is a mount-time
-// posture, not something a request turns on.
+// TenantNote is the model CUST-07 confines: nucleus detects tenant_id by
+// convention, so the panel scopes it without an override.
+type TenantNote struct {
+	model.BaseModel
+	TenantID string `db:"column:tenant_id;required" json:"tenant_id" admin:"list,filter"`
+	Title    string `db:"column:title;required" json:"title" admin:"list,search"`
+}
+
+func (TenantNote) TableName() string { return "adminbench_tenant_notes" }
+
+// withTenantHeader is the client a tenant's user agent is: the same session,
+// and the X-Tenant-ID header Nucleus' header resolver reads on every request.
+func withTenantHeader(c *http.Client, tenant string) *http.Client {
+	cc := *c
+	next := c.Transport
+	if next == nil {
+		next = http.DefaultTransport
+	}
+	cc.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		r = r.Clone(r.Context())
+		r.Header.Set("X-Tenant-ID", tenant)
+		return next.RoundTrip(r)
+	})
+	return &cc
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// probeMultiTenant measures confinement, not that a tenant-scoped list
+// answers (OR-87: the probe used to call 200 on ?tenant=globex "present",
+// which is what let OR-79 and OR-80 through). It boots its own application
+// — multi-tenancy is a mount-time posture — with Nucleus' header resolver,
+// the one whose tenant the client names, seeds one row in each of two
+// tenants as the superuser, and then asks as a NON-superuser operator bound
+// to acme, granted list, retrieve, create and export_csv on the model and
+// not tenant_switch: the operator a multi-tenant deployment hands out.
+//
+// Present means: their list and CSV export show acme's row and never
+// globex's, globex's row by id is not found, and naming globex in the
+// header neither shows globex's rows nor writes a row there.
+//
+// Imports and fixtures under a tenant are not measured here: OR-79 is
+// their own finding.
 func probeMultiTenant(t *testing.T, e *env) verdict {
 	cfg := benchConfig(t)
+	cfg.MultiTenant.Enabled = true
+	cfg.MultiTenant.Resolver = "header"
+	cfg.MultiTenant.Header = "X-Tenant-ID"
+	cfg.MultiTenant.RequireIsolatedDB = false
+	cfg.MultiTenant.DatabaseAliasTemplate = ""
 	srv := nucleustest.StartApp(t, nucleus.App{
 		Config: cfg,
 		Modules: map[string]nucleus.ModuleSpec{
-			"content": contentModule(),
+			"tenancy": nucleus.Module[struct{}]{
+				Name:   "tenancy",
+				Models: []any{TenantNote{}},
+				OnStart: func(_ context.Context, rt nucleus.Runtime, _ struct{}) error {
+					return rt.AutoMigrate(TenantNote{})
+				},
+			}.Build(),
 			"orbit": orbit.Module(orbit.Config{
 				Prefix:             "/admin",
 				Title:              "Tenanted",
@@ -357,20 +411,82 @@ func probeMultiTenant(t *testing.T, e *env) verdict {
 				BootstrapEmail:     "admin@example.test",
 				BootstrapPassword:  bootstrapPassword,
 				MultiTenantEnabled: true,
-				MultiTenantDefault: "acme",
 				MultiTenantIDs:     []string{"acme", "globex"},
 			}),
 		},
 	})
-	client := signInTo(t, srv, "admin", bootstrapPassword)
+	admin := signInTo(t, srv, "admin", bootstrapPassword)
 
-	resp, err := client.Get(srv.URL("/admin/api/models/Note?tenant=globex"))
-	if err != nil {
-		t.Fatalf("tenant-scoped list: %v", err)
+	ids := map[string]string{}
+	for _, tenant := range []string{"acme", "globex"} {
+		r := requestAs(t, withTenantHeader(admin, tenant), srv, http.MethodPost, "/admin/api/models/TenantNote",
+			map[string]any{"title": tenant + " note"})
+		if r.code >= 300 {
+			t.Logf("seeding the %s row answered %d: %s", tenant, r.code, r.text())
+			return absent
+		}
+		ids[tenant] = recordID(t, r.json(t))
 	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		t.Logf("a tenant-scoped list answered %d", resp.StatusCode)
+
+	const clerk, role = "acme-clerk", "acme-clerks"
+	created := requestAs(t, admin, srv, http.MethodPost, "/admin/api/admin-users", map[string]any{
+		"username": clerk, "email": clerk + "@example.test", "password": limitedPassword,
+		"tenant_id": "acme", "roles": []string{role},
+	})
+	if created.code != http.StatusCreated {
+		t.Logf("creating an operator bound to acme answered %d: %s", created.code, created.text())
+		return partial
+	}
+	for _, act := range []string{"list", "retrieve", "create", "export_csv"} {
+		r := requestAs(t, admin, srv, http.MethodPost, "/admin/api/rbac/policies",
+			map[string]any{"sub": role, "obj": "admin:TenantNote", "act": act})
+		if r.code >= 400 {
+			t.Fatalf("grant %s answered %d: %s", act, r.code, r.text())
+		}
+	}
+	operator := signInTo(t, srv, clerk, limitedPassword)
+	inAcme, inGlobex := withTenantHeader(operator, "acme"), withTenantHeader(operator, "globex")
+
+	confined := true
+	fail := func(format string, args ...any) {
+		t.Logf(format, args...)
+		confined = false
+	}
+
+	for _, client := range []*http.Client{inAcme, operator} {
+		list := requestAs(t, client, srv, http.MethodGet, "/admin/api/models/TenantNote", nil)
+		if list.code != http.StatusOK || !strings.Contains(list.raw(), "acme note") || strings.Contains(list.raw(), "globex note") {
+			fail("the operator's own list answered %d: %s", list.code, list.text())
+		}
+		export := requestAs(t, client, srv, http.MethodGet, "/admin/api/models/TenantNote/export", nil)
+		if export.code != http.StatusOK || !strings.Contains(export.raw(), "acme note") || strings.Contains(export.raw(), "globex note") {
+			fail("the operator's own export answered %d: %s", export.code, export.text())
+		}
+		if r := requestAs(t, client, srv, http.MethodGet, "/admin/api/models/TenantNote/"+ids["globex"], nil); r.code != http.StatusNotFound {
+			fail("globex's row by id answered %d: %s", r.code, r.text())
+		}
+	}
+
+	for _, path := range []string{
+		"/admin/api/models/TenantNote",
+		"/admin/api/models/TenantNote/" + ids["globex"],
+		"/admin/api/models/TenantNote/export",
+		"/admin/api/models/TenantNote?tenant=globex",
+	} {
+		if r := requestAs(t, inGlobex, srv, http.MethodGet, path, nil); r.code < 400 || strings.Contains(r.raw(), "globex note") {
+			fail("naming globex in the header, GET %s answered %d: %s", path, r.code, r.text())
+		}
+	}
+	if r := requestAs(t, inGlobex, srv, http.MethodPost, "/admin/api/models/TenantNote",
+		map[string]any{"title": "smuggled"}); r.code < 400 {
+		fail("naming globex in the header, a create answered %d: %s", r.code, r.text())
+	}
+	all := requestAs(t, admin, srv, http.MethodGet, "/admin/api/models/TenantNote?tenant=all", nil)
+	if all.code != http.StatusOK || strings.Contains(all.raw(), "smuggled") {
+		fail("after the refused create, every tenant's rows (%d): %s", all.code, all.text())
+	}
+
+	if !confined {
 		return partial
 	}
 	return present

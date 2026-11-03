@@ -53,14 +53,20 @@ const operatorPasswordMinLength = 12
 // is never in it — not even redacted: a hash that reaches a client is a hash
 // someone can attack offline at their leisure.
 type operatorRecord struct {
-	ID          string   `json:"id"`
-	Username    string   `json:"username"`
-	Email       string   `json:"email"`
-	IsSuperuser bool     `json:"is_superuser"`
-	IsActive    bool     `json:"is_active"`
-	CreatedAt   string   `json:"created_at,omitempty"`
-	UpdatedAt   string   `json:"updated_at,omitempty"`
-	Roles       []string `json:"roles"`
+	ID          string `json:"id"`
+	Username    string `json:"username"`
+	Email       string `json:"email"`
+	IsSuperuser bool   `json:"is_superuser"`
+	IsActive    bool   `json:"is_active"`
+	// TenantID is the tenant the operator is bound to in a multi-tenant
+	// application, "" for none (OR-80, DEP-2026-003). A bound operator who
+	// is not a superuser and holds no tenant_switch sees and writes that
+	// tenant only, whatever tenant a request resolves to; see
+	// tenantContextMiddleware.
+	TenantID  string   `json:"tenant_id"`
+	CreatedAt string   `json:"created_at,omitempty"`
+	UpdatedAt string   `json:"updated_at,omitempty"`
+	Roles     []string `json:"roles"`
 }
 
 // operatorStore is the SQL side of operator management, over the same table
@@ -99,15 +105,20 @@ func (s *operatorStore) binds(n int) ([]string, error) {
 	return ph, nil
 }
 
-const operatorSelectColumns = "id, username, email, is_superuser, is_active, created_at, updated_at"
+const operatorSelectColumns = "id, username, email, is_superuser, is_active, created_at, updated_at, tenant_id"
+
+// operatorInsertColumns is adminUsersInsertColumns plus the operator's
+// tenant, which the bootstrap superuser never has.
+const operatorInsertColumns = "(id, username, email, password_hash, is_superuser, is_active, created_at, updated_at, tenant_id)"
 
 func (s *operatorStore) scan(rows *sql.Rows) (operatorRecord, error) {
 	var (
 		rec                  operatorRecord
 		superRaw, activeRaw  interface{}
 		createdRaw, updatedR interface{}
+		tenantRaw            interface{}
 	)
-	if err := rows.Scan(&rec.ID, &rec.Username, &rec.Email, &superRaw, &activeRaw, &createdRaw, &updatedR); err != nil {
+	if err := rows.Scan(&rec.ID, &rec.Username, &rec.Email, &superRaw, &activeRaw, &createdRaw, &updatedR, &tenantRaw); err != nil {
 		return operatorRecord{}, err
 	}
 	rec.ID = strings.TrimSpace(rec.ID)
@@ -117,8 +128,78 @@ func (s *operatorStore) scan(rows *sql.Rows) (operatorRecord, error) {
 	rec.IsActive = parseAdminSuperuserValue(activeRaw)
 	rec.CreatedAt = timestampText(createdRaw)
 	rec.UpdatedAt = timestampText(updatedR)
+	rec.TenantID = operatorTenantText(tenantRaw)
 	rec.Roles = []string{}
 	return rec, nil
+}
+
+// operatorTenantText renders the nullable tenant_id column: NULL and an
+// empty string are both "no tenant". It trims, as the host's resolver does
+// (orbit.go resolvedTenant): a padded value is not a tenant any request
+// resolves to, and an operator bound to one would be refused everywhere.
+func operatorTenantText(raw interface{}) string {
+	switch v := raw.(type) {
+	case nil:
+		return ""
+	case string:
+		return strings.TrimSpace(v)
+	case []byte:
+		return strings.TrimSpace(string(v))
+	default:
+		return strings.TrimSpace(fmt.Sprintf("%v", v))
+	}
+}
+
+// nullableTenant is the value bound for tenant_id: NULL for no tenant, so
+// an operator created or edited without one reads exactly like an operator
+// that predates the column.
+func nullableTenant(tenant string) any {
+	if tenant == "" {
+		return nil
+	}
+	return tenant
+}
+
+// tenantOf returns the tenant the operator with this id is bound to, "" for
+// none, and errOperatorNotFound for an id nobody has. It runs on every Data
+// Studio request of an operator who may not switch tenants in a
+// multi-tenant application (tenantContextMiddleware), so it reads one
+// column by primary key. A store whose dialect has no known placeholder
+// style reads the two columns of every row instead, as DatabaseAdminAuth's
+// own fallback does: refusing would take the panel away from a deployment
+// that authenticates today.
+func (s *operatorStore) tenantOf(ctx context.Context, id string) (string, error) {
+	if ph := bindPlaceholders(s.system, 1); ph != nil {
+		var raw interface{}
+		query := fmt.Sprintf("SELECT tenant_id FROM %s WHERE id = %s", s.table, ph[0])
+		if err := s.db.QueryRowContext(ctx, query, id).Scan(&raw); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return "", errOperatorNotFound
+			}
+			return "", fmt.Errorf("read operator tenant: %w", err)
+		}
+		return operatorTenantText(raw), nil
+	}
+
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf("SELECT id, tenant_id FROM %s", s.table))
+	if err != nil {
+		return "", fmt.Errorf("read operator tenant: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var rowID string
+		var raw interface{}
+		if err := rows.Scan(&rowID, &raw); err != nil {
+			return "", fmt.Errorf("read operator tenant: %w", err)
+		}
+		if strings.TrimSpace(rowID) == id {
+			return operatorTenantText(raw), nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return "", fmt.Errorf("read operator tenant: %w", err)
+	}
+	return "", errOperatorNotFound
 }
 
 // timestampText renders whatever the driver returns for the timestamp
@@ -189,7 +270,7 @@ func (s *operatorStore) get(ctx context.Context, id string) (operatorRecord, err
 }
 
 func (s *operatorStore) create(ctx context.Context, rec operatorRecord, passwordHash string) (operatorRecord, error) {
-	ph, err := s.binds(8)
+	ph, err := s.binds(9)
 	if err != nil {
 		return operatorRecord{}, err
 	}
@@ -198,22 +279,22 @@ func (s *operatorStore) create(ctx context.Context, rec operatorRecord, password
 	rec.CreatedAt, rec.UpdatedAt = now, now
 	rec.IsActive = true
 
-	stmt := fmt.Sprintf("INSERT INTO %s %s VALUES (%s)", s.table, adminUsersInsertColumns, strings.Join(ph, ", "))
+	stmt := fmt.Sprintf("INSERT INTO %s %s VALUES (%s)", s.table, operatorInsertColumns, strings.Join(ph, ", "))
 	if _, err := s.db.ExecContext(ctx, stmt,
-		rec.ID, rec.Username, rec.Email, passwordHash, boolToInt(rec.IsSuperuser), 1, now, now); err != nil {
+		rec.ID, rec.Username, rec.Email, passwordHash, boolToInt(rec.IsSuperuser), 1, now, now, nullableTenant(rec.TenantID)); err != nil {
 		return operatorRecord{}, err
 	}
 	return rec, nil
 }
 
-func (s *operatorStore) updateProfile(ctx context.Context, id, email string, superuser bool) error {
-	ph, err := s.binds(4)
+func (s *operatorStore) updateProfile(ctx context.Context, id, email string, superuser bool, tenant string) error {
+	ph, err := s.binds(5)
 	if err != nil {
 		return err
 	}
-	stmt := fmt.Sprintf("UPDATE %s SET email = %s, is_superuser = %s, updated_at = %s WHERE id = %s",
-		s.table, ph[0], ph[1], ph[2], ph[3])
-	return s.exec(ctx, stmt, email, boolToInt(superuser), time.Now().UTC().Format(time.RFC3339), id)
+	stmt := fmt.Sprintf("UPDATE %s SET email = %s, is_superuser = %s, tenant_id = %s, updated_at = %s WHERE id = %s",
+		s.table, ph[0], ph[1], ph[2], ph[3], ph[4])
+	return s.exec(ctx, stmt, email, boolToInt(superuser), nullableTenant(tenant), time.Now().UTC().Format(time.RFC3339), id)
 }
 
 func (s *operatorStore) setPassword(ctx context.Context, id, hash string) error {
@@ -377,6 +458,7 @@ func (p *Panel) handleCreateOperator(c *router.Context) error {
 		Email       string   `json:"email"`
 		Password    string   `json:"password"`
 		IsSuperuser bool     `json:"is_superuser"`
+		TenantID    string   `json:"tenant_id"`
 		Roles       []string `json:"roles"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -390,6 +472,10 @@ func (p *Panel) handleCreateOperator(c *router.Context) error {
 	if err := validateOperatorPassword(req.Password); err != nil {
 		return err
 	}
+	tenant, err := normalizeOperatorTenant(req.TenantID)
+	if err != nil {
+		return err
+	}
 
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
@@ -400,6 +486,7 @@ func (p *Panel) handleCreateOperator(c *router.Context) error {
 		Username:    req.Username,
 		Email:       req.Email,
 		IsSuperuser: req.IsSuperuser,
+		TenantID:    tenant,
 	}, hash)
 	if err != nil {
 		if isBootstrapDuplicateError(err) {
@@ -433,7 +520,8 @@ func (p *Panel) handleCreateOperator(c *router.Context) error {
 		RecordID:  rec.ID,
 		NewValue: map[string]any{
 			"username": rec.Username, "email": rec.Email,
-			"is_superuser": rec.IsSuperuser, "roles": granted,
+			"is_superuser": rec.IsSuperuser, "tenant_id": rec.TenantID,
+			"roles": granted,
 		},
 	})
 	return c.JSON(http.StatusCreated, rec)
@@ -454,9 +542,14 @@ func (p *Panel) handleUpdateOperator(c *router.Context) error {
 		return operatorError(err)
 	}
 
+	// Every field is optional and a missing one keeps its value: the
+	// panel's own screen sends email and is_superuser only, and an edit
+	// from it must not unbind an operator from their tenant. "tenant_id":
+	// "" is the explicit way to clear it.
 	var req struct {
 		Email       *string `json:"email"`
 		IsSuperuser *bool   `json:"is_superuser"`
+		TenantID    *string `json:"tenant_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		return gferrors.BadRequest("invalid JSON")
@@ -472,6 +565,12 @@ func (p *Panel) handleUpdateOperator(c *router.Context) error {
 	if req.IsSuperuser != nil {
 		superuser = *req.IsSuperuser
 	}
+	tenant := before.TenantID
+	if req.TenantID != nil {
+		if tenant, err = normalizeOperatorTenant(*req.TenantID); err != nil {
+			return err
+		}
+	}
 
 	if before.IsSuperuser && !superuser {
 		if err := p.guardLastSuperuser(c, before, "demoted"); err != nil {
@@ -479,7 +578,7 @@ func (p *Panel) handleUpdateOperator(c *router.Context) error {
 		}
 	}
 
-	if err := store.updateProfile(r.Context(), id, email, superuser); err != nil {
+	if err := store.updateProfile(r.Context(), id, email, superuser, tenant); err != nil {
 		if isBootstrapDuplicateError(err) {
 			return &gferrors.DomainError{
 				Code:       "CONFLICT",
@@ -498,8 +597,8 @@ func (p *Panel) handleUpdateOperator(c *router.Context) error {
 		Action:    "operator.update",
 		ModelName: "operator",
 		RecordID:  id,
-		OldValue:  map[string]any{"email": before.Email, "is_superuser": before.IsSuperuser},
-		NewValue:  map[string]any{"email": after.Email, "is_superuser": after.IsSuperuser},
+		OldValue:  map[string]any{"email": before.Email, "is_superuser": before.IsSuperuser, "tenant_id": before.TenantID},
+		NewValue:  map[string]any{"email": after.Email, "is_superuser": after.IsSuperuser, "tenant_id": after.TenantID},
 	})
 	return c.JSON(http.StatusOK, p.withRoles([]operatorRecord{after})[0])
 }
@@ -721,6 +820,32 @@ func (p *Panel) guardLastSuperuser(c *router.Context, target operatorRecord, ver
 		Message:    fmt.Sprintf("%q is the last active superuser and cannot be %s: promote another operator first", target.Username, verb),
 		StatusCode: http.StatusConflict,
 	}
+}
+
+// operatorTenantMaxLength is the width of the tenant_id column.
+const operatorTenantMaxLength = 191
+
+// normalizeOperatorTenant trims the tenant an operator is to be bound to,
+// "" meaning none. It refuses "all", which on this panel is not a tenant
+// but every tenant (?tenant=all): an operator who works across tenants is
+// granted tenant_switch, not bound to a tenant of that name.
+//
+// The value is not checked against multitenant_ids: that list feeds the
+// selector and need not name every tenant the host resolves. An operator
+// bound to a tenant nobody resolves sees no rows and is refused on every
+// request that resolves another — the safe side of a typo.
+func normalizeOperatorTenant(raw string) (string, error) {
+	tenant := strings.TrimSpace(raw)
+	if tenant == "" {
+		return "", nil
+	}
+	if strings.EqualFold(tenant, "all") {
+		return "", gferrors.BadRequest(`tenant_id "all" is reserved for ?tenant=all (every tenant); grant the ` + tenantSwitchAction + ` permission to an operator who works across tenants`)
+	}
+	if len([]rune(tenant)) > operatorTenantMaxLength {
+		return "", gferrors.BadRequest(fmt.Sprintf("tenant_id must be at most %d characters", operatorTenantMaxLength))
+	}
+	return tenant, nil
 }
 
 func validateOperatorPassword(password string) error {
