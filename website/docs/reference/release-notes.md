@@ -6,7 +6,7 @@ description: What changed in each Orbit release, in plain terms.
 
 # Release notes
 
-The current release is **v1.20.1**. <!-- x-release-please-version -->
+The current release is **v1.21.0**. <!-- x-release-please-version -->
 
 Every heading below is a version of the **root module**
 (`github.com/jcsvwinston/orbit`) — the one an application mounts for the
@@ -16,6 +16,161 @@ The fleet modules (`agent`, `server`, `proto`) release independently with their
 own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
+
+## v1.21.0 — 2026-11-07
+
+A minor that closes the four most serious findings of the suite's re-audit of
+2026-10-23 and announces three more changes Orbit makes at its 2.0, each
+with its way to stay in 1.x. In a multi-tenant application an operator can
+now be bound to a tenant, and the import, export, fixture and file-widget
+paths work with the keys the panel itself hands out; a fleet of servers
+forms its mesh under mutual TLS, and a server can refuse peers it does not
+dial. Nothing is removed and no default changes in this release: the
+notices announce, and the changes ship with the major. A deployment that
+runs v1.20.1 runs as before, with two exceptions under **Fixed**: a request
+that resolves another tenant than the one a bound operator holds is
+refused, and a server whose agent certificate lacks `clientAuth` logs one
+WARN at start when it dials an `https://` peer.
+
+**What this root requires.** The root, `agent`, `server` and
+`quarkdatasource` require Nucleus v1.34.0, and `quarkbridge` and
+`quarkdatasource` require Quark v1.18.0, the tags the suite certifies with
+this release. The Data Studio fixes under **Fixed** are in `quarkdatasource`
+(v1.13.2), which an application requires on its own.
+
+### Announced for 2.0
+
+- **Operators are bound to a tenant (`DEP-2026-003`).** In a multi-tenant
+  application, an operator with no tenant of their own who is not a
+  superuser and holds no `tenant_switch` is refused at 2.0. Today such an
+  operator follows the tenant the host resolves for each request, and the
+  panel logs one WARN per operator per process naming the notice and how to
+  set the tenant. The way to prepare: set each such operator's tenant
+  through the operator API (below), or grant `tenant_switch` to the ones who
+  work across tenants.
+- **`system_pulse` drops the environment (`DEP-2026-004`).** The system
+  snapshot (`GET <prefix>/api/system/snapshot`) serves the process
+  environment, masked, to any `system_pulse` holder. At 2.0 it needs the new
+  `system_env` permission beside it, and `system_pulse` alone gets
+  `"environment": []` with the rest of the snapshot unchanged. Today the
+  environment is still served, with one WARN per operator per process naming
+  the notice and the permission to grant.
+- **The mesh accepts only configured peers (`DEP-2026-005`).** `PeerService`
+  is mounted on every server's agent listener behind the agents'
+  authentication only, so a holder of the agent token, or of any certificate
+  the agents' CA signed, can announce a server and put nodes and events into
+  the registry. At 2.0 every server accepts a peer only when the announced
+  `server_id` is the one that answered on its own link to a configured
+  `--peers` endpoint and, under mutual TLS, the certificate's Common Name is
+  that `server_id`. Today the check is behind `--peer-allowlist` (below), and
+  each peer it would refuse is logged once per `server_id` per process.
+
+The three notices live in `docs/deprecations/`, with the migration path,
+how to detect that a deployment relies on what changes, and the tests that
+pin the current behaviour. Each names v2.0.0 and a date no earlier than
+2027-02-07.
+
+### Added
+
+- **An operator's tenant.** `nucleus_admin_users` gains a nullable
+  `tenant_id`, added at mount to an existing table; every existing operator
+  reads as unbound, so the upgrade changes nobody's access. The operator API
+  carries it on `GET`/`POST /admin/api/admin-users` and
+  `GET`/`PUT /admin/api/admin-users/{id}`: a `PUT` that does not name it
+  keeps it, `""` clears it, and `all` is refused. For an operator who is not
+  a superuser and holds no `tenant_switch`, the account's tenant confines
+  every request: one that resolves another tenant is refused with `403`, the
+  answer `?tenant=` naming it already gets, and one that resolves none opens
+  their tenant. Superusers and `tenant_switch` holders keep the existing
+  rules, `tenant.override` audit included.
+- **`system_env`** on `admin:*`: a superuser, or an operator holding
+  `system_pulse` and `system_env`, reads the environment as before, masked.
+  It opens nothing on its own; the snapshot stays `system_pulse`'s door.
+- **`server.Config.PeerAllowlist`**, and on the `admin-server` binary
+  `--peer-allowlist` (env `NUCLEUS_ADMIN_PEER_ALLOWLIST`), off by default:
+  the 2.0 check, today. A server without `--peers` accepts no peer. Without
+  client certificates the check compares names, not credentials: a token
+  holder who knows the `server_id` of a server this one dials can still
+  announce it; under mutual TLS the certificate decides.
+- **`server.PeerTLSFromFiles(caFile, certFile, keyFile, logger)`** builds
+  `server.Config.PeerTLS`, the client side a server presents to its peers:
+  an optional CA bundle and an optional client pair re-read on rotation, as
+  `TLSFromFiles` does. A certificate whose extended key usage leaves out
+  `clientAuth` is refused with `ErrNotAClientCertificate`. On the binary,
+  `--peer-ca`, `--peer-cert` and `--peer-key` (env `NUCLEUS_ADMIN_PEER_CA`,
+  `NUCLEUS_ADMIN_PEER_CERT`, `NUCLEUS_ADMIN_PEER_KEY`); when the agent
+  listener verifies client certificates the defaults are that CA bundle and
+  the `--agent-cert`/`--agent-key` pair.
+- **Mesh diagnostics.** A peer link that fails or drops is logged as a WARN
+  on the dialling server with its cause (`remote error: tls: certificate
+  required`, `x509: certificate is not trusted`), once per distinct error;
+  before, the only trace was a handshake error in the peer's log.
+
+### Fixed
+
+- **A fleet of servers forms its mesh under mutual TLS (OR-99).** Peers
+  speak on each other's agent listener, so when that listener verifies
+  client certificates a server must present one to its peers, and no flag
+  filled `server.Config.PeerTLS`: two servers with `--agent-client-ca` and
+  `--peers https://…` failed every handshake and never shared a node, while
+  the docs promised otherwise. The flags and defaults above fix it. An
+  explicit `--peer-cert` without `clientAuth` refuses to start; the agent
+  certificate taken by default without it is not presented, and one WARN at
+  start names both ways out.
+- **A bound operator cannot reach another tenant through the resolver
+  (OR-80).** With `multitenant_enabled` on, a non-superuser operator without
+  `tenant_switch` was refused `?tenant=<other>` but answered from the other
+  tenant when the request named it the way the host's resolver reads it,
+  such as a header: list, record by id, CSV export, export jobs and, with
+  `create` in the role, a write. The operator tenant above closes it.
+- **Import, fixtures and exports under a tenant use the panel's own keys
+  (OR-79).** The store a multi-tenant application hands the panel prefixes
+  every key with the request's tenant and reports the physical key; the
+  upload, the stored export and the fixture dump answered with that key, and
+  the next step handed it back to the same store, which prefixed it again.
+  Validate and execute of an import, `loaddata` and the export download
+  failed with `500` or `403`. They now answer and take the logical key, and
+  the store adds the prefix once. A physical key of the request's own tenant
+  from an earlier version is still read back; another tenant's key is never
+  stripped.
+- **A file uploaded through a widget under a tenant is found again
+  (OR-141).** The same double prefix on `POST /api/models/{name}/upload`:
+  the form wrote the physical key into the record and every read of the file
+  by that value went through the store, which prefixed it a second time. The
+  upload now answers, and audits, the logical key. Without a tenant the key
+  is byte-identical to what it was.
+- **Data Studio over Quark validates and classifies (OR-78).** Over
+  `quarkdatasource`, a required field left out was stored empty, a
+  wrong-typed value and a repeated unique value were a `500` carrying the
+  decoder's or the driver's text, unknown keys were dropped, and an update or
+  delete of a missing row answered success and was recorded in the audit
+  trail. The adapter now answers a `422` per field, a `409` for a unique or
+  other constraint violation without engine text, and a `404` for a missing
+  row, as the Nucleus adapter does; and the panel checks a record against the
+  catalogue before calling any store, for any data source. A bulk delete
+  writes its audit entry only when it removed a row.
+- **Imports and inline writes on a source that converts nothing (OR-144).**
+  `ValidateImportData` refused every row that carried a read-only field, the
+  primary key included, so an export of the Quark adapter, which declares the
+  key read-only, could not be imported back; CSV cells reached the store as
+  text; and the parent stamp of an inline child was a string. A read-only key
+  no longer invalidates a row, CSV cells are parsed to the kind the field
+  declares, and the stamp is written in the field's Go type.
+- **The migration path of `DEP-2026-002` points at what exists (OR-89).** It
+  sent the reader to a section that did not exist and named options the
+  adapter does not take; it now names the quick start's step 4 and the
+  adapter's README, and the quick start shows the Quark path beside the
+  registry.
+
+### Build
+
+**Built and tested with Go 1.26.10.** The toolchain moves from Go 1.26.9
+to 1.26.10, which fixes GO-2026-6809 in `crypto/x509`; the `go` directive
+does not move.
+
+Fleet and bridge tags cut alongside: `agent/v0.16.2`, `server/v0.22.0`,
+`proto/v0.8.2`, `quarkbridge/v1.9.7`, `quarkdatasource/v1.13.2`,
+`datasource/v1.1.1`, `ui/v1.2.1`.
 
 ## v1.20.1 — 2026-10-18
 
