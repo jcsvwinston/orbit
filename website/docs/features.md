@@ -447,9 +447,14 @@ would otherwise quietly show the column's plain input.
 A file field holds a storage **key**, and `POST /api/models/{model}/upload`
 (multipart, `file` plus an optional `field`) produces one: the bytes go to the
 application's own storage and the answer carries the key the form writes into
-the record. The route refuses a field that does not hold a file, caps an
-upload at 32 MB, keeps only the base name of what the client called it, and is
-audited (`field.upload`).
+the record. It is the key the panel asked the store to write: in a
+multi-tenant application the store adds the tenant's prefix to it, once, on
+the write and on every read the application makes by the record's value.
+The upload used to answer the prefixed key instead, which the store
+prefixed a second time on each read, so a file uploaded under a tenant was
+not found. The route refuses a field
+that does not hold a file, caps an upload at 32 MB, keeps only the base name
+of what the client called it, and is audited (`field.upload`).
 
 ## Access control (RBAC)
 
@@ -628,7 +633,8 @@ their file whole as it does anybody's.
 
 **Storage keys.** The key an upload, a stored export and a fixture dump answer
 with is the key the panel wrote (`_tmp/import_…`, `_tmp/export_…`,
-`_tmp/fixture_…`), and it is the key the next step takes back: the validate
+`_tmp/fixture_…`; a file widget's upload answers `admin/uploads/…` the same
+way), and it is the key the next step takes back: the validate
 and execute steps, the download and the fixture load. In a multi-tenant
 application the store adds the tenant's prefix to it once, as it does to every
 key the application uses — the panel used to answer with the prefixed key,
