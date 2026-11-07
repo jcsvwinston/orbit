@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.21.1](https://github.com/jcsvwinston/orbit/compare/v1.21.0...v1.21.1) (2026-11-07)
+
+
+### Fixed
+
+* **deps:** re-pin ui, datasource and proto to the tags cut with v1.21.0 ([#588](https://github.com/jcsvwinston/orbit/issues/588)) ([61f615f](https://github.com/jcsvwinston/orbit/commit/61f615fe15b50d8eb79848efa6297b1256e7ff81))
+
 ## [1.21.0](https://github.com/jcsvwinston/orbit/compare/v1.20.1...v1.21.0) (2026-11-07)
 
 

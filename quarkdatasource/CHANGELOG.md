@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.3](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v1.13.2...quarkdatasource/v1.13.3) (2026-11-07)
+
+
+### Fixed
+
+* **deps:** re-pin ui, datasource and proto to the tags cut with v1.21.0 ([#588](https://github.com/jcsvwinston/orbit/issues/588)) ([61f615f](https://github.com/jcsvwinston/orbit/commit/61f615fe15b50d8eb79848efa6297b1256e7ff81))
+
 ## [1.13.2](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v1.13.1...quarkdatasource/v1.13.2) (2026-11-07)
 
 

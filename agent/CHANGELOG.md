@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.3](https://github.com/jcsvwinston/orbit/compare/agent/v0.16.2...agent/v0.16.3) (2026-11-07)
+
+
+### Fixed
+
+* **deps:** re-pin ui, datasource and proto to the tags cut with v1.21.0 ([#588](https://github.com/jcsvwinston/orbit/issues/588)) ([61f615f](https://github.com/jcsvwinston/orbit/commit/61f615fe15b50d8eb79848efa6297b1256e7ff81))
+
 ## [0.16.2](https://github.com/jcsvwinston/orbit/compare/agent/v0.16.1...agent/v0.16.2) (2026-11-07)
 
 
