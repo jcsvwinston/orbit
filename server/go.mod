@@ -6,8 +6,8 @@ toolchain go1.26.10
 
 require (
 	connectrpc.com/connect v1.20.0
-	github.com/jcsvwinston/orbit/proto v0.8.1
-	github.com/jcsvwinston/orbit/ui v1.2.0
+	github.com/jcsvwinston/orbit/proto v0.8.2
+	github.com/jcsvwinston/orbit/ui v1.2.1
 )
 
 require (
