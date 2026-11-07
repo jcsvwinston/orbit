@@ -402,7 +402,10 @@ carries the children:
 A row with an id is an edit, one without is an insert, and a row that should
 go **says so** — absence never deletes, because a form that loaded two of five
 lines would otherwise remove the three it never showed. The key pointing at
-the parent is stamped by the panel: a child that names another record there
+the parent is stamped by the panel, in the type the child's field declares
+(a number for a numeric column, so a source that converts no text — the
+Quark adapter, an application's own — stores it as it would a form's): a
+child that names another record there
 is refused with `400`, and a child named by id must be one of the record being
 edited — any other row, including one that does not exist, answers `404`, for
 a superuser too. A record being created has no children to edit or remove yet.
@@ -630,6 +633,17 @@ rows of the report: none of them is a question of who is writing.
 A superuser is unaffected, apart from the tenant: model grants, `#own` and
 field policies do not apply to them, and a row of another tenant refuses
 their file whole as it does anybody's.
+
+**What a cell becomes.** Every cell of a CSV is text; the store is handed
+each one in the kind its field declares — a number, a decimal, a boolean —
+as the record form would hand it, so a source that converts no text (the
+Quark adapter, an application's own) writes a CSV as it writes a JSON file.
+A cell that does not read as its kind is a failed row of the report, as
+before. A row that carries the primary key is valid though the source may
+declare the key read-only (the Quark adapter does, for every key the
+database assigns): the key names the row an update targets and is never
+written as a field, so an export round-trips through the import whichever
+adapter serves the model.
 
 **Storage keys.** The key an upload, a stored export and a fixture dump answer
 with is the key the panel wrote (`_tmp/import_…`, `_tmp/export_…`,
