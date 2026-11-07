@@ -312,12 +312,20 @@ func (p *Panel) handleFieldUpload(c *router.Context) error {
 		return fmt.Errorf("store upload: %w", err)
 	}
 
+	// The answer carries the LOGICAL key — the one the panel asked the
+	// store to write — because it is what the form writes into the field
+	// and what the application reads the file back by, through the same
+	// store. info.Key is the physical one, already prefixed with the
+	// tenant by a multi-tenant application's store: stored in the record,
+	// it was prefixed a second time on every read, and the file was not
+	// found (OR-141; the import, the export and the fixture dump answer
+	// the logical key since OR-79).
 	p.recordAuditEntry(r, AuditEntry{
 		Action:    "field.upload",
 		ModelName: mi.Name,
-		RecordID:  info.Key,
+		RecordID:  key,
 		NewValue: map[string]any{
-			"key":   info.Key,
+			"key":   key,
 			"field": fieldName,
 			"size":  info.Size,
 			"name":  filename,
@@ -325,7 +333,7 @@ func (p *Panel) handleFieldUpload(c *router.Context) error {
 	})
 
 	return c.JSON(http.StatusCreated, map[string]interface{}{
-		"key":          info.Key,
+		"key":          key,
 		"field":        fieldName,
 		"size":         info.Size,
 		"content_type": header.Header.Get("Content-Type"),
