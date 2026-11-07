@@ -17,6 +17,18 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.21.1 — 2026-11-07
+
+A patch that re-pins the modules cut with v1.21.0 inside the same release:
+the root and `server` now require `orbit/ui` v1.2.1, the root, `agent` and
+`quarkdatasource` require `datasource` v1.1.1, and `agent` and `server`
+require `proto` v0.8.2, the tags that went out beside v1.21.0 and that
+v1.21.0 itself still required one tag behind. No Go code changes; nothing
+in the binaries or the panel behaves differently from v1.21.0, and the
+module tags re-pinned carry the Go 1.26.10 toolchain only.
+
+Fleet and bridge tags cut alongside: `agent/v0.16.3`, `server/v0.22.1`, `quarkdatasource/v1.13.3`.
+
 ## v1.21.0 — 2026-11-07
 
 A minor that closes the four most serious findings of the suite's re-audit of
