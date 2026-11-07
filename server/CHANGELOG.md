@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.22.0](https://github.com/jcsvwinston/orbit/compare/server/v0.21.1...server/v0.22.0) (2026-11-07)
+
+
+### Added
+
+* **server:** add --peer-allowlist and announce that the mesh accepts only configured peers in v2 (OR-103) ([#582](https://github.com/jcsvwinston/orbit/issues/582)) ([5f0f59f](https://github.com/jcsvwinston/orbit/commit/5f0f59f5c3071b0f0de08567ca7cba9b4a23ec78))
+
+
+### Fixed
+
+* **deps:** build and test with Go 1.26.10, which fixes GO-2026-6809 in crypto/x509 ([#580](https://github.com/jcsvwinston/orbit/issues/580)) ([9519a4b](https://github.com/jcsvwinston/orbit/commit/9519a4ba2c2fe5d64e70f69804b5cdbae8c2d9d3))
+* **server:** let admin-server peers form the mesh under mTLS (OR-99) ([#577](https://github.com/jcsvwinston/orbit/issues/577)) ([9a3c5e7](https://github.com/jcsvwinston/orbit/commit/9a3c5e77b500d562f82dc5e7200ecec28b46af2f))
+
 ## [0.21.1](https://github.com/jcsvwinston/orbit/compare/server/v0.21.0...server/v0.21.1) (2026-10-18)
 
 
