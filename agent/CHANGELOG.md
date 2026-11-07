@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.16.2](https://github.com/jcsvwinston/orbit/compare/agent/v0.16.1...agent/v0.16.2) (2026-11-07)
+
+
+### Fixed
+
+* **deps:** align root, agent, server, quarkbridge, quarkdatasource to the set (nucleus v1.34.0, quark v1.18.0) ([#587](https://github.com/jcsvwinston/orbit/issues/587)) ([8f34732](https://github.com/jcsvwinston/orbit/commit/8f34732485aab1a4282f97571ddcb87bb347f07b))
+* **deps:** build and test with Go 1.26.10, which fixes GO-2026-6809 in crypto/x509 ([#580](https://github.com/jcsvwinston/orbit/issues/580)) ([9519a4b](https://github.com/jcsvwinston/orbit/commit/9519a4ba2c2fe5d64e70f69804b5cdbae8c2d9d3))
+
 ## [0.16.1](https://github.com/jcsvwinston/orbit/compare/agent/v0.16.0...agent/v0.16.1) (2026-10-18)
 
 
