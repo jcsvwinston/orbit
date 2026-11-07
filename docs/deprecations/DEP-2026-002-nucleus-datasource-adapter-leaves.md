@@ -84,9 +84,14 @@ What changes and when:
   agent.NewExtension(agent.ExtensionConfig{Endpoints: endpoints, DataSource: src}, stateDir, version)
   ```
 
-  See *Data Studio over Quark* in the features page for the options
-  `quarkdatasource` takes (searchable columns, per-model read-only, the
-  filter operators it answers).
+  The quick start (`website/docs/quick-start.md`, step 4, *With the Quark
+  ORM*) shows this path beside the default one. The adapter's README
+  (`quarkdatasource/README.md`: *Usage*, *In the fleet*, *Semantics*)
+  names the options it takes (`WithTenantColumn`,
+  `WithDatabaseAlias`) and what it answers: the filter operators, a missing
+  row as a `404`, a record it cannot write as a `422` per field, and the
+  tenant scoping it applies. The *Data Studio* section of the features page
+  says how the two adapters differ on validation, search and counts.
 - **At 2.0:** an application that still passes no `DataSource` does not
   start; the error names the field. There is no Nucleus adapter to fall back
   to, because there is no `pkg/model` registry to read.

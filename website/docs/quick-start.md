@@ -121,6 +121,68 @@ Model registration is a Nucleus concept, not an Orbit one — see the
 [models and database](/nucleus/concepts/models-and-database) for tags,
 relations, and real migrations.
 
+### With the Quark ORM
+
+The registry above is the panel's default source, and the Nucleus adapter
+that reads it leaves at Orbit 2.0 (`DEP-2026-002` in the repository's
+`docs/deprecations/`). An application whose models are
+[Quark](https://github.com/jcsvwinston/quark) models hands Data Studio the
+`quarkdatasource` adapter instead — a module of its own, so Quark never
+enters the panel's dependency graph — with one `Register` per model:
+
+```go
+import (
+    "context"
+    "log"
+
+    "github.com/jcsvwinston/quark"
+    _ "github.com/jcsvwinston/quark/drivers/sqlite"
+
+    "github.com/jcsvwinston/orbit"
+    "github.com/jcsvwinston/orbit/quarkdatasource"
+)
+
+type Note struct {
+    ID    int64  `db:"id" pk:"true"`
+    Title string `db:"title" quark:"not_null"`
+    Body  string `db:"body"`
+}
+
+func notes() *quarkdatasource.Adapter {
+    client, err := quark.New("sqlite", "app.db")
+    if err != nil {
+        log.Fatal(err)
+    }
+    // Dev-mode convenience; production apps use SQL migrations.
+    if err := client.RegisterModel(&Note{}); err != nil {
+        log.Fatal(err)
+    }
+    if err := client.MigrateRegistered(context.Background()); err != nil {
+        log.Fatal(err)
+    }
+    src := quarkdatasource.New(client)
+    if err := quarkdatasource.Register[Note](src); err != nil { // ← this line puts Note in Data Studio
+        log.Fatal(err)
+    }
+    return src
+}
+```
+
+Hand the adapter to the panel where you mount it, and the host's registry
+is no longer what Data Studio shows:
+
+```go
+.Mount(orbit.Module(orbit.Config{Prefix: "/admin", DataSource: notes()}))
+```
+
+`Note` appears the same way — browse, create, edit, delete — and the
+panel's own tables (operators, sessions, the audit trail) need nothing from
+the source. The adapter's
+[README](https://github.com/jcsvwinston/orbit/tree/main/quarkdatasource)
+covers its options (the tenant column, the database alias) and what it
+answers; the fleet agent takes the same adapter
+([`agent.ExtensionConfig.DataSource`](./cluster/agent.md)).
+
 ## The bootstrap user
 
 Orbit creates the `nucleus_admin_users` schema every time it mounts.
