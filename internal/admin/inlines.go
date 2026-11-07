@@ -215,9 +215,9 @@ func (p *Panel) inlineParentFor(child datasource.ModelInfo, spec inlineSpec, par
 
 // inlineParentKey is the key of the record being edited the way a child's
 // column holds it: the record's own primary key when it carries one, else
-// the id the request named. Ids are strings at the boundary (ADR-001 D1)
-// and the adapters accept the text of a number for a numeric column, so the
-// text is what is stamped and compared.
+// the id the request named. Ids are strings at the boundary (ADR-001 D1),
+// so the text is what is compared; what is stamped into the child's field
+// is that text in the field's Go type (inlineParent.stamp).
 func inlineParentKey(mi datasource.ModelInfo, rec datasource.Record, id string) string {
 	if key, ok := canonicalID(auditRecordID(mi, rec)); ok {
 		return key
