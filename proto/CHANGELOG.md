@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.2](https://github.com/jcsvwinston/orbit/compare/proto/v0.8.1...proto/v0.8.2) (2026-11-07)
+
+
+### Fixed
+
+* **deps:** build and test with Go 1.26.10, which fixes GO-2026-6809 in crypto/x509 ([#580](https://github.com/jcsvwinston/orbit/issues/580)) ([9519a4b](https://github.com/jcsvwinston/orbit/commit/9519a4ba2c2fe5d64e70f69804b5cdbae8c2d9d3))
+
 ## [0.8.1](https://github.com/jcsvwinston/orbit/compare/proto/v0.8.0...proto/v0.8.1) (2026-10-12)
 
 

@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.21.0](https://github.com/jcsvwinston/orbit/compare/v1.20.1...v1.21.0) (2026-11-07)
+
+
+### Added
+
+* **admin:** add the system_env permission and announce that system_pulse drops the environment in v2 (OR-93) ([#576](https://github.com/jcsvwinston/orbit/issues/576)) ([fb7356e](https://github.com/jcsvwinston/orbit/commit/fb7356e27febd39b1280d10ca56b58b35812b648))
+* **server:** add --peer-allowlist and announce that the mesh accepts only configured peers in v2 (OR-103) ([#582](https://github.com/jcsvwinston/orbit/issues/582)) ([5f0f59f](https://github.com/jcsvwinston/orbit/commit/5f0f59f5c3071b0f0de08567ca7cba9b4a23ec78))
+
+
+### Fixed
+
+* **admin:** bind operators to a tenant and announce the v2 flip (OR-80) ([#578](https://github.com/jcsvwinston/orbit/issues/578)) ([438eb83](https://github.com/jcsvwinston/orbit/commit/438eb834533af3386545a98ae1d38c22d221c0fe))
+* **admin:** import and inline writes hand the store typed values, and a read-only key does not invalidate an imported row (OR-144) ([#586](https://github.com/jcsvwinston/orbit/issues/586)) ([da5b362](https://github.com/jcsvwinston/orbit/commit/da5b3621cc097abb7c665166d0e8157e56fa2f7d))
+* **admin:** store the logical key of a file uploaded through a widget under a tenant (OR-141) ([#585](https://github.com/jcsvwinston/orbit/issues/585)) ([2fbdb33](https://github.com/jcsvwinston/orbit/commit/2fbdb33c3093244ebeb0ee571334cbfb358b8579))
+* **admin:** use logical storage keys for import, fixtures and exports under a tenant (OR-79) ([#581](https://github.com/jcsvwinston/orbit/issues/581)) ([670976b](https://github.com/jcsvwinston/orbit/commit/670976b1de123d6c2dbd91d94482aef8f640e27e))
+* **deps:** build and test with Go 1.26.10, which fixes GO-2026-6809 in crypto/x509 ([#580](https://github.com/jcsvwinston/orbit/issues/580)) ([9519a4b](https://github.com/jcsvwinston/orbit/commit/9519a4ba2c2fe5d64e70f69804b5cdbae8c2d9d3))
+* **quarkdatasource:** validate records and classify store errors in Data Studio (OR-78) ([#579](https://github.com/jcsvwinston/orbit/issues/579)) ([da85404](https://github.com/jcsvwinston/orbit/commit/da8540405a65cf5ef3196c8948628b18e6da8250))
+* **server:** let admin-server peers form the mesh under mTLS (OR-99) ([#577](https://github.com/jcsvwinston/orbit/issues/577)) ([9a3c5e7](https://github.com/jcsvwinston/orbit/commit/9a3c5e77b500d562f82dc5e7200ecec28b46af2f))
+
 ## [1.20.1](https://github.com/jcsvwinston/orbit/compare/v1.20.0...v1.20.1) (2026-10-18)
 
 
