@@ -125,7 +125,11 @@ func probeAgentListenerMTLS(t *testing.T, e *env) verdict {
 		return absent
 	}
 
-	if _, err := registerRaw(ctx, tlsH2Client(ca.clientTLSWithCert(t, "fb-node")), "https://"+srv.AgentAddr(), "fb-mtls"); err != nil {
+	// The certificate is named after the node it registers: a listener
+	// that verifies client certificates binds the node_id to the Common
+	// Name once DEP-2026-001 flips the default (IDENT-06 measures that
+	// binding; this control measures the handshake).
+	if _, err := registerRaw(ctx, tlsH2Client(ca.clientTLSWithCert(t, "fb-mtls")), "https://"+srv.AgentAddr(), "fb-mtls"); err != nil {
 		t.Logf("registration with a valid client certificate failed: %v", err)
 		return partial
 	}
@@ -182,7 +186,9 @@ func probeRealAgentOverMTLS(t *testing.T, e *env) verdict {
 	}
 	noCert.stop()
 
-	e.startAgent(t, agent.Config{Endpoints: []string{endpoint}, TLS: ca.clientTLSWithCert(t, "fb-agent"), NodeIDOverride: "fb-cert"})
+	// Certificate and node_id agree: a listener that binds the two (the
+	// 2.0 default, DEP-2026-001) registers this agent as the 1.x one does.
+	e.startAgent(t, agent.Config{Endpoints: []string{endpoint}, TLS: ca.clientTLSWithCert(t, "fb-cert"), NodeIDOverride: "fb-cert"})
 	if !waitRegistered(srv.Server, "fb-cert", 5*time.Second) {
 		t.Log("the agent with a valid client certificate did not register in 5s")
 		return partial
@@ -403,9 +409,16 @@ func probeAgentCertRotation(t *testing.T, e *env) verdict {
 	// Server A sits behind a relay so that "A dies" severs the agent's
 	// connection the way a process death would (see env_test.go: an
 	// in-process stop leaves an open bidi stream serving).
-	srvA := e.startServer(t, server.Config{AgentTLS: mutual(recA)})
+	//
+	// The two certificates carry different Common Names (agent-v1,
+	// agent-v2) so the recorders can tell which one a handshake saw,
+	// while the node keeps one name across the rotation. A listener that
+	// binds node_id to the Common Name (the 2.0 default, DEP-2026-001)
+	// would refuse both, so the servers allow a shared certificate: this
+	// control measures the rotation, not the binding (IDENT-06 does).
+	srvA := e.startServer(t, server.Config{AgentTLS: mutual(recA), AllowSharedAgentCertificate: true})
 	relayA := startRelay(t, srvA.AgentAddr())
-	srvB := e.startServer(t, server.Config{AgentTLS: mutual(recB)})
+	srvB := e.startServer(t, server.Config{AgentTLS: mutual(recB), AllowSharedAgentCertificate: true})
 
 	c1 := ca.clientTLSWithCert(t, "agent-v1").Certificates[0]
 	c2 := ca.clientTLSWithCert(t, "agent-v2").Certificates[0]

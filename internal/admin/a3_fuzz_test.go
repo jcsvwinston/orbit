@@ -465,7 +465,10 @@ func FuzzImportValidation(f *testing.F) {
 				if field == nil {
 					t.Fatalf("record %d: unknown column %q passed validation and would reach Create", i, key)
 				}
-				if field.IsReadOnly || field.IsExcluded {
+				// A read-only primary key may pass: it names the row, the
+				// stores never write it as a field (ValidateImportData says
+				// the same). Any other read-only or excluded column may not.
+				if (field.IsReadOnly && !field.IsPK) || field.IsExcluded {
 					t.Fatalf("record %d: column %q is read-only or excluded and passed validation", i, key)
 				}
 				s, _ := val.(string)
