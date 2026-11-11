@@ -19,10 +19,14 @@ complete tag history lives on the
 
 ## v1.21.2 — 2026-11-11
 
-An alignment release with no product change: every module now requires
-Nucleus v1.35.0 and Quark v1.19.0, the versions the suite certifies next, and
-`quarkdatasource` pins the root at v1.21.1. Nothing in the binaries or the
-panel behaves differently from v1.21.1.
+A patch with no product change. The root, `agent`, `server`, `quarkbridge`
+and `quarkdatasource` now require Nucleus v1.35.0 and Quark v1.19.0, the
+versions the suite certifies next; `proto`, `datasource` and `ui` require
+neither and are unchanged apart from the toolchain. Every module declares
+`toolchain go1.26.11`, which fixes GO-2026-6859 (an HTTP/1 server crash in
+`net/http`) in the binaries this release builds; the `go` directive does not
+move, so no consumer of Orbit is forced onto a newer minimum Go. Nothing in
+the binaries or the panel behaves differently from v1.21.1.
 
 Fleet and bridge tags cut alongside: `quarkbridge/v1.9.8`, `quarkdatasource/v1.13.4`, `proto/v0.8.3`, `agent/v0.16.4`, `server/v0.22.2`, `datasource/v1.1.2`, `ui/v1.2.2`.
 
