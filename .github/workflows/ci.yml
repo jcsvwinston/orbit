@@ -275,7 +275,7 @@ jobs:
   # unfixed, and how GO-2026-6617 (an HPACK encoder race that crashes the
   # net/http HTTP/2 server) was found on 1.26.6, and GO-2026-6809 (in
   # crypto/x509) on 1.26.9. The toolchain directive is
-  # now go1.26.10 and setup-go installs it in preference to the go directive,
+  # now go1.26.11 and setup-go installs it in preference to the go directive,
   # which stays at 1.26.6 so no consumer of Orbit is forced onto a newer
   # minimum Go — this job is what stops the build silently sliding back.
   # The same advisory covers golang.org/x/net/http2, which agent/ and server/
