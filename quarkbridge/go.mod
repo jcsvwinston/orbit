@@ -14,8 +14,8 @@ toolchain go1.26.11
 // the rest of orbit/* pins today. In the suite go.work this resolves to the
 // local ./nucleus checkout; standalone it resolves from the proxy.
 require (
-	github.com/jcsvwinston/nucleus v1.34.0
-	github.com/jcsvwinston/quark v1.18.0
+	github.com/jcsvwinston/nucleus v1.35.0
+	github.com/jcsvwinston/quark v1.19.0
 )
 
 require (
