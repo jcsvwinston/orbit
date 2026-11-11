@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.2](https://github.com/jcsvwinston/orbit/compare/ui/v1.2.1...ui/v1.2.2) (2026-11-11)
+
+
+### Fixed
+
+* **deps:** build and test with Go 1.26.11, which fixes GO-2026-6859 in net/http ([#591](https://github.com/jcsvwinston/orbit/issues/591)) ([47c3824](https://github.com/jcsvwinston/orbit/commit/47c38245a8b89353ae28558553f3b35f810ab42a))
+
 ## [1.2.1](https://github.com/jcsvwinston/orbit/compare/ui/v1.2.0...ui/v1.2.1) (2026-11-07)
 
 

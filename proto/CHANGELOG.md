@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.3](https://github.com/jcsvwinston/orbit/compare/proto/v0.8.2...proto/v0.8.3) (2026-11-11)
+
+
+### Fixed
+
+* **deps:** build and test with Go 1.26.11, which fixes GO-2026-6859 in net/http ([#591](https://github.com/jcsvwinston/orbit/issues/591)) ([47c3824](https://github.com/jcsvwinston/orbit/commit/47c38245a8b89353ae28558553f3b35f810ab42a))
+
 ## [0.8.2](https://github.com/jcsvwinston/orbit/compare/proto/v0.8.1...proto/v0.8.2) (2026-11-07)
 
 
