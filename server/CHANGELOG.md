@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.3](https://github.com/jcsvwinston/orbit/compare/server/v0.22.2...server/v0.22.3) (2026-11-12)
+
+
+### Fixed
+
+* **deps:** re-pin datasource v1.1.2, ui v1.2.2 and proto v0.8.3 in the root, agent, server and quarkdatasource ([#594](https://github.com/jcsvwinston/orbit/issues/594)) ([2bcc1f0](https://github.com/jcsvwinston/orbit/commit/2bcc1f0be25c209d4cd5a2e365e7d968b0033121))
+
 ## [0.22.2](https://github.com/jcsvwinston/orbit/compare/server/v0.22.1...server/v0.22.2) (2026-11-11)
 
 
