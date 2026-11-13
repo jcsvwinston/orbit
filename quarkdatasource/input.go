@@ -92,6 +92,14 @@ func (s *store[T]) readRecord(rec datasource.Record, update bool) ([]fieldValue,
 			continue
 		}
 		named[fi.Column] = k
+		// A hidden column is not a field of the panel at all (the schema
+		// never emitted it, so no client names it honestly): answered as a
+		// column the model does not have, as the panel answers a filter by
+		// one. A read-only field is left to the database, as the key is.
+		if fi.IsExcluded {
+			problems[k] = msgUnknown
+			continue
+		}
 		if fi.IsPK || fi.IsReadOnly {
 			continue
 		}
@@ -118,7 +126,10 @@ func (s *store[T]) readRecord(rec datasource.Record, update bool) ([]fieldValue,
 	// promised could not exist.
 	if !update {
 		for _, f := range s.info.Fields {
-			if !f.IsRequired || f.IsPK || f.IsReadOnly {
+			// A required column the model hides cannot be named here, and
+			// is stored as its Go zero value — the Nucleus adapter's
+			// answer too (the panel's own create check skips it).
+			if !f.IsRequired || f.IsPK || f.IsReadOnly || f.IsExcluded {
 				continue
 			}
 			if _, ok := named[f.Column]; ok {

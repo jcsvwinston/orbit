@@ -59,7 +59,7 @@ func setup(t *testing.T) (*Adapter, context.Context) {
 	}
 
 	a := New(client)
-	for _, reg := range []func(*Adapter) error{
+	for _, reg := range []func(*Adapter, ...ModelOption) error{
 		Register[QDWidget], Register[QDMembership], Register[QDOrphan],
 	} {
 		if err := reg(a); err != nil {
