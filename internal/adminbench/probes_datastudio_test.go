@@ -793,3 +793,98 @@ func probeSavedViews(t *testing.T, e *env) verdict {
 	t.Logf("the saved view (%s) is not in the list of %d: %s", id, len(views), list.text())
 	return partial
 }
+
+// probeDeclaredPresentation (DS-18) asks whether the panel does with each
+// field what the MODEL declares — the admin tag on a Nucleus model,
+// quarkdatasource's Register options on a Quark one (pinned by that module's
+// own tests; Quark stays out of the root's graph until 2.0, ADR-012) — and
+// not what the column's type suggests. Four things, each measured by effect:
+// the schema carries the declaration; a filter on a field the model does not
+// offer is refused by name; a search does not look in a field the model did
+// not mark; and a field the model hides is in neither the schema nor the
+// rows. The last is the one a schema alone cannot show: a column the grid
+// does not draw still travels in every row unless the panel leaves it out.
+func probeDeclaredPresentation(t *testing.T, e *env) verdict {
+	schema := e.get(t, "/admin/api/models/Note/schema")
+	if schema.code != http.StatusOK {
+		t.Logf("schema answered %d: %s", schema.code, schema.text())
+		return absent
+	}
+	fields := schemaFieldsByName(t, schema)
+	flag := func(field, key string) bool {
+		f, ok := fields[field]
+		if !ok {
+			t.Logf("the schema has no field %s: %s", field, schema.text())
+			return false
+		}
+		v, _ := f[key].(bool)
+		return v
+	}
+	// Title is declared list,search,filter; Status list,filter; Body nothing.
+	if !flag("Title", "is_list") || !flag("Title", "is_search") || !flag("Title", "is_filter") {
+		t.Logf("Title is declared admin:\"list,search,filter\" and the schema says %v", fields["Title"])
+		return absent
+	}
+	if flag("Body", "is_list") || flag("Body", "is_search") || flag("Body", "is_filter") || flag("Status", "is_search") {
+		t.Logf("a field the model did not mark is listed, searched or filtered anyway: body=%v status=%v", fields["Body"], fields["Status"])
+		return absent
+	}
+
+	// A filter on a field the model does not offer is refused, by name.
+	refused := e.get(t, "/admin/api/models/Note?body=anything")
+	if refused.code != http.StatusBadRequest || !strings.Contains(refused.text(), "body") {
+		t.Logf("a filter on a field the model does not offer answered %d: %s", refused.code, refused.text())
+		return partial
+	}
+
+	// A search looks only where the model said: a term that is in the body
+	// alone finds nothing.
+	e.createNote(t, map[string]any{"title": "declared presentation", "body": "zz-only-in-the-body", "status": "draft"})
+	found := e.get(t, "/admin/api/models/Note?search=zz-only-in-the-body")
+	if items, _ := found.json(t)["items"].([]any); len(items) > 0 {
+		t.Logf("a search found %d row(s) by a term that is only in a field the model did not mark searchable", len(items))
+		return partial
+	}
+
+	// What the model hides is in neither the schema nor the rows.
+	credSchema := e.get(t, "/admin/api/models/Credential/schema")
+	if _, shown := schemaFieldsByName(t, credSchema)["Recovery"]; shown {
+		t.Logf("the schema emits the field the model declared excluded: %s", credSchema.text())
+		return partial
+	}
+	created := e.do(t, http.MethodPost, "/admin/api/models/Credential",
+		map[string]any{"label": "declared presentation", "password": "p", "api_token": "t"})
+	if created.code >= 400 {
+		t.Logf("create Credential answered %d: %s", created.code, created.text())
+		return partial
+	}
+	for _, surface := range []string{
+		"/admin/api/models/Credential",
+		"/admin/api/models/Credential/" + recordID(t, created.json(t)),
+	} {
+		r := e.get(t, surface)
+		if r.code != http.StatusOK {
+			t.Logf("%s answered %d: %s", surface, r.code, r.text())
+			return partial
+		}
+		if strings.Contains(r.raw(), `"recovery"`) {
+			t.Logf("%s carries the field the model declared excluded in its rows: the schema hides it and the row does not", surface)
+			return partial
+		}
+	}
+	return present
+}
+
+// schemaFieldsByName indexes a schema's fields by Go name.
+func schemaFieldsByName(t *testing.T, schema response) map[string]map[string]any {
+	t.Helper()
+	out := map[string]map[string]any{}
+	fields, _ := schema.json(t)["fields"].([]any)
+	for _, f := range fields {
+		if entry, ok := f.(map[string]any); ok {
+			name, _ := entry["name"].(string)
+			out[name] = entry
+		}
+	}
+	return out
+}
