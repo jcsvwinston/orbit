@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.0](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v1.13.5...quarkdatasource/v1.14.0) (2026-11-13)
+
+
+### Added
+
+* **quarkdatasource:** Register options declare what Data Studio lists, searches, filters and hides ([#597](https://github.com/jcsvwinston/orbit/issues/597)) ([49b6f7d](https://github.com/jcsvwinston/orbit/commit/49b6f7d7c31f29ae0b8345811c34b67d45d989ff))
+
 ## [1.13.5](https://github.com/jcsvwinston/orbit/compare/quarkdatasource/v1.13.4...quarkdatasource/v1.13.5) (2026-11-12)
 
 
