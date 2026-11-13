@@ -59,6 +59,8 @@ func controls() []control {
 			probe: probeRecordHistory},
 		{id: "DS-17", family: "data-studio", title: "saved views an operator returns to",
 			want: present, probe: probeSavedViews},
+		{id: "DS-18", family: "data-studio", title: "what the panel lists, searches, filters and hides is what the model declares",
+			want: present, probe: probeDeclaredPresentation},
 
 		// ---- permissions -------------------------------------------------
 		{id: "PERM-01", family: "permissions", title: "permissions per model and action",

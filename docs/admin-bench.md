@@ -48,18 +48,18 @@ A control that cannot be probed does not belong in the bench.
 
 ## The result
 
-**72 of 72 controls present. 0 partial. 0 absent.**
+**73 of 73 controls present. 0 partial. 0 absent.**
 
 | family | present | partial | absent |
 |---|---|---|---|
-| data-studio | 17 | 0 | 0 |
+| data-studio | 18 | 0 | 0 |
 | permissions | 9 | 0 | 0 |
 | audit | 7 | 0 | 0 |
 | operations | 17 | 0 | 0 |
 | customization | 7 | 0 | 0 |
 | interface | 2 | 0 | 0 |
 | extension | 13 | 0 | 0 |
-| **total** | **72** | **0** | **0** |
+| **total** | **73** | **0** | **0** |
 
 The six families A6 measured are complete as of that arc's eighth session:
 59 of 59. The seventh, `extension`, was recorded at the baseline of A11 and
@@ -82,10 +82,11 @@ The panel **browses and operates well, and administers poorly**.
   model validation, search, server-side ordering, bulk actions, import,
   export, fixtures, multi-tenant confinement, and a panel mounted over a
   backend that is not the framework's. The bench's models are served by the
-  Nucleus adapter, so model validation (`DS-03`) is measured there; the same
-  answer from `quarkdatasource` is pinned by that module's own tests, because
-  the bench lives in the root module and Quark stays out of the root's graph
-  until 2.0 (ADR-012).
+  Nucleus adapter, so model validation (`DS-03`) and what a model declares
+  about its fields (`DS-18`) are measured there; the same answers from
+  `quarkdatasource` are pinned by that module's own tests, because the bench
+  lives in the root module and Quark stays out of the root's graph until 2.0
+  (ADR-012).
 - Everything an operator does to *the application* works too, and this is the
   part no comparable product has: a live request and SQL feed, a runtime
   pulse, feature flags, migrations, storage, async exports.
@@ -2156,3 +2157,49 @@ The HTTP bench is unchanged at 72 of 72; the browser half stays at 18 of 18.
 
 The HTTP bench is unchanged at 72 of 72: `CUST-07` stays present, now for
 the reason its title gives.
+
+## What the model declares, the panel does (DS-18)
+
+A Nucleus model says what the panel does with each field in its `admin` tag
+and in `model.ModelConfig`: which columns the list shows, which `?search=`
+looks in, which are offered as filters, which are never shown. A Quark model
+had no way to say any of it — `quarkdatasource` listed and filtered every
+column and searched every string one — so "the panel over Quark" was not the
+same panel, which is what decision D10 of the 2.0 contract closes:
+`quarkdatasource.Register[T]` takes the same declarations as options
+(`ListFields`, `SearchFields`, `Filters`, `Exclude`, `ReadOnly`,
+`ReadOnlyFields`, `Label`, `Choices`, `Icon`, `OrderBy`, `PageSize`), refuses
+one that names no field or contradicts another, and hides a column whose name
+looks like a credential unless `ShowSensitive` names it.
+
+The bench gained the control that asks whether the panel honours the
+declaration, measured by effect over the Nucleus adapter (the Quark side is
+pinned by `quarkdatasource`'s own tests, as `DS-03` is):
+
+| `DS-18` asks | measured as |
+|---|---|
+| the schema carries the declaration | `Title` (`admin:"list,search,filter"`) is listed, searched and filtered; `Body` (no tag) is none of the three; `Status` is not searched |
+| a filter on a field the model does not offer is refused | `?body=anything` answers `400` naming the field |
+| a search looks only where the model said | a term that is only in the body finds nothing |
+| a field the model hides is in neither the schema nor the rows | `Credential.Recovery` (`admin:"exclude"`) is absent from the schema, the list and the record |
+
+### What the control found
+
+The last row was **partial** on the first run: the schema hid the field and
+the rows carried its value. The panel masked a record only when a field
+policy applied to the operator — `mask`, `maskAll` and `maskValues` returned
+early otherwise — so a column an application declared excluded was not in
+the grid and was in every row the API answered, to any operator with `list`
+on the model. The three masks now drop an excluded field for every operator,
+and the record of a model that hides nothing comes back untouched.
+
+Verified by breaking it:
+
+| mutation | what fails |
+|---|---|
+| the parent commit's `mask` (an early return when no policy applies) | `DS-18` (`partial`: "carries the field the model declared excluded in its rows"); `TestMask_DropsExcludedFieldsWithoutFieldPolicies` in `internal/admin` |
+| `quarkdatasource` keeps `IsSearch` on an excluded column | `TestOptions_SearchLooksOnlyWhereTheModelSays`, and the panel would refuse every search on the model (it refuses one that would reach an excluded field) |
+| `quarkdatasource` ignores an option naming an unknown field | `TestOptions_RegisterRefusesWhatItCannotApply` |
+
+The HTTP bench goes from 72 of 72 to **73 of 73**; the browser half stays at
+18 of 18.

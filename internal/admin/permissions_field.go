@@ -135,11 +135,15 @@ func (fr fieldRules) guardPayload(mi datasource.ModelInfo, data map[string]any, 
 	return fieldDeniedError(mi.Name, action, refused)
 }
 
-// mask removes from a record every field the subject may not read. The
-// primary key stays: a row whose key is hidden cannot be opened, exported or
-// audited, which turns a field permission into a broken grid.
+// mask removes from a record every field the subject may not read, and
+// every field the model hides (datasource.FieldInfo.IsExcluded): the schema
+// never emits an excluded field, but its value travelled in every row until
+// the admin bench asked (DS-18) — a column the grid does not draw is still a
+// column an API client reads. The primary key stays: a row whose key is
+// hidden cannot be opened, exported or audited, which turns a field
+// permission into a broken grid.
 func (fr fieldRules) mask(mi datasource.ModelInfo, rec datasource.Record) datasource.Record {
-	if !fr.enforced() || rec == nil {
+	if rec == nil || (!fr.enforced() && !hidesField(mi)) {
 		return rec
 	}
 	for key := range rec {
@@ -147,11 +151,23 @@ func (fr fieldRules) mask(mi datasource.ModelInfo, rec datasource.Record) dataso
 		if !ok || f.IsPK {
 			continue
 		}
-		if !fr.readable(col) {
+		if f.IsExcluded || !fr.readable(col) {
 			delete(rec, key)
 		}
 	}
 	return rec
+}
+
+// hidesField reports whether the model declares a field Data Studio never
+// shows, which is what makes mask worth a pass over a record when no field
+// policy applies.
+func hidesField(mi datasource.ModelInfo) bool {
+	for _, f := range mi.Fields {
+		if f.IsExcluded {
+			return true
+		}
+	}
+	return false
 }
 
 // maskValues masks a plain value map — an audit entry's before/after side,
@@ -160,13 +176,13 @@ func (fr fieldRules) mask(mi datasource.ModelInfo, rec datasource.Record) dataso
 // values, but a future store may not), and masking in place would edit the
 // trail itself.
 func (fr fieldRules) maskValues(mi datasource.ModelInfo, values map[string]any) map[string]any {
-	if !fr.enforced() || len(values) == 0 {
+	if len(values) == 0 || (!fr.enforced() && !hidesField(mi)) {
 		return values
 	}
 	out := make(map[string]any, len(values))
 	for key, v := range values {
 		col, f, ok := fr.resolve(mi, key)
-		if ok && !f.IsPK && !fr.readable(col) {
+		if ok && !f.IsPK && (f.IsExcluded || !fr.readable(col)) {
 			continue
 		}
 		out[key] = v
@@ -176,7 +192,7 @@ func (fr fieldRules) maskValues(mi datasource.ModelInfo, values map[string]any) 
 
 // maskAll masks every record of a page in place.
 func (fr fieldRules) maskAll(mi datasource.ModelInfo, items []datasource.Record) {
-	if !fr.enforced() {
+	if !fr.enforced() && !hidesField(mi) {
 		return
 	}
 	for _, rec := range items {

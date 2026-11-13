@@ -92,6 +92,10 @@ type Credential struct {
 	Label    string `db:"required" json:"label" admin:"list,search"`
 	Password string `json:"password"`
 	APIToken string `json:"api_token" db:"column:api_token"`
+	// Recovery is the field the model HIDES (DS-18): declared excluded, so
+	// the schema never emits it and no row carries it. A bench whose every
+	// field is shown cannot ask what the panel does with one that is not.
+	Recovery string `json:"recovery" admin:"exclude"`
 }
 
 // Comment points at both, which is what makes it the relation probe's model.
