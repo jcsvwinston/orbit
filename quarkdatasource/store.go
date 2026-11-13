@@ -31,6 +31,18 @@ type store[T any] struct {
 
 	searchCols []string // columns LIKE-matched by Query.Search
 
+	// pageSize and orderBy are the model's defaults (PageSize, OrderBy at
+	// Register), applied when the query asks for none: the panel sends 0
+	// and "" for a request that did not say.
+	pageSize int
+	orderBy  []orderClause
+
+	// excludedCols are the columns Data Studio never shows (Exclude, or a
+	// credential-shaped name): left out of every record this store answers,
+	// and refused — as a column the model does not have — when a write
+	// names one.
+	excludedCols map[string]bool
+
 	// fieldKeys pairs each schema column with the object key encoding/json
 	// uses for its struct field, in declaration order. Quark models normally
 	// carry no json tags, so entities marshal under Go-case keys ("CustomerID")
@@ -47,10 +59,16 @@ type fieldKey struct {
 	jsonKey string // key the struct field marshals under
 }
 
-func newStore[T any](a *Adapter, t reflect.Type, meta *quark.ModelMeta, info datasource.ModelInfo) datasource.RecordStore {
+func newStore[T any](a *Adapter, t reflect.Type, meta *quark.ModelMeta, info datasource.ModelInfo, pageSize int, orderBy string) datasource.RecordStore {
 	s := &store[T]{adapter: a, typ: t, meta: meta, info: info,
-		jsonKeyByCol: make(map[string]string, len(meta.Fields))}
+		jsonKeyByCol: make(map[string]string, len(meta.Fields)),
+		pageSize:     pageSize, orderBy: parseOrderBy(orderBy),
+		excludedCols: make(map[string]bool)}
 	for _, f := range info.Fields {
+		if f.IsExcluded {
+			s.excludedCols[f.Column] = true
+			continue
+		}
 		if f.IsSearch {
 			s.searchCols = append(s.searchCols, f.Column)
 		}
@@ -232,6 +250,9 @@ func (s *store[T]) List(ctx context.Context, q datasource.Query) (datasource.Pag
 	}
 	size := q.PageSize
 	if size <= 0 {
+		size = s.pageSize
+	}
+	if size <= 0 {
 		size = defaultPageSize
 	}
 
@@ -248,7 +269,11 @@ func (s *store[T]) List(ctx context.Context, q datasource.Query) (datasource.Pag
 	if err != nil {
 		return datasource.Page{}, err
 	}
-	for _, clause := range parseOrderBy(q.OrderBy) {
+	order := parseOrderBy(q.OrderBy)
+	if len(order) == 0 {
+		order = s.orderBy
+	}
+	for _, clause := range order {
 		qb = qb.OrderBy(clause.column, clause.direction)
 	}
 	items, err := qb.Limit(size).Offset((page - 1) * size).List()
@@ -412,6 +437,9 @@ func (s *store[T]) TableExists(ctx context.Context) bool {
 // ---- helpers ----
 
 func (s *store[T]) readOnlyErr() error {
+	if s.meta.HasPK && !s.meta.HasCompositePK {
+		return fmt.Errorf("quarkdatasource: %s is registered read-only (quarkdatasource.ReadOnly)", s.info.Name)
+	}
 	if s.meta.HasCompositePK {
 		return fmt.Errorf("quarkdatasource: %s has a composite primary key; Data Studio edits require a single key (model is read-only)", s.info.Name)
 	}
@@ -527,6 +555,12 @@ func (s *store[T]) entityToRecord(entity any) (datasource.Record, error) {
 			delete(rec, fk.jsonKey)
 			rec[fk.column] = v
 		}
+	}
+	// A hidden column leaves with the record, not only with the schema: the
+	// panel does not draw a column the schema never emitted, but the value
+	// would still travel in every row.
+	for col := range s.excludedCols {
+		delete(rec, col)
 	}
 	return rec, nil
 }

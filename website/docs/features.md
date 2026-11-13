@@ -91,8 +91,9 @@ bulk one.
 
 **Search.** `?search=` looks in the fields a model declares searchable: in
 Nucleus, fields tagged `admin:"search"`, listed in `ModelConfig.SearchFields`,
-or switched on in the panel's Field settings; Quark models search every
-string column. A Nucleus model that declares none is not searchable today —
+or switched on in the panel's Field settings; a Quark model searches the
+columns its `quarkdatasource.SearchFields` names, or every string column when
+it names none. A Nucleus model that declares none is not searchable today —
 the registry does not yet default search to its string columns — so a search
 on it answers `400` naming the model and how to enable search, rather than
 every row, and the grid disables its search box. The two backends match
@@ -176,7 +177,14 @@ model registry as the default backend. Applications built on the
 [Quark](https://github.com/jcsvwinston/quark) ORM can point it at their Quark
 models instead: add the opt-in
 [`quarkdatasource`](https://github.com/jcsvwinston/orbit/tree/main/quarkdatasource)
-module and set `orbit.Config.DataSource`.
+module and set `orbit.Config.DataSource`. What the panel lists, searches,
+filters and hides for a Quark model is declared at `Register` — `ListFields`,
+`SearchFields`, `Filters`, `Exclude`, `ReadOnly`, `Label`, `Choices`, `Icon`,
+`OrderBy`, `PageSize`, the same declarations `model.ModelConfig` and the
+`admin` tag carry on a Nucleus model — and a column whose name looks like a
+credential (`password`, `*_hash`, `*_token`, `secret`…) is hidden unless
+`ShowSensitive` names it. A field a model hides, on either source, is in
+neither the schema nor the rows the API answers (admin bench `DS-18`).
 
 A record a form or an API client sends is held to the catalogue before it is
 written, whichever source serves the model: a required field left out or

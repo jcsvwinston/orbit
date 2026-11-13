@@ -82,7 +82,76 @@ facts.
 Presentation metadata Quark deliberately does not carry (labels, HTML input
 types, list/search/filter flags) is derived from the Go type with permissive
 defaults: every column is listed and filterable (scalars), string columns are
-searchable, labels are humanized field names.
+searchable, labels are humanized field names — and a column whose name looks
+like a credential is left out (below). What the defaults get wrong for a
+model is declared at `Register`.
+
+## Declaring what the panel shows
+
+`Register[T]` takes options that say what Data Studio does with the model —
+the same things an application on `pkg/model` says in `model.ModelConfig`
+and the `admin` struct tag, in the same words, so a model moved to Quark
+keeps the same panel (nucleus `MA-2026-024`). Quark itself reads none of
+them: a struct tag that said "list" would be a UI decision in the data layer.
+
+```go
+quarkdatasource.Register[User](ds,
+    quarkdatasource.ListFields("email", "role", "created_at"),
+    quarkdatasource.SearchFields("email", "display_name"),
+    quarkdatasource.Filters("role"),
+    quarkdatasource.Exclude("notes"),
+    quarkdatasource.ReadOnlyFields("email"),
+    quarkdatasource.Label("display_name", "Name"),
+    quarkdatasource.Choices("role",
+        datasource.Choice{Value: "admin", Label: "Administrator"},
+        datasource.Choice{Value: "member", Label: "Member"}),
+    quarkdatasource.Icon("users"),
+    quarkdatasource.OrderBy("created_at desc"),
+    quarkdatasource.PageSize(50),
+)
+quarkdatasource.Register[AuditEntry](ds, quarkdatasource.ReadOnly())
+```
+
+| Option | `model.ModelConfig` / `admin` tag | What it does |
+|---|---|---|
+| `ListFields(cols...)` | `ListFields` / `admin:"list"` | the columns the list shows; none named keeps every column |
+| `SearchFields(cols...)` | `SearchFields` / `admin:"search"` | the text columns `?search=` looks in; none named keeps every string column |
+| `Filters(cols...)` | `Filters` / `admin:"filter"` | the columns offered as filters; none named keeps every scalar column |
+| `Exclude(cols...)` | `ExcludeFields` / `admin:"exclude"` | never shown: not in the schema, the rows, a form, an export or the audit trail; a filter, sort, search or write naming one is refused as a column the model does not have |
+| `ReadOnly()` | `ReadOnly` | the model is listed and every write is refused |
+| `ReadOnlyFields(cols...)` | `admin:"readonly"` | shown, not edited; a write naming one leaves it to the database, as the key is |
+| `Label(col, label)` | `FieldLabels` / `admin:"label:…"` | the label the panel shows |
+| `Choices(col, choices...)` | `admin:"choices:…"` | a closed set of values; the form draws a select |
+| `Icon(name)` | `Icon` | the sidebar icon |
+| `OrderBy("col [asc\|desc], …")` | `OrderBy` | the order of a list the request did not sort |
+| `PageSize(n)` | `PageSize` | the page of a list the request did not size (default 25) |
+| `ShowSensitive(cols...)` | — | keeps a column the name rule below would hide |
+
+A field is named by its storage column or its Go name, case-insensitively.
+An option that names no field of the model, names a column of the wrong
+kind (`SearchFields` on a number, `Filters` on a timestamp), contradicts
+another (`Exclude` and `ListFields` on the same column, `OrderBy` on an
+excluded one) or would silently overturn a default is an **error from
+`Register`**, and the model is not registered: a misspelled column in
+`ListFields` would otherwise list every column and look like the default.
+The primary key and the tenant column cannot be excluded.
+
+**A column whose name looks like a credential is excluded unless you say
+otherwise.** `IsSensitiveColumnName` is the rule — the name contains
+`password`, `secret`, `token`, `credential`, `api_key`, `apikey` or
+`private_key`, or ends in `hash` or `salt` — and it is the same rule the
+panel's audit trail redacts by. `Register` says what it hid in the adapter's
+log (`WithLogger`; `slog.Default` otherwise), naming the option that shows
+it: `ShowSensitive("password_hash")`. Naming such a column in `ListFields`,
+`SearchFields`, `Filters`, `ReadOnlyFields`, `Label` or `Choices` without
+`ShowSensitive` is an error rather than a column that is both asked for and
+hidden. A required column that is hidden is stored as its Go zero value on a
+create, as on the Nucleus adapter: hide the columns the application fills
+itself.
+
+`Register` grew its variadic options in a minor: `Register[T](ds)` is the
+same call. Code that assigned `Register[T]` to a `func(*Adapter) error`
+value names the new signature.
 
 ## Semantics
 
@@ -145,5 +214,11 @@ searchable, labels are humanized field names.
 
 ## Status
 
-Pre-1.0, alongside Orbit. The datasource contract freezes at Orbit v1.0
-(QADR-0005).
+Released with its own tag (`quarkdatasource/vX.Y.Z`; the set certified by
+the suite pins it in `versions.yaml` of
+[quantum](https://github.com/jcsvwinston/quantum)). The datasource contract
+it implements has been frozen since Orbit v1.0 (QADR-0005); the module's
+own API — `New`, its options, `Register` and its options — is not part of
+that freeze and grows by minor. At Orbit 2.0 the root module requires this
+one (decision D11 of the 2.0 contract), and the Nucleus adapter it replaces
+leaves (DEP-2026-002).

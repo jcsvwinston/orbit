@@ -55,6 +55,7 @@ package quarkdatasource
 
 import (
 	"fmt"
+	"log/slog"
 	"reflect"
 	"sort"
 	"strings"
@@ -88,12 +89,24 @@ func WithDatabaseAlias(alias string) Option {
 	return func(a *Adapter) { a.alias = strings.TrimSpace(alias) }
 }
 
+// WithLogger names the logger Register writes its notices to — one line per
+// column it leaves out of Data Studio because of its name (ShowSensitive).
+// The default is slog.Default.
+func WithLogger(logger *slog.Logger) Option {
+	return func(a *Adapter) {
+		if logger != nil {
+			a.logger = logger
+		}
+	}
+}
+
 // Adapter implements datasource.DataSource over a Quark client. Populate it
 // with Register[T] for each model; registration order is preserved in All.
 type Adapter struct {
 	provider     quark.ClientProvider
 	tenantColumn string
 	alias        string
+	logger       *slog.Logger
 
 	mu     sync.RWMutex
 	names  []string
@@ -108,7 +121,7 @@ type registeredModel struct {
 // New returns an empty adapter bound to provider (a *quark.Client or a
 // *quark.TenantRouter). Register models with Register[T].
 func New(provider quark.ClientProvider, opts ...Option) *Adapter {
-	a := &Adapter{provider: provider, models: make(map[string]*registeredModel), alias: DefaultDatabaseAlias}
+	a := &Adapter{provider: provider, models: make(map[string]*registeredModel), alias: DefaultDatabaseAlias, logger: slog.Default()}
 	for _, o := range opts {
 		o(a)
 	}
@@ -168,7 +181,15 @@ func (a *Adapter) Store(modelName, dbAlias string) (datasource.RecordStore, erro
 // Register adds model T to the adapter's catalogue and builds its typed record
 // store. T must be a struct with Quark tags. Registering the same name twice
 // replaces the previous entry.
-func Register[T any](a *Adapter) error {
+//
+// The options declare what Data Studio does with the model (ListFields,
+// SearchFields, Filters, Exclude, ReadOnly, ReadOnlyFields, Label, Choices,
+// Icon, OrderBy, PageSize); with none, every column is listed and filterable,
+// the string columns are searchable, and a column whose name looks like a
+// credential (IsSensitiveColumnName) is left out, which Register says in the
+// adapter's log. An option that names no field of the model, or contradicts
+// another, is an error and the model is not registered.
+func Register[T any](a *Adapter, opts ...ModelOption) error {
 	t := reflect.TypeOf((*T)(nil)).Elem()
 	if t.Kind() != reflect.Struct {
 		return fmt.Errorf("quarkdatasource: Register[%s]: model must be a struct", t)
@@ -178,8 +199,20 @@ func Register[T any](a *Adapter) error {
 		return fmt.Errorf("quarkdatasource: Register[%s]: no Quark metadata (missing db tags?)", t)
 	}
 
+	var cfg modelConfig
+	for _, o := range opts {
+		o(&cfg)
+	}
 	info := a.buildModelInfo(t, meta)
-	st := newStore[T](a, t, meta, info)
+	hidden, err := applyModelOptions(&info, cfg)
+	if err != nil {
+		return err
+	}
+	for _, col := range hidden {
+		a.logger.Info(fmt.Sprintf("quarkdatasource: %s.%s is left out of Data Studio because its name looks like a credential; pass quarkdatasource.ShowSensitive(%q) to Register to show it", info.Name, col, col),
+			"model", info.Name, "column", col)
+	}
+	st := newStore[T](a, t, meta, info, cfg.pageSize, cfg.orderBy)
 
 	info.DatabaseAlias = a.alias
 
