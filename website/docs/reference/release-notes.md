@@ -17,6 +17,75 @@ own tags, so each entry also lists the fleet tags cut alongside it. The
 complete tag history lives on the
 [GitHub releases page](https://github.com/jcsvwinston/orbit/releases).
 
+## v1.22.0 — 2026-11-15
+
+A minor in which a Quark model registered with `quarkdatasource` declares
+what Data Studio lists, searches, filters and hides, and in which a column
+a model excludes is left out of every row the panel answers, not only of
+the schema it describes. Nothing is removed and no default changes for a
+model registered without options, with one exception under **Fixed**: a
+field marked excluded no longer travels in the rows of the list, the record
+and the write's answer. A deployment that runs v1.21.3 runs as before.
+
+**What this root requires.** The root, `agent`, `server`, `quarkbridge`
+and `quarkdatasource` require Nucleus v1.36.0, and `quarkbridge` and
+`quarkdatasource` require Quark v1.19.1, the tags the suite certifies with
+this release. The registration options under **Added** are in
+`quarkdatasource` (v1.14.0), which an application requires on its own.
+
+### Added
+
+- **`quarkdatasource.Register` takes options
+  ([#597](https://github.com/jcsvwinston/orbit/pull/597)).**
+  `Register[T](adapter, opts...)` declares for one Quark model what the
+  panel shows, with the same vocabulary a `pkg/model` model carries in
+  `ModelConfig` and in its `admin` tag: `ListFields`, `SearchFields`,
+  `Filters`, `Exclude`, `ReadOnly()`, `ReadOnlyFields`, `Label`, `Choices`,
+  `Icon`, `OrderBy` and `PageSize`, over today's defaults (nothing named:
+  every column listed and filterable, the string columns searchable). A
+  field is named by its column or by its Go field name, case-insensitively.
+  An option that names no field, a field of the wrong kind (`SearchFields`
+  on a number), contradicts another (`Exclude` and `ListFields` on the same
+  column, `OrderBy` on a hidden one) or would overturn a default silently
+  is an error from `Register`, and the model is not registered: a
+  `ListFields` with a misspelled column would list every column and look
+  like the default. The key and the tenant column cannot be excluded.
+  Quark itself reads none of this; the ORM carries no `admin` tag.
+- **Columns whose name looks like a credential are hidden by default
+  ([#597](https://github.com/jcsvwinston/orbit/pull/597)).** A column
+  named `password`, `secret`, `token`, `credential`, `api_key`,
+  `private_key`, or ending in `hash` or `salt` — the rule the panel already
+  uses to redact its audit log, exported as
+  `quarkdatasource.IsSensitiveColumnName` — is excluded unless the model
+  says `ShowSensitive(field)`; naming such a column in another option
+  without it is an error. The adapter logs each column it hides, naming
+  the option that shows it, through the logger `WithLogger` sets
+  (`slog.Default()` otherwise).
+- **The store applies the model's declaration
+  ([#597](https://github.com/jcsvwinston/orbit/pull/597)).** A list
+  without a page size or an order takes the model's; excluded columns are
+  left out of every record and are not searched; a write that names one is
+  refused as a column the model does not have; a read-only field named in
+  a write is left to the database, as the key is. The module's README
+  carries the table of options against `ModelConfig` and the `admin` tag,
+  and its status section describes what the module does today.
+
+### Fixed
+
+- **An excluded field leaves every row, not only the schema (OR-150;
+  [#596](https://github.com/jcsvwinston/orbit/pull/596)).** The panel
+  masked a record only when a field policy applied to the operator, so a
+  column a model declared excluded (`admin:"exclude"`, or `IsExcluded` on
+  any data source) was out of the grid and inside every row the API
+  answered — the list, the record and the answer to a `POST` — for any
+  operator with `list`. The masks now drop an excluded field for every
+  operator (the key stays), and a model with nothing hidden pays nothing.
+  The admin bench measures it as `DS-18` (what the panel lists, searches,
+  filters and hides is what the model declares): **73 of 73** controls
+  present.
+
+Fleet and bridge tags cut alongside: `quarkbridge/v1.9.9`, `quarkdatasource/v1.14.0`, `agent/v0.16.6`, `server/v0.22.4`.
+
 ## v1.21.3 — 2026-11-12
 
 A patch that re-pins the modules cut with v1.21.2 inside the same release:
