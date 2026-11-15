@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.22.0](https://github.com/jcsvwinston/orbit/compare/v1.21.3...v1.22.0) (2026-11-15)
+
+
+### Added
+
+* **quarkdatasource:** Register options declare what Data Studio lists, searches, filters and hides ([#597](https://github.com/jcsvwinston/orbit/issues/597)) ([49b6f7d](https://github.com/jcsvwinston/orbit/commit/49b6f7d7c31f29ae0b8345811c34b67d45d989ff))
+
+
+### Fixed
+
+* **datastudio:** an excluded field leaves every row, not only the schema ([#596](https://github.com/jcsvwinston/orbit/issues/596)) ([076f371](https://github.com/jcsvwinston/orbit/commit/076f371598304bb87966bee7bcae862007c04133))
+* **deps:** align root, agent, server, quarkbridge, quarkdatasource to the set (nucleus v1.36.0, quark v1.19.1) ([#599](https://github.com/jcsvwinston/orbit/issues/599)) ([ae5f5d2](https://github.com/jcsvwinston/orbit/commit/ae5f5d29d21bf0e8c47717588be304360fac523d))
+
 ## [1.21.3](https://github.com/jcsvwinston/orbit/compare/v1.21.2...v1.21.3) (2026-11-12)
 
 
