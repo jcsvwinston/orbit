@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.9](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v1.9.8...quarkbridge/v1.9.9) (2026-11-15)
+
+
+### Fixed
+
+* **deps:** align root, agent, server, quarkbridge, quarkdatasource to the set (nucleus v1.36.0, quark v1.19.1) ([#599](https://github.com/jcsvwinston/orbit/issues/599)) ([ae5f5d2](https://github.com/jcsvwinston/orbit/commit/ae5f5d29d21bf0e8c47717588be304360fac523d))
+
 ## [1.9.8](https://github.com/jcsvwinston/orbit/compare/quarkbridge/v1.9.7...quarkbridge/v1.9.8) (2026-11-11)
 
 
